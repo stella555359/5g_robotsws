@@ -1,0 +1,1617 @@
+# - Override values for deployment in cloud-development environment
+# - Operator need to set the values base on the real scenario.
+# - This is a YAML-formatted file.
+# - Declare variables to be passed into your templates.
+
+global:
+  #########################################################
+  # global configuration shared by parent and sub charts
+  #########################################################
+
+  # - Description: Denote CNF layout in deployment
+  # - Support Value:
+  #     "DRAN"
+  #     "CRAN"
+  #     "mini"
+  # - Default Value: "DRAN"
+  cnfLayout: "mini"
+
+  # - Description: securityContext configuration for vDU runAsUser/runAsGroup/fsGroup.
+  securityContext:
+    runAsUser: 9999
+    runAsGroup: 9999
+    fsGroup: 9999
+
+
+  # - Description: Assigning pods to specific nodes (except L2RT and AHM pod)
+  # - Support Value: key-value pair.
+  # - Note: the value is key-value pairs come from the node label
+  #   # - example:
+  #   1) nodeSelector: {}
+  #   2) nodeSelector: { "labelA": "A" } or
+  #      nodeSelector: { labelA: A }
+  #   3) nodeSelector: { "labelA": "A", "labelB": "B" }
+  #   4) nodeSelector: { "labelWithEmptyValue": "" } or
+  #      nodeSelector: { labelWithEmptyValue:  } or
+  #      nodeSelector: { labelWithEmptyValue }
+  #  - For CRAN cnflayout, to deploy pods with zone specific (feature CB013856-A)
+  #   5) nodeSelector: { config.nokia.com/zone: NRT }
+  # If sub chart is configured with nodeSelector(e.g. certman-auto-cmp.nodeSelector) and the value of sub chart with
+  #   nodeSelector is not empty, sub chart shall prevail.
+  # In case of dual-server vCU+vDU , nodeSelector shall use the MSW as the node hostname for vDU and worker as the node hostname for vCU.
+  #   #- example:
+  #   1)nodeSelector: { "kubernetes.io/hostname": "master0"}
+  #   2)nodeSelector: { kubernetes.io/hostname: master0}
+  nodeSelector: {}
+
+  # - Description: upInstanceNodeSelector to control the L2RT and AHM pod prefer to deployment and RAN-NIC SW controller perfer to RAN-NIC selection
+  # - Note: the value is key-value come from the nodes' label, and only one label supported
+  # - example:
+  #   1) upInstanceNodeSelector: {}
+  #   2) upInstanceNodeSelector: { "config.nokia.com/accelerator": "rannic" } or
+  #      upInstanceNodeSelector: { config.nokia.com/accelerator: rannic }
+  #   3) upInstanceNodeSelector: { "config.nokia.com/application": "" } or
+  #      upInstanceNodeSelector: { config.nokia.com/application:  } or
+  #      upInstanceNodeSelector: { config.nokia.com/application }
+  # - For CRAN cnflayout, to deploy pods with zone specific (feature CB013856-A)
+  #   4) upInstanceNodeSelector: { config.nokia.com/zone: RT }
+  upInstanceNodeSelector: {}
+
+  # - Description: Policy for NodeSelector, preferred or required
+  # - Support value: type string "preferred" or "required"
+  # - Default value: "preferred"
+  upInstanceNodeSelectorPolicy: "preferred"
+
+  # Description: Control the number of AHM/L2RT pod and RANNIC Card number in CR
+  # - Note: The ahm and RANNIC Card count is equal with <global.upInstanceCount + global.halfUpInstanceCount>
+  #         The L2RT pod is equal with <upInstanceCount>
+  # Support value: 1 ~ 12 (Both support 1 and 12).
+  # Default value is 1.
+  # Feature: CB009567-A
+  upInstanceCount: 0
+
+  # Description: Control the number of AHM/L2RT-half pod and RANNIC Card number in CR.
+  # - Note: The ahm and RANNIC Card count is equal with <global.upInstanceCount + global.halfUpInstanceCount>
+  #         The L2RT-half pod is equal with <halfUpInstanceCount>
+  # Support value: 0 ~ 2.
+  # Default value is 0.
+  # Feature: CB011051-K
+  halfUpInstanceCount: 1
+
+  # - Description: the number of l2nrt POD to deploy.
+  # - support value: 1-3 for DRAN and 2-8 for CRAN (feature CB013856-A) depends on F1-U throughput.
+  # - Note: To achieve the maximum count, the cluster should be equipped with sufficient resources and nodes.
+  # - default value: 1
+  # - feature: CB009567-A
+  # -  Note: If RANNIC Card count is equal 4 , maximum supported l2nrtCount is equal to 2.(CB013175)
+  l2nrtCount: 1
+
+  # - Description: The number of ORAN O1 Pod for 5G CNF deployment
+  # - Note: During CNF deployment preparation phase, the operator modifies it to 1 to require to deploy the O-RAN O1 pod by O-RAN scene
+  # - support value: 0,1
+  # - default value: 0
+  # - feature: CB006088-A
+  orano1Count: 0
+
+  # - Description: device Pool List
+  # - Note: need to be filled according to the real environment!!!
+  #         all the device pool values should same as the values in the aic-vcu-prerequisite/values-override.yaml
+  devicePoolList:
+    # The SR-IOV Device Pool used by bip networks (fast path)
+    fastPathBipPool: "openshift.io/sriov_vfio_0"
+    # The SR-IOV Device Pool used by f1 networks (fast path)
+    fastPathF1uPool: "openshift.io/sriov_vfio_1"
+    # The SR-IOV Device Pool used by f1s networks (fast path), which is backup of fastPathF1uPool
+    # default value is empty, if set this parameter, will enable link redundancy function
+    # Note: must different with fastPathF1uPool
+    fastPathF1uPoolBackup: ""
+    # The SR-IOV Device Pool used by oam/f1c/fhm/twamp networks (slow path)
+    slowPathCommonPool: "openshift.io/sriov_netdevice_1"
+    # The SR-IOV Device Pool used by oams/f1cs/twamps networks (slow path),which is backup of slowPathCommonPool
+    # default value is empty, if set this parameter, will enable link redundancy function
+    # Note: must different with slowPathCommonPool
+    slowPathCommonPoolBackup: ""
+
+  # - Description: external network configuration for each network interface.
+  # List of parameters for each network interface
+  # ----------------------------------------------------------------------------------------------------------
+  # key                   | description
+  # ----------------------------------------------------------------------------------------------------------
+  # vlanInfo              | vlanInfo.vid for guest vlan interface VLAN ID
+  #                       |   set when guest vlan applied for interface
+  #                       |   if not set, host vlan applied
+  # ----------------------------------------------------------------------------------------------------------
+  # ipInfo                | IP address pool start/end/subnet/role
+  #                       |   set when ip info applied for interface
+  #                       |     - rangeStart & rangEnd & subnet are mandatory if iface configured ipInfo
+  #                       |     - subnet set format as CIDR (e.g. ""10.0.0.0"/24" or "2001:db8::0/128")
+  #                       |     - the ip role is not recommand to change
+  #                       | NOTE: all ip addresses support family IPv4/IPv6, (e.g. "10.0.0.0" or "2001:db8::0")
+  # ----------------------------------------------------------------------------------------------------------
+  # policyRouteInfo       | policy route info for oam
+  # ----------------------------------------------------------------------------------------------------------
+  externalNetwork:
+    oam:
+      vlanInfo:
+        vlName: "mcplane"
+        defaultUnderlyingIface: "oam"
+        secUnderlyingIface: "oams"
+        vid: 205
+        mtu: 1500
+      ipInfo:
+      - rangeStart: "10.5.59.144"
+        rangeEnd: "10.5.59.144"
+        subnet: "10.5.59.128/27"
+        type: "physical"
+        role:
+        - "oam"
+        - "certman-server"
+        - "tracecontroller"
+      policyRouteInfo:
+      - gateway: "10.5.59.129"
+        # - Description: the orderNumber of oam route
+        # Note: should different from orderNumber in the SCF file to avoid conflict
+        orderNumber: "5"
+        # - Description: the table id of oam route
+        # recommend not to modify
+        table: "2"
+    f1c:
+      vlanInfo:
+        vlName: "f1cplane"
+        defaultUnderlyingIface: "f1c"
+        secUnderlyingIface: "f1cs"
+        vid: 201
+        mtu: 1500
+      ipInfo:
+      - rangeStart: "10.5.59.94"
+        rangeEnd: "10.5.59.94"
+        subnet: "10.5.59.64/26"
+        type: "physical"
+        role:
+        - "F1-C"
+    fhm:
+      vlanInfo:
+        vlName: "fhmplane"
+        defaultUnderlyingIface: "fhm"
+        vid: 295
+        pcp: ""
+        mtu: 1500
+      ipInfo:
+      - rangeStart: "192.168.254.33"
+        rangeEnd: "192.168.254.33"
+        subnet: "192.168.254.0/26"
+        type: "physical"
+        role:
+        - "fhm"
+      - rangeStart: "fd5f:4268:2387:77c1::1"
+        rangeEnd: "fd5f:4268:2387:77c1::1"
+        subnet: "fd5f:4268:2387:77c1::/64"
+        type: "physical"
+        role:
+        - "fhm"
+
+  # Configuration for the f1 interface
+    f1:
+      vlanInfo:
+        vlName: "f1uplane"
+        defaultUnderlyingIface: "f1"
+        secUnderlyingIface: "f1s"
+        vid: 201
+        mtu: 1500
+      ipInfo:
+      - rangeStart: "10.5.59.95"
+        rangeEnd: "10.5.59.95"
+        subnet: "10.5.59.64/26"
+        type: "physical"
+        role:
+        # Include "Tracing" here only if f1 is responsible for tracing
+        - "Tracing"
+        - "F1-U"
+
+    # Configuration for the traceu interface
+    # Use this ONLY if "Tracing" is NOT part of f1 roles
+    # Typically, "Tracing" is handled by f1, but traceu can be used if separation is needed
+    # 'traceu' is NOT required for CB014440
+
+    #    traceu:
+    #      vlanInfo:
+    #        vlName: "traceu"
+    #        defaultUnderlyingIface: "f1"
+    #        secUnderlyingIface: "f1s"
+    #        vid: ""
+    #        mtu: 1500
+    #      ipInfo:
+    #      - rangeStart: ""
+    #        rangeEnd: ""
+    #        subnet: ""
+    #        type: "physical"
+    #        role:
+    #        - "Tracing"
+
+    # f1 RAN sharing for additional operator1, only available if RAN sharing function enabled.
+    f1OP1:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1uplane1"
+        defaultUnderlyingIface: "f1"
+        secUnderlyingIface: "f1s"
+        vid: ""
+        mtu: 1500
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_OP_1"
+    # f1 RAN sharing for additional operator2, only available if RAN sharing function enabled.
+    f1OP2:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1uplane2"
+        defaultUnderlyingIface: "f1"
+        secUnderlyingIface: "f1s"
+        vid: ""
+        mtu: 1500
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_OP_2"
+    # f1 RAN sharing for additional operator3, only available if RAN sharing function enabled
+    f1OP3:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1uplane3"
+        defaultUnderlyingIface: "f1"
+        secUnderlyingIface: "f1s"
+        vid: ""
+        mtu: 1500
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_OP_3"
+    # f1 RAN sharing for additional operator4, only available if RAN sharing function enabled
+    f1OP4:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1uplane4"
+        defaultUnderlyingIface: "f1"
+        secUnderlyingIface: "f1s"
+        vid: ""
+        mtu: 1500
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_OP_4"
+    # f1 RAN sharing for additional operator5, only available if RAN sharing function enabled
+    f1OP5:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1uplane5"
+        defaultUnderlyingIface: "f1"
+        secUnderlyingIface: "f1s"
+        vid: ""
+        mtu: 1500
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_OP_5"
+    # f1 RAN sharing for additional operator6, only available if RAN sharing function enabled
+    #  - Feature ID: CB012220
+    f1OP6:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1uplane6"
+        defaultUnderlyingIface: "f1"
+        secUnderlyingIface: "f1s"
+        vid: ""
+        mtu: 1500
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_OP_6"
+    # f1 RAN sharing for additional operator7, only available if RAN sharing function enabled
+    #  - Feature ID: CB012220
+    f1OP7:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1uplane7"
+        defaultUnderlyingIface: "f1"
+        secUnderlyingIface: "f1s"
+        vid: ""
+        mtu: 1500
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_OP_7"
+    # f1 RAN sharing for additional operator8, only available if RAN sharing function enabled
+    #  - Feature ID: CB012220
+    f1OP8:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1uplane8"
+        defaultUnderlyingIface: "f1"
+        secUnderlyingIface: "f1s"
+        vid: ""
+        mtu: 1500
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_OP_8"
+    # f1 RAN sharing for additional operator9, only available if RAN sharing function enabled
+    #  - Feature ID: CB012220
+    f1OP9:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1uplane9"
+        defaultUnderlyingIface: "f1"
+        secUnderlyingIface: "f1s"
+        vid: ""
+        mtu: 1500
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_OP_9"
+    #  - Description: Network slice for F1-U,here just list one example for one slice
+    #    Add one network slice for F1-U according to following instruction.
+    #      1. copy the whole section from "f1Slice1" to "- 'F1-U_slice1'" including all the spaces
+    #      2. paste the whole section after line "- 'F1-U_slice1'"
+    #      3. modify the section key name "f1Slice1", align with the new vlName and role
+    #      4. configure vid( vlan id), rangeStart,rangeEnd,subnet
+    #  - Feature ID: CB008473
+    #  - Note:
+    #    vlName should be unique and can be defined by user, please not exceed 15 characters
+    #    role should be unique and format like "F1-U_X"
+    #    X is the dynamic part which can be customized by operator. The maximum length for X is 24 and the allowed characters can include [A-Za-z0-9]
+    f1Slice1:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1u_slice1"
+        defaultUnderlyingIface: "f1"
+        secUnderlyingIface: "f1s"
+        vid: ""
+        mtu: 1500
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_slice1"
+    # - End example for network slice
+
+    #  - Description: this is only one twamp vlan interface example
+    #    Add one vlan interface for the Measurement network as followed steps
+    #      1. copy the whole section from "twampF1" to "- 'twamp_f1'" including all the spaces
+    #      2. paste the whole section after line "- 'twamp_f1'"
+    #      3. modify the section key name "twampF1", align with the new vlName and role
+    #      4. configure vid( vlan id), pcp ,rangeStart,rangeEnd,subnet,family
+    #  - Feature ID: CB008468
+    #  - Note:
+    #    defaultUnderlyingIface and secUnderlyingIface are not recommended to modify
+    #    vlName should be unique under twamp section and can be defined by user, please not exceed 15 characters
+    #    role should be unique and same in the SCF file
+    #    subnet should be same as the Measurement network
+    #    if f1 and f1c use the same subnet, only need create one vlan interface here    
+    twampF1:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "twamp_f1"
+        defaultUnderlyingIface: "twamp"
+        secUnderlyingIface: "twamps"
+        vid: ""
+        mtu: 1500
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "twamp_f1"
+    # - End example for twamp vlan interface
+
+    # The same vid used for l2rt and l2rt-half pod.
+    l2biprt:
+      vlanInfo:
+        vid: 102
+        mtu: 9000
+
+    l2biphi:
+      vlanInfo:
+        vid: 102
+        mtu: 9000
+    l1up:
+      vlanInfo:
+        mtu: 9000
+
+    ######################### Start of configuration for fhuc/fhm vlan interfaces on RANNIC when fhmSiso set as "direct-connect" #####################################
+    ### since CB013175 ##
+    # - Description: Configuration for fhuc/fhm vlan interfaces for each RANNIC, max support 4 RANNIC
+    # -              keys ahm-x(x=a, b, c, d) means configurations for RANNIC on node which ahm-x is running
+    # -              key sn means the serial number of RANNIC used by the network
+    # -              key fhuc means configuration for fhuc vlan interface
+    # -              key fhm means configuraion for fhm vlan interface
+    # -              the followed list section called as vlan interface section include vlName/defaultUnderlyingIface/vid/pcp, pcp only needed in fhuc vlan interface section
+    #                - vlName: ""
+    #                  defaultUnderlyingIface: ""
+    #                  vid: ""
+    #                  pcp: ""
+    # - How to configure:
+    # -   1. if you only need one vlan interface for fhuc or fhm, you can just modify the "defaultUnderlyingIface" and "vid", "vlName" can just use the default
+    # -   2. if you need more than one vlan interface for one RANNIC, you can add one vlan interface as followed example
+    #        Example:
+    #          1. copy the vlan interface section under ahm-x(x=a, b, c,d).fhuc and align it according to yaml format
+    #          2. fill the vlName and defaultUnderlyingIface and vid, the three parameters are mandatory
+    #          3. after added the new vlan interfaces, the content of ahm-x(x=a, b, c,d).fhuc would be like followed
+    #          ahm-a:
+    #            sn: "asdfghjkl"
+    #            fhuc:
+    #            - vlName: "fhucplane01"
+    #              defaultUnderlyingIface: "ecpri4"
+    #              vid: "301"
+    #              pcp: "7"
+    #            - vlName: "fhucplane02"
+    #              defaultUnderlyingIface: "ecpri5"
+    #              vid: "301"
+    #              pcp: "7"
+    #          4. after added fhm vlan interface under ahm-x(x=a, b, c, d).fhm, the content of ahm-x(x=a, b, c).fhm should be like followed
+    #          ahm-a:
+    #              sn: "asdfghjkl"
+    #            fhm:
+    #            - vlName: "fhmplane01"
+    #              defaultUnderlyingIface: "ecpri4"
+    #              vid: "301"
+    #            - vlName: "fhmplane02"
+    #              defaultUnderlyingIface: "ecpri5"
+    #              vid: "301"
+    # - Note: all the vlName of fhuc, fhm and fhs in all the RANNIC(ahm) must be different.
+    #         vlName format is: fhucplane<ahm_index><Mark>, Mark support [0~9][A-Z][a-z], follow Linux interface naming rule of max length 15.
+    #         for Single vlan, please keep the pcp value as default "7" for fhuc, and pcp value which is not open to user is "2" for fhm.
+    #         To distinguish fhuc and fhm, the vlName MUST use prefix "fhuc" for fhuc and prefix "fhm" for fhm.
+    ahm-a:
+      sn: "L1250200922"
+      fhuc:
+      - vlName: "fhucplane0e"
+        defaultUnderlyingIface: "ecpri9"
+        vid: "301"
+        pcp: "7"
+      - vlName: "fhucplane0d"
+        defaultUnderlyingIface: "ecpri8"
+        vid: "301"
+        pcp: "7"
+      - vlName: "fhucplane0c"
+        defaultUnderlyingIface: "ecpri3"
+        vid: "301"
+        pcp: "7"
+      - vlName: "fhucplane0b"
+        defaultUnderlyingIface: "ecpri2"
+        vid: "301"
+        pcp: "7"
+      - vlName: "fhucplane0a"
+        defaultUnderlyingIface: "ecpri1"
+        vid: "301"
+        pcp: "7"
+      - vlName: "fhucplane09"
+        defaultUnderlyingIface: "ecpri0"
+        vid: "301"
+        pcp: "7"
+      - vlName: "fhucplane01"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane0e"
+        defaultUnderlyingIface: "ecpri9"
+        vid: "295"
+      - vlName: "fhmplane0d"
+        defaultUnderlyingIface: "ecpri8"
+        vid: "295"
+      - vlName: "fhmplane0c"
+        defaultUnderlyingIface: "ecpri3"
+        vid: "295"
+      - vlName: "fhmplane0b"
+        defaultUnderlyingIface: "ecpri2"
+        vid: "295"
+      - vlName: "fhmplane0a"
+        defaultUnderlyingIface: "ecpri1"
+        vid: "295"
+      - vlName: "fhmplane09"
+        defaultUnderlyingIface: "ecpri0"
+        vid: "295"
+      - vlName: "fhmplane01"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane01"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+    ahm-b:
+      sn: ""
+      fhuc:
+      - vlName: "fhucplane11"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane11"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane11"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+    ahm-c:
+      sn: ""
+      fhuc:
+      - vlName: "fhucplane21"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane21"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane21"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+    ahm-d:
+      sn: ""
+      fhuc:
+      - vlName: "fhucplane31"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane31"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane31"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+
+    ######################### Start of configuration for fhuc/fhm vlan interfaces on RANNIC #####################################
+    # - Description:Configuration for fhuc/fhm vlan interfaces for each RANNIC, max support 12 RANNIC
+    # -              keys ahm-x(x=0..11) means configurations for RANNIC on node which ahm-x is running
+    # -              key fhuc means configuration for fhuc vlan interface
+    # -              key fhm means configuraion for fhm vlan interface which only need to configure when global.fhmSiso is set as "direct-connect"
+    # -              the followed list section called as vlan interface section include vlName/defaultUnderlyingIface/vid/pcp, pcp only needed in fhuc vlan interface section
+    #                - vlName: ""
+    #                  defaultUnderlyingIface: ""
+    #                  vid: ""
+    #                  pcp: ""
+    # - How to configure:
+    # -   1. if you only need one vlan interface for fhuc or fhm, you can just modify the "defaultUnderlyingIface" and "vid", "vlName" can just use the default
+    # -   2. if you need more than one vlan interface for one RANNIC, you can add one vlan interface as followed example
+    #        Example:
+    #          1. copy the vlan interface section under ahm-x(x=0..11).fhuc and align it according to yaml format
+    #          2. fill the vlName and defaultUnderlyingIface and vid, the three parameters are mandatory
+    #          3. after added the new vlan interfaces, the content of ahm-x(x=0..11).fhuc would be like followed
+    #          ahm-0:
+    #            fhuc:
+    #            - vlName: "fhucplane01"
+    #              defaultUnderlyingIface: "ecpri4"
+    #              vid: "301"
+    #              pcp: "7"
+    #            - vlName: "fhucplane02"
+    #              defaultUnderlyingIface: "ecpri5"
+    #              vid: "301"
+    #              pcp: "7"
+    #          4. after added fhm vlan interface under ahm-x(x=0..11).fhm, the content of ahm-x(x=0..11).fhm should be like followed
+    #          ahm-0:
+    #            fhm:
+    #            - vlName: "fhmplane01"
+    #              defaultUnderlyingIface: "ecpri4"
+    #              vid: "301"
+    #            - vlName: "fhmplane02"
+    #              defaultUnderlyingIface: "ecpri5"
+    #              vid: "301"
+    # - Note: all the vlName of fhuc, fhm and fhs in all the RANNIC(ahm) must be different.
+    #         vlName format is: fhucplane<ahm_index><Mark>, Mark support [0~9][A-Z][a-z], follow Linux interface naming rule of max length 15.
+    #         for Single vlan, please keep the pcp value as default "7" for fhuc, and pcp value which is not open to user is "2" for fhm.
+    #         To distinguish fhuc and fhm, the vlName MUST use prefix "fhuc" for fhuc and prefix "fhm" for fhm.
+    ahm-0:
+      fhuc:
+      - vlName: "fhucplane01"
+        defaultUnderlyingIface: "ecpri4"
+        vid: "301"
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane01"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      # - Description: Support S-Plane VLAN IP addresses configuration on the RANNIC. 5 scenarios are supported according to the placement of Master and Slave interfaces in S-Plane.
+      # - Note: Only select one of following 5 supported configuration and configure the fields (defaultUnderlyingIface, vlName, vid, rangeStart, rangeEnd and subnet) according to the actual IP Plan.
+      # -       If set rangeStart, rangeEnd and subnet, will support S-Plane IP addresses. If set vid, IP addresses configure on VLAN, if not set vid, IP addresses configure on defaultUnderlyingIface.
+      fhs:
+      # - 1. S-Plane VLAN IP addresses (Master and Slave) configured on same Physical RANNIC port with same IP address.
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane01"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+      # - 2. S-Plane VLAN IP addresses (Master and Slave) configured on same Physical RANNIC port with different IP addresses.
+      # - 2.1 Different IPs are configured on same S-Plane VLAN.
+      #- defaultUnderlyingIface: "ecpri4"
+      #  vlanInfo:
+      #  - vlName: "fhsplane01"
+      #    vid: ""
+      #  ipInfo:
+      #  - rangeStart: ""
+      #    rangeEnd: ""
+      #    subnet: ""
+      #    role:
+      #    - fhsm
+      #  - rangeStart: ""
+      #    rangeEnd: ""
+      #    subnet: ""
+      #    role:
+      #    - fhss
+      # - 2.2 Different IPs are configured on different VLANs which are configured on same physical interface.
+      #- defaultUnderlyingIface: "ecpri4"
+      #  vlanInfo:
+      #  - vlName: "fhsplane01"
+      #    vid: ""
+      #  ipInfo:
+      #  - rangeStart: ""
+      #    rangeEnd: ""
+      #    subnet: ""
+      #    role:
+      #    - fhsm
+      #- defaultUnderlyingIface: "ecpri4"
+      #  vlanInfo:
+      #  - vlName: "fhsplane02"
+      #    vid: ""
+      #  ipInfo:
+      #  - rangeStart: ""
+      #    rangeEnd: ""
+      #    subnet: ""
+      #    role:
+      #    - fhss
+      # - 3. S-Plane VLAN IP addresses (Master and Slave) can be configured on different Physical RANNIC ports with different IP addresses.
+      #- defaultUnderlyingIface: "ecpri4"
+      #  vlanInfo:
+      #  - vlName: "fhsplane01"
+      #    vid: ""
+      #  ipInfo:
+      #  - rangeStart: ""
+      #    rangeEnd: ""
+      #    subnet: ""
+      #    role:
+      #    - fhsm
+      #- defaultUnderlyingIface: "ecpri5"
+      #  vlanInfo:
+      #  - vlName: "fhsplane02"
+      #    vid: ""
+      #  ipInfo:
+      #  - rangeStart: ""
+      #    rangeEnd: ""
+      #    subnet: ""
+      #    role:
+      #    - fhss
+      # - 4. fhsm on VLAN IP and fhss on Ether IP, or fhss on VLAN IP and fhsm on Ether IP.
+      #- defaultUnderlyingIface: "ecpri4"
+      #  vlanInfo:
+      #  - vlName: "fhsplane01"
+      #    vid: ""
+      #  ipInfo:
+      #  - rangeStart: ""
+      #    rangeEnd: ""
+      #    subnet: ""
+      #    role:
+      #    - fhsm
+      #- defaultUnderlyingIface: "ecpri4"
+      #  ipInfo:
+      #  - rangeStart: ""
+      #    rangeEnd: ""
+      #    subnet: ""
+      #    role:
+      #    - fhss
+    ahm-1:
+      fhuc:
+      - vlName: "fhucplane11"
+        defaultUnderlyingIface: "ecpri4"
+        vid: "301"
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane11"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane11"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+    ahm-2:
+      fhuc:
+      - vlName: "fhucplane21"
+        defaultUnderlyingIface: "ecpri4"
+        vid: "301"
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane21"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane21"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+    ahm-3:
+      fhuc:
+      - vlName: "fhucplane31"
+        defaultUnderlyingIface: "ecpri4"
+        vid: "301"
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane31"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane31"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+    ahm-4:
+      fhuc:
+      - vlName: "fhucplane41"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane41"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane41"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+    ahm-5:
+      fhuc:
+      - vlName: "fhucplane51"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane51"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane51"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+    ahm-6:
+      fhuc:
+      - vlName: "fhucplane61"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane61"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane61"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+    ahm-7:
+      fhuc:
+      - vlName: "fhucplane71"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane71"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane71"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+    ahm-8:
+      fhuc:
+      - vlName: "fhucplane81"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane81"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane81"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+    ahm-9:
+      fhuc:
+      - vlName: "fhucplane91"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane91"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane91"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+    ahm-10:
+      fhuc:
+      - vlName: "fhucplane101"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane101"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane101"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+    ahm-11:
+      fhuc:
+      - vlName: "fhucplane111"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+        pcp: "7"
+      fhm:
+      - vlName: "fhmplane111"
+        defaultUnderlyingIface: "ecpri4"
+        vid: ""
+      fhs:
+      - defaultUnderlyingIface: "ecpri4"
+        vlanInfo:
+        - vlName: "fhsplane111"
+          vid: ""
+        ipInfo:
+        - rangeStart: ""
+          rangeEnd: ""
+          subnet: ""
+          role:
+          - fhsm
+          - fhss
+########################### End of configuration for fhuc/fhm vlan interfaces on RANNIC #####################################
+
+  # - Description: network attribute definition for each network.
+  #   This section is provide to set the MTU for each network
+  #  - Description: ether mtu configuration for all vf interfaces.
+  #  - The value passed here for bip interface, will not be in effect due to the limitations in the
+  #     backend network solution in AWS GV2 Outpost.For now the MTU size must be set manually in the
+  #     node for all ovs ports via ovs-vsctl command post deployment.By default the value is 1500.
+  networkInfo:
+    fhm:
+      mtu: 1500
+    oam:
+      mtu: 9000
+    oams:
+      mtu: 9000
+    f1c:
+      mtu: 9000
+    f1cs:
+      mtu: 9000
+    bip:
+      mtu: 9000
+    f1:
+      mtu: 9000
+    f1s:
+      mtu: 9000
+    twamp:
+      mtu: 9000
+    twamps:
+      mtu: 9000
+    l1up:
+      mtu: 9000
+
+  # - Description: fhm network connectivity mode
+  # - Support value: direct-connect, switch-network, legacy
+  # -   legacy:
+  # -      used for RINLINE1
+  # -      temporarily used for the RINLINE2 before the CB007576 ready
+  # -      deploy fhm VLAN on OAMFH
+  # -   direct-connect:
+  # -      used for RINLINE2 and direct connect with RU
+  # -      deploy fhm VLAN on RINLINE2
+  # -   switch-network:
+  # -      used for RINLINE2 and connect with switch
+  # -      deploy fhm VLAN on OAMFH
+  # - Default value: switch-network after CB007576 done
+  fhmSiso: "direct-connect"
+
+  # - Description: the fh-m plane internal network ip address pool for both ipv4 and ipv6, which only used when fhmSiso set as "direct-connect" for RU connect to Rannic directly,
+  # -              this ip address poll will be configured from OAMFH Pod and RANNIC.
+  #   NOTE: Please according to your real network plan and requirement to configure it
+  # -       ip number should in this address pool >= number of FHM RANNIC + 3
+  #             Example: 3 RANNICs, require >=6 IP addresses
+  # -       Must not conflict with the subnets of eth0 on OCP
+  # -       Must not conflict with the aic-oamfh.dhcp.service.dhcpv4.subnetsForDC and global.fhmIpForDC.ipAddress
+  # -       Must not conflict with the aic-oamfh.dhcp.service.dhcpv6.subnetsForDC and global.fhmIpv6ForDC.ipAddress
+  # - For example: "192.168.251.0/27"
+  fhmInternalNetworkIpPool: "192.168.251.0/27"
+  fhmInternalNetworkIpV6Pool: "fd5f:4268:2387:97C1:0000:0000:0000:0000/124"
+
+  # - Description: the ip address of the fhm master agent which only used when fhmSiso set as "direct-connect"
+  # - Note: please according to your real network plan and requirement to configure it
+  # -       the CIDR format and the netmask of ip address must be 32, for example: "70.70.70.1/32"
+  # -       the ip address must not conflict with the subnet of eth0 on OCP
+  # -       the ip address must not conflict with global.fhmInternalNetworkIpPool and aic-oamfh.dhcp.service.dhcpv4.subnetsForDC
+  # - For example: "70.70.70.1/32"
+  fhmIpForDC:
+    ipAddress: "70.70.70.1/32"
+    role:
+    - "fhm"
+
+  # - Description: the ip address of the fhmMasterAgentIPv6 which only used when fhmSiso set as "direct-connect"
+  # - Note: please according to your real network plan and requirement to configure it
+  # -       the CIDR format and the netmask of ip address must be 128, for example: "2a00:8a00:8000:117:1:2:a47:b528/128"
+  # -       the ip address must not conflict with the subnet of eth0 on OCP
+  # - the ip address must not conflict with global.fhmInternalNetworkIpV6Pool and aic-oamfh.dhcp.service.dhcpv6.subnetsForDC
+  # - For example : "2a00:8a00:8000:117:1:2:a47:b528/128"
+  fhmIpv6ForDC:
+    ipAddress: "2a00:8a00:8000:117:1:2:a47:b528/128"
+    role:
+    - "fhm"
+
+  # - Description: the storageclass name of persistent volume. it's mandatory
+  # - Values:
+  #     OCP multi node: ocs-storagecluster-cephfs
+  #     OCP single node: lvms-vg1
+  #     AWS Outpost: longhorn
+  #     Windriver: cephfs
+  #     For AWS Outpost, StorageClassName value should be "longhorn" as per Feature CB012156
+  #     For Windriver, StorageClassName value should be "cephfs" as per Feature CB014693
+  #     Other 3rd-party kubernetes platform, set the storageClassName according to the real scenario
+  # - Note:
+  #     The storageClassName in aic-vdu-prerequisite/values-override.yaml should be same value as this one.
+  storageClassName: "lvms-vg1"
+
+  # - Description: convention of name . NAMESPACE should not be used in the prefix.
+  name_convention:
+
+    pod_prefix:
+    - "po"
+
+    container_prefix:
+    - "ctr"
+
+    deployment_prefix:
+    - "po"
+
+    statefulset_prefix:
+    - "po"
+
+  image:
+    # - Description: registry of image
+    # - Example:
+    #    "bcmt-registry:5000/dep" for NCS;
+    #    "registry.kube-system.svc.nokia.net:5555/dep" for NCIR;
+    #    "image-registry.openshift-image-registry.svc:5000/{{ .Release.Namespace }}" for OCP.
+    registry: "image-registry.openshift-image-registry.svc:5000/{{ .Release.Namespace }}"
+
+  # - Description: time zone in format "Region/City", e.g. "Asia/Shanghai". Default as 'GMT'.
+  timezone: "Europe/Helsinki"
+
+  #########################################################
+  # global configuration for VDU parent chart
+  #########################################################
+
+  # - Description: the name of persistent volume
+  # - Note: Ensure uniqueness for every VDU and keep same when do upgrade/update
+  # -       consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character
+  pvcName: "vdupvc"
+
+  # Custom extensions for labels which will be injected into ConfigMap,
+  # Service, Pod resources.
+  # Example:
+  #  labels: {nf-type: 5g-nf-producer}
+  custom_extensions:
+    labels: {}
+
+  # - Description: Description of a site used as auto connection site ID.
+  # - Note: As it will be used for identifying the vDU, ensure uniqueness for every vDU
+  # -       equal to the value of MRBTS/AutoConnSiteID parameter from the CM plan imported to the NMS
+  # -       1 to 50 ASCII characters
+  siteDescription: "CMTRNL157"
+
+  # - Description: NMS URL for NE3S registration
+  # - Required for AutoIdentification (PnP)
+  # - Leave empty to prevent triggering AutoIdentification after CNF deployment
+  # - If needed, it's possible to configure more than one NMS URL. For example, if required for geo-redundancy support.
+  # - Example:
+  #    - "https://cluster123lbwas.nms.nokia.net/NE3S/1.0"
+  #    - ""
+  urlNms:
+  - ""
+  - ""
+
+  # - Description: external IP to access ne3sadapt, used by NMS to connect back (register)  with ne3sadapt
+  # - Note: current agentIP should be the same as vDU oam IP by default, due to ne3sadapt run in oam container
+  agentIP: ""
+
+  # - Description: true means SeLinux enforcing + WA, not support audit log; false means seLinux permissive + no WA, support audit log.
+  # - For AWS CaaS SeLinux should be set to "false" as per Feature CB012156
+  seLinux: "true"
+  # - Description: The collection of stack trace needs to be enabled as alternative for debugging program crashes only when core dump files are not achievable.
+  # - Supported values: type string "true" or "false"
+  # - Default value: "false"
+  stackTraceEnabled: "false"
+
+  # - Description: the name of RuntimeClass which is used for high performance
+  # - For AWS CaaS highPerformanceRuntimeClass should be empty as per Feature CB012156
+  # - For Windriver highPerformanceRuntimeClass should be empty as per Feature CB014693
+  # - Default value: "nokia-performance"
+  highPerformanceRuntimeClass: "nokia-performance"
+  # - CB006092-A Mplane Onap CM parameters for uncommission mode usage.
+  aic_orano1:
+    # - Description: enabled by Operator is SMO is expecting to receive
+    #   o1NotifyCloudNFRegistration notification
+    # - support value: boolean true or false
+    # - default value: false
+    actNfRegistration: false
+
+    # - Description: starts Netconf server, must be true in order to allow
+    #   SMO/Netconf client to push the plan file to BTS
+    # - support value: boolean true or false
+    # - default value: false
+    activateOranO1NetconfService: false
+
+    # - Description: must be present in order to configure certificate
+    #   which represent Netconf commissioning use and should be configured when activateOranO1NetconfService==true.
+    # - support value: string
+    # - default value: ""
+    cmUserCertFingerPrint: ""
+
+    # - Description: value 'IPv4', mplane IP address type.
+    # - support value: IPv4 or IPv6
+    # - default value: IPv4
+    mPlaneIpType: "IPv4"
+
+    # - Description: VesEndpoint URL can be set and must be configured when actNfRegistration==true and should be composed of protocol Ipv4/Ipv6/FQDN and port value.
+    # - support value: string
+    # - default value: ""
+    nfRegistrationEndpoint: ""
+
+    # - Description: unique idenfier of the NE in ONAP and should be configured when actNfRegistration==true.
+    # - support value: string
+    # - default value: ""
+    vesSourceName: ""
+
+    # - Description: value 'true', NE shall not request plan provisioning/commissioning from NMS
+    # - support value: boolean true or false
+    # - default value: false
+    commissioningRequestBlocked: false
+
+    # - Description: value 'true/false', NE enables/disables SMO/ONAP VES Endpoint FQDN/IP address identity checking against the server's identity in certificate received from ONAP VES Endpoint.
+    # - support value: boolean true or false
+    # - default value: false
+    enableHostnameValidation: false
+
+#########################################################
+# top level configuration private to RCP sub charts
+#########################################################
+
+# - Description: sub chart certman-auto-cmp private configuration
+certman-auto-cmp:
+  configuration:
+    # - Description: The CMP configuration
+    cmp:
+      # - Description: The secret name which defines the CMP server's pre-shared key, reference number
+      cmp_secret_name: ""
+      # - Description: CMP server IP. Note: Mandatory for PnP
+      ip:
+      # - Description: CMP server port. Note: Mandatory for PnP
+      port:
+      # - Description: CMP server URL path. Note: Mandatory for PnP
+      path:
+      # - Description: CA subject name to be used in CMP initialization. Note: Mandatory for PnP
+      ca_subject_name:
+      # - Description: EE certificate profile's certificate subject name. Note: Mandatory for PnP
+      ee_subject_name:
+      # - Description: EE certificate profile's FQDN value to be set as subject alternative name
+      ee_subject_fqdn: []
+      # - Description: EE certificate profile's IP address to be set as subject alternative name
+      ee_subject_ip_addr: []
+    # - Description: additional TA (trust anchor) certificates secret name, if you created additional TA (trust anchor) certificates,
+    #                you need to add the secrets name of the certificates here
+    additionalTACertSecretName: []
+
+# - Description: sub chart logservice private configuration
+logservice:
+  # - Description: node selector to deploy logservice pod for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart healing-controller private configuration
+healing-controller:
+  # - Description: node selector to deploy healing-controller pod for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+  # - Description: the namespace of nokia-sync-operator
+  # - Supported values: string type
+  # - Default value: "nokia-sync-operator"
+  syncOperatorNamespace: "nokia-sync-operator"
+
+# - Description: sub chart secret-storage-framework private configuration
+secret-storage-framework:
+  # - Description: node selector to deploy secret-storage-framework pod for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart lwsd private configuration
+lwsd:
+  # - Description: node selector to deploy lwsd for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart rcpsdl private configuration
+rcpsdl:
+  # - Description: node selector to deploy rcpsdl for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart rcpum private configuration
+rcpum:
+  # - Description: node selector to deploy rcpum for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart trsconfig private configuration
+trsconfig:
+  # - Description: node selector to deploy trsconfig for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart infra-symptomdata-provider private configuration
+infra-symptomdata-provider:
+  # - Description: node selector to deploy infra-symptomdata-provider for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+fhnwmgmt:
+  # - Description: node selector to deploy fhnwmgmt.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+fheoammgmt:
+  # - Description: node selector to deploy fheoammgmt.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+fhnftmgmt:
+  # - Description: node selector to deploy fhnftmgmt.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+remote-storage:
+  # - Description: node selector to deploy remote-storage.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# ========configuration oamfh POD =========
+aic-oamfh:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node selector to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+  # ========configuration about dhcp container ========
+  dhcp:
+    service:
+      dhcpv4:
+        subnets:
+        # Define the whole subnet.
+        - subnet: "192.168.254.0/26"
+          # Define the actual part of your subnet that is governed.
+          # Only one subnet is supported in L2 deployment and all pools should belong from only one subnet and prefix.
+          pools:
+          - startAddress: "192.168.254.34"
+            endAddress: "192.168.254.40"
+            ruProtocol: "Nokia"
+          optionData:
+          # DHCP vendor specific information of master agent ip and port number.
+          - code: 61
+            alwaysSend: "true"
+            data:
+              #<Product code>/<Serial number> in option 61 client identifier
+              #clientIdentifier is configuerd as a list of product code/serial number of RUs.
+              #It is an optional parameter. DHCP option 61 will not be checked by DHCP server,
+              #if clientIdentifier is empty. For example:
+              #     clientIdentifier:
+              #     - "753/001"
+              #     - "753/002"
+              #     - "753/003"
+              #     - "755/001"
+              #     - "755/002"
+              clientIdentifier:
+        # - Description: the subnets used when fhmSiso set as "direct-connect"
+        # - Note: please according to your real network plan and requirement to configure it
+        # -       for example:
+        # -          if you use ECPRI RU, ECPRI subnet is mandatory, don't need to configure CPRI subnet, vice versa.
+        # -          if both ECPRI and CPRI RU are used, ECPRI and CPRI subnet are mandatory.
+        # -          The upper rules are used for 24R2. Please refer to the definition of relevant features for future configurations
+        subnetsForDC:
+        # - Description: The ip address pool for eCPRI, where the netmask must be 16
+        # -              for example: "192.169.0.0/16"
+        - subnet: "192.169.0.0/16"
+          type: "eCPRI"
+        # - Description: The ip address pool for CPRI, where the netmask must be 24
+        # -              for example: "192.170.0.0/24"
+        - subnet: "192.170.0.0/24"
+          type: "CPRI"
+        # - Description: The ip address and port for the sztp request.sztpIpAddressesAndPorts parameter will only be configured when fhmSiso is set as "direct-connect"
+        #   Parameter IP and Port  Under sztpIpAddressesAndPorts should not be configured and keep it blank when fhmSiso is set as "switch-network"
+        # - Support value: ip is the ip of netconf client (also known as o-ru controller or master agent)
+        #                  port is the port information to call home using NETCONF/SSH (port: 4334).If no call home port is provided, the O-RU shall attempt to call home using NETCONF/SSH.
+        # - Default value: default ip value is empty, if empty we will fill the master agent (O-RU controller) IP address of the O-DU automatically, currently master agent IP is the value of .global.fhmIpForDC.ipAddress except netmask
+        # - Note: port should be empty, for now not support to set.
+        # - Feature: CB008048-B
+        sztpIpAddressesAndPorts:
+        - ip: ""
+          port: ""
+      # - must not conflict with  eth0 subnet on OCP and .global.fhmInternalNetworkIpv6Pool and.global.fhmIpv6ForDC
+      dhcpv6:
+        subnets:
+        # Define the whole ipv6 subnet.
+        # Define the actual part of your subnet that is governed.
+        # Only one ipv6 subnet is supported in L2 deployment and all pools should belong from only one subnet and prefix.
+        # Start address & end address of ipv6 pool should be unique and it should not be overlapped with other pools ipv6 ranges.
+        # ruProtocol defines the RU Protocol type for the pool (Nokia or Oran)
+        # Note: All the IPs given below are just examples for l2 swn and pools
+        # User can configure their own IPs as needed.
+        - subnet: "fd5f:4268:2387:77c1::/64"
+          pools:
+          - startAddress: "fd5f:4268:2387:77c1::11"
+            endAddress: "fd5f:4268:2387:77c1::20"
+            ruProtocol: "Nokia"
+          - startAddress: "fd5f:4268:2387:77c1::21"
+            endAddress: "fd5f:4268:2387:77c1::30"
+            ruProtocol: "Oran"
+          - startAddress: "fd5f:4268:2387:77c1::31"
+            endAddress: "fd5f:4268:2387:77c1::40"
+            ruProtocol: "Nokia"
+          - startAddress: "fd5f:4268:2387:77c1::41"
+            endAddress: "fd5f:4268:2387:77c1::50"
+            ruProtocol: "Oran"
+        subnetsForDC:
+        - subnet: "fd5f:4268:2387:87C1:0000:0000:0000:0000/116"
+          type: "eCPRI"
+
+aic-oamext:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+  # - Description: LRIP roundcheck configure, one instance for one eth pair
+  #                for default setting oamext pod have two eth pairs include oam/oams
+  #                this is optional setting, if have set vlanId values, the LRIP rouncheck function will be enabled
+  #                the vlanId depends on the lab network plan.
+  # - Feature ID: 5GC001999
+  lripRoundCheckInfo:
+  - instanceId: "1"
+    vlanId: ""
+
+aic-oamconfig:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oampm:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oamfm:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oamasm:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oamcm:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-twamp:
+  # ======== configuration twamp POD support C-RAN deploy =========
+  # - Description: node seletor to deploy twamp pod for C-RAN deployment.
+  # - Note: twamp is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oambb:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oamkpianalyzer:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oamcalc:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node selector to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oamswm:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# ======== configuration CPRT POD =========
+aic-vdu-cprt:
+  # ======== configuration CPRT POD support C-RAN deploy =========
+  # - Description: node seletor to deploy cprt pod for C-RAN deployment.
+  # - Note: cprt is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+  # - Description: LRIP roundcheck configure, one instance for one eth pair
+  #                for default setting cprt pod have two eth pairs include f1c/f1cs
+  #                this is optional setting, if have set vlanId values, the LRIP rouncheck function will be enabled
+  #                the vlanId depends on the lab network plan.
+  # - Feature ID: 5GC001999
+  lripRoundCheckInfo:
+  - instanceId: "1"
+    vlanId: ""
+
+
+# =========================== configuration L2NRT POD ==========================================
+aic-vdu-l2nrt:
+  nodeSelector: {}
+  # - Description: deploymentType for different cores mapping
+  # - Support Values: NR_L2NRT_10vCPU
+  #                   NR_L2NRT_10vCPU_mini (Only For mini cnfLayout)
+  # - default value: NR_L2NRT_10vCPU
+  # - core mapping as followed
+  # +----------+---------------------------------+----------------------------------+----------------------------------+
+  # | platform |         deployment type         | cores/hostHyperThreading=true     |  cores/hostHyperThreading=false   |
+  # +----------+---------------------------------+----------------------------------+----------------------------------+
+  # |   OCP    |  NR_L2NRT_10vCPU                |  5(L2HI) + 4(trsw) + 1(CCSRT)=10 |  NOT SUPPORTED                   |
+  # |   OCP    |  NR_L2NRT_10vCPU_mini           |  5(L2HI) + 4(trsw) + 1(CCSRT)=10 |  NOT SUPPORTED                   |
+  # +----------+---------------------------------+----------------------------------+----------------------------------+
+  deploymentType: "NR_L2NRT_10vCPU"
+  # - Description: LRIP roundcheck configure, one instance for one eth pair
+  #                for default setting l2rnt pod have two eth pairs include f1/f1s
+  #                this is optional setting, if have set vlanId values, the LRIP rouncheck function will be enabled
+  #                the vlanId depends on the lab network plan.
+  # - Feature ID: 5GC001999
+  lripRoundCheckInfo:
+  - instanceId: "1"
+    vlanId: ""
+
+  # ====== configuration about l2hi container =====
+  l2hi:
+    dptrace:
+      # - Description: Enable or disable l2hi container dptrace function. 0 means disable, 1 means enable.
+      enable: "0"
+      # - Description: Enable or disable l2hi container payload dump. 0 means disable payload dump, 1 means enable payload dump.
+      dump_payload: "0"
+      # - Description: Config l2hi container dptrace filter. Format: messageID:queueID. Example: none:1(means messageID not set ,queueID set with 1), which means will trace em packets with local queueID=1.
+      # - Note: Maximum dptrace filter condition num is 4. Example: "none:1,1:10,10:none,2:5", which means 4 type of em packets will be traced: 1. local queueID=1; 2. messageID=1 and local queueID=10; 3. messageID=10; 4. messageID=2 and local queueID=5.
+      filter: "none:none"
+
+# ========================= configuration L2RT POD ====================================
+aic-vdu-l2rt:
+
+    # - Description: deploymentType for different cores mapping
+  # - Support Values:NR_L2RT_20vCPU
+  # - default value: NR_L2RT_20vCPU
+  # +----------+----------------------------+--------------------------------------------+----------------------------------+------------------------+
+  # | platform |    deployment type         | FDD/TDD | cores/hostHyperThreading=true     |  cores/hostHyperThreading=false   |     Thor or Loki       |
+  # +----------+----------------------------+--------------------------------------------+----------------------------------+------------------------+
+  # |   OCP    |  NR_L2RT_20vCPU            | FDD/TDD | 12(L2PS) + 6(L2Lo) + 2(CCSRT)=20 |  Not Supported                   |     Thor(RINLINE2)     |
+  # +----------+---------------------------------+----------------------------------+--------------------------------------+------------------------+
+  deploymentType: "NR_L2RT_20vCPU"
+
+  # ====== configuration about l2rt container =====
+  l2rt:
+    dptrace:
+      # - Description: Enable or disable l2rt container dptrace function. 0 means disable, 1 means enable.
+      enable: "0"
+      # - Description: Enable or disable l2rt container payload dump. 0 means disable payload dump, 1 means enable payload dump.
+      dump_payload: "0"
+      # - Description: Config l2rt container dptrace filter. Format: messageID:queueID. Example: none:1(means messageID not set ,queueID set with 1), which means will trace em packets with local queueID=1.
+      # - Note: Maximum dptrace filter condition num is 4. Example: "none:1,1:10,10:none,2:5", which means 4 type of em packets will be traced: 1. local queueID=1; 2. messageID=1 and local queueID=10; 3. messageID=10; 4. messageID=2 and local queueID=5.
+      filter: "none:none"
+
+# ========================= configuration L2RT half POD ====================================
+aic-vdu-l2rt-half:
+  # - This parameter defines the deployment type for half l2rt
+  # - supported value as part of CB013347-CR will be NR_L2RT_12vCPU
+  # - Description: deploymentType for different cores mapping
+  # - Support Values: NR_L2RT_12vCPU
+  # - default value: NR_L2RT_12vCPU
+  # +----------+---------------------------------+----------------------------------+----------------------------------+
+  # | platform |         deployment type         |  cores/hostHyperThreading=true    |  cores/hostHyperThreading=false   |
+  # +----------+---------------------------------+----------------------------------+----------------------------------+
+  # |   OCP    |         NR_L2RT_12vCPU          |  6(L2PS)  + 4(L2Lo) + 2(CCSRT)=12|  Not Supported                   |
+  # +----------+---------------------------------+----------------------------------+----------------------------------+
+  deploymentType: "NR_L2RT_12vCPU"
+
+  # ====== configuration about l2rt container =====
+  l2rt:
+    dptrace:
+      # - Description: Enable or disable l2rt container dptrace function. 0 means disable, 1 means enable.
+      enable: "0"
+      # - Description: Enable or disable l2rt container payload dump. 0 means disable payload dump, 1 means enable payload dump.
+      dump_payload: "0"
+      # - Description: Config l2rt container dptrace filter. Format: messageID:queueID. Example: none:1(means messageID not set ,queueID set with 1), which means will trace em packets with local queueID=1.
+      # - Note: Maximum dptrace filter condition num is 4. Example: "none:1,1:10,10:none,2:5", which means 4 type of em packets will be traced: 1. local queueID=1; 2. messageID=1 and local queueID=10; 3. messageID=10; 4. messageID=2 and local queueID=5.
+      filter: "none:none"

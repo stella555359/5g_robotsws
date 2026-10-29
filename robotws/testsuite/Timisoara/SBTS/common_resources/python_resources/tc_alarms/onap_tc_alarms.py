@@ -1,0 +1,34 @@
+from alarms_resource import *
+
+ONAP__3GPP_XML_measurement_file_enrichment = dict(
+    FAULT_4639_ONAP_VES=FAULT_4639_ONAP_VES,
+    FAULT_4639_SMO_ONAP_VES=FAULT_4639_SMO_ONAP_VES
+)
+ONAP__3GPP_XML_measurement_file_enrich_disable_enable = dict(
+    FAULT_4639_ONAP_VES=FAULT_4639_ONAP_VES,
+    FAULT_4639_SMO_ONAP_VES=FAULT_4639_SMO_ONAP_VES
+)
+ONAP__3GPP_XML_measurement_file_enrichment_name_change = dict(
+    FAULT_4639_ONAP_VES=FAULT_4639_ONAP_VES,
+    FAULT_4639_SMO_ONAP_VES=FAULT_4639_SMO_ONAP_VES
+)
+ONAP__3GPP_XML_measurement_file_enrichment_no_cell_name = dict(
+    FAULT_4639_ONAP_VES=FAULT_4639_ONAP_VES,
+    FAULT_4639_SMO_ONAP_VES=FAULT_4639_SMO_ONAP_VES
+)
+ONAP__3GPP_XML_measurement_file_enrichment_reset_site = dict(
+    FAULT_4639_ONAP_VES=FAULT_4639_ONAP_VES,
+    FAULT_4639_SMO_ONAP_VES=FAULT_4639_SMO_ONAP_VES
+)
+PANO__A_13_Suppression_of_zero_values = dict(
+    FAULT_4639_ONAP_VES=FAULT_4639_ONAP_VES,
+    FAULT_4639_SMO_ONAP_VES=FAULT_4639_SMO_ONAP_VES
+)
+PANO__Break_connection_to_ONAP = dict(
+    FAULT_4639_ONAP_VES=FAULT_4639_ONAP_VES,
+    FAULT_4639_SMO_ONAP_VES=FAULT_4639_SMO_ONAP_VES
+)
+PANO__G_Check_PM_files = dict(
+    FAULT_4639_ONAP_VES=FAULT_4639_ONAP_VES,
+    FAULT_4639_SMO_ONAP_VES=FAULT_4639_SMO_ONAP_VES
+)

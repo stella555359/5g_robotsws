@@ -1,0 +1,80 @@
+__maintainer__ = 'UTE team'
+__team__ = 'UTE team'
+__email__ = 'ute@nokia.com'
+__owner_email__ = 'UTE Lab Team'
+
+import os
+from taf.config.testline.testline import TestLine
+from taf.config.testline.airscale import Airscale, CommonUnit, CapacityUnit
+from taf.config.testline.testpc import TestPc
+from taf.config.testline.connection_details import SshServiceDetails
+from taf.config.testline.enb import RealEnb
+from taf.config.testline import Connection, CUS
+from taf.config.testline.pdu import ATEN
+
+# PDU1
+_pdu1 = ATEN(addr="10.45.170.138", port_numbers=[3, 4])
+_CFG_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# ENB1
+_enb_common_unit1 = CommonUnit(
+    lmp_connection=SshServiceDetails(
+        addr='192.168.255.129',
+        username="toor4nsn",
+        password="oZPS0POrRieRtu"
+    ),
+    capacity_units=[
+        CapacityUnit(addr="192.168.253.20", hardware_type='ABIO')
+    ],
+    pdu_port=_pdu1.pdu_ports[3],
+    hardware_type="ASIB"
+)
+
+_enb_airscale1 = Airscale(common_units=[_enb_common_unit1])
+_enb1 = RealEnb('', system_module=_enb_airscale1, instance_id=21617641)
+
+# CUS1
+_cus_common_unit1 = CommonUnit(
+    lmp_connection=SshServiceDetails(
+        addr="192.168.200.1",
+        username="toor4nsn",
+        password="oZPS0POrRieRtu"
+    ),
+    capacity_units=[
+        CapacityUnit(addr="192.168.253.84", hardware_type="ABIA"),
+        CapacityUnit(addr="192.168.253.88", hardware_type="ABIA"),
+        CapacityUnit(addr="192.168.253.92", hardware_type="ABIA"),
+    ],
+    pdu_port=_pdu1.pdu_ports[4],
+    hardware_type="ASIB"
+)
+_cus_airscale1 = Airscale(common_units=[_cus_common_unit1])
+_cus1 = CUS(l1=_cus_airscale1)
+
+# TestPC1
+_test_pc1 = TestPc(
+    default_ssh_connection_details=SshServiceDetails(
+        addr="10.42.99.138",
+        username="ute",
+        password="ute",),
+    connections=[
+        Connection(
+            interface="eth1",
+            interface_type="lmp",
+            device=_enb1.system_module.common_units[0],
+        ),
+        Connection(
+            interface="eth2",
+            interface_type="lmp",
+            device=_cus1
+        )
+    ]
+)
+tl = TestLine(
+    test_pc=_test_pc1,
+    enbs=[_enb1],
+    tl_cloud_topology="CLOUD_*_CUS",
+    ues=[_cus1],
+    pdus=[_pdu1],
+)
+__all__ = ["tl"]

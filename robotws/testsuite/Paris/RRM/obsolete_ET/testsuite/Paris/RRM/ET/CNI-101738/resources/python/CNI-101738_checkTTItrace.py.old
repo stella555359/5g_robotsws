@@ -1,0 +1,63 @@
+import os
+import json
+import getopt
+import sys
+import math
+from enum import Enum
+
+# TAF Libraries:
+from taf.analyzer.ttitrace_eventdecoder import TtitraceReader as TtitraceReaderEvtDec
+
+
+def getPairedAndNotPairedNumber(jsonPathName):
+    """
+    This function returns the number of paired and no paired UEs
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    nbMsg = 0
+    nbPaired = 0
+    nbNoPaired = 0
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if event.type == "dlFdSchedData":
+                muState = event.data["muStatus"]
+                if muState == "MUPAIR":
+                    nbPaired = nbPaired+1
+                elif muState == "NOPAIR_LITTLEDATANOTNEEDPAIR":
+                    nbNoPaired = nbNoPaired+1
+    print("TTI trace status - nb paired: %s, nb no paired: %s"
+          % (nbPaired, nbNoPaired))
+    return (nbPaired, nbNoPaired)
+
+
+def getCellAverageScheduledPrb(jsonPathName, physCellId):
+    """
+    This function returns the average of PRBs used in scheduled TTI (rounded up)
+    (don't take into account TTI without scheduling)
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    physCellId = int(physCellId)
+    nbMsg = 0
+    nbPrb = 0
+    nbScheduling = 0
+    averageScheduledPrb = 0
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if event.type == "dlFdSchedData":
+                if event.data["eventHeader"]["physCellId"] == physCellId:
+                    nbPrb = nbPrb+event.data["numOfPrb"]
+                    nbScheduling = nbScheduling+1
+    if nbScheduling != 0:
+        averageScheduledPrb = math.ceil(nbPrb/nbScheduling)
+    print("Average scheduled PRBs: %s" % averageScheduledPrb)
+    return averageScheduledPrb

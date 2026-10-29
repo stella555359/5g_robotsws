@@ -1,0 +1,103 @@
+#-- template to create 5GRAC VNF 
+#-- Version: 0.1
+#-- Tenant network and VNFC configuration based on 5G cloud architecture below:
+#     https://sharenet-ims.int.net.nokia.com/Overview/D542816454 
+
+#-- Single instance for each VNFC type, no redundancy.
+
+heat_template_version: 2014-10-16
+
+description: 5GRAC for create oam network
+
+parameters:
+  # Application networks
+  oam_net_name:
+    type: string
+    description: external OAM network for NetAct/WebUI connection.
+    default: oam_net
+  oam_net_ip_and_mask:
+    type: comma_delimited_list
+    description: oam network IP and mask
+  oam_net_sid:
+    type: number
+    description: oam network sid
+  oam_net_provider_name:
+    type: string
+    description: provider name for oam network
+  oam_net_pool:
+    type: comma_delimited_list
+    description: Start and end of oam network IP address allocation pool
+  backhaul_net_name:
+    type: string
+    description: Control and user plane interface for backhaul network.
+    default: backhaul_net
+  backhaul_net_ip_and_mask:
+    type: comma_delimited_list
+    description: backhaul network IP and mask
+  backhaul_net_sid:
+    type: number
+    description: backhaul network sid
+  backhaul_net_provider_name:
+    type: string
+    description: provider name for backhaul network
+
+
+resources:
+  # Application networks
+  oam_net:
+    type: OS::Neutron::Net
+    properties:
+      name: { get_param: oam_net_name }
+      shared: True
+      value_specs:
+        router:external: True
+        provider:physical_network: { get_param: oam_net_provider_name }
+        provider:network_type: vlan
+        provider:segmentation_id: { get_param: oam_net_sid }
+
+  oam_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      name: { get_param: oam_net_name }
+      network_id: { get_resource: oam_net }
+      cidr: { list_join: ['/', { get_param: oam_net_ip_and_mask }] }
+      enable_dhcp: False 
+      allocation_pools:
+        - start: { get_param: [oam_net_pool, 0] }
+          end:   { get_param: [oam_net_pool, 1] }
+
+  backhaul_net:
+    type: OS::Neutron::Net
+    properties:
+      name: { get_param: backhaul_net_name }
+      shared: True
+      value_specs:
+        provider:physical_network: { get_param: backhaul_net_provider_name }
+        provider:network_type: vlan
+        provider:segmentation_id: { get_param: backhaul_net_sid }
+
+  backhaul_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      network_id: { get_resource: backhaul_net }
+      cidr: { list_join: ['/', { get_param: backhaul_net_ip_and_mask }] }
+      enable_dhcp: False
+      allocation_pools: []   
+outputs:
+# output for [oam_net] to be refered in other yaml files
+   oam_net_id:
+     description: Oam Network UUID
+     value: { get_resource: oam_net }
+   oam_subnet_id:
+     description: Oam subnet UUID
+     value: { get_resource: oam_subnet }
+     
+# output for [backhaul_net] to be refered in other yaml files
+   backhaul_net_id:
+     description: backhaul network UUID
+     value: { get_resource: backhaul_net }
+   backhaul_subnet_id:
+     description: backhaul subnet UUID
+     value: { get_resource: backhaul_subnet }
+ 
+

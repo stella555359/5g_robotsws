@@ -1,0 +1,12 @@
+{
+    "vDUCNF_*.*": {
+     "Root\\Test_Sets\\Trunk\\VRF_WRO1\\CRT": {
+        "CB008608-5G-F": [
+            "CB008608-5G-F1_CB008697_B7_B17_OAI_deactivation_of_all_active_SCells_and_OH_exit"
+        ]
+    },
+	"label": ".*",
+    "qc_domain": "MN_RAN",
+    "qc_project": "RAN_VRF"
+    }
+}

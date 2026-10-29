@@ -1,0 +1,116 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]   Common keyword of CB011028 feature
+...               Prerequisite : gNB configured with 4 Cells & RU detected
+...               Scope : 11028-B-EI2-UPD2
+...
+...               Test Case Scenario author   : adrien.hervat@nokia.com
+
+...               Creation Date               : 27-07-2023
+...               Version History    Date           Author                      Notes
+...               0.1                27-07-2023     adrien.hervat@nokia.com     Creation
+...               0.2                25-09-2023     adrien.hervat@nokia.com     Custom config addition + L1L2 capture with csirs rimrs filter
+...               0.3                12-10-2023     adrien.hervat@nokia.com     CB011028 checking + BSR package handling
+...               0.4                16-10-2023     adrien.hervat@nokia.com     UPD2 TC addition  + New SCF parameters
+...               0.5                23-11-2023     adrien.hervat@nokia.com     Robustness TC modification to online modification + BIP size handling
+...               0.6                05-01-2024     adrien.hervat@nokia.com     Removal of Sherpa
+...               0.7                02-07-2024     martial.hummel@nokia.com              Parity Adaptation for ASOH
+...               0.7                02-07-2024     marie-laurence.le_borgne@nokia.com    Parity Adaptation for ASOH
+...               0.8                25-09-2024     richard.duthu@nokia.com     Produce Scout Data through "Test Teardown" + some RF50 fixes
+
+Variables         ./resources/python/Constants-CB011028-B.py
+
+Library           OperatingSystem
+Library           Collections
+Library           logging
+Library           ArchiveLibrary
+
+Resource          ./resources/robot/CB011028-B-Keywords.robot
+
+
+Suite Setup                 Suite Setup for CB011028-B_ASOH     custom_bsr_update=1
+
+Suite Teardown              Suite Teardown
+
+
+
+*** Variables ***
+# Hardware Variables
+${isASOH}                   ${True}
+
+${TestSharkTool}            MC_SHARK
+
+&{params}                   nbCell=4
+...                         duration=30
+...                         deviation=50
+...                         rad=32       # must be set to 0 to use NIDD parameter repetitionRsType1
+...                         timeCapture=6
+...                         repetition=r2
+...                         explicitCsirs=true
+...                         csiReport=slots80
+...                         bip=1000
+
+
+
+&{Vendor_Param_ASOH}        bbHwVariant=ASOH                                 # bbL1SpPrbInitCapacity
+...                         l1PoolType=NR_L1Pool_Thor_TDD_FR1_eCPRI          # bbL1SpPrbInitCapacity
+...                         maxNumLayerPrbL1Sp=2184                          # bbL1SpPrbInitCapacity DL
+...                         maxNumStreamPrbL1Sp=2184                         # bbL1SpPrbInitCapacity DL
+...                         maxNumWbStreamPrbL1Sp=1092                       # bbL1SpPrbInitCapacity DL
+...                         ul_maxNumLayerPrbL1Sp=819                        # bbL1SpPrbInitCapacity UL
+...                         ul_maxNumStreamPrbL1Sp=1638                      # bbL1SpPrbInitCapacity UL
+...                         ul_maxNumWbStreamPrbL1Sp=1092                    # bbL1SpPrbInitCapacity UL
+...                         maxNumScheUePdschL1Pool=None                     # bbPoolCapacity
+...                         maxNumScheUePdschL1Sp=None                       # bbPoolCapacity
+
+
+
+# ue's settings
+
+&{dict_settings_ue_1_MIMO}                                          originalCell=1
+...                                                                 DL_throughput=600
+...                                                                 DL_throughput_GBR=0
+...                                                                 UL_throughput=0
+...                                                                 ue_nr_capa=${SA_TDD_RANK4}
+
+&{dict_settings_ue_2_MIMO}                                          originalCell=1
+...                                                                 DL_throughput=600
+...                                                                 DL_throughput_GBR=0
+...                                                                 UL_throughput=0
+...                                                                 ue_nr_capa=${SA_TDD_RANK2}
+
+@{dict_settings_all}                                                ${dict_settings_ue_1_MIMO}
+...                                                                 ${dict_settings_ue_2_MIMO}
+
+
+
+*** Test Cases ***
+
+[1]CB011028-B-EI2_2_Semi-Static_3-7_BW_100MHz_4cells_DL_MU-MIMO_actExplicitCsirsPoolSolution_1_RIM_period_RAD_CSI_80_ASOH
+    TC_CB011028-EI2    params=${params}       Vendor_Param_ASOH=${Vendor_Param_ASOH}        dict_ues=${dict_settings_all}
+    [Teardown]             Setup.Test Teardown
+
+
+*** Keywords ***
+
+TC_CB011028-EI2
+    [Documentation]        11028 Basic Call
+    [Arguments]            ${params}        ${Vendor_Param_ASOH}      ${dict_ues}
+    Set Suite Variable     ${params}
+    Init Sequence          ${params}
+    Step                   Set RAD Params for 11028
+    Step                   Update Vendor File Config For bbL1SpPrbInitCapacity And bbPoolCapacity for ASOH           argument=${Vendor_Param_ASOH}
+    Step                   Set 11028 Context TDD SA
+    Step                   Restart.F1 Wait Link Classical
+    ${listOfUes}           Build UEs list SA Multi UEs          dict_ues=${dict_ues}
+    Step                   Set UE_Capa Context_WTS CFG          listOfUes=${listOfUes}
+    Step                   Multi Cells Setup for 11028          listOfUes=${listOfUes}     nbCell=${params.nbCell}
+    Step                   Set DL MU MIMO Test Modes
+    Critical Step          SA Start Traffic Multi UEs NonGBR    listOfUes=${listOfUes}
+    Step                   Get TTI Logs
+    Step                   Get L1L2 Logs
+    Step                   Check Rim Rs in L1L2
+    Step                   Check 11028 PM Counters
+    Step                   SA DeRegister Multi UEs              listOfUes=${listOfUes}
+    Step                   Get Snaphot Sos Report
+    [Teardown]             Display diagnosis
+

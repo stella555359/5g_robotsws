@@ -1,0 +1,473 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for FDM test
+...               Modified Date               : 20-Mar-2023
+...               Last Modified by            : vincent.boulet@nokia.com
+...               Last Modification           : correction for shortPucch configuration and factorization
+...               Last Modification           : ML-Leborgne and M. Hummel Adaptations for VRAN2.0
+...               Last Modification           : vincent.boulet@nokia.com - Get Sos Report only if generate_sos_report is enabled
+
+Resource          ../../../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Library           ../../../../../resources/SWENG/python/XmlScf.py
+
+Resource          FDM_Variables.robot
+Resource          5GC000679_rrcConfigChecking.robot
+Library           ../python/SlotSfn.py
+Library           ../python/FDM_Tools.py
+Library           FDM_Tools.checkingDtxCrc       WITH NAME       checkingDtxCrc
+Library           ../../../resources/python/luashark_tools.py
+Library           luashark_tools.analyzer       WITH NAME       analyzer
+
+*** Keywords ***
+Get Pucch Mode Select
+    ${CURRENT_SCF}                  OAM Get SCF File
+    ...                             oam=${GNB_DU.oam}            file=SCF_DU_Current.xml
+    SCF StartSession                scf_file=${CURRENT_SCF}
+    ${dist_name}                    Set Variable                 MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${NRCELL_ID}
+    ${pucchModeSelect}              SCF Get Single Value         ${dist_name}           pucchModeSelect    aicListEntity=Vdu    scope=both
+    SCF StopSession                 scf_file=${CURRENT_SCF}
+    Dated Log new line              pucchModeSelect is ${pucchModeSelect} for NRCELL ${dist_name}
+    Set Suite Variable              ${pucchModeSelect}
+
+Attach UE Multi
+    [Arguments]           ${testParam}
+    Run Keyword If        ${testParam.checkPucch} and '${pucchModeSelect}[0]' == 'shortPucch'        Prepare UE RRC List
+    FOR      ${idUE}      IN RANGE      1         ${testParam.seq.totalUE}+1
+         ${ueProfile}     Copy Dictionary         ${UE_PROFILE${idUE}}
+         ${CAPTURE_SCTP}                          Test UE attach          ueProfile=${ueProfile}
+         ...                                      testParam=${testParam}
+         Set suite variable                       ${CAPTURE_SCTP}
+         Dated log                                CAPTURE_SCTP=${CAPTURE_SCTP}
+         UE Attach Check
+#         Run Keyword If        ${testParam.checkPucch} and '${pucchModeSelect}[0]' == 'shortPucch'   Test Check PUCCH
+#         ...                   ue=${idUE}
+#         ...                   pcapFile=${CAPTURE_SCTP}
+#         ...                   technology=${testParam.seq.technology}
+    END
+#    Run Keyword If        ${testParam.checkPucch} and '${pucchModeSelect}[0]' == 'shortPucch'        Check Start Prb Between UEs
+#    ...                 UeRrcList=${UeRrcList}
+
+Prepare UE RRC List
+    ${UeRrcList}            create list
+    Set suite variable      ${UeRrcList}
+
+Test UE attach
+    [Arguments]                     ${testParam}
+    ...                             ${ueProfile}=${1st_UE_PROFILE}           # Reference to UE Settings
+    ${capture_CPRT_GNB}             Capture CPRT Set Upon Config            airscale=${GNB_DU}
+    ${capture_CPRT_GNB.name}        Set Variable           ${testParam.captureName}
+    Capture Init                    ${capture_CPRT_GNB}
+    set suite variable              ${capture_CPRT_GNB}
+    ${CaptureSCTPPath}              SgNB Addition to ENB
+    ...                             ueSetting=${ueProfile}
+    ...                             captureCallback=Callback Capture L1L2
+    ...                             capture=${capture_CPRT_GNB}
+    [Return]                        ${CaptureSCTPPath}
+
+Test UE attach Debug
+    [Arguments]                     ${testParam}
+    ...                             ${ueProfile}=${1st_UE_PROFILE}           # Reference to UE Settings
+    ${CaptureBIP_AttachGNB}         Capture Bip Traffic      airscaleType=${GNB_DU}
+    ...                             filtermsg=${TrafficFilterAttach}
+    ...                             captureName=${testParam.captureName}
+    ${CaptureBIP_AttachAP}          Capture Bip Traffic      airscaleType=${AP_DU}
+    ...                             captureName=${testParam.captureName}
+    Set Test Variable               ${CaptureBIP_AttachGNB}
+    Set Test Variable               ${CaptureBIP_AttachAP}
+    ${capture_CPRT_GNB}                 Capture CPRT Set Upon Config            airscale=${GNB_DU}
+    Capture Init                    ${capture_CPRT_GNB}
+    set suite variable              ${capture_CPRT_GNB}
+    Capture Start                   ${CaptureBIP_AttachGNB}
+    Capture Start                   ${CaptureBIP_AttachAP}
+    ${CaptureSCTPPath}              SgNB Addition to ENB
+    ...                             ueSetting=${ueProfile}
+    ...                             captureCallback=Callback Capture L1L2
+    ...                             capture=${capture_CPRT_GNB}
+    Capture Stop                    ${CaptureBIP_AttachGNB}
+    Capture Stop                    ${CaptureBIP_AttachAP}
+    [Return]                        ${CaptureSCTPPath}
+
+Restart
+    [Arguments]                     ${isOAMRebooted}=${False}
+    Restart TL                      isOAMRebooted=${isOAMRebooted}
+
+Start Traffic Multi UE with Filter
+    [Documentation]     Cannot use callback capture L1L2 because we need filter on pcap.
+    [Arguments]         ${testParam}
+        FOR      ${idUE}      IN RANGE      1        ${testParam.seq.totalUE}+1
+         ${ueProfile}       Copy Dictionary       ${UE_PROFILE${idUE}}
+         Traffic UE                               throughput=${testParam.seq.throughput}
+         ...                                      duration=${testParam.seq.trafficDuration}
+         ...                                      shouldBeStop=${testParam.seq.stopTraffic}
+         ...                                      ueSetting=${ueProfile}
+         ...                                      dir=${testParam.seq.dirTraffic}
+         ...                                      deviation=${testParam.seq.deviation}
+        END
+    Dated Log                                     FILTER_TRAFFIC=${testParam.filtermsg}
+    ${CaptureBIPTrafficGNB}                       Capture Bip Traffic            airscaleType=${GNB_DU}
+    ...                                           captureName=${testParam.captureName}
+    ...                                           filtermsg=${testParam.filtermsg}
+    Set Test Variable                             ${CaptureBIPTrafficGNB}
+    Capture Start                                 ${CaptureBIPTrafficGNB}
+    sleep                                         ${testParam.seq.captureDuration}s
+    Capture Stop                                  ${CaptureBIPTrafficGNB}
+    Dated Log                                     CaptureBipGnb=${CaptureBIPTrafficGNB.path}
+    [Return]                                      ${CaptureBIPTrafficGNB.path}
+
+Start Traffic Multi UEs with Filter UL DL
+    [Documentation]     Cannot use callback capture L1L2 because we need filter on pcap.
+    [Arguments]         ${testParam}
+        FOR      ${idUE}      IN RANGE      1        ${testParam.seq.totalUE}+1
+         ${ueProfile}       Copy Dictionary       ${UE_PROFILE${idUE}}
+		END
+         Traffic UEs UL DL                        ueSettingList=${ue_list}
+		 ...									  ulThroughput=${testParam.seq.ulthroughput}
+		 ...									  dlThroughput=${testParam.seq.dlthroughput}
+         ...                                      duration=${testParam.seq.trafficDuration}
+         ...                                      shouldBeCheck=${testParam.seq.stopTraffic}
+         ...                                      deviation=${testParam.seq.deviation}
+    Dated Log                                     FILTER_TRAFFIC=${testParam.filtermsg}
+    ${CaptureBIPTrafficGNB}                       Capture Bip Traffic            airscaleType=${GNB_DU}
+    ...                                           captureName=${testParam.captureName}
+    ...                                           filtermsg=${testParam.filtermsg}
+    Set Test Variable                             ${CaptureBIPTrafficGNB}
+    Capture Start                                 ${CaptureBIPTrafficGNB}
+    sleep                                         ${testParam.seq.captureDuration}s
+    Capture Stop                                  ${CaptureBIPTrafficGNB}
+    Dated Log                                     CaptureBipGnb=${CaptureBIPTrafficGNB.path}
+    [Return]                                      ${CaptureBIPTrafficGNB.path}
+
+
+
+Stop Traffic Multi UE
+    [Arguments]         ${testParam}
+    FOR      ${idUE}      IN RANGE      1        ${testParam.seq.totalUE}+1
+         ${ueProfile}       Copy Dictionary        ${UE_PROFILE${idUE}}
+         Traffic Stop                   ueSetting=${ueProfile}    dir=${testParam.seq.dirTraffic}
+    END
+
+Detach UE Multi
+    [Arguments]         ${totalUE}
+    FOR    ${index}    IN RANGE    1        ${totalUE}+1
+         wtsemu.Ue Detach    id=${index}
+         wtsemu.Read Wtsemu Output Until Re    expected=${index}: detached    timeout=45
+    END
+
+Test Check PUCCH
+    [Arguments]                     ${ue}
+    ...                             ${pcapFile}
+    ...                             ${technology}
+    ${UeRRC}                        5GC000679_rrcConfigChecking.Convert and parse pdml TDD
+    ...                             ue=${ue}
+    ...                             pcapFile=${pcapFile}
+    ...                             technology=${technology}
+    Append to list                  ${UeRrcList}        ${UeRRC}
+    Set suite variable              ${UeRrcList}
+    [Return]                        ${UeRRC}
+
+Retrieve Logs
+   [Tags]                          Retrieve Logs
+   [Timeout]                       20 minute
+   OAM Get Active Alarms
+   Run Keyword If    not ${isAic} or ${generate_sos_report} == 'True'    Get Sos Report
+
+Set UE capa on EPCSim
+    [Arguments]                     ${ue_nr_capa_value}=${ue_nr_capa_onePortsPTRS_10_fr1}
+    Modify Field in WtsEmu Cfg File
+    ...                             field=ue_nr_capabilities                 value=${ue_nr_capa_value}
+
+Add Node Airphone Config XML
+    [Arguments]        ${node}
+    ...                ${node_path}
+    ${add_xml}    Catenate    SEPARATOR=\n
+     ...     ${node}
+    Set Suite Variable    ${add_xml}
+    #Adding tag into airphone xml file  after the specificied xpath position
+    AddNewTree          path=${node_path}
+    ...                 add_xml=${add_xml}
+
+Capture Bip Traffic
+    [Arguments]                        ${airscaleType}
+    ...                                ${captureName}
+    ...                                ${filtermsg}=@{EMPTY}
+    ${CaptureBIPTraffic}               Capture L1L2 Set Upon Config              airscale=${airscaleType}           isMirror=${True}
+    ${CaptureBIPTraffic.name}                Set Variable           ${captureName}
+    Capture Init                       ${CaptureBIPTraffic}
+    ${CaptureBIPTraffic.filter}        BuiltIn.Run Keyword if                    @{filtermsg}==@{EMPTY}
+    ...                                CaptureFilter.Get Filter All BIP Msgs
+    ...     ELSE                       CaptureFilter.Get Filter For Particular Msgs              bipMsgList=${filtermsg}
+    [Return]                           ${CaptureBIPTraffic}
+
+Check Traffic Quality
+    [Documentation]     Check DTX and CRC in corresponding uldata_pucchreceiverespharqd on DL traffic
+    ...                 or uldata_pucchreceiverespharqd AND uldata_puschreceiverespharqu
+    ...                 on UL traffic in format 2
+    ...                 calculate the ratio of dtx in function of total number of
+    ...                 given uldata_pucchreceiverespharqd msgs
+    [Arguments]         ${pcapInput}
+    ...                 ${index}
+    ...                 ${dtxLimit}=10
+    ...                 ${crcLimit}=10
+    ...                 ${direction}=dl
+    ${pdmlFile}         analyzer.pcap_to_pdml        pcapFile=${pcapInput}
+    Set Test Variable              ${TRAFFIC_PDML.pdmlTrf${index}}               ${pdmlFile}
+#    Check DTX CRC       index=${index}     direction=${direction}    dtxLimit=${dtxLimit}     crcLimit=${crcLimit}
+
+Check DTX CRC
+    [Arguments]         ${index}
+    ...                 ${direction}
+    ...                 ${dtxLimit}
+    ...                 ${crcLimit}
+    Dated log new line                  Getting all uldata_puschreceiverespharqu
+    @{listAllPuschRecRespHarqU}            analyzer.get_match_from_paths
+    ...                                 pdmlFile=${TRAFFIC_PDML.pdmlTrf${index}}
+    ...                                 packetName=uldata_puschreceiverespharqu
+    ...                                 pathList=${FIELDS_TRF_QUALITY}
+    ${lenPuschRecRespHarqU}             get length                                          ${listAllPuschRecRespHarqU}
+    Dated Log New Line                  Total number of PuschRecRespHarqU msgs: ${lenPuschRecRespHarqU}
+    DTX CRC calcul       listMessage=${listAllPuschRecRespHarqU}     lenMessage=${lenPuschRecRespHarqU}     index=${index}
+    Run Keyword If      '${direction}'=='dl'         DTX CRC Calcul DL     index=${index}
+    Run Keyword If       ${TRAFFIC_RESULT.dtxPcap${index}} < ${dtxLimit}
+    ...                  Dated log new line       Good traffic with dtx=${TRAFFIC_RESULT.dtxPcap${index}}%
+    ...                  ELSE     Dated log new line       Bad traffic with dtx=${TRAFFIC_RESULT.dtxPcap${index}}%
+    Run Keyword If       ${TRAFFIC_RESULT.crcPcap${index}} < ${crcLimit}
+    ...                  Dated log new line       Good traffic with crc=${TRAFFIC_RESULT.crcPcap${index}}%
+    ...                  ELSE                 Dated log new line       Bad traffic with crc=${TRAFFIC_RESULT.crcPcap${index}}%
+    Should Be True       ${TRAFFIC_RESULT.dtxPcap${index}} < ${dtxLimit}
+    Should Be True       ${TRAFFIC_RESULT.crcPcap${index}} < ${crcLimit}
+
+DTX CRC Calcul DL
+    [Arguments]                         ${index}
+    @{listAllPucchRecRespHarqD}            analyzer.get_match_from_paths
+    ...                                 pdmlFile=${TRAFFIC_PDML.pdmlTrf${index}}
+    ...                                 packetName=uldata_pucchreceiverespharqd
+    ...                                 pathList=${FIELDS_TRF_QUALITY}
+    ${lenPucchRecRespHarqD}                get length                                          ${listAllPucchRecRespHarqD}
+    Dated Log New Line                  Total number of PucchRespHarqD msgs: ${lenPucchRecRespHarqD}
+    DTX CRC Calcul       listMessage=${listAllPucchRecRespHarqD}     lenMessage=${lenPucchRecRespHarqD}     index=${index}
+
+DTX CRC Calcul
+    [Arguments]                         ${listMessage}
+    ...                                 ${lenMessage}
+    ...                                 ${index}
+    ${counterNonDtx}                    Set Variable                                        ${0}
+    ${counterDtx}                       Set Variable                                        ${0}
+    FOR    ${packet}   IN              @{listMessage}
+    #       Retrieve pucchFormat and dtx for current PucchRespHarqD
+            ${pucchFormat}              Get Value In Packet Match
+            ...                         packetMatch=${packet}
+            ...                         field=pucchFormat
+            ${dtx}                      Get Value In Packet Match
+            ...                         packetMatch=${packet}
+            ...                         field=dtx
+            ${crc}                      Get Value In Packet Match
+            ...                         packetMatch=${packet}
+            ...                         field=crc
+            checkingDtxCrc.checkNonDTX     dtx=${dtx}     format2=${pucchFormat}
+            checkingDtxCrc.checkNonCRC     crc=${crc}     format2=${pucchFormat}
+    END
+    ${counterNonDtx}=                   checkingDtxCrc.resultNonDTX
+    ${counterDtx}=                      checkingDtxCrc.resultDTX
+    ${counterNonCrc}=                   checkingDtxCrc.resultNonCRC
+    ${counterCrc}=                      checkingDtxCrc.resultCRC
+    Dated log                           number of NON-DTX:${counterNonDtx}
+    Dated log                           number of DTX:${counterDtx}
+    Dated log                           number of NON-CRC:${counterNonCrc}
+    Dated log                           number of CRC:${counterCrc}
+    ${totalDtxMessage}                  EVALUATE                     ${counterDtx}+${counterNonDtx}
+    ${ratioOfDtx}                       EVALUATE                     (${counterDtx}/${totalDtxMessage})*100
+    ${totalCrcMessage}                  EVALUATE                     ${counterCrc}+${counterNonCrc}
+    ${ratioOfCrc}                       EVALUATE                     (${counterCrc}/${totalCrcMessage})*100
+    ${ratioOfDtxTotal}                  EVALUATE                     ${TRAFFIC_RESULT.dtxPcap${index}}+${ratioOfDtx}
+    ${ratioOfCrcTotal}                  EVALUATE                     ${TRAFFIC_RESULT.crcPcap${index}}+${ratioOfCrc}
+    Set Test Variable                   ${TRAFFIC_RESULT.dtxPcap${index}}           ${ratioOfDtxTotal}
+    Set Test Variable                   ${TRAFFIC_RESULT.crcPcap${index}}           ${ratioOfCrcTotal}
+
+Check NumOfPrb
+    [Documentation]                 Retrieve from pdml value of numOfPrb has to be less than 273
+     ...                            from message dldata_pdschsendreq and check prb allocation conditions.
+    [Arguments]                     ${pdmlFile}
+    ...                             ${dirTraffic}
+    ...                             ${maxNumOfPrb}
+    ...                             ${listMessageParam}
+    ${trafficMessage}=       Set Variable If       '${dirTraffic}'=='dl'     dldata_pdschsendreq      uldata_puschreceivereq
+    # 1 - Retrieve from pdml all pucchReceiveReq or pdschSendReq
+    Dated log new line              Getting all ${trafficMessage}
+    @{listMessageTraffic}           analyzer.get_match_from_paths
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=${trafficMessage}
+    ...                             pathList=${listMessageParam}
+    [Return]              ${listMessageTraffic}
+
+Check StartPrb Allocation and NumOfPrb
+    [Documentation]                 Check overlap on startPrbAllocation
+    ...                             Check message dldata_pdschsendreq on dl or
+    ...                             uldata_puschreceivereq on ul.
+    [Arguments]                     ${pdmlFile}
+    ...                             ${dirTraffic}
+    ...                             ${prbMax}=${TDD_PRB_MAX}
+    ${packetName}=       Set Variable If       '${dirTraffic}'=='dl'     dldata_pdschsendreq      uldata_puschreceivereq
+    Dated log                       Start get_match_from_paths
+    SlotSfn.createSlotSfnRecords    pdmlFile=${pdmlFile}
+    ...                             packetName=${packetName}
+    ...                             pathList=${DATA_SEND_REQ_FIELDS}
+    ...                             prbMax=${TDD_PRB_MAX}
+    ...                             verbose=${False}
+    SlotSfn.printSlotSfnRec         onlyKO=${True}
+    ${nbRecord}                     countSlotSfnRecord
+    ${nbError}                      SlotSfn.countPrbInconsistency
+    Dated log                       NB ERROR=${nbError}/${nbRecord} SlotSfn records
+    Should Be Equal                 ${nbError}      ${0}
+    ...                             Too many errors in PRB checks (ovelap or limit)
+
+Check Prb Allocation with rat0bitmap
+    [Documentation]                 Check overlap PRB in DL with rat0bitmap field in dldata_pdschsendreq
+    [Arguments]                     ${pdmlFile}
+    ${packetName}=                  Set Variable    dldata_pdschsendreq
+    Dated log                       Start get_match_from_paths
+    SlotSfn.createSlotSfnRecordsBitmap
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=${packetName}
+    ...                             pathList=${DATA_SEND_REQ_FIELDS_BITMAP}
+    ...                             verbose=${False}
+    SlotSfn.printSlotSfnRec         onlyKO=${True}
+    ${nbRecord}                     countSlotSfnRecord
+    ${nbError}                      SlotSfn.countPrbInconsistency
+    Dated log                       NB ERROR=${nbError}/${nbRecord} SlotSfn records
+    Should Be Equal                 ${nbError}      ${0}
+    ...                             Too many errors in PRB checks (ovelap or limit)
+
+Check Counter FDM
+    [Arguments]         ${log_path_pm}
+    ...                 ${expected_val}
+    ...                 ${comparison}
+    ...                 &{expected_dict}
+    ${foundOrNot}            Run Keyword If                  ${isAic}
+    ...                      Counters.Check At Least One Value Is In Criteria From Pm Files For Object With ID on vDU
+    ...                      ${expected_val}       ${comparison}         &{expected_dict}
+    ...                      ELSE
+    ...                      Counters.Check At Least One Value Is In Criteria From Pm Files For Object With ID
+    ...                      ${log_path_pm}        ${expected_val}       ${comparison}         &{expected_dict}
+    [Return]            ${foundOrNot}
+
+Log Counter FDM
+    [Arguments]         ${counter}
+    ...                 ${expectedValue}
+    ...                 ${result}
+    Dated Log           ${counter.name}=${counter.counter}
+    Dated Log           ${counter.name}:${expectedValue}=${result}
+    Should Be True      '${result}'=='True'
+
+Check PM Counter
+    [Documentation]                 KW to check Performance Management (PM) counter list and compare with
+    ...                             expected value with an error percentage
+    [Arguments]                     ${expectedValue}
+    ...                             ${counter_id}
+    ...                             ${pm_reporting_period}=0 minutes
+    Traced Sleep                    ${pm_reporting_period}
+    ${date}                          Get Current Date
+    ${date_in_dir_name}              Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                   Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+    ${pm_latest}                     Collect PM files from BTS    ${log_path_pm}
+    ${counter_values}=            Counters.Retrieve NRCell Counter Value From Pm File      ${pm_latest}    ${counter_id}
+    Dated Log                     counter_values= ${counter_values}
+    Should be Equal                 ${expectedValue}         ${counter_values}
+
+Check PM Counter Greater
+    [Documentation]                 KW to check Performance Management (PM) counter list and compare with
+    ...                             expected value with an error percentage
+    [Arguments]                     ${greaterThanValue}
+    ...                             ${counter_id}
+    ...                             ${pm_reporting_period}=0 minutes
+    Traced Sleep                    ${pm_reporting_period}
+    ${date}                          Get Current Date
+    ${date_in_dir_name}              Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                   Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+    ${pm_latest}                     Collect PM files from BTS    ${log_path_pm}
+    ${counter_values}=            Counters.Retrieve NRCell Counter Value From Pm File      ${pm_latest}    ${counter_id}
+    Dated Log                     counter_values= ${counter_values}
+    Should Be True                    ${counter_values} > ${greaterThanValue}
+
+Check PM Counter Equal
+    [Documentation]                 KW to check Performance Management (PM) counter list and compare with
+    ...                             expected value with an error percentage
+    [Arguments]                     ${equalTo}
+    ...                             ${counter_id}
+    ...                             ${pm_reporting_period}=0
+    Traced Sleep                    ${pm_reporting_period}
+    ${date}                         Get Current Date
+    ${date_in_dir_name}             Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                  Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+    ${pm_latest}                    Collect PM files from BTS    ${log_path_pm}
+    ${counter_values}=              Counters.Retrieve NRCell Counter Value From Pm File      ${pm_latest}    ${counter_id}
+    ${counter_val}=	                Convert To Integer	${counter_values}
+    Dated Log                       counter_values= ${counter_values}
+    Should Be Equal                 ${counter_val}    ${equalTo}
+
+Test Traffic Start Multi with filter DEBUG
+    [Documentation]     Cannot use callback capture L1L2 because we need filter on pcap.
+    ...                 retrieve PCAP traffic from Airphone
+    [Arguments]         ${testParam}
+        FOR      ${idUE}      IN RANGE      1        ${testParam.seq.totalUE}+1
+         ${ueProfile}       Copy Dictionary       ${UE_PROFILE${idUE}}
+         Run Keyword And Continue On Failure      Traffic UE              throughput=${testParam.seq.throughput}
+         ...                                      duration=${testParam.seq.trafficDuration}
+         ...                                      shouldBeStop=${testParam.seq.stopTraffic}
+         ...                                      ueSetting=${ueProfile}
+         ...                                      dir=${testParam.seq.dirTraffic}
+#    \    ...                                      captureDuration=${testParam.seq.captureDuration}
+        END
+    ${CaptureBIPTrafficGNB}     Capture Bip Traffic    airscaleType=${GNB_DU}     filtermsg=${testParam.filtermsg}
+    ...                                                captureName=${testParam.captureName}
+    ${CaptureBIPTrafficAP}      Capture Bip Traffic      airscaleType=${AP_DU}     captureName=${testParam.captureName}
+    Set Test Variable                             ${CaptureBIPTrafficGNB}
+    Set Test Variable                             ${CaptureBIPTrafficAP}
+    Capture Start                                 ${CaptureBIPTrafficGNB}
+    Capture Start                                 ${CaptureBIPTrafficAP}
+    sleep                                         ${testParam.seq.captureDuration}s
+    Capture Stop                                  ${CaptureBIPTrafficGNB}
+    Capture Stop                                  ${CaptureBIPTrafficAP}
+    Dated Log                    CaptureBipGnb=${CaptureBIPTrafficGNB.path} CaptureBipAP=${CaptureBIPTrafficAP.path}
+    Dated Log                    CaptureBipGnb=${CaptureBIPTrafficGNB.path}
+    [Return]                     ${CaptureBIPTrafficGNB.path}
+
+Get Distance Name Profile
+    [Arguments]              ${endClassParent}
+    ...                      ${endClassChild}
+    ...                      ${bwpTypeValue}
+    XmlScf.StartSession      path=${SCF_SETUP_PATH}
+    @{listMO}                XmlScf.getListMOWithAttr
+    ...                      endClass=${endClassParent}
+    ...                      attrName=bwpType
+    ...                      value=${bwpType_value}
+    ${profileMO}             set variable                ${listMO[0]}
+    ${profileDN}             set variable                ${profileMO.get("distName")}
+    Dated log                PROFILE MO:DN=${profileDN}
+    ${ManagedObject}         XmlScf.getListMOWithDN
+    ...                      endClass=${endClassChild}
+    ...                      startDN=${profileDN}
+    ${distanceName}          XmlScf.getMODistName     ${ManagedObject[0]}
+    Dated log                DistanceName= ${distanceName}
+    [Return]                 ${distanceName}
+
+
+Create Ue List for Multi Ues
+	[Arguments]              ${nb_ue}
+#	For Ue 1 to....n Ues
+	${ue_list}    Create List
+	Set Test Variable    ${ue_list}
+	FOR   ${ue_id}   IN RANGE   1    ${nb_ue}+1
+	    &{current_UE}=    Copy Dictionary    ${UE_SIMPLE}
+	    Set To Dictionary    ${current_UE}    ue    ${ue_id}
+	    Append To List    ${ue_list}    ${current_UE}
+	END
+

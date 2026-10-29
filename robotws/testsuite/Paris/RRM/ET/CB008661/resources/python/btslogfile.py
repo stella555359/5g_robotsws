@@ -1,0 +1,212 @@
+from taf.transport.ssh import ssh
+
+BTSLOG_INI = """
+########################################
+# BTS Log 2 configuration file for Linux
+########################################
+[INITIAL_FILES]
+UserFile=/home/ute/btslog2/user.ini
+NodesFile=/home/ute/btslog2/nodes.ini
+DevicesFile=/home/ute/btslog2/devices.ini
+UIFile=/home/ute/btslog2/ui.ini
+BTSFilter=/opt/btslog/configuration/filters.bts
+LTXFilter=/home/ute/btslog2/filters.bts
+
+# Sack parameters configuration file
+RadParamSackInfoFile=/home/ute/btslog2/radparamsackinfo.ini
+UserRadParamsFile=/home/ute/btslog2/user_radparams.ini
+CustomRdParamNodesFile=/home/ute/btslog2/rd_custom_nodes.ini
+
+# Empty ini files - needed for startup without warning
+RT_Watch0=/home/ute/btslog2/rtvwatch.brw
+RT_Watch1=/home/ute/btslog2/rtvwatch.brw
+RT_Watch2=/home/ute/btslog2/rtvwatch.brw
+RT_Watch3=/home/ute/btslog2/rtvwatch.brw
+RT_Watch4=/home/ute/btslog2/rtvwatch.brw
+RT_Watch5=/home/ute/btslog2/rtvwatch.brw
+RT_Watch6=/home/ute/btslog2/rtvwatch.brw
+RT_Watch7=/home/ute/btslog2/rtvwatch.brw
+RT_Filter0=/home/ute/btslog2/rtvfilter.brf
+RT_Filter1=/home/ute/btslog2/rtvfilter.brf
+RT_Filter2=/home/ute/btslog2/rtvfilter.brf
+RT_Filter3=/home/ute/btslog2/rtvfilter.brf
+RT_Filter4=/home/ute/btslog2/rtvfilter.brf
+RT_Filter5=/home/ute/btslog2/rtvfilter.brf
+RT_Filter6=/home/ute/btslog2/rtvfilter.brf
+RT_Filter7=/home/ute/btslog2/rtvfilter.brf
+
+##############
+[CONFIGURATION]
+# Temporary directory
+# temporary files (e.g. Real Time View watches) are stored in this directory
+TemporaryDir=/tmp/btslog2
+
+# User favorite text editor.
+# Modify to kedit for Red Hat
+# Editor=kedit
+Editor=/usr/bin/gedit
+
+# The number of lines in realtime view snapshot
+RealtimeViewSnapshotSize=1000
+
+# Monitoring mode - can be Local or Remote
+MonitoringMode=Local
+
+# Show context help
+ShowContextHelp=True
+
+# Sys log over TCP
+SysLogOverTCP=false
+
+# Refresh rate in Real time view allowed
+RefreshRate=false
+
+# NO DATA timeout (seconds)
+NoDataTimeout=10
+
+# Statistics in Real time view allowed
+RTVStatistics=True
+Version=9
+
+###############
+[EXECUTION_LOG]
+LogFileTemplate=/tmp/btslog2/executionlog%1.txt
+Index=1
+MinIndex=1
+MaxIndex=500
+MaxFileSize=100
+Started=false
+
+###################
+# Trace file configuration
+###################
+[LOG_CONFIGURATION]
+# Template for trace files
+TraceFileTemplate=/tmp/btslog2/BTSLOG_TRACE_%1.bin
+# Template for sys log files
+SysLogFileTemplate=/tmp/btslog2/SYSLOG_%1.LOG
+# Maximum size of trace file in MB
+MaxTraceFileSize=5.000000
+# Maximum size of sys log file in MB
+MaxSysLogFileSize=20.000000
+# The lowest index
+MinIndex=1
+# The maximum index
+MaxIndex=5
+# Current index
+Index=1
+
+##############
+# Ping configuration data
+##############
+[PING]
+# Delay between two pings in miliseconds
+PingInterval=1000
+# Ping timeout - response must come in miliseconds
+PingTimeOut=1000
+
+########
+[PCNODE]
+IPAddress=131.207.211.244
+Port=FCMUDPCP
+Board=0x10
+CPU=0x11
+Task=0x0001
+
+#######
+[UDPCP]
+CFlag=YES
+NFlag=NO
+SFlag=NO
+RetryLimit=5
+RetryTimeout=100
+
+#######
+[PORTS]
+NONE=0
+LTX=100
+TASSU=15001
+BTSLOG=15004
+FCMUDPCP=12000
+DSP=12001
+DSP1=12002
+DSP2=12003
+DSP3=12004
+FSPUDPCP1=771
+FSP1=12021
+FSP2=12022
+FSP3=12023
+
+##########
+[PROTOCOL]
+All=0
+RTOS=1
+SWBus=2
+UDP=3
+UDPCP=4
+SOAP=5
+
+###########
+[DIRECTION]
+Both=0
+Send=1
+Receive=2
+
+###########
+[UDP_PORTS]
+Ports="51000,51001,50011,51003"
+
+##########
+[RAW_DATA]
+LogFileTemplate=/tmp/btslog2/raw_data%1.txt
+Index=1
+MinIndex=1
+MaxIndex=500
+MaxFileSize=0.5
+Started=false
+
+################
+[FTP_PARAMETERS]
+UserName=toor4nsn
+Password=oZPS0POrRieRtu
+
+###########
+[ARCHIVING]
+ArchiveName=/tmp/btslog2/BTSLogZip_%1.zip
+ArchiverCommandLine=/usr/bin/zip %1 -q -u %2
+ExtractorCommandLine=/usr/bin/unzip %1 -d %2
+ArchiverCommandLineForExport=/usr/bin/zip %1 -q -u -r %2
+ExtractorCommandLineForImport=/usr/bin/unzip %1 -d %2
+
+###########
+[FILTERS]
+# Try to send filters every x seconds
+Interval=3
+# send filters till timeout (in seconds)
+Timeout=120
+
+##########
+[LOG_VIEW]
+# Limitted Log view history allowed
+Limited=True
+# Maximum of messages in Log view
+Limit=200
+
+################
+[NODES_FROM_URL]
+UrlName=https://bts.inside.nsn.com/labstorage/Analyzer/Wireshark_LTE_NSN/config/syscom/btslog_configs/nodes.ini
+UserName=
+Password=
+"""
+
+
+def write_btslog_to_file(path):
+    with open(path, "w+") as f:
+        f.writelines(BTSLOG_INI)
+
+
+def write_btslog_to_remote_file(remote_path, remote_ip, remote_username, remote_password):
+    ssh_conn = ssh()
+    ssh_conn.connect_to(hostname=remote_ip, username=remote_username, password=remote_password, alias="btslog_conn")
+    ssh_conn.execute("cat << EOF > {} {}".format(remote_path, BTSLOG_INI), connection="btslog_conn")
+    ssh_conn.disconnect(connection="btslog_conn")

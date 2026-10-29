@@ -1,0 +1,2340 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for 5GC002535 feature tests cases
+...
+...               Automation author           : christophe.samson@nokia.com
+...               Automation contact          : christophe.samson@nokia.com
+...               Creation Date               : March 09 2021
+...               Modified Date               : March 09 2021
+...               Last Modified by            : christophe.samson@nokia.com
+...               Modified Date               : 18-Sep-2024 - Scout data
+
+
+# taf library
+Library          taf.wts.runner                 WITH NAME    wtsemu
+# Library          taf.config.scf                 WITH NAME    scf   # used of SWENG MutiScf.py Library instead
+Library          taf.sbts.oam.coam.admin         WITH NAME    admin
+Library          taf.collectors.tcpdump         WITH NAME    tcpdump
+
+# SWENG library
+Library          ../../../../../resources/SWENG/python/OldMultiScf.py       WITH NAME    scf
+
+# ET and 2535 library
+Library          ../python/tools.py                                      WITH NAME    nps_2535_tools
+Library          ../python/5GC002535.py                                  WITH NAME    5GC002535_tools
+Library          ../../../resources/common/TtiTrace/python/ttitrace.py   WITH NAME    nps_ttitraces_tools
+Library          ../python/Common.py
+Library          ../python/aasyslog.py
+Library          ../python/robot_extension.py                            WITH NAME    robot_extension
+
+# SWENG Resource
+Resource         ../../../../../resources/SWENG/robot/Tools.robot
+
+# ET resource
+Resource         ../../../resources/common/TtiTrace/ttitrace.robot
+
+# 5GC002535 specific Resource
+Resource          5GC002535_Kw_TestSetup.robot
+Resource          5GC002535_Ue_command.robot
+Resource          pcap.robot
+
+*** Variables ***
+
+&{OPT_GNB_MIRRORING}                bb_slot=bb_slot_1
+...                                 mirroring_mode='manual'
+...                                 bb_board_type='ABIL'
+...                                 l2_l1_bip='false'
+...                                 syscom_mirroring='false'
+...                                 carrier_aggregation='false'
+...                                 backhaul_mirroring='false'
+...                                 l2hi_l2lo_mirroring='false'
+...                                 filtering='off'
+...                                 capturing_time_seconds='1'
+
+# Table describing list of field we want to collect for each packet
+@{FIELDS_PUCCH_REQ}                 slot        sfn         rnti        pucchFormat     startPrb
+...                                 numOfBitsOfUciInformation           nANPucch        numOfSymbols
+...                                 firstSymbol
+@{FIELDS_PUCCH_RESP}                slot        sfn         rnti        pucchFormat     startPrb
+...                                 dtx         ackNack     crc
+@{FIELDS_PDSCHSendReq}              rat0Bitmap        rbgSize         numOfPrb    numOfDmrsCdmGroupWithoutData
+@{FIELDS_PUCCHreceivereq}                           pucchFormat          startPrb         nANPucch
+@{FIELDS_PUSCHreceivereq}           numOfPrb       startPrb
+
+# Global counters to build status when parsing pucchResp packets
+${NbReq}                            0           # Number of pucchReq packets found
+${NbNone}                           0           # Number of pucchReq with no pucchResp found
+${NbOK}                             0           # Number of pucchReq/resp where numOfBitsOfUci is OK
+${NbKO}                             0           # Number of pucchReq/resp where numOfBitsOfUci is KO
+
+*** Keywords ***
+# robocop: off=unused-argument
+# robocop: off=possible-variable-overwriting
+#===================================
+# To Start and stop Traces for 2535
+#===================================
+
+return filter for capture
+    [Documentation]       return filter for capture
+    ...                   test_scf_file is gloval variable
+    ...                   Only for Classical
+    [Arguments]                    ${filter}    ${name}=CAPTURE_L1L2_GNB_FS
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    ${ipAddr}	 scf.get_value_from_scf   p_name=localIpAddr
+    ...              dist_name=MRBTS-${MRBTS_ID}/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1
+    ${filter}       Catenate    ${filter}    or host ${ipAddr}
+    Dated log          ${name}.filter = ${filter}
+    [return]     ${filter}
+
+Start capture for 2535
+    [Documentation]                 Start capture for 2535
+    [Arguments]                    ${prefix}=L1L2_BIP
+
+    # set a specific name to keep the trace
+    ${CAPTURE_L1L2_GNB_FS_2535.prefix}       set Variable   ${prefix}
+    ${CAPTURE_L1L2_GNB_FS_2535.withTN}       set Variable   True
+    # ${CAPTURE_L1L2_GNB_FS_2535.filter}       Get Filter all BIP msgs
+    # to manage the case vlan218 encapsulated within vlan305 (seen with ABIO / ABIP) and the case vlan218 only (seen with ABIP & ABIL)
+    ${CAPTURE_L1L2_GNB_FS_2535.filter}       set variable   ether[12:2]=0x8951 or ether[16:2]=0x8951
+
+    # Get SCF File (SCF.xml) in Kw 'Test case setup'
+    ${CAPTURE_L1L2_GNB_FS_2535.filter}=     run Keyword if    '${isAiC}' != '${True}'
+    ...                                        return filter for capture    filter=${CAPTURE_L1L2_GNB_FS_2535.filter}   name=CAPTURE_L1L2_GNB_FS_2535
+    ...   ELSE                              set variable      ${CAPTURE_L1L2_GNB_FS_2535.filter}
+
+    # ${current_scf_fullname}    set Variable      ${test_scf_file}
+    # scf.load_scf	 ${current_scf_fullname}
+    # ${ipAddr}	 scf.get_value_from_scf   p_name=localIpAddr
+    # ...              dist_name=MRBTS-${MRBTS_ID}/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1
+    # ${CAPTURE_L1L2_GNB_FS_2535.filter}       Catenate    ${CAPTURE_L1L2_GNB_FS_2535.filter}    or host ${ipAddr}
+    # Dated log          CAPTURE_L1L2_GNB_FS_2535.filter = ${CAPTURE_L1L2_GNB_FS_2535.filter}
+    # ${CAPTURE_L1L2_GNB_FS_2535.filter}       set variable         ${CAPTURE_L1L2_GNB_FS_2535.filter}
+
+    Capture Init                   capture=${CAPTURE_L1L2_GNB_FS_2535}
+    Capture Start                  ${CAPTURE_L1L2_GNB_FS_2535}
+
+
+Stop capture for 2535
+    Capture Stop                   ${CAPTURE_L1L2_GNB_FS_2535}
+
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CAPTURE_L1L2_GNB_FS_2535.path}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${CAPTURE_L1L2_GNB_FS_2535.path}    ${testCaseDir}
+    Dated Log     pcap file ${CAPTURE_L1L2_GNB_FS_2535.path} copied into ${testCaseDir}
+
+    # Dated log                       pdml files generation ...
+    # ${pdmlFile}=          analyzer.pcap_to_pdml          ${CAPTURE_L1L2_GNB_FS_2535.path}
+    # Dated log                       pdml files generation completed ...
+
+    # [return]   ${pdmlFile}
+
+
+################################################################################################################################
+#               To test 2535 Alarms
+################################################################################################################################
+
+Check 2535 Active Alarms
+    [Tags]      ALARMS_CHECK
+    [Arguments]    ${fault_id}
+
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+
+    Fault Should Be Present   fault_id=${fault_id}
+
+    [Teardown]    OAM Disconnect                          ${GNB_DU.oam}
+
+Check Clear 2535 Active Alarms
+    [Tags]      ALARMS_CHECK
+    [Arguments]    ${fault_id}
+
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+
+    Fault Should Not Be Present   fault_id=${fault_id}
+
+    [Teardown]    OAM Disconnect                          ${GNB_DU.oam}
+
+Fault Should Be Present
+    [Documentation]
+    ...
+    [Arguments]    ${fault_id}
+    Dated log          KW - Fault Should Be Present fault_id=${fault_id}
+    ${active_alarms}     OAM Get Active Alarms                   oam=${GNB_DU.oam}       textFormat=${False}
+    ${len}    Get Length    ${active_alarms}
+    ${alarm_id_list}    Create List
+    ${alarm_name_list}    Create List
+    FOR    ${i}    IN RANGE    ${len}
+        ${tmp_id}    Get From Dictionary    ${active_alarms[${i}]}    faultId
+        ${tmp_name_id}    Get From Dictionary    ${active_alarms[${i}]}    faultName
+        Append To List    ${alarm_id_list}    ${tmp_id}
+        Append To List    ${alarm_name_list}    ${tmp_name_id}
+    END
+    Dated log     Active alarms: alarm_id_list=${alarm_id_list}
+    Dated log     Active alarms: alarm_name_list=${alarm_name_list}
+    ${list}     convert to string  ${alarm_id_list}
+    Should Contain     ${list}    ${fault_id}
+
+Fault Should Not Be Present
+    [Documentation]
+    ...
+    [Arguments]    ${fault_id}
+    Dated log     KW - Fault Should Not Be Present fault_id=${fault_id}
+    ${active_alarms}     OAM Get Active Alarms                   oam=${GNB_DU.oam}        textFormat=${False}
+    ${len}    Get Length    ${active_alarms}
+    ${alarm_id_list}    Create List
+    FOR    ${i}    IN RANGE    ${len}
+        ${tmp_id}    Get From Dictionary    ${active_alarms[${i}]}    faultId
+        Append To List    ${alarm_id_list}    ${tmp_id}
+    END
+    Dated log     Active alarms: alarm_id_list=${alarm_id_list}
+    ${list}     convert to string  ${alarm_id_list}
+    Should Not Contain     ${list}    ${fault_id}
+
+################################################################################################################################
+#              END :  To test 2535 Alarms
+################################################################################################################################
+
+
+#################################################################################################################################
+#  Basic procedure
+#################################################################################################################################
+
+Fetch common OAM SW version for Classical
+    [Documentation]    :
+    ...    Only used by KW "Fetch Current gNB SW Version"
+    ...    [PRIVATE]
+    [Arguments]    ${gnb_id}=0  ${bts_host}=${EMPTY}
+    ${bts_host}=  Set Variable if  '${bts_host}'=='${EMPTY}'  ${tl.gnbs[${gnb_id}].cu.oam_http_connection_details.addr}  ${bts_host}
+    admin.connect_to    bts_host=${bts_host}    name=gnb
+    ${gnb_sw_version}=    admin.get_sw_version    connection=gnb
+    admin.teardown    connection=gnb
+    ${gnb_sw_version}=    nps_2535_tools.reform_coam_sw_version    ${gnb_sw_version}
+    set global variable    ${TLConfig.release.name}      ${gnb_sw_version}
+    [Return]    ${gnb_sw_version}
+
+Fetch common OAM SW version
+    [Documentation]    :
+    ...    Only used by KW "Fetch Current gNB SW Version"
+    ...    [PRIVATE]
+    [Arguments]     ${oam}=${GNB_DU.oam}
+    ${gnb_sw_version}                      OAM Get SW Version                      oam=${oam}
+    ${gnb_sw_version}=    nps_2535_tools.reform_coam_sw_version    ${gnb_sw_version}
+    set global variable    ${TLConfig.release.name}      ${gnb_sw_version}
+    [Return]    ${gnb_sw_version}
+
+Connect to test pc proxy
+    [Documentation]    :Author: Vasileios Papoutsis, [PRIVATE]
+    ...    It is needed when there is different test_pc for each unit.
+    ...    In such case "tl.test_pc.connections" is required
+    [Arguments]    ${gnb_id}
+    ${gnb_test_pc}=    5GC002535_Keywords.Get Test PC for Object    ${tl.gnbs[${gnb_id}]}
+    ${alias}=    Set variable    gnb-${gnb_id}-test_pc
+    ssh.Connect_to      hostname=${gnb_test_pc.default_ssh_connection_details.addr}
+    ...                 username=${gnb_test_pc.default_ssh_connection_details.username}
+    ...                 password=${gnb_test_pc.default_ssh_connection_details.password}
+    ...                 alias=${alias}
+    [Return]    ${alias}
+
+
+Get Test PC for Object
+    [Documentation]    :Author: Vasileios Papoutsis, [PRIVATE]
+    [Arguments]    ${obj}
+    ${result}=    Evaluate    [test_pc for test_pc in $tl.test_pcs for obj in test_pc.connections if obj is $obj][0]
+    [Return]    ${result}
+
+Connect to gNB Common Unit
+    [Documentation]    :Author: Soenke Kullberg
+    ...     setup ssh connection to Airscale (ASXX) and returns connection handle/alias
+    ...
+    ...     :param gnb_id:         Id of gnb                       [0.. ]  default=0
+    ...     :param du_id:          Id of DU                        [0.. ]  default=0
+    ...     :param comu_id:        Id of Common Unit               [0..1]  default=0
+    ...     :param alias:       (optional) connection alias  !! should not be used
+    ...
+    ...     :returns alias:     alias for ssh connection to Common Unit
+    ...
+    ...     **Example:**
+    ...
+    ...     | ${asxx_alias}=   connect.Connect to gNB Common Unit    gnb_id=0  du_id=0  comu_id=0
+    ...     | ssh.execute     command=uptime  connection=${asxx_alias}
+    ...
+    [Arguments]    ${gnb_id}=${0}  ${du_id}=${0}  ${comu_id}=${0}  ${alias}=ssh-gnb-${gnb_id}-${du_id}-${comu_id}
+    ${test_pc_connection_count}=   Get Length    ${tl.test_pc.connections}
+    # ${proxy}   Run keyword If   ${test_pc_connection_count}==0        5GC002535_Keywords.Connect to test pc proxy    gnb_id=${gnb_id}
+    # ...    ELSE    Set variable    ${None}
+    ${proxy}  Set variable    ${None}
+    ssh.Connect_to      hostname=${tl.gnbs[${gnb_id}].dus[${du_id}].airscale.common_units[${comu_id}].lmp_connection.addr}
+    ...                 username=${tl.gnbs[${gnb_id}].dus[${du_id}].airscale.common_units[${comu_id}].lmp_connection.username}
+    ...                 password=${tl.gnbs[${gnb_id}].dus[${du_id}].airscale.common_units[${comu_id}].lmp_connection.password}
+    ...                 alias=${alias}
+    ...                 proxy=${proxy}
+    ssh.Force Reconnect    ${alias}
+    [Return]    ${alias}
+
+Check Airscale Board Status
+    [Documentation]    [PRIVATE]
+    ...     :Author: Soenke Kullberg
+    ...
+    ...     :param alias:               ssh connnection alias to common unit board
+    ...     :param board_id:            Board ID
+    ...     :param CCS_Daemon_node_id:  CC&S Node Id
+    [Arguments]     ${alias}  ${board_id}    ${CCS_Daemon_node_id}
+    ssh.Force Reconnect    ${alias}
+    ${sys_result}=  ssh.execute
+    ...     command=PYTHONPATH=/opt/hwmt/python python3 /opt/hwmt/python/hwapi/AdetS.py -s -p 15004 -n ${CCS_Daemon_node_id} | grep ${board_id}
+    ...     connection=${alias}
+    ...     timeout=60 sec
+    Should Contain  ${sys_result}   ready[0]
+
+Wait for gNB Common and Capacity unit up
+    [Documentation]    :Author: Vasileios Papoutsis
+    ...
+    ...     :param gnb_id:      Id of gnb                       [0.. ]  default=0
+    ...     :param du_id:       Id of DU                        [0.. ]  default=0
+    ...     :param comu_id:     Id of Common Unit               [0..1]  default=0
+    ...     :param timeout:     Time until Common+CapacityUnit have to be up  default=10 minutes
+    [Arguments]    ${gnb_id}=0    ${du_id}=0  ${comu_id}=0  ${timeout}=10 min
+    ${capu_num}=    Get length    ${tl.gnbs[${gnb_id}].dus[${du_id}].airscale.common_units[${comu_id}].capacity_units}
+    ${comu_ssh_alias}=  Wait until keyword succeeds     ${timeout}  10 sec
+    ...     5GC002535_Keywords.Connect to gNB Common Unit  gnb_id=${gnb_id}  du_id=${du_id}    comu_id=${comu_id}
+    # ${CCS_Daemon_node_id}=    gnb_internal.get_CCS_Daemon_node_id    connection=${comu_ssh_alias}
+    ${CCS_Daemon_node_id}=    Airscales.getNodeId        connection=${comu_ssh_alias}
+    @{boards_ids}=    Run keyword if    '${CCS_Daemon_node_id}'=='0x1011'
+    ...    Create List    0x10    0x12    0x13    0x14
+    ...    ELSE IF    '${CCS_Daemon_node_id}'=='0x2011'
+    ...    Create List    0x20    0x22    0x23    0x24
+    ...    ELSE    Fail    Wrong node id ${CCS_Daemon_node_id}!
+    ${end_index}=    Evaluate    ${capu_num}+${1}
+    @{existing_boards_ids}=    Get slice from list    ${boards_ids}    start=${0}    end=${end_index}
+    FOR    ${board_id}    IN    @{existing_boards_ids}
+         Wait until keyword succeeds     ${timeout}    20 sec    5GC002535_Keywords.Check Airscale Board Status
+         ...     alias=${comu_ssh_alias}   board_id=${board_id}   CCS_Daemon_node_id=${CCS_Daemon_node_id}
+
+    END
+
+Private Restart Gnb Classical
+    [Documentation]                 Restart sequence for case GNB is in classical configuration
+    [Arguments]                     ${GNBCallback}=None                     ${APCallback}=None
+    ...                             ${isOAMRebooted}=False
+    Dated log                       Restart Gnb Classical :isOAMRebooted=${isOAMRebooted}
+    WTS Clear
+    Run Keyword if                  ${isOAMRebooted}==False
+    ...                             Airscale Soft Reboot                    ${GNB_DU}
+    Airscale Soft Reboot            ${AP_DU}
+    Dated Log                       Waiting for airscales to come back
+    Run keyword and ignore error    Wait for gNB Common and Capacity unit up    timeout=3 min
+    ${gnb_status}=                  WA Airscale Wait For Ready              ${GNB_DU}
+    Run Keyword If                  '${gnb_status}'!='Ready'                Fail    GNB is not ready
+    ${ap_status}=                   WA Airscale Wait For Ready              ${AP_DU}
+    Run Keyword If                  '${gnb_status}'!='Ready'                Fail    AP is not ready
+    Get TL Info Struct
+    Run Keyword if                  '${GNBCallback}'!='None'                ${GNBCallback}
+    Run Keyword if                  '${APCallback}'!='None'                 ${APCallback}
+    WA DCI Wait for service         ${AP_DU}
+    F1 Wait Link Classical
+    GNSS Check and run
+    IRfHead Check Service
+
+
+Restart
+    [Tags]                          RESTART
+    [Arguments]                     ${isOAMRebooted}=${False}       ${OwnTLReset}=${False}
+    Run keyword if      '${OwnTLReset}'=='${False}'      Restart TL       isOAMRebooted=${isOAMRebooted}
+    ...         ELSE       Private Restart Gnb Classical     isOAMRebooted=${isOAMRebooted}
+
+
+################################################################################################################################
+#  WTS , X2  and XP Link Setup
+################################################################################################################################
+
+Launch WTS
+    [Arguments]                 ${egate_alias}=egate    ${edaemon_alias}=edaemon
+    BuiltIn.Log    \n[From Launch WTS] Connecting to: localhost, Port: ${tl.core.egate_port}    console=yes
+    wts.setup_egate      egate_port=${tl.core.egate_port}
+    ...                         host_ip=${tl.core.default_ssh_connection_details.addr}
+    ...                         tool_dir=${tl.core.dir_path}
+    ...                         alias=${egate_alias}
+    ...                         ssh_user=ute
+    ...                         ssh_pass=ute
+
+Setup WTS
+    [Arguments]              ${remove_logs}=False
+
+    # Run keyword if    '${remove_logs}'=='True'    Connect to LTEEMU   alias=lteemu_alias
+    Run keyword if    '${remove_logs}'=='True'    SSH Connect   host=${HOST_EPCSIM}
+    Run keyword if    '${remove_logs}'=='True'    ssh.execute    cd ${tl.core.dir_path} && sudo rm *.log.* && sudo rm *.tgz
+    ...                                                          connection=${HOST_EPCSIM.alias}
+
+    CallSetup.WTS Setup
+
+Start WTS and setup X2 link
+    [Arguments]                 ${egate_alias}=egate    ${edaemon_alias}=edaemon
+    Setup WTS    remove_logs=True
+    Launch WTS   egate_alias=${egate_alias}
+
+Start WTS
+   [Arguments]                 ${egate_alias}=egate    ${edaemon_alias}=edaemon    ${shouldUseLua}=${True}    ${nbUe}=1
+    Setup WTS Only    shouldUseLua=${shouldUseLua}    nbUe=${nbUe}
+    Launch WTS   egate_alias=${egate_alias}
+
+my WTS Configure upon format
+    [Arguments]                     ${shouldUseLua}=${True}
+    ...                             ${luaFile}=${EMPTY}
+    Run Keyword if                  ${shouldUseLua}
+    ...                             my WTS Configure                           ConfigFileName=${luaFile}
+    ...   ELSE                      my WTS Configure                           ConfigFileName=${tl.core.cfg_filename}
+
+my WTS Configure
+    [Documentation]                 Set configuration for WTS from fiole as pointed in __init__.py
+    [Arguments]                     ${alias}=${HOST_EPCSIM.alias}
+    ...                             ${ConfigFileName}=${tl.core.cfg_filename}
+    Dated Log                       \tConfiguring LteEmu with ${tl.core.dir_path}/${ConfigFileName}
+    wtsemu.Configure                file=${tl.core.dir_path}/${ConfigFileName}
+    # Check we reach active state
+    ${pattern}                   set variable if    '${NWtype_}' == 'SA+NSA'    NG link is Up      CHANGE STATE: ACTIVE - SimMode is ready now
+    wtsemu.Read Wtsemu Output Until Re
+    ...                             expected=${pattern}
+    ...                             timeout=90
+    # wtsemu.Read Wtsemu Output Until Re
+    # ...                             expected=CHANGE STATE: ACTIVE - SimMode is ready now
+    # ...                             timeout=45
+    # sleep 30s is not needed !!!
+    # sleep                           30s
+
+Setup WTS Only
+    [Documentation]                 Clean WTS (processes, logs), restart ePC simulator
+    ...                             and configure it
+    [Arguments]                     ${telnet_egate_addr}=${tl.core.default_ssh_connection_details.addr}
+    ...                             ${nbUe}=1
+    ...                             ${shouldUseLua}=${True}
+    # Clean WTS from process and logs point of view
+    ${alias}		                SSH Wait For Connect                    host=${HOST_EPCSIM}
+    Dated Log New Line              Starting WTS setup (WTS:IP=${HOST_EPCSIM.sshConnection.addr})
+    # WTS Clear
+    # Cloud only
+    Run Keyword If                  ${TLConfig.isGnbCloud}
+    ...                             WTS Set Backhaul IP                     ${alias}
+    # Init lua config file with nb of UE
+    ${LuaFileName}                  TxtConfig Init                          nbUe=${nbUe}
+    set global variable             ${LuaFileName_generated}                ${LuaFileName}
+    # Configure eDaemon and eGate
+    WTS Start processes             telnet_egate_addr=${telnet_egate_addr}
+    # Launching configuration
+    my WTS Configure upon format       shouldUseLua=${shouldUseLua}            luaFile=${LuaFileName}
+
+
+X2Ap link Setup
+    [Arguments]                 ${alias}=EPCSIM
+    Log to console  \n***Activate eNBSim with X2Ap interface with alias=${alias}***
+    wts.execute egate command and wait for data    cmd=enb_x2_link_up enb=1 target=2    pass_regexp=X2AP Link .* is up    timeout=60   alias=${alias}
+    # sometimes the link falls, and come back again after 4-5 seconds, so we add a sleep here
+    Traced sleep    10s
+    Log to console  \n***Activate eNBSim with X2AP interface completed ***
+
+Store Current swconfig from Airphone
+    [Documentation]    :Author: Jing Liang
+    ...    in case testcase needs to modify swconfig.txt on Airphone, collect current one as backup, Set path as Suite Variable ${P_ORIG_AP_SWCONFIG}
+    ...
+    ...    :param ue_id:      Id of ue                       [0.. ]  default=0
+    ...    :param comu_id:    Id of Common Unit              [0..1]  default=0
+    ...    :param target_dir: where to save original swconfig.txt, default with testline.Get Test Suite Config Directory
+    ...
+    ...    **Example:**
+    ...    | wts_ue.Store Current swconfig from Airphone
+    ...
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}    ${target_dir}=None
+    ${ORIG_SWCONFIG}=    5GC002535_Keywords.Get swconfig from Airphone    ue_id=${0}    comu_id=${0}    target_dir=${target_dir}
+    Run    mv ${ORIG_SWCONFIG} ${ORIG_SWCONFIG}.orig
+    Set Suite Variable    ${P_ORIG_AP_SWCONFIG}    ${ORIG_SWCONFIG}.orig
+
+Connect to Airphone Common Unit
+    [Documentation]    :Author: Jing Liang
+    ...     setup ssh connection to Airphone Airscale (ASXX) and returns connection handle/alias
+    ...
+    ...     :param ue_id:             Id of UE                       [0.. ]  default=0
+    ...     :param ue_comu_id:        Id of AP Common Unit           [0..1]  default=0
+    ...     :param alias:       (optional) connection alias  !! should not be used
+    ...
+    ...     :returns alias:     alias for ssh connection to Common Unit
+    ...
+    ...     **Example:**
+    ...
+    ...     | ${ap_alias}=   connect.Connect to Airphone Common Unit    ue_id=0  ue_comu_id=0
+    ...     | ssh.execute     command=uptime  connection=${ap_alias}
+    ...
+    [Arguments]    ${ue_id}=${0}    ${ue_comu_id}=${0}  ${alias}=ssh-ap-${ue_id}-${ue_comu_id}
+    ssh.Connect_to      hostname=${tl.ues[${ue_id}].l1.common_units[${ue_comu_id}].lmp_connection.addr}
+    ...                 username=${tl.ues[${ue_id}].l1.common_units[${ue_comu_id}].lmp_connection.username}
+    ...                 password=${tl.ues[${ue_id}].l1.common_units[${ue_comu_id}].lmp_connection.password}
+    ...                 alias=${alias}
+    ssh.Force Reconnect    connection=${alias}
+    [Return]    ${alias}
+
+Get swconfig from Airphone
+    [Documentation]    :Author: Ch SAMSON
+    ...
+    ...     :param ue_id:         Id of gnb                       [0.. ]  default=0
+    ...     :param comu_id:       Id of Common Unit               [0..1]  default=0
+    ...     :param target_dir:    (default None) save swconfig to path
+    ...
+    ...     :return:   swconfig path for further usage
+    ...
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}    ${target_dir}=None
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    5GC002535_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+    ${ap_alias}=    5GC002535_Keywords.Connect to Airphone Common Unit    ue_id=${ue_id}    ue_comu_id=${comu_id}
+    ssh.Download File    remote_path=/ffs/run/swconfig.txt    local_path=${target_dir}/ap_swconfig.txt    connection=${ap_alias}
+    [Return]    ${target_dir}/ap_swconfig.txt
+
+Get APL3 log from Airphone
+    [Documentation]    :Author: Ch SAMSON
+    ...
+    ...     :param ue_id:         Id of gnb                       [0.. ]  default=0
+    ...     :param comu_id:       Id of Common Unit               [0..1]  default=0
+    ...     :param target_dir:    (default None) save swconfig to path
+    ...
+    ...     :return:   swconfig path for further usage
+    ...
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}    ${target_dir}=None
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    5GC002535_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+    ${ap_alias}=    5GC002535_Keywords.Connect to Airphone Common Unit    ue_id=${ue_id}    ue_comu_id=${comu_id}
+    ssh.Download File    remote_path=/ram/startup_l3.log    local_path=${target_dir}/ap_APL3.log    connection=${ap_alias}
+    [Return]    ${target_dir}/ap_APL3.log
+
+Get iPhy.xml file from Airphone
+    [Documentation]    :Author: Ch SAMSON
+    ...
+    ...     :param ue_id:         Id of gnb                       [0.. ]  default=0
+    ...     :param comu_id:       Id of Common Unit               [0..1]  default=0
+    ...     :param target_dir:    (default None) save swconfig to path
+    ...
+    ...     :return:   swconfig path for further usage
+    ...
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}    ${target_dir}=None    ${file_name}=ap_new_iphy.xml
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    5GC002535_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+    ${ap_alias}=    5GC002535_Keywords.Connect to Airphone Common Unit    ue_id=${ue_id}    ue_comu_id=${comu_id}
+    # WARNING : need to adapt new_iphy.xml  => iphy.xml  for AiC tests !!!
+    ${iphy_filename}     set variable if     ${isAiC}       iphy.xml
+    ...                                                     new_iphy.xml
+    ssh.Download File    remote_path=/ffs/run/simmode/${iphy_filename}    local_path=${target_dir}/${file_name}    connection=${ap_alias}
+    [Return]    ${target_dir}/ap_new_iphy.xml
+
+Restore iPhy.xml file to Airphone
+    [Documentation]    :Author: Ch SAMSON
+    ...
+    ...     :param ue_id:         Id of gnb                       [0.. ]  default=0
+    ...     :param comu_id:       Id of Common Unit               [0..1]  default=0
+    ...     :param target_dir:    (default None) save swconfig to path
+    ...
+    ...     :return:   swconfig path for further usage
+    ...
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}    ${local_dir}=None    ${file_name}=ap_new_iphy.xml
+    ${local_dir}=    Run Keyword If    '${local_dir}'=='None'    5GC002535_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${local_dir}
+    ${ap_alias}=    5GC002535_Keywords.Connect to Airphone Common Unit    ue_id=${ue_id}    ue_comu_id=${comu_id}
+    # WARNING : need to adapt new_iphy.xml  => iphy.xml  for AiC tests !!!
+    ${iphy_filename}     set variable if     ${isAiC}       iphy.xml
+    ...                                                     new_iphy.xml
+    ssh.upload File    local_path=${local_dir}/${file_name}    remote_path=/ffs/run/simmode/${iphy_filename}       connection=${ap_alias}
+    [Return]    ${local_dir}/ap_new_iphy.xml
+
+Collect egate log files
+    [Documentation]    Author: Ch SAMSON
+    ...    Run keyword before egate teardown
+    ...
+    ...    :param target_dir:   directory to store the journal file
+    ...    :param wts_alias:    alias name to handle egate for ute_wtssim    default=ap_egate
+    ...
+    [Arguments]    ${target_dir}=None    ${wts_alias}=ap_egate
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    5GC002535_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+
+    ute_wtssim.setup_egate      egate_port=${tl.core.egate_port}
+    ...                         host_ip=${tl.core.default_ssh_connection_details.addr}
+    ...                         tool_dir=${tl.core.dir_path}
+    ...                         alias=ap_egate
+    ...                         ssh_user=ute
+    ...                         ssh_pass=ute
+
+    ute_wtssim.collect_egate_log_files    unzip=${False}    subdirectory=${target_dir}    alias=ap_egate
+
+    #Connect to LTEEMU   alias=lteemu_alias
+    ${alias}        SSH Connect   host=${HOST_EPCSIM}
+    # option h added in case of WTS folder is a link
+    Dated Log      tar zcvfh WTS.tgz ${tl.core.dir_path}
+    ssh.execute    tar zcvfh WTS.tgz ${tl.core.dir_path}    connection=${alias}
+    ssh.execute    ls -l ${tl.core.dir_path}/* >ls-l-WTS.txt       connection=${alias}
+
+    csn.download_file               remote_path=/home/ute/WTS.tgz
+    ...                             local_path=${target_dir}/WTS.tgz
+    ...                             connection=${alias}
+    csn.download_file               remote_path=/home/ute/ls-l-WTS.txt
+    ...                             local_path=${target_dir}/ls-l-WTS.txt
+    ...                             connection=${alias}
+    Dated Log                  WTS log files stored to ${target_dir}
+
+    ute_wtssim.teardown_egate    alias=ap_egate
+
+Collect edaemon log files
+    [Documentation]    Author: Ch SAMSON
+    ...    Run keyword before edaemon teardown
+    ...
+    ...    :param target_dir:   directory to store the journal file
+    ...    :param edaemon_alias:    alias name to handle edaemon for ute_wtssim    default=ap_edaemon
+    ...
+    [Arguments]    ${target_dir}=None    ${edaemon_alias}=ap_edaemon
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    Get Testcase Log Directory
+    ...    ELSE    Set Variable    ${target_dir}
+    ute_wtssim.setup_egate      egate_port=${tl.core.egate_port}
+    ...                         host_ip=${tl.core.default_ssh_connection_details.addr}
+    ...                         tool_dir=${tl.core.dir_path}
+    ...                         alias=ap_edaemon
+    ...                         ssh_user=ute
+    ...                         ssh_pass=ute
+    ute_wtssim.collect edaemon log files    unzip=${False}    subdirectory=${target_dir}    alias=ap_edaemon
+    ute_wtssim.teardown_egate    alias=ap_edaemon
+
+#######################################################################################################################
+# cmd reset eGate
+#######################################################################################################################
+
+Reset_eGate
+   [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+   Log to console  \n***Cmd Reset eGate alias=${alias}***
+   sleep   2
+   wts.execute egate command    cmd=reset   alias=${alias}
+
+######################################################################################################################"
+#
+#               For 2535 CellSetup, 5g Call & Traffic
+#
+######################################################################################################################"
+
+NSA CellSetup
+    [Documentation]         [PRIVATE]       Start WTS, setup X2 and check cellsetup
+    [Arguments]                    ${nbCell}=2
+    ${nbCell}        Convert to string    ${nbCell}
+    CallSetup.WTS Setup            nbCell=${nbCell}
+
+TC 2535 CellSetup
+    [Documentation]                Generic test for 2535: test purpose is to setup X2 ans check cellsetup
+    [Arguments]                    ${param}      ${alias}=default
+    Init Sequence                  ${param}
+    5GC002535_Keywords.Restart     OwnTLReset=${False}
+    Step                           Start capture for 2535        argument=TC_2535_CellSetup.wL1L2Bip       depends=5GC002535_Keywords.Restart
+    # Step                           CallSetup.WTS Setup
+    # argument is nbCell unlocked
+    Step                           5GC002535_Keywords.NSA CellSetup     argument=${param.Context.nbr_cell_unlock}
+    Run Keyword if   '${TRACE_SHOULD_BE_STOP_AFTER_CELLSETUP}' == '1'    Step   Stop capture for 2535        depends=Start capture for 2535
+    Critical Step                  5GC002535_Ue_command.Verify AP Classical Cell Setup
+    [Teardown]                      GenericTest.Display diagnosis
+
+#################################################################################################################################################
+# 5g Call Setup
+#################################################################################################################################################
+
+Test SgNB Addition PRACH
+    ${capture_path}      CallSetup.SgNB Addition to ENB          ueSetting=${ueProfile1}
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${capture_path}
+    Run Keyword And Ignore Error    OperatingSystem.Copy File    ${capture_path}    ${testCaseDir}
+
+Check numOfDmrsCdmGroupWithoutData on DlData_PdschSendReq
+    [Documentation]                 Retrieve from pdml value of numOfDmrsCdmGroupWithoutData
+     ...                            from message DlData_PdschSendReq and check numOfDmrsCdmGroupWithoutData.
+    [Arguments]                     ${pdmlFile}       ${numOfDmrsCdmGroupWithoutDataToCheck}=0x00000002
+
+    ${NbOK}                    Evaluate     0
+    ${NbKO}                    Evaluate     0
+    Set Suite Variable              ${NbOK}
+    Set Suite Variable              ${NbKO}
+
+    # ${pdmlFile}                     set variable            ${CURDIR}/L1L2_BIP_GNB_FS_UL_TPUT.5GC001586_C_TC_03_5GC001586-C_NSA_Check_UL_Tput.pdml
+    # 1 - Retrieve from pdml all DlData_PdschSendReq
+    Dated log                       \tGetting all DlData_PdschSendReq
+    @{listAllPdschSendReq}          analyzer.get_match_from_paths
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=DlData_PdschSendReq
+    ...                             pathList=${FIELDS_PDSCHSendReq}
+    ${lenPdschSendReq}                  get length                          ${listAllPdschSendReq}
+    Dated log                       \tNB of DlData_PdschSendReq:${lenPdschSendReq}
+    # 2 - For each PdschSendReq, find corresponding PdschSendReq (same numOfDmrsCdmGroupWithoutData)
+    FOR    ${packet}       IN          @{listAllPdschSendReq}
+           #  Retrieve numOfPrb  for current PdschSendReq
+           ${numOfDmrsCdmGroupWithoutData}            Get Value In Packet Match
+           ...                                                     packetMatch=${packet}
+           ...                                                     field=numOfDmrsCdmGroupWithoutData
+          #  Dated log                 numOfDmrsCdmGroupWithoutData:${numOfDmrsCdmGroupWithoutData}
+          ${comp}                     compareInDecimal   ${numOfDmrsCdmGroupWithoutData}   ${numOfDmrsCdmGroupWithoutDataToCheck}
+          Run Keyword If    ('${comp}'!='True')
+          ...                            New Case KO
+    END
+    ${PASSED}             evaluate       (${NbKO}*100)/${lenPdschSendReq}
+    ${PASSED}             Convert to Number        ${PASSED}      2
+    Dated log              \t%nrOf_KO [numOfDmrsCdmGroupWithoutData!=${numOfDmrsCdmGroupWithoutDataToCheck}]:${PASSED}%
+    Should Be Equal        ${PASSED}          ${0}
+
+New Case OK
+    ${NbOK}                         Evaluate                            ${NbOK}+1
+    Set Suite Variable              ${NbOK}
+
+New Case KO
+    ${NbKO}                         Evaluate                            ${NbKO}+1
+    Set Suite Variable              ${NbKO}
+
+New Case NONE
+    ${NbNone}                       Evaluate                            ${NbNone}+1
+    Set Suite Variable              ${NbNone}
+
+TC 2535-5gCall
+    [Documentation]                Test purpose is to test 5g  Call
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+    Step         5GC002535_Keywords.Test SgNB Addition PRACH
+    Step         CallSetup.UE Attach Check                        depends=Test SgNB Addition PRACH
+    Run Keyword if      '${TRACE_SHOULD_BE_STOP_AFTER_CELLSETUP}' == '0'     Step      Stop capture for 2535
+    [Teardown]          GenericTest.Display diagnosis
+
+
+Start SYSLOG tput log capture
+    return from Keyword if   ${isAiC}
+    Dated log     SSH on ${GNB_DU.sys[0].M.sshId}
+    ${aliasGNB}          SSH Wait For Connect        ${GNB_DU.sys[0].M}
+    set test variable     ${aliasGNB}
+    ${tput_log_file_path_gnb}     Start tput log capture    gnb_index=0
+    ...                                                     gnb_alias=${aliasGNB}
+    [return]     ${tput_log_file_path_gnb}
+
+
+Check SYSLOG tput log capture
+    [Arguments]        ${tput_log_file_path_gnb}
+    return from Keyword if   ${isAiC}
+    Check Throughput from aasyslog
+    ...                               gnb_alias=${aliasGNB}
+    ...                               tput_log_file_path_gnb_combined=${tput_log_file_path_gnb}
+
+
+Check numOfDmrsCdmGroupWithoutData based on L1L2 pcap
+    [Arguments]      ${param}     ${filename}
+    5GC002535_Keywords.Extract numOfDmrsCdmGroupWithoutData from L1L2 Pcap       File=${filename}
+    ${UeList}    5GC002535_tools.get_rntis_from_pcap     ${testCaseDir}
+    Dated log       UeList=${UeList}
+    ${Rnti_UeId1}   set variable     ${UeList}[0]
+    Dated log     verify_5GC002535_numOfDmrsCdmGroupWithoutData for Ue_RNTI ${Rnti_UeId1}
+    ${output}=    5GC002535_tools.Verify QC Test Case    verify_5GC002535_numOfDmrsCdmGroupWithoutData
+    ...                                                          rnti_ue=${Rnti_UeId1}
+    ...                                                          rdMcsIndexForDmrsFDMThreshold=${param.scfFile.nrcell.dlDataDmrsFdmThres256QamMcs}
+    [return]     ${output}
+
+# check numOfDmrsCdmGroupWithoutData into pdml file
+# <field name="DlData_PdschSendReq.PdschSendReq.numOfDmrsCdmGroupWithoutData" showname="numOfDmrsCdmGroupWithoutData
+#   (Uint8): 0x02(2)" size="1" pos="98" show="0x00000002" value="02"/>
+TC 2535-DLOnly and check numOfDmrsCdmGroupWithoutData
+    [Documentation]                Generic test: test purpose is to check numOfDmrsCdmGroupWithoutData
+    ...                            Acceptance criteria based on TtiTrace
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+    Point ENB_BUILD to luashark sw package
+    Point AF_PATH to current sw package
+    ${CaptureBIP_wo_filtering}      Capture L1L2 Set Upon Config             airscale=${GNB_DU}
+    ${CaptureBIP_wo_filtering.prefix}   set Variable   TC_2535.wDLTput.wL1L2Bip.woFiltering.gNB.FS
+    #   L1L2_BIP_WO_FILTERING_GNB_FS_DL_TPUT
+    Set Suite Variable       ${CaptureBIP_wo_filtering}
+
+    ${tput_log_file_path_gnb}        Run Keyword If     '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'       Start SYSLOG tput log capture
+    ...       ELSE                                                                                        set variable       ${EMPTY}
+
+    Capture Init      capture=${CaptureBIP_wo_filtering}
+    Capture Start     ${CaptureBIP_wo_filtering}
+    Dated Log         Start TTI Traces in Streaming Mode
+    ttitrace.Start TTI Traces in Streaming Mode      filter_bitmap2=0x0
+    Traffic UE DL    ueSetting=${ueProfile1}  throughput=${param.seq.dl_throughput}  duration=1s
+    ...                             shouldBeStop=${param.seq.stopTraffic}    shouldBeCheck=${param.seq.shouldBeCheck}  deviation=10
+    Capture Stop      ${CaptureBIP_wo_filtering}
+    # ${branch} is a test suite variable intialized during test suite setup Kw
+    ${l1l2ItfVersion}=   Run Keyword And Return Status   Should Match Regexp     ${branch}     ^SBTS25R[2-9]|SBTS00$
+    ${filter}=    Run Keyword If    ${l1l2ItfVersion}   set variable     dldata_pdschsendreql1sw
+    ...               ELSE                              set variable     dldata_pdschsendreq
+    Run Keywords      Dated log      Filtering pcap ${CaptureBIP_wo_filtering.path} with filter=${filter}...   AND
+    ...               5GC002535_Keywords.Filter Pcap           src=${CaptureBIP_wo_filtering.path}
+    ...                                                        dest=${CaptureBIP_wo_filtering.name}_${filter}.pcap
+    ...                                                        filter=${filter}
+    # ...                                                        lua_path=/opt/luashark/generated_luashark/luashark.lua
+    ${filtered_pcap}=   5GC002535_Keywords.Filter Pcap with Tshark
+    ...                                                        pcap_file_full_path=${CaptureBIP_wo_filtering.path}
+    ...                                                        filterName=${filter}_2
+    ...                                                        filterExp=${filter}
+    Run Keyword And Ignore Error     OperatingSystem.Move File   ${CaptureBIP_wo_filtering.name}_${filter}.pcap  ${testCaseDir}
+    Run Keyword And Ignore Error     OperatingSystem.Move File   ${filtered_pcap}  ${testCaseDir}
+    Run Keyword And Ignore Error     OperatingSystem.File Should Exist   ${CaptureBIP_wo_filtering.path}
+    Run Keyword And Ignore Error     OperatingSystem.Move File   ${CaptureBIP_wo_filtering.path}  ${testCaseDir}
+    Dated log         Stop TTI Traces in Streaming Mode...
+    ${tti_trace_filename}=   set variable    ttitrace_streaming
+    ${tti_trace_path}=     ttitrace.Stop TTI Traces in Streaming Mode   tti_trace_path=${testCaseDir}   tti_trace_filename=${tti_trace_filename}
+    Dated log         Convert TTI trace from pcap to excelCsv...
+    Run keyword and continue on failure    ttitrace.Convert TTI trace from pcap to excelCsv     input_file_path=${tti_trace_path}
+    ...                                                                                         output_file_path=${testCaseDir}
+    ${tti_traces_file_msg_all_csv}   nps_ttitraces_tools.decode_tti_traces_Using_TtitraceReaderEvtDec   desired_storage_directory=${testCaseDir}
+    ...                                                                                              desired_file_name=${tti_trace_filename}.pcap
+    ...                                                                                              num_of_events=1000
+    run Keyword if    '${DL_TPUT_CHECK_BASED_PCAP}' == '1'   Check numOfDmrsCdmGroupWithoutData based on pcap traces
+    ...                                                                    ${param}
+    ...                                                                    filename=${testCaseDir}/${CaptureBIP_wo_filtering.name}_${filter}.pcap
+    ${output}      run Keyword if    ${isAiC}    Check numOfDmrsCdmGroupWithoutData based on L1L2 pcap
+    ...                                                                    ${param}
+    ...                                                                    filename=${testCaseDir}/${CaptureBIP_wo_filtering.name}_${filter}.pcap
+    ${output}       run Keyword if    '${DL_TPUT_CHECK_BASED_TTITRACE}' == '1'   Check numOfDmrsCdmGroupWithoutData based on TTI traces   ${param}
+    run Keyword If    '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'      Check SYSLOG tput log capture
+    ...                                                                               tput_log_file_path_gnb=${tput_log_file_path_gnb}
+    [return]     ${output}
+
+TC 2535-DLOnly and check numOfDmrsCdmGroupWithoutData VRAN dedicated
+    [Documentation]                Generic test: test purpose is to check numOfDmrsCdmGroupWithoutData
+    ...                            Acceptance criteria based on L1L2 Bip Pcap
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+    Point ENB_BUILD to luashark sw package
+    Point AF_PATH to current sw package
+    ${CaptureBIP_wo_filtering}      Capture L1L2 Set Upon Config             airscale=${GNB_DU}
+    ${CaptureBIP_wo_filtering.prefix}   set Variable   TC_2535.wDLTput.wL1L2Bip.woFiltering.gNB.FS
+    Set Suite Variable       ${CaptureBIP_wo_filtering}
+
+    ${tput_log_file_path_gnb}        Run Keyword If     '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'       Start SYSLOG tput log capture
+    ...       ELSE                                                                                        set variable       ${EMPTY}
+
+    Capture Init      capture=${CaptureBIP_wo_filtering}
+    Capture Start     ${CaptureBIP_wo_filtering}
+    Dated Log         Start TTI Traces in Streaming Mode
+    ttitrace.Start TTI Traces in Streaming Mode      filter_bitmap2=0x0
+    Traffic UE DL    ueSetting=${ueProfile1}  throughput=${param.seq.dl_throughput}  duration=1s
+    ...                             shouldBeStop=${param.seq.stopTraffic}    shouldBeCheck=${param.seq.shouldBeCheck}  deviation=10
+    Dated log         Stop TTI Traces in Streaming Mode...
+    ${tti_trace_filename}=   set variable    ttitrace_streaming
+    ${tti_trace_path}=     ttitrace.Stop TTI Traces in Streaming Mode   tti_trace_path=${testCaseDir}   tti_trace_filename=${tti_trace_filename}
+    Capture Stop      ${CaptureBIP_wo_filtering}
+    ${filter}=       set variable     dldata_pdschsendreq
+    Run Keywords      Dated log      Filtering pcap ${CaptureBIP.path} with filter=${filter}...   AND
+    ...               5GC002535_Keywords.Filter Pcap          src=${CaptureBIP_wo_filtering.path}
+    ...                                                       dest=${CaptureBIP_wo_filtering.name}_${filter}.pcap
+    ...                                                       filter=${filter}
+    # ...                                                       lua_path=/opt/luashark/generated_luashark/luashark.lua
+    ${filtered_pcap}=   5GC002535_Keywords.Filter Pcap with Tshark
+    ...                                                       pcap_file_full_path=${CaptureBIP_wo_filtering.path}
+    ...                                                       filterName=${filter}_2
+    ...                                                       filterExp=${filter}
+    Run Keyword And Ignore Error     OperatingSystem.Move File   ${CaptureBIP_wo_filtering.name}_${filter}.pcap  ${testCaseDir}
+    Run Keyword And Ignore Error     OperatingSystem.Move File   ${filtered_pcap}  ${testCaseDir}
+    Run Keyword And Ignore Error     OperatingSystem.File Should Exist   ${CaptureBIP_wo_filtering.path}
+    Run Keyword And Ignore Error     OperatingSystem.Move File   ${CaptureBIP_wo_filtering.path}  ${testCaseDir}
+    # Dated log         Convert TTI trace from pcap to excelCsv...
+    # Run keyword and continue on failure    ttitrace.Convert TTI trace from pcap to excelCsv     input_file_path=${tti_trace_path}
+    #                                                                                             output_file_path=${testCaseDir}
+    # ${tti_traces_file_msg_all_csv}   nps_ttitraces_tools.decode_tti_traces_Using_TtitraceReaderEvtDec   desired_storage_directory=${testCaseDir}
+    # ...                                                                                              desired_file_name=${tti_trace_filename}.pcap
+    # ...                                                                                              num_of_events=1000
+    run Keyword if    '${DL_TPUT_CHECK_BASED_PCAP}' == '1'         Check numOfDmrsCdmGroupWithoutData based on pcap traces   ${param}
+    ...                                                                     filename=${testCaseDir}/${CaptureBIP_wo_filtering.name}_${filter}.pcap
+    # Acceptance criteria for AiC case
+    ${output}      run Keyword if    ${isAiC}       Check numOfDmrsCdmGroupWithoutData based on L1L2 pcap   ${param}
+    ...                                                                     filename=${testCaseDir}/${CaptureBIP_wo_filtering.name}_${filter}.pcap
+    # ${output}       run Keyword if    '${DL_TPUT_CHECK_BASED_TTITRACE}' == '1'   Check numOfDmrsCdmGroupWithoutData based on TTI traces   ${param}
+    run Keyword If    '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'      Check SYSLOG tput log capture
+    ...                                                                               tput_log_file_path_gnb=${tput_log_file_path_gnb}
+    [return]     ${output}
+
+Check numOfDmrsCdmGroupWithoutData based on pcap traces
+    [Arguments]                    ${param}     ${filename}
+    # Init Sequence                  ${param}
+    pcap.Point to luashark scripts via AF_PATH variable
+    Dated log                       pcap.Convert pcap to pdml file [DlData_PdschSendReqL1sw filtered]...
+    ${pdmlFileBIP_DL}     pcap.Convert pcap to pdml file   ${filename}      message=DlData_PdschSendReqL1sw
+    Dated log                       Checking numOfDmrsCdmGroupWithoutData on DlData_PdschSendReqL1sw...
+    Check numOfDmrsCdmGroupWithoutData on DlData_PdschSendReq     ${pdmlFileBIP_DL}    ${param.seq.numOfDmrsCdmGroupWithoutData}
+
+Check numOfDmrsCdmGroupWithoutData based on TTI traces
+    [Arguments]                    ${param}
+    ${resultDir}=     5GC002535_Keywords.Get Testcase Log Directory
+    ${UeList}    nps_2535_tools.get_rntis     ${resultDir}
+    ${UeId1}   set variable     ${UeList}[0]
+    Dated log     verify_5GC002535_DL_numOfDmrsCdmGroupWithoutData_Based_Mcs for Ue_RNTI ${UeId1}
+    ${output}=    5GC002535_tools.Verify QC Test Case    verify_5GC002535_DL_numOfDmrsCdmGroupWithoutData_Based_Mcs
+    ...                                                          rnti_ue=${UeId1}
+    ...                                                          rdMcsIndexForDmrsFDMThreshold=${param.scfFile.nrcell.dlDataDmrsFdmThres256QamMcs}
+    ...                                                          method="Expand array item Field"
+    [return]    ${output}
+
+Extract numOfDmrsCdmGroupWithoutData from L1L2 Pcap
+    [Arguments]                     ${File}
+    [Documentation]                 Extract numOfDmrsCdmGroupWithoutData from L1L2 Bip Pcap
+
+    Dated log                   Checking numOfDmrsCdmGroupWithoutData inside PCAP file    ${File}
+
+    set test variable    ${pcapprocessed_2535_L1L2}    pcapprocessed_2535_L1L2.txt
+    set test variable    ${pcapprocessed_2535_L1L2_path}    ${LOG_PATH}/${pcapprocessed_2535_L1L2}
+    ${cmd}    catenate      tshark -X lua_script:/opt/luashark/generated_luashark/luashark.lua -r
+    ...        ${File} -T fields -Y "icom_5g" -e _ws.col.Info
+    ...           -e DlData_PdschSendReq.PdschSendReq.sfn
+    ...           -e DlData_PdschSendReq.PdschSendReq.slot
+    ...           -e DlData_PdschSendReq.grants_item_0.rnti
+    ...           -e DlData_PdschSendReq.grants_item_0.mcs
+    ...           -e DlData_PdschSendReq.grants_item_0.rvIndex
+    ...           -e DlData_PdschSendReq.grants_item_0.numOfLayers
+    ...           -e DlData_PdschSendReq.grants_item_0.numOfDmrsCdmGroupWithoutData
+    ...           -E header=y -E separator=';' > ${pcapprocessed_2535_L1L2_path}
+    Run       ${cmd}
+
+    ${extract}   OperatingSystem.grep file        ${pcapprocessed_2535_L1L2_path}   ICOM_5G/DlData_PdschSendReq
+    run keyword if  len($extract)==0     fail   dldata_pdschsendreq not found
+
+    OperatingSystem.copy file     ${pcapprocessed_2535_L1L2_path}    ${testCaseDir}/msg_DlData_PdschSendReq_pcap.csv
+
+
+Verify if nc process is killed
+    [Documentation]  Author: Ch Samson
+    [Arguments]  ${gnb_alias}=Master
+    ${is_nc_process_started}    common.is_process_exist    process_name=51000    connection=${gnb_alias}
+    Should not be true    ${is_nc_process_started}
+
+kill nc process
+    [Documentation]  Author: Ch Samson
+    [Arguments]  ${gnb_alias}=Master
+    ${is_nc_process_killed}    common.kill_process_by_name    process_name=51000    connection=${gnb_alias}
+    Should be true    ${is_nc_process_killed}
+
+Start tput log capture
+    [Documentation]    Author: Ch Samson
+    ...                Description: Start L2LO throughput log capturing from aasyslog and return the log path in GNB
+    ...                             It can only support for 1 GNB currently,
+    ...                             due to the limitation for common keyword 'Connect to Capacity Unit Master'
+    ...                             If started separate nc processes for UL and DL, then log records will be influenced.
+    ...                             So captured both UL and DL tput log in one log file at the same time.
+    ...                Return the tput file path on GNB: /tmp/Tput_ul_dl.txt
+    [Arguments]  ${gnb_index}=0    ${gnb_alias}=Master    ${du_index}=0
+
+    aasyslog.aasyslog_realtime_output_configuration    host=${tl.gnbs[0].dus[0].airscale.common_units[0].lmp_connection.addr}
+    ...    username=${tl.gnbs[0].dus[0].airscale.common_units[0].lmp_connection.username}
+    ...    password=${tl.gnbs[0].dus[0].airscale.common_units[0].lmp_connection.password}    type=mcu
+
+    ${is_nc_process_started}    common.is_process_exist    process_name=51000    connection=${gnb_alias}
+
+    Run keyword if    ${is_nc_process_started}
+    ...    Run keywords    Log to console    Existing aasys log process exists, will close it before starting tput log capturing    AND
+    ...    kill nc process    gnb_alias=${gnb_alias}
+
+    Wait until keyword succeeds    5s    200ms    Verify if nc process is killed    gnb_alias=${gnb_alias}
+
+    #  command="nc -u -w 100 -l 127.0.0.1 51000 > /tmp/Tput_gnb.txt"
+    ${tput_log_file_path_gnb_combined}     common.start_nc_aasyslog        connection=${gnb_alias}
+
+    Sleep    200ms
+
+    ${is_nc_process_started}    common.is_process_exist    process_name=51000    connection=${gnb_alias}
+
+    Should be true    ${is_nc_process_started}
+
+    [Return]    ${tput_log_file_path_gnb_combined}
+
+Check Throughput from aasyslog
+    [Documentation]    Author: Ch Samson
+    [Arguments]   ${gnb_alias}=Master     ${tput_log_file_path_gnb_combined}=/tmp/Tput_ul_dl.txt
+
+    ${is_nc_process_started}    common.is_process_exist    process_name=51000    connection=${gnb_alias}
+
+    # command="ps -ef |grep 51000|grep -v grep| awk '{print $2}'|xargs kill -9"
+    Run keyword if    ${is_nc_process_started}
+    ...    Run keywords     Dated log      Existing aasys log process exists, will close it before starting tput log capturing    AND
+    ...    kill nc process    gnb_alias=${gnb_alias}
+
+    Wait until keyword succeeds    5s    200ms    Verify if nc process is killed    gnb_alias=${gnb_alias}
+
+    Dated log     Calculate UL and DL throughput with ${tput_log_file_path_gnb_combined}
+    ${ul_tp_l2lo}=        nps_2535_tools.Calculate_UL_throughput2      alias=${gnb_alias}     file_name=${tput_log_file_path_gnb_combined}
+    ${dl_tp_l2lo}=        nps_2535_tools.Calculate_DL_throughput2      alias=${gnb_alias}     file_name=${tput_log_file_path_gnb_combined}
+    ${cur_time}    Get Current Date
+    log to console    Current time : ${cur_time}, DL actual throughput(Mbps): ${dl_tp_l2lo}
+    log to console    Current time : ${cur_time}, UL actual throughput(Mbps): ${ul_tp_l2lo}
+
+
+Check UL Throughput
+    [Documentation]
+    [Arguments]    ${ul_expect}=${UL_EXPECT}
+    ...            ${ul_throughput_list}=${UL_THROUGHPUT_LIST}
+
+    Calculate UL throughput on gnb L2Lo case    ul_expect=${ul_expect}    ul_throughput_list=${ul_throughput_list}
+
+Check UL DL Throughput
+    [Documentation]
+    [Arguments]    ${ul_expect}=${UL_EXPECT}    ${dl_expect}=${DL_EXPECT}
+    ...            ${ul_throughput_list}=${UL_THROUGHPUT_LIST}    ${dl_throughput_list}=${DL_THROUGHPUT_LIST}
+
+    Calculate UL throughput on gnb L2Lo case    ul_expect=${ul_expect}    ul_throughput_list=${ul_throughput_list}
+    Calculate DL throughput on gnb L2Lo case    dl_expect=${dl_expect}    dl_throughput_list=${dl_throughput_list}
+
+Calculate UL throughput on gnb L2Lo case
+    [Documentation]
+    ...             This keyword check the UL throughput in gnb l2lo and compare with expect value.
+    [Arguments]     ${ul_expect}    ${ul_throughput_list}
+    ${LogL2RT}                      Container.Get Log                                 name=L2RT
+    Dated log     SSH on ${GNB_DU.bb[0].S.sshId}
+    ${aliasL2RT}         SSH Wait For Connect                    ${GNB_DU.bb[0].S}
+
+    # Dated Log       LogL2RT = ${LogL2RT}
+    # Dated Log       LIST_LOG = @{LIST_LOG}
+
+    ${ZipLog}                       Set variable                            ${LogL2RT.path.replace('.log','.zip')}
+    Dated log                       Check ASP:ZIPLOG=${ZipLog}
+    ${output}                       SSH Cmd
+    ...                             ls -lrt ${ZipLog}                       alias=${aliasL2RT}
+    ${len}                          Get Length                              ${output}
+    Dated log                       Presence ${ZipLog} = ${len} output=${output.strip()}
+    ${nodeL2RT}                     Get Node         L2RT
+    Dated log                       LogL2RT.prefix = /tmp/node_${nodeL2RT.id}/${LogL2RT.prefix}
+    Run Keyword If                  ${len} != 0
+    ...                             SSH Cmd
+    ...                             unzip -o -d /tmp/node_${nodeL2RT.id}/${LogL2RT.prefix} ${ZipLog}              alias=${aliasL2RT}
+    Dated log                       Grep into ${LogL2RT.path}
+    # ${output}                       SSH Cmd
+    # ...                             grep --line-buffered "rlcPduBytes" ${LogL2RT.path}
+    # ...                             alias=${aliasL2RT}
+
+    Dated log     Calculate_UL_throughput with ${LogL2RT.path}
+    ${ul_tp_l2lo}=        nps_2535_tools.Calculate_UL_throughput2      alias=${aliasL2RT}     file_name=${LogL2RT.path}
+
+    ${cur_time}    Get Current Date
+    # log to console    Current time:${cur_time}, grep = ${output}
+    log to console    Current time : ${cur_time}, UL actual throughput(Mbps): ${ul_tp_l2lo}
+    # Append to list    ${ul_throughput_list}    ${ul_tp_l2lo}
+    # should be true    ${ul_tp_l2lo} > ${ul_expect}
+    [Teardown]    run keyword and ignore error  csn.disconnect    connection=${aliasL2RT}
+
+Calculate DL throughput on gnb L2Lo case
+    [Documentation]
+    ...             This keyword check the DL throughput in gnb l2lo and compare with expect value.
+    [Arguments]     ${ul_expect}    ${ul_throughput_list}
+    ${LogL2RT}                      Container.Get Log                                 name=L2RT
+    Dated log     SSH on ${GNB_DU.bb[0].S.sshId}
+    ${aliasL2RT}         SSH Wait For Connect                    ${GNB_DU.bb[0].S}
+    # Dated Log       LogL2RT = ${LogL2RT}
+    # Dated Log       LIST_LOG = @{LIST_LOG}
+
+    ${ZipLog}                       Set variable                            ${LogL2RT.path.replace('.log','.zip')}
+    Dated log                       Check ASP:ZIPLOG=${ZipLog}
+    ${output}                       SSH Cmd
+    ...                             ls -lrt ${ZipLog}                       alias=${aliasL2RT}
+    ${len}                          Get Length                              ${output}
+    Dated log                       Presence ${ZipLog} = ${len} output=${output.strip()}
+    ${nodeL2RT}                     Get Node         L2RT
+    Dated log                       LogL2RT.prefix = /tmp/node_${nodeL2RT.id}/${LogL2RT.prefix}
+    Run Keyword If                  ${len} != 0
+    ...                             SSH Cmd
+    ...                             unzip -o -d /tmp/node_${nodeL2RT.id}/${LogL2RT.prefix} ${ZipLog}              alias=${aliasL2RT}
+    Dated log                       Grep into ${LogL2RT.path}
+    # ${output}                       SSH Cmd
+    # ...                             grep --line-buffered "SentDataMeasurementCounting" ${LogL2RT.path}
+    # ...                             alias=${aliasL2RT}
+
+    Dated log     Calculate_DL_throughput with ${LogL2RT.path}
+    ${dl_tp_l2lo}=        nps_2535_tools.Calculate_DL_throughput2      alias=${aliasL2RT}     file_name=${LogL2RT.path}
+
+    ${cur_time}    Get Current Date
+    # log to console    Current time:${cur_time}, grep = ${output}
+    log to console    Current time : ${cur_time}, DL actual throughput(Mbps): ${dl_tp_l2lo}
+    # Append to list    ${dl_throughput_list}    ${dl_tp_l2lo}
+    # should be true    ${dl_tp_l2lo} > ${dl_expect}
+    [Teardown]    run keyword and ignore error  csn.disconnect    connection=${aliasL2RT}
+
+####################################################################################################################################
+
+Create Test Suite Folder
+    [Documentation]    create test suite folder
+    ${timeStamp}    get current date    result_format=%Y%m%d_%H%M%S
+    Set Suite Variable    ${testSuiteDir}    ${LOG_PATH}/${SUITE_NAME}/${timeStamp}
+    create directory    ${testSuiteDir}
+
+Create Test Case Folder
+    [Documentation]    create test case folder
+    ${testCaseDir}    Replace String    ${TEST_NAME}    ${SPACE}    _
+    ${testCaseDir}    nps_2535_tools.filter_non_printable_and_remove_head    ${testCaseDir}
+    ${testCaseDir}    Replace String    ${testCaseDir[0:30]}    ${SPACE}    _
+    ${testCaseDir}    Replace String    ${testCaseDir}    .    _
+    Dated log       Create Test Case Folder ${testSuiteDir}/${testCaseDir}
+    Set Suite Variable    ${testCaseDir}    ${testSuiteDir}/${testCaseDir}
+    Create Directory    ${testCaseDir}
+
+Create Test Case Folder OLD
+    [Documentation]    create test case folder
+    ${testCaseDir}    Replace String    ${TEST_NAME[0:30]}    ${SPACE}    _
+    ${testCaseDir}    Remove String    ${testCaseDir}    [1]
+    ${testCaseDir}    Remove String    ${testCaseDir}    [1.0]
+    Dated log       Create Test Case Folder ${testSuiteDir}/${testCaseDir}
+    Set Suite Variable    ${testCaseDir}    ${testSuiteDir}/${testCaseDir}
+    Create Directory    ${testCaseDir}
+
+Get testcase log directory
+    [Documentation]    :Author: Ch SAMSON
+    ...    Retuns path for Testcase log directory
+    ...    If Testcase Log directory does not exist it will created automatically
+    ...
+    ...    :returns: Path for Testcase log
+    ...
+    ${P_resultTestDir}=    Get Variable Value    ${testCaseDir}
+    Run Keyword If    '${P_resultTestDir}'=='None'
+    ...    Create Test Case Folder
+    ${P_resultTestDir} =    Get Variable Value   ${testCaseDir}
+    #${P_resultTestDir} =    Set Variable If    '${P_resultTestDir}'=='None'
+    #...              ${testCaseDir}
+    [Return]    ${P_resultTestDir}
+
+Prepare Test Name
+    [Documentation]    :Author: Ch SAMSON
+    ...    Retuns formated test name
+    ...
+    ...    :returns: formated test name
+    ...
+    ${TEST_NAME}=       replace string  ${TEST_NAME}      ${SPACE}        _
+    set test variable      ${TEST_NAME}
+    [Return]    ${TEST_NAME}
+
+Prepare Logs Directory Path
+    [Arguments]    ${resultDir}=None   ${subdir}=${EMPTY}    ${with_timestamp}=${FALSE}
+    [Documentation]
+    ...    Creates directory for storing logs, based on current execution context.
+    ...    An absolute path to created directory is returned.
+    [Tags]    PRIVATE
+    ${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    ${subdir}    set variable if    '${with_timestamp}'=='${TRUE}'   ${subdir}_${timestamp}
+    ...                                                              ${subdir}
+    ${resultDir}=    Run Keyword If    '${resultDir}'=='None'    5GC002535_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${resultDir}
+    ${logs_dir}   set variable     ${resultDir}/${subdir}
+    OperatingSystem.Create Directory    ${logs_dir}
+    [Return]    ${logs_dir}
+
+Start Tcpdump on TestPc
+    [Documentation]    :Author: Soenke Kullberg
+    ...     Start Tcpdump on test PC
+    ...
+    ...     :param option: (default="") Addtional options for tcpdump
+    ...     :param interface: (default=fronthaul) Interface tcpdump
+    ...     :param collector: (default gnb-${gnb_id}-oam-${interface}-tcpdump)  Name of collector **Impact on log filename**
+    ...
+    ...     **Example:**
+    ...
+    ...         | Start Tcpdump on TestPc     interface=eth0
+    ...         | BuiltIn.Sleep     10 sec
+    ...         | Stop Tcpdump on TestPc     interface=eth0
+    [Arguments]     ${interface}  ${option}=${EMPTY}      ${collector}=testpc-${interface}-tcpdump
+    ${testpc_ssh_config}=  Create Dictionary
+    ...     host=${tl.test_pc.default_ssh_connection_details.addr}
+    ...     user=${tl.test_pc.default_ssh_connection_details.username}
+    ...     password=${tl.test_pc.default_ssh_connection_details.password}
+    tcpdump.create_tcpdump_collector
+    ...     name=${collector}
+    ...     options=-i ${interface} ${option}
+    ...     executor=${testpc_ssh_config}
+    tcpdump.setup_collectors    names=${collector}
+    tcpdump.start_collectors    names=${collector}
+    tcpdump.set_suite_alias     ${collector}
+    BuiltIn.Log    Tcpdump on test pc on interface ${interface} started successfully    console=yes
+    [RETURN]    ${collector}
+
+
+Stop Tcpdump on TestPc
+    [Documentation]    :Author: Soenke Kullberg
+    ...     Stop tcpdump on testpc
+    ...     Logs are storred in Testcase Log directory
+    ...
+    ...     :param interface: (default=fronthaul) Interface for tcpdump
+    ...     :param target_dir: Directory to store the pcap file
+    ...
+    ...     :return tcpdump-file: Path to tcpdump file
+    ...
+    [Arguments]     ${interface}  ${collector}=testpc-${interface}-tcpdump    ${target_dir}=None
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    5GC002535_Keywords.Get Testcase Log Directory
+    ...    ELSE    Set Variable    ${target_dir}
+    tcpdump.stop_collectors         names=${collector}
+    tcpdump.collect_collectors      names=${collector}   target_dir=${target_dir}
+    tcpdump.teardown_collectors     names=${collector}
+    BuiltIn.Log    Tcpdump on test pc on interface ${interface} stopped and collected successfully    console=yes
+    [RETURN]    ${target_dir}/${collector}/${collector}.pcap
+
+Get SosReport
+    [Documentation]      Get GNB Logs from Coam. Files are put inside LOG_PATH directory
+    # BTS snapshot.
+    Get GNB Logs from Coam
+
+Get GNB Logs from Coam
+    [Arguments]    ${resultDir}=None   ${subdir}=${EMPTY}    ${with_timestamp}=${TRUE}
+    ${snapshot_path}=  run Keyword if    ${isAiC}     Get GNB Logs from VRAN    resultDir=${resultDir}
+    ...                                                                         subdir=${subdir}
+    ...                                                                         with_timestamp=${with_timestamp}
+    return from Keyword if     ${isAiC}    ${snapshot_path}
+	coam.connect to   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+	${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    ${snapshot_path}=    set variable  ${LOG_PATH}/Snapshot_GNB_${timestamp}.zip
+    coam.get_snapshot     target_file_name=${snapshot_path}    timeout=720    connection=coam_admin
+    [Teardown]  coam.teardown    connection=coam_admin
+    [Return]         ${snapshot_path}
+
+#---------------------vCU--------------------------------------------------------------------------
+Login To vCU By Rest
+   [Arguments]   ${gnb_index}=0   ${alias}=${None}   ${restapi_version}=cuoam_21b
+   [Documentation]  Create rest session to vCU.
+    ...    | Input Parameters | Man. | Description |
+    ...    | gnb_index  | No |  gnb index to indicate which gnb will be used  |
+    ...    | restapi_version | No | if you use 'get_counter' keyword in CU trunk build, the parameter should be given |
+    ...    | ...             |     'cuoam_21b' other senarios should be use default value - cuoam_21b |
+    ...    | alias | No. | alias that identifies this connection, if the argument is given, |
+    ...    | ...   |      the alias must be given to the Logout To vCU By Rest keyword as connection argumument. |
+	...
+    ...    | Return Value | Description |
+    ...    | ${alias} | return the connection alias |
+    ...
+    ...    the connection alias
+    ...    Example
+    ...    | Login To vCU By Rest | gnb_index=0 |
+    ...
+    ${host}    set variable  ${tl.gnbs[${gnb_index}].cu.oam_http_connection_details.addr}
+    run keyword and ignore error    5GC002535_Keywords.Logout To vCU By Rest
+    cu.connect to    host=${host}
+    ...    port=${EMPTY}
+    ...    username=${tl.gnbs[${gnb_index}].cu.oam_http_connection_details.username}
+    ...    password=${tl.gnbs[${gnb_index}].cu.oam_http_connection_details.password}
+    ...    cu_version=${restapi_version}
+    ...    secure=${True}
+    ...    alias=${alias}
+    [Return]  ${alias}
+
+Logout To vCU By Rest
+    [Arguments]    ${connection}=${None}
+    [Documentation]  Teardown rest session to CU.
+    ...    | Input Parameters | Man. | Description |
+    ...    | connection | No. | the connection alias that used in CU login |
+    ...    | Return Value | Description |
+    ...    | None | NA |
+    ...
+    ...    Example
+    ...    |  Logout To vCU By Rest | connection=${None} |
+    ...
+    # dated log   *** vcu logout ***
+    cu.disconnect    connection=${connection}
+
+#---------------------vDU--------------------------------------------------------------------------
+
+vDU Login
+    [Arguments]  ${login_type}=rest   ${restapi_version}=cuoam_19b   ${vdu_index}=0
+    [Documentation]  Login to vdu via rest or webem.
+    ...    | Input Parameters | Man. | Description |
+    ...    | vdu_index | Yes | the index of vdu, default value is 0 |
+    ...    |  solution | Yes |  rest or webui, default value is 0 |
+    ...    *RETURN VALUE*
+    ...    None
+    ...    Example
+    ...    |  vDU Login  |     |
+
+    run keyword if  "${login_type}"=="rest"    vDU Rest Login   ${restapi_version}  ${vdu_index}
+    ...   ELSE   Dated log   vDU WebEM Login not supported!!!
+
+vDU Rest Login
+    [Arguments]  ${restapi_version}=cuoam_19b  ${vdu_index}=0
+    [Documentation]  login vdu webem.
+    run keyword and ignore error   5GC002535_Keywords.vDU Rest Logout   vdu_index=${vdu_index}
+    ${vdu_connection}=   Run Keyword If  '${restapi_version}'=='cuoam_19b'  vdu.connect to
+    ...  host=${tl.gnbs[0].dus[${vdu_index}].oam_http_connection_details.addr}
+    ...  port=${EMPTY}
+    ...  username=${tl.gnbs[0].dus[${vdu_index}].oam_http_connection_details.username}
+    ...  password=${tl.gnbs[0].dus[${vdu_index}].oam_http_connection_details.password}
+    ...  secure=True
+    ...  ELSE  vdu.connect to
+    ...  host=${tl.gnbs[0].dus[${vdu_index}].oam_http_connection_details.addr}
+    ...  port=8081
+    ...  username=${tl.gnbs[0].dus[${vdu_index}].oam_http_connection_details.username}
+    ...  password=${tl.gnbs[0].dus[${vdu_index}].oam_http_connection_details.password}
+
+vDU Rest Logout
+    [Arguments]  ${vdu_index}=0
+    [Documentation]  Teardown rest session to vdu.
+    # dated log   \n*** vdu logout ***
+    vdu.disconnect
+
+#--------------------- VRAN snapshot--------------------------------------------------------------------------
+Save Local Snapshot In vCU
+    [Arguments]     ${gnb_index}=0    ${local_snapshot_location}=None
+    [Documentation]    this kw is used to Gets local snapshot in vcu
+    ...    |  Input Parameters | Man. | Description |
+    ...    |  gnb_index  | No |  gnb index to indicate which gnb will be used  |
+    ...
+    ...    *RETURN VALUE*
+    ...    NA
+    ...    Example
+    ...    |  CU Save Snapshot  |   |
+    dated log   *** Start to save vCU snapshot ***
+    5GC002535_Keywords.Login To vCU By Rest    gnb_index=${gnb_index}
+    ${Snapshot_path}=    run Keyword if  '${local_snapshot_location}'=='None'     5GC002535_Keywords.Prepare Logs Directory Path
+    ...                                                                                                    subdir=vcu_snapshot
+    ...   ELSE                                                                    set variable    ${local_snapshot_location}
+    cu.Get_Local_Snapshot  ${Snapshot_path}
+    dated log   *** End save vCU snapshot ***
+    [Return]  ${Snapshot_path}
+    [Teardown]  Run Keyword And Ignore Error   5GC002535_Keywords.Logout To vCU By Rest
+
+Save Local Snapshot In vDU
+    [Arguments]    ${local_snapshot_location}=None    ${vdu_index}=${0}
+    [Documentation]    Save Local Snapshot
+    ...    |  Input Parameters | Man. | Description |
+    ...    | local_snapshot_location | No | local_snapshot_location  |
+    ...
+    ...    | Return Value | Description |
+    ...    | ${Snapshot_path} | return to path of local snapshot |
+    ...
+    ...    Example
+    ...    | Save Local Snapshot In vDU | local_snapshot_location=snapshot |
+    ...
+    dated log   *** Start to save vDU snapshot ***
+    5GC002535_Keywords.vDU Rest Login
+    ${Snapshot_path}=   run Keyword if  '${local_snapshot_location}'=='None'  5GC002535_Keywords.Prepare Logs Directory Path
+    ...                                                                                            subdir=vdu_snapshot
+    ...   ELSE                                                                set variable     ${local_snapshot_location}
+    ${a}    vdu.Get_Local_Snapshot    ${Snapshot_path}   operation_timeout=${900}
+    dated log   *** End save vDU snapshot ***
+    [Return]    ${Snapshot_path}
+    [Teardown]    Run Keyword And Ignore Error    5GC002535_Keywords.vDU Rest Logout
+
+Get GNB Logs from VRAN
+    [Arguments]    ${resultDir}=None   ${subdir}=${EMPTY}    ${with_timestamp}=${TRUE}
+    return from Keyword if     not ${isAiC}
+    ${resultDir}=    Run Keyword If    '${resultDir}'=='None'    5GC002535_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${resultDir}
+    ${logs_dir}   set variable     ${resultDir}/${subdir}
+	${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    ${snapshot_subdir}=    run keyword if   '${with_timestamp}'=='${TRUE}'   set variable  Snapshot_VDU_${timestamp}
+    ...    ELSE                                                              set variable  Snapshot_VDU
+    ${snapshot_path}=   5GC002535_Keywords.Prepare Logs Directory Path     resultDir=${logs_dir}   subdir=${snapshot_subdir}
+    Save Local Snapshot In vDU   local_snapshot_location=${snapshot_path}
+    ${snapshot_subdir}=    run keyword if   '${with_timestamp}'=='${TRUE}'   set variable  Snapshot_VCU_${timestamp}
+    ...    ELSE                                                              set variable  Snapshot_VCU
+    ${snapshot_path}=   5GC002535_Keywords.Prepare Logs Directory Path     resultDir=${logs_dir}   subdir=${snapshot_subdir}
+    Save Local Snapshot In vCU   local_snapshot_location=${snapshot_path}
+    [Return]         ${logs_dir}
+
+Collect IMS2 Coam
+    return from Keyword if   ${isAiC}
+	coam.connect to   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+	${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    ${snapshot_path}=    set variable  ${LOG_PATH}/Snapshot_GNB_IMS2_${timestamp}.zip
+    Run Keyword And Ignore Error    admin.collect_im_snapshot
+    ...                             target_file_name=${snapshot_path}
+    ...                             timeout=720
+    ...                             connection=coam_admin
+    [Teardown]  coam.teardown    connection=coam_admin
+    [Return]         ${snapshot_path}
+
+Collect EGATE console Logs
+    [Documentation]    This keyword is used to collect egate_console.log from the /opt/wts/latest/ folder
+    ...                This is collected in the Test Log Folder
+    [Arguments]       ${target_dir}=None
+    ${local_target_dir}=    Run Keyword If    '${target_dir}'=='None'    5GC002535_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+
+    ute_wtssim.setup_egate      egate_port=${tl.core.egate_port}
+    ...                         host_ip=${tl.core.default_ssh_connection_details.addr}
+    ...                         tool_dir=${tl.core.dir_path}
+    ...                         alias=ap_egate
+    ...                         ssh_user=ute
+    ...                         ssh_pass=ute
+    ute_wtssim.execute egate command         cmd=sim_log_set flush  timeout=1s  alias=ap_egate
+    ute_wtssim.teardown_egate    alias=ap_egate
+
+    # Connect to LTEEMU   alias=lteemu_alias
+    ${alias}        SSH Connect   host=${HOST_EPCSIM}
+
+    Dated Log      Collecting ${tl.core.dir_path}/egate_console.log...
+    csn.download_file               remote_path=${tl.core.dir_path}/egate_console.log
+    ...                             local_path=${local_target_dir}/egate_console.log
+    ...                             connection=${alias}
+    Dated Log                  egate_console.log file stored to ${local_target_dir}
+
+# ln -s source_file myfile
+# ln -s classicalbts_log_collector_151020.sh classicalbts_log_collector.sh into Git
+Install classicalbts log collector into gNB
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist    {CURDIR}/../scripts/classicalbts_log_collector.sh
+    ${Myalias}                        SSH Wait For Connect                    ${CAPTURE_L1L2_GNB_FS_2535.scriptDef.target.host}
+    Dated log     Upload classicalbts_log_collector.sh in gNB
+    SSH Upload Script           alias=${Myalias}        localPath=${CURDIR}/../scripts
+    ...                         scriptFile=classicalbts_log_collector.sh      remotePath=/ffs/run/config/scripts
+    set suite variable     ${classicalbts_log_collector_installed}      True
+
+Install classicalbts log collector into Airphone
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist    {CURDIR}/../scripts/classicalbts_log_collector.sh
+    ${Myalias}                        SSH Wait For Connect                    ${AP_DU.sys[0].M}
+    Dated log     Upload classicalbts_log_collector.sh in Airphone
+    SSH Upload Script           alias=${Myalias}        localPath=${CURDIR}/../scripts
+    ...                         scriptFile=classicalbts_log_collector.sh      remotePath=/ffs/run/config/scripts
+    set suite variable     ${ap_classicalbts_log_collector_installed}      True
+
+
+Collect gNB Logs
+    Log many     collect all log ${TEST NAME}
+    ${tm}    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}    .    :
+    ${gNB_logName}=    catenate    SEPARATOR=_    ${TEST NAME[0:30].replace(" ", "_").replace("(", "").replace(")", "")}   gNB-${tm}.log
+    Run Keyword And Ignore Error    5GC002535_Keywords.LogCollector   ${gNB_logName}
+    # 29/07/2021 : dont reset cache here (before teardown), if not , stop the wtsemu process fails
+    # Conn.ResetCache
+
+Collect AirPhone Logs
+    return from Keyword if   '${GNB_DU.sys[0].M.boardType}'!='ASIK'
+    Log many     collect all log ${TEST NAME}
+    ${tm}    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}    .    :
+    ${AirP_logName}=    catenate    SEPARATOR=_    ${TEST NAME[0:30].replace(" ", "_").replace("(", "").replace(")", "")}   AirP-${tm}.log
+    Run Keyword And Ignore Error    5GC002535_Keywords.Airphone LogCollector   ${AirP_logName}
+    # 29/07/2021 : dont reset cache here (before teardown), if not , stop the wtsemu process fails
+    # Conn.ResetCache
+
+Connect to Core
+    [Documentation]    :Author: Soenke Kullberg
+    ...     setup ssh connection core and returns connection handle/alias
+    ...     KW sould be called without arguments
+    ...
+    ...     :param alias: (optional) alias used for ssh connection
+    ...
+    ...     :return alias: alias for ssh connection to OAM
+    ...
+    [Arguments]    ${alias}=ssh-core
+    ssh.Connect_to      hostname=${tl.core.default_ssh_connection_details.addr}
+    ...                 username=${tl.core.default_ssh_connection_details.username}
+    ...                 password=${tl.core.default_ssh_connection_details.password}
+    ...                 alias=${alias}
+    [Return]    ${alias}
+
+Get latest modified file with defined pattern
+    [Documentation]    :Author: Vasileios Papoutsis
+    ...    It returns the latest modified file from a specified directory
+    ...
+    ...    :param path:    Path of directory to get the files
+    ...    :param pattern: Optional matching pattern (default: ${EMPTY})
+    ...
+    ...    :returns lastModifiedFile: Latest modified file
+    ...
+    [Arguments]    ${path}    ${pattern}=${EMPTY}
+    ${files}=    OperatingSystem.List files in directory    path=${path}    pattern=${pattern}
+    ${lastModifiedFile}=    Get from list    ${files}    0
+    ${time1}=    OperatingSystem.Get modified time    ${path}//${lastModifiedFile}    epoch
+    FOR    ${file}    IN    @{files}
+        ${time}=    Get modified time    ${path}//${file}    epoch
+        ${lastModifiedFile}=    Set variable if    ${time1} < ${time}    ${file}    ${lastModifiedfile}
+    END
+    [Return]    ${lastModifiedFile}
+
+Collect sos report logs
+    [Documentation]
+    ...    Sos report logs are needed in case of opening airphone pronto
+    ...
+    ...    :param target_dir:   directory to store the journal file
+    ...    :param script_path:  path where sosReport.sh is located (default: ${tl.core.dir_path})
+    ...
+    [Arguments]    ${target_dir}=None    ${script_path}=${tl.core.dir_path}
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    5GC002535_Keywords.Get Testcase Log Directory
+    ...    ELSE    Set Variable    ${target_dir}
+    ${core_alias}=    5GC002535_Keywords.Connect to Core
+    ssh.execute    cd ${script_path}; ./sosReport.sh -c -s -nr -iphyDIR\=${tl.core.dir_path} -btsDIR\=${tl.core.dir_path}   connection=${core_alias}
+    ssh.Download File    remote_path=${tl.core.dir_path}/iphyPsSnapshot.zip    local_path=${target_dir}/iphyPsSnapshot.zip
+    ...    connection=${core_alias}
+    ssh.Download File    remote_path=${tl.core.dir_path}/btsSnapshot.zip    local_path=${target_dir}/btsSnapshot.zip
+    ...    connection=${core_alias}
+    ssh.Download File    remote_path=${tl.core.dir_path}/sosReport.sh.log    local_path=${target_dir}/sosReport.sh.log
+    ...    connection=${core_alias}
+    ${sos_report_file}=    5GC002535_Keywords.Get latest modified file with defined pattern    path=${script_path}
+    ...                                                                                        pattern=SosReport*_complete_iphy1.tgz
+    ssh.Download File    remote_path=${script_path}/${sos_report_file}    local_path=${target_dir}/${sos_report_file}
+    ...    connection=${core_alias}
+
+Conn.ExecuteUnblock
+    [Arguments]     ${cmd}    ${timeout}    ${alias}
+    ${result}    ssh.send_command    command=${cmd}    timeout=${timeout}    connection=${alias}
+    [Return]    ${result}
+
+Conn.Execute
+    [Arguments]     ${cmd}    ${alias}
+    ${result}    ssh.execute    command=${cmd}    connection=${alias}
+    [return]    ${result}
+
+Conn.ReceiveReply
+    [Arguments]    ${size}=10000    ${alias}=${ALIAS_GNB_M}
+    ${result}    ssh.read_output    size=${size}   connection=${alias}
+    [Return]    ${result}
+
+Conn.ReceiveUntil
+    [Arguments]    ${match}=""   ${alias}=${ALIAS_GNB_M}
+    ssh.await_execution_end    connection=${alias}    timeout=30
+    # ${result}    ssh.read_output_until    match=${match}   timeout=30    connection=${alias}
+    # [Return]    ${result}
+
+Conn.DownloadFile
+    [Arguments]     ${local_path}    ${remote_path}    ${alias}
+    ${result}     ssh.download_file    remote_path=${remote_path}    local_path=${local_path}    connection=${alias}
+    [Return]    ${result}
+
+Conn.ResetCache
+    ssh.reset_cache
+
+Conn.Disconnect
+    [Arguments]    ${alias}
+    ssh.disconnect    connection=${alias}
+
+Collect gNB snapshot via Aashell
+   [Arguments]    ${location}=/ram   ${target_dir}=None
+
+   ${local_target_dir}=    Run Keyword If    '${target_dir}'=='None'    5GC002535_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+
+    ssh.Connect to    ${GNB_DU.sys[0].M.sshConnection.addr}
+    ...               ${GNB_DU.sys[0].M.sshConnection.username}
+    ...               ${GNB_DU.sys[0].M.sshConnection.password}
+    ...                alias=ALIAS_GNB_M
+
+# (echo "log -a -z snapshot.zip";sleep 50)|telnet 0 15007
+# (echo "log -a -z snapshot.zip")|telnet 0 15007
+    Conn.Execute  cmd=rm -f /ram/snapshot_gnb*.zip   alias=ALIAS_GNB_M
+    # Conn.Execute  cmd=(echo "log -a -c full -z snapshot_gnb.zip"; sleep 50; echo "quit")|telnet 0 15007   alias=ALIAS_GNB_M
+    Conn.Execute  cmd=echo "log -a -z /ram/snapshot_gnb.zip" | nc 0 15007   alias=ALIAS_GNB_M
+    ${reply}    Conn.ReceiveUntil  match=AaShell>   alias=ALIAS_GNB_M
+    # AaSysComUserDeregister succeed!
+    ${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    Conn.DownloadFile  local_path=${local_target_dir}/Aashell_snapshot_gnb_${timestamp}.zip
+    ...                 remote_path=/ram/snapshot_gnb.zip   alias=ALIAS_GNB_M
+    Conn.Disconnect  alias=ALIAS_GNB_M
+
+Collect AirPhone snapshot via Aashell
+   [Arguments]    ${location}=/ram   ${target_dir}=None
+
+   ${local_target_dir}=    Run Keyword If    '${target_dir}'=='None'    5GC002535_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+
+    ssh.Connect to    ${AP_DU.sys[0].M.sshConnection.addr}
+    ...               ${AP_DU.sys[0].M.sshConnection.username}
+    ...               ${AP_DU.sys[0].M.sshConnection.password}
+    ...                alias=ALIAS_GNB_M
+
+# (echo "log -a -z snapshot.zip";sleep 50)|telnet 0 15007
+# (echo "log -a -z snapshot.zip")|telnet 0 15007
+    Conn.Execute  cmd=rm -f /ram/snapshot_ap*.zip   alias=ALIAS_GNB_M
+    # Conn.Execute  cmd=(echo "log -a -c full -z snapshot_gnb.zip"; sleep 50; echo "quit")|telnet 0 15007   alias=ALIAS_GNB_M
+    Conn.Execute  cmd=echo "log -a -z /ram/snapshot_ap.zip" | nc 0 15007   alias=ALIAS_GNB_M
+    ${reply}    Conn.ReceiveUntil  match=AaShell>   alias=ALIAS_GNB_M
+    # AaSysComUserDeregister succeed!
+    ${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    Conn.DownloadFile  local_path=${local_target_dir}/Aashell_snapshot_ap_${timestamp}.zip
+    ...                remote_path=/ram/snapshot_ap.zip   alias=ALIAS_GNB_M
+    Conn.Disconnect  alias=ALIAS_GNB_M
+
+LogCollector
+    [Arguments]    ${logName}=gNB.log    ${location}=/ffs/run/logs    ${target_dir}=None
+
+    ${local_target_dir}=    Run Keyword If    '${target_dir}'=='None'    5GC002535_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+
+    ssh.Connect to    ${GNB_DU.sys[0].M.sshConnection.addr}
+    ...               ${GNB_DU.sys[0].M.sshConnection.username}
+    ...               ${GNB_DU.sys[0].M.sshConnection.password}
+    ...                alias=ALIAS_GNB_M
+
+    # /opt/trs/bin/trs-xpif-d execute dumpconfig
+    Conn.Execute  cmd=rm -f /tmp/xpif.dump   alias=ALIAS_GNB_M
+    Conn.Execute  cmd=/opt/trs/bin/trs-xpif-d execute dumpconfig     alias=ALIAS_GNB_M
+    Conn.DownloadFile  local_path=${local_target_dir}/xpif.dump   remote_path=/tmp/xpif.dump   alias=ALIAS_GNB_M
+    Run Keyword if   '${GNB_DU.sys[0].M.boardType}'!='ASIK'     Conn.Disconnect  alias=ALIAS_GNB_M
+    return from Keyword if   '${GNB_DU.sys[0].M.boardType}'!='ASIK'
+    ${the var}=    Get Variable Value    ${classicalbts_log_collector_installed}
+    ${is set}=      Set Variable If    """${the var}""" != 'None'    ${True}    ${False}
+    run Keyword if    '${is set}'=='${False}'     set suite variable      ${classicalbts_log_collector_installed}    False
+    run Keyword if   '${classicalbts_log_collector_installed}'=='False'    BuiltIn.Log     INFO: classical log collector not installed\n
+    ...                                                                                    level=INFO    console=yes
+    return from Keyword if   '${classicalbts_log_collector_installed}'=='False'
+    Conn.Execute  cmd=rm -rf ${location}/*gNB*.log   alias=ALIAS_GNB_M
+    Conn.Execute  cmd=rm -rf ${location}/*gNB*.log.tgz   alias=ALIAS_GNB_M
+    Conn.Execute  cmd=/ffs/run/config/scripts/classicalbts_log_collector.sh -o ${location}/${logName}   alias=ALIAS_GNB_M
+    Conn.Execute  cmd=tar czvf ${location}/${logName}.tgz ${location}/${logName}/  alias=ALIAS_GNB_M
+    Conn.DownloadFile  local_path=${local_target_dir}${/}${logName}.tgz  remote_path=${location}/${logName}.tgz   alias=ALIAS_GNB_M
+    Conn.Disconnect  alias=ALIAS_GNB_M
+
+Airphone LogCollector
+    [Arguments]    ${logName}=AirP.log    ${location}=/ffs/run/logs    ${target_dir}=None
+
+    ${local_target_dir}=    Run Keyword If    '${target_dir}'=='None'    5GC002535_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+
+    ${the var}=    Get Variable Value    ${ap_classicalbts_log_collector_installed}
+    ${is set}=      Set Variable If    """${the var}""" != 'None'    ${True}    ${False}
+    run Keyword if    '${is set}'=='${False}'     set suite variable      ${ap_classicalbts_log_collector_installed}    False
+    run Keyword if   '${ap_classicalbts_log_collector_installed}'=='False'    BuiltIn.Log     INFO: ap classical log collector not installed\n
+    ...                                                                                    level=INFO    console=yes
+    return from Keyword if   '${ap_classicalbts_log_collector_installed}'=='False'
+
+    ssh.Connect to    ${AP_DU.sys[0].M.sshConnection.addr}
+    ...               ${AP_DU.sys[0].M.sshConnection.username}
+    ...               ${AP_DU.sys[0].M.sshConnection.password}
+    ...                alias=ALIAS_GNB_M
+    Conn.Execute  cmd=rm -rf ${location}/*AirP*.log   alias=ALIAS_GNB_M
+    Conn.Execute  cmd=rm -rf ${location}/*AirP*.log.tgz   alias=ALIAS_GNB_M
+    Conn.Execute  cmd=/ffs/run/config/scripts/classicalbts_log_collector.sh -o ${location}/${logName}   alias=ALIAS_GNB_M
+    Conn.Execute  cmd=tar czvf ${location}/${logName}.tgz ${location}/${logName}/  alias=ALIAS_GNB_M
+    Conn.DownloadFile  local_path=${local_target_dir}${/}${logName}.tgz  remote_path=${location}/${logName}.tgz   alias=ALIAS_GNB_M
+    Conn.Disconnect  alias=ALIAS_GNB_M
+
+Collect all logs
+    [Documentation]      Get GNB Logs from Coam. Files are put inside testCaseDir directory
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+
+    ${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    ${scf}=    set variable  SCF_GNB_${timestamp}_${SUITE_NAME}_${TEST_NAME}_${TEST STATUS}.xml
+    ${swconfig}=    set variable  swconfig_GNB_${timestamp}_${SUITE_NAME}_${TEST_NAME}_${TEST STATUS}.txt
+
+    # Save current SCF file used during test cases
+    ${current_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=${scf}
+    Set Suite Variable              ${current_scf_file}
+    Dated Log         Current 2535 SCF file stored to ${current_scf_file}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${current_scf_file}    ${testCaseDir}
+
+    # Get swconfig file that will be used during 2535 tests
+    ${alias_gnb}                    Run Keyword And Ignore Error     SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    Run Keyword And Ignore Error    csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${LOG_PATH}/${swconfig}
+    ...                             connection=${alias_gnb}
+    Dated Log                  Current 2535 swconfig file stored to ${LOG_PATH}/${swconfig}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${LOG_PATH}/${swconfig}    ${testCaseDir}
+
+    5GC002535_Keywords.Prepare Logs Directory Path    subdir=airphone
+    Dated Log         Collect /ram/APL3.log from Airphone...
+    Run keyword and Ignore error      5GC002535_Keywords.Get APL3 log from Airphone       target_dir=${testCaseDir}/airphone
+
+    Dated Log         Collect /ffs/run/simmode/new_iphy.xml from Airphone...
+    Run keyword and Ignore error      5GC002535_Keywords.Get iPhy.xml file from Airphone   target_dir=${testCaseDir}/airphone
+
+    ${COLLECT_LOGS}           Set Variable if
+    ...                       "${TEST STATUS}" == "FAIL" and "${EXCLUDE_LOGS_IF_FAIL}" == "0"
+    ...                       1    ${COLLECT_LOGS}
+
+    Return From Keyword If    "${COLLECT_LOGS}" == "0"
+
+    # BTS snapshot.
+    Run Keyword if      '${get_snapshot}' == '1'                       Dated Log New Line         Get gNB snapshot...
+    ${snapshot_path}     Run Keyword if  '${get_snapshot}' == '1'       5GC002535_Keywords.Get GNB Logs from Coam
+    ...    ELSE      set variable    ${EMPTY}
+    ${status}   ${ret}   Run Keyword if  '${snapshot_path}'!='${EMPTY}'   Run Keyword And Ignore Error    OperatingSystem.File Should Exist
+    ...                                                                       ${snapshot_path}
+    ...  ELSE           set variable    FAIL   ${EMPTY}
+    run Keyword if   '${status}'=='PASS'     Run Keyword And Ignore Error    OperatingSystem.Move File    ${snapshot_path}    ${testCaseDir}
+    run Keyword if   '${status}'=='PASS'     Dated Log     gNB snapshot ${snapshot_path} generated and copied into ${testCaseDir}
+
+    ${snapshot_ims2_path}     Run Keyword And Ignore Error      5GC002535_Keywords.Collect IMS2 Coam
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${snapshot_ims2_path}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${snapshot_ims2_path}    ${testCaseDir}
+    run Keyword if    not ${isAiC}     Dated Log     gNB snapshot IMS2 ${snapshot_ims2_path} generated and copied into ${testCaseDir}
+
+    Dated Log         Collect WTS logs...
+    5GC002535_Keywords.Prepare Logs Directory Path    subdir=wts
+    5GC002535_Keywords.Collect edaemon log files    target_dir=${testCaseDir}/wts
+    5GC002535_Keywords.Collect egate log files      target_dir=${testCaseDir}/wts
+
+    Dated Log         Collect Current swconfig from Airphone...
+    5GC002535_Keywords.Store Current swconfig from Airphone
+
+    Dated Log          Collect gNB Logs...
+    5GC002535_Keywords.Collect gNB Logs
+
+    run Keyword if   not ${isAiC}      5GC002535_Keywords.Prepare Logs Directory Path    subdir=aashell
+    run Keyword if   not ${isAiC}      Dated Log          Collect gNB snapshot via Aashell...
+    run Keyword if   not ${isAiC}      5GC002535_Keywords.Collect gNB snapshot via Aashell         target_dir=${testCaseDir}/aashell
+
+    Dated Log          Collect Airphone Logs...
+    5GC002535_Keywords.Prepare Logs Directory Path    subdir=ap_sosreport
+    5GC002535_Keywords.Collect AirPhone Logs
+    Run Keyword And Ignore Error      5GC002535_Keywords.Collect sos report logs    target_dir=${testCaseDir}/ap_sosreport
+
+    Dated Log          Collect AirPhone snapshot via Aashell...
+    5GC002535_Keywords.Collect AirPhone snapshot via Aashell    target_dir=${testCaseDir}/aashell
+
+Collect Logs
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+    Run Keyword And Ignore Error         5GC002535_Keywords.Get testcase log directory
+    Run Keyword And Ignore Error         5GC002535_Keywords.Collect all logs     ${alias}
+
+Collect Logs if needed
+    [Documentation]                 Collect logs if needed
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+    log many     ${TEST STATUS}
+    Run Keyword If  '${TEST STATUS}' == 'FAIL'     5GC002535_Keywords.Collect Logs    ${alias}
+    ...    ELSE    Pass Execution If    '${TEST STATUS}' == 'PASS'    Not collect logs
+
+Get msgId from lua package
+    [Documentation]                Generic test for 2535: get msgId from lua package (using Get Filter For Particular Msgs)
+    [Arguments]                    ${message}
+    # ${sw_version}=       pcap.Get Software Version
+    # current_sw_version_for_lua_gNB is filled in test suite setup
+    Log to console    \ENB_BUILD variable points to: ${ENB_BUILD}
+    Log to console    \nAF_PATH variable points to: ${AF_PATH}
+    ${filter}=     run keyword if     "${ENB_BUILD}" != "${empty}"    Get Filter For Particular Msgs       bipMsgList=${message}
+    run keyword if     "${ENB_BUILD}" != "${empty}"       Dated log     filter for ${message} are ${filter}
+    Return From Keyword If    "${ENB_BUILD}" != "${empty}"     ${filter}
+    ${lua_installed}=     nps_lua_ver.is_lua_Analyzer_installed   ${current_sw_version_for_lua_gNB}
+    Dated log   lua already installed = ${lua_installed}
+    ${sw_version}=     Run keyword if    ${lua_installed} != ${TRUE}    pcap.Point to luashark scripts via AF_PATH variable
+    ...    ELSE     Set Variable   ${current_sw_version_for_lua_gNB}
+    # csamson : how to manage SBTS case ?
+    ${sw_gnb_version} =    Get gNB software version
+    ${sw_list}    split string    ${sw_gnb_version}    separator=_
+    ${luashark_url}=     run keyword if    '${sw_list[0]}'=='${SRAN_PRE}'    nps_lua_ver.Create luashark package url sbts    ${sw_gnb_version}
+    ...    ELSE                                                              nps_lua_ver.Create luashark package url    ${sw_version}
+    # END
+    # ${luashark_url} =    nps_lua_ver.Create luashark package url   ${sw_version}
+    Set Suite Variable    ${AF_PATH}    ${luashark_url}
+    ${filter}         Get Filter For Particular Msgs                bipMsgList=${message}
+    Dated log     filter for ${message} are ${filter}
+    [Return]       ${filter}
+
+Filter Pcap
+    [Arguments]  ${src}   ${dest}    ${filter}=${EMPTY}   ${lua_path}=None
+    [Documentation]    filter wireshark pcap file
+     ...    |  Input Parameters | Man. | Description |
+    ...    | src  |  Yes | the pcap file to be converted in UTE server |
+    ...    | dest | Yes | the target pcap file to be generated in UTE server |
+    ...    | filter | Yes | filter used to generate target file |
+    ...    | lua_path | Yes | full path to lua script |
+    ...
+    ...    *RETURN VALUE*
+    ...    None
+
+    OperatingSystem.File Should Exist    ${src}
+    # ${cmd}   Set Variable      tshark -r ${src} -w ${dest} "${filter}" 2>/dev/null
+
+    ${cmd}   Set Variable if   '${lua_path}'!='None'      tshark -r "${src}" -F pcap -w ${dest} -X lua_script:${lua_path} -Y ${filter} 2>/dev/null
+    ...                                                   tshark -r "${src}" -F pcap -w ${dest} -Y ${filter} 2>/dev/null
+    ${rc}   ${out}   OperatingSystem.Run And Return Rc And Output    ${cmd}
+
+Filter Pcap with Tshark
+    [Documentation]     def filter_pcap(self, pcapInFile, filterName=None, filterExp=None):
+    ...                 This method apply a filter on a pcap file and generate a new pcap
+    ...                 containing only selected packets
+    ...                 param pcapInFile: input pcap file
+    ...                 param filterName: name of filter to add in root name of generated pcap
+    ...                 param filterExp: litteral expression of filter to apply. Exple : uldata_puschreceiverespharqu
+    ...                 return: path of generated pcap file
+    [Arguments]     ${pcap_file_full_path}     ${filterName}     ${filterExp}
+    # generated pcap = pcap_file_full_path (without .pcap) + . + filterName + .pcap
+    Dated log   Filtering pcap ${pcap_file_full_path} with filter=${filterExp}...
+    ${res}     analyzer.filter_pcap
+    ...            ${pcap_file_full_path}
+    ...            filterName=${filterName}
+    ...            filterExp=${filterExp}
+    [Return]    ${res}
+
+Point AF_PATH to current sw package
+    [Documentation]                Generic test for 2535: get AF_PATH for current sw package
+    # set suite variable     ${AF_PATH}    ${EMPTY}
+    # need to unset ${AF_PATH} variable here but ${EMPTY} dont work  with robot
+    set suite variable     ${AF_PATH}    ${None}
+    Dated log      AF_PATH = ${AF_PATH} and ENB_BUILD = ${ENB_BUILD}
+    Return From Keyword If    "${ENB_BUILD}" != "${empty}"
+    # current_sw_version_for_lua_gNB is filled in test suite setup
+    ${lua_installed}=     nps_lua_ver.is_lua_Analyzer_installed   ${current_sw_version_for_lua_gNB}
+    Dated log   lua already installed = ${lua_installed}
+    ${sw_version}=     Run keyword if    ${lua_installed} != ${TRUE}    pcap.Point to luashark scripts via AF_PATH variable
+    ...    ELSE     Set Variable   ${current_sw_version_for_lua_gNB}
+    ${luashark_url}   Run keyword if    ${lua_installed} == ${TRUE}       nps_lua_ver.Create luashark package url   ${sw_version}
+    Run keyword if    ${lua_installed} == ${TRUE}      Set Suite Variable    ${AF_PATH}    ${luashark_url}
+
+Software Converter
+    [Documentation]    Compatibility with KW: Check Current Software Version
+    ...   param: ${input_version} put full or short software version name with dots or commas
+    ...   param: ${manipulator} can increace or decrease number of software version
+    [Arguments]    ${input_version}    ${manipulator}=0
+    ${manipulator}    convert to integer    ${manipulator}
+    ${input_version}    replace string   ${input_version}    .    _
+    @{string_split}   split string    ${input_version}    _
+    # to manage sw knife like 5G20A_GNB_0009_001800_000744_182cc_  ;  5G20A_GNB_0009_001800_000668_0ilsj_
+    ${string_split2}     set variable    ${string_split[:5]}
+    dated log         swversion split result=${string_split2}
+    ${length_list}   get length    ${string_split2}
+    @{sw_version}    create list
+    @{reverse_list}    Evaluate    list(range(${length_list}-1, ${length_list}-4, -1))
+    FOR    ${i}    IN    @{reverse_list}
+         ${trunk}    get from list    ${string_split2}    ${i}
+         ${trunk}    convert to integer    ${trunk}
+         append to list    ${sw_version}    ${trunk}
+    END
+    ${master}    get from list    ${sw_version}    2
+    ${stream}    get from list    ${sw_version}    1
+    ${version}    get from list    ${sw_version}    0
+    Set Suite Variable     ${convert_version}    ${master}.${stream}.${version+${manipulator}}
+    Set Suite Variable     ${master_version}     ${master}
+    [Return]    ${convert_version}   ${master_version}
+
+Get gNB mirroring into local repo
+    ${local_repo}    set variable    repo
+    run   command=mkdir ${LOG_PATH}${/}${local_repo}
+    set global variable    ${LOCAL_REPO_DIR}    ${LOG_PATH}${/}${local_repo}
+    Dated log        cp ${CURDIR}/../../../../../resources/SWENG/shell/gnbMirroring.sh ${LOCAL_REPO_DIR}
+    # /home/ute/NpsTest/robotws5g/testsuite/Paris/resources/SWENG/shell/gnbMirroring.sh
+    # /home/ute/NpsTest/robotws5g/testsuite/Paris/RRM/ET/5GC001586/resources/robot
+    run   command=cp ${CURDIR}/../../../../../resources/SWENG/shell/gnbMirroring.sh ${LOCAL_REPO_DIR}
+    run   command=cp ${CURDIR}/../../../../../resources/SWENG/shell/gnbMirroringConfig.sh ${LOCAL_REPO_DIR}
+
+Mirror Script Install for 2535
+    [Documentation]                 Install mirroring script on target for 2535
+    [Arguments]                     ${scriptDef}     ${PathToScriptsRepo}=${LOCAL_REPO_DIR}
+
+    # Install mirroring script on target
+    Capture.Mirror Script Install           ${scriptDef}
+
+    ${mirrorslot}                   Set Variable If                         '${GNB_DU.domainId}'=='1'
+    ...                             1                                       5
+    ${OPT_GNB_MIRRORING.bb_board_type}              set Variable     ${GNB_DU.bb[0].M.boardType}
+    ${OPT_GNB_MIRRORING.bb_slot}                    set Variable     bb_slot_${mirrorslot}
+
+# &{OPT_GNB_MIRRORING}                bb_slot=bb_slot_1
+# ...                                 mirroring_mode='manual'
+# ...                                 l2_l1_bip='false'
+# ...                                 syscom_mirroring='false'
+# ...                                 carrier_aggregation='false'
+# ...                                 backhaul_mirroring='false'
+# ...                                 L2HI_MIRRORING='false'
+# ...                                 L2RT_MIRRORING='false'
+# ...                                 CPRT_MIRRORING='false'
+# ...                                 filtering='off'
+# ...                                 capturing_time_seconds='1'
+
+# L2HI_MIRRORING='false' # true/false, traffic to/from L2-HI, only in ASIK
+# L2RT_MIRRORING='false' # true/false, traffic to/from L2-RT, only in ASIK
+# CPRT_MIRRORING='false' # true/false, traffic to/from CP-RT, only in ASIK
+# BACKHAUL_MIRRORING='false' # true/false, S1/X2 in Classical deployment, F1-U in Cloud deployment, works only in ASIK
+
+
+Execute Mirror Script with options for 2535
+    [Documentation]                 Execute mirroring script on target for 2535
+    [Arguments]                     ${scriptDef}     ${opt_gnb_mirroring}   ${location}=/ffs/run/config/scripts    ${local_dir}=None
+
+    ${local_target_dir}=    Run Keyword If    '${local_dir}'=='None'    5GC002535_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${local_dir}
+
+    ssh.Connect to    ${GNB_DU.sys[0].M.sshConnection.addr}
+    ...               ${GNB_DU.sys[0].M.sshConnection.username}
+    ...               ${GNB_DU.sys[0].M.sshConnection.password}
+    ...                alias=ALIAS_GNB_M
+
+    Conn.Execute  cmd=rm -rf ${location}/Launch.gNB*.log   alias=ALIAS_GNB_M
+    ${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    ${LAUNCH_LOG}   set Variable   Launch.gNB.gnbMirroring.${timestamp}.log
+    # BEWARE : --l2_11_bip     instead of   --l2_l1_bip   into gnbMirroring.sh !!!!
+    ${cmd}=   catenate     ${scriptDef.cmd}
+    ...                     --mirroring_mode=${opt_gnb_mirroring.mirroring_mode}
+    ...                     --bb_board_type=${opt_gnb_mirroring.bb_board_type}
+    ...                     --${opt_gnb_mirroring.bb_slot}='true'
+    ...                     --l2_11_bip=${opt_gnb_mirroring.l2_l1_bip}
+    ...                     --backhaul_mirroring=${opt_gnb_mirroring.backhaul_mirroring}
+    ...                     --filtering=${opt_gnb_mirroring.filtering}
+    ...                     --capturing_time_seconds=${opt_gnb_mirroring.capturing_time_seconds}|tee ${location}/${LAUNCH_LOG}
+    Conn.Execute    cmd=${cmd}      alias=ALIAS_GNB_M
+    Conn.DownloadFile  local_path=${local_target_dir}${/}${LAUNCH_LOG}  remote_path=${location}/${LAUNCH_LOG}   alias=ALIAS_GNB_M
+    Conn.Disconnect  alias=ALIAS_GNB_M
+
+####################################################################################################################################""
+#
+#       Common 2535 Teardown
+#
+####################################################################################################################################""
+
+Log to Console like Next Step
+    [Documentation]                 Compute next step index and print step nb and step name
+    [Arguments]                     ${StepNb}        ${StepName}
+    ${msg}                          Evaluate
+    ...                             "${BG_BLUE}${WHITE}STEP %-2s : %-70s${NORMAL}" % ('${StepNb}','${StepName}')
+    Log to Console                  ${msg}
+
+Teardown 2535
+    [Arguments]           ${testParam}       ${alias}=${HOST_EPCSIM.alias}
+
+    BuiltIn.Log      \nTest ${TEST_NAME} 2535 ending   console=yes
+    Produce Scout Data
+    Run Keyword And Ignore Error     Collect EGATE console Logs
+
+    # Save current SCF file used during test cases
+    ${current_scf_file}             OAM Get SCF File            dir=${testCaseDir}      file=SCF_used_for_2535_${testParam.seq.bandwidth}_Tests.xml
+    Set Suite Variable              ${current_scf_file}
+    Dated Log New Line         Current 2535 SCF file stored to ${current_scf_file}
+
+    # Get swconfig file used during 2535 tests
+    ${status}     ${alias_gnb}         Run Keyword And Ignore Error         SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    Run Keyword And Ignore Error       csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${testCaseDir}/swconfig_used_for_2535_${testParam.seq.bandwidth}_Tests.txt
+    ...                             connection=${alias_gnb}
+    Dated Log                  Current 2535 swconfig file stored to ${testCaseDir}/swconfig_used_for_2535_${testParam.seq.bandwidth}_Tests.txt
+
+    # Get EPC file configuration used during 2535 tests
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${testCaseDir}/basic_wts_used_for_2535_${testParam.seq.bandwidth}_Tests.cfg
+    ...                             connection=${alias_epc}
+
+    # Get AP configuration file used during 2535 tests
+    ${ap_configfile}                Get XML AirPhoneConfig Path
+    run Keyword if      '${ap_configfile}' != '${empty}'     csn.download_file     remote_path=${tl.core.dir_path}/${ap_configfile}
+    ...                             local_path=${testCaseDir}/ApOamConfig_used_for_2535_${testParam.seq.bandwidth}_Tests.xml
+    ...                             connection=${alias_epc}
+
+    ${msg}=   Catenate    Current 2535 basic file ${tl.core.cfg_filename} stored
+    ...                      to ${testCaseDir}/basic_wts_used_for_2535_${testParam.seq.bandwidth}_Tests.cfg
+    Dated Log    ${msg}
+    Dated Log  Current 2535 ApOamConfig file stored to ${testCaseDir}/ApOamConfig_used_for_2535_${testParam.seq.bandwidth}_Tests.xml
+
+    # get Alarm at the end of the test and store it into a file
+    Dated log New Line  OAM Get Active Alarms to Save into file
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+
+    ${active_alarms}     OAM Get Active Alarms                   oam=${GNB_DU.oam}       textFormat=${False}
+    ${len}    Get Length    ${active_alarms}
+    ${alarm_id_list}    Create List
+    ${alarm_name_list}    Create List
+    ${faultId}=     set variable if    ${isAiC}        fault_id
+    ...                                                faultId
+    ${faultName}=     set variable if    ${isAiC}      fault_name
+    ...                                                faultName
+    FOR    ${i}    IN RANGE    ${len}
+         ${tmp_id}    Get From Dictionary    ${active_alarms[${i}]}    ${faultId}
+         ${tmp_name_id}    Get From Dictionary    ${active_alarms[${i}]}    ${faultName}
+         Append To List    ${alarm_id_list}    ${tmp_id}
+         Append To List    ${alarm_name_list}    ${tmp_name_id}
+    END
+    # Dated log     Active alarms: alarm_id_list=${alarm_id_list}
+    # Dated log     Active alarms: alarm_name_list=${alarm_name_list}
+
+    Append To File    ${testCaseDir}/OAM_Alarms_After_${TEST_NAME}.txt     Active Alarms Id List:\n${alarm_id_list}\n\n
+    Append To File    ${testCaseDir}/OAM_Alarms_After_${TEST_NAME}.txt     Active Alarms Name List:\n${alarm_name_list}\n\n
+
+    OAM Disconnect                          ${GNB_DU.oam}
+    # Restore WTS cfg file name
+    Run Keyword If   '${testParam.seq.bandwidth}'!='5MHz'      restoreFilename
+
+    Dated Log         Collect /ram/APL3.log and egate_console.log from Airphone...
+    5GC002535_Keywords.Prepare Logs Directory Path    subdir=airphone
+    Run Keyword And Ignore Error      5GC002535_Keywords.Collect EGATE console Logs
+    Run keyword and Ignore error      5GC002535_Keywords.Get APL3 log from Airphone        target_dir=${testCaseDir}/airphone
+
+    Dated Log         Collect /ffs/run/simmode/new_iphy.xml from Airphone...
+    Run keyword and Ignore error      5GC002535_Keywords.Get iPhy.xml file from Airphone   target_dir=${testCaseDir}/airphone
+
+    # Get EPC file configuration used during 2535 tests
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    ${LuaFileName_generated}=    catenate    SEPARATOR=    ${tl.core.cfg_filename.replace(".cfg",".lua")}
+    run keyword and ignore error     csn.download_file          remote_path=${tl.core.dir_path}/${LuaFileName_generated}
+    ...                             local_path=${testCaseDir}/basic_wts_used_for_2535_${testParam.seq.bandwidth}_Tests.lua
+    ...                             connection=${alias_epc}
+
+    # wts.stop_and_collect_wts_logs   subdirectory=${LOG_PATH}
+    wts.teardown_all_aliases_for_egate
+    wts.teardown_all_aliases_for_edaemon
+
+    Collect Logs if needed
+    set Suite Variable    ${testCaseDir}    None
+
+
+####################################################################################################################################""
+
+Get Orignal Configuration 2535
+   [Arguments]                   ${BACKUP_DIR}=original_config_files
+
+    # Save current  SCF file
+    ${file_name}   set variable     SCF_2535_original.xml
+    ${original_scf_file}            OAM Get SCF File                file=${file_name}
+    Set Suite Variable              ${original_scf_file}
+    Dated Log New Line         Original SCF file stored to ${original_scf_file}
+    Run keyword and Ignore error   OperatingSystem.Copy File    ${original_scf_file}
+    ...                                                         ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    # Get swconfig file that will be restored during test suite teardown
+    ${status}   ${alias_gnb}          Run keyword and Ignore error          SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    ${file_name}   set variable     swconfig_to_be_restored.txt
+    Run keyword and Ignore error    csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                                                             local_path=${LOG_PATH}/${file_name}
+    ...                                                             connection=${alias_gnb}
+    Dated Log                  Default swconfig file stored to ${LOG_PATH}/${file_name}
+    Run keyword and Ignore error   OperatingSystem.Copy File    ${LOG_PATH}/${file_name}
+    ...                                                         ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    # Get EPC file configuration:
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    ${file_name}   set variable     basic_wts_to_be_restored.cfg
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/${file_name}
+    ...                             connection=${alias_epc}
+    Dated Log                  Default basic cfg file stored to ${LOG_PATH}/${file_name}
+    Run keyword and Ignore error   OperatingSystem.Copy File    ${LOG_PATH}/${file_name}    ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    ${file_name}   set variable     new_iphy_to_be_restored.xml
+    Run keyword and Ignore error      5GC002535_Keywords.Get iPhy.xml file from Airphone    target_dir=${LOG_PATH}    file_name=${file_name}
+    Dated Log                  Default /ffs/run/simmode/new_iphy.xml from Airphone stored to ${LOG_PATH}/${file_name}
+    Run keyword and Ignore error     OperatingSystem.Copy File    ${LOG_PATH}/${file_name}    ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    # Get AP configuration file
+    ${ap_configfile}                Get XML AirPhoneConfig Path
+    return from Keyword if     '${ap_configfile}'=='${EMPTY}'
+    ${file_name}   set variable     ApOamConfig_to_be_restored.xml
+    csn.download_file               remote_path=${tl.core.dir_path}/${ap_configfile}
+    ...                             local_path=${LOG_PATH}/${file_name}
+    ...                             connection=${alias_epc}
+    Dated Log                  Default AP Oam Config file stored to ${LOG_PATH}/${file_name}
+    Run keyword and Ignore error     OperatingSystem.Copy File    ${LOG_PATH}/${file_name}    ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+Restore Orignal Configuration 2535
+
+   # Get swconfig file that will be restored during test suite teardown
+    ${status}      ${alias_gnb}          Run keyword and Ignore error          SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    Run keyword and Ignore error     csn.upload_file            remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${LOG_PATH}/swconfig_to_be_restored.txt
+    ...                             connection=${alias_gnb}
+
+    Run keyword and Ignore error     SSH Exec                     command=crasign ${SWCONFIG_PATH}           alias=${alias_gnb}
+
+    Dated Log                 swconfig file has been restored to default (${LOG_PATH}/swconfig_to_be_restored.txt)
+
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.upload_file                 remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/basic_wts_to_be_restored.cfg
+    ...                             connection=${alias_epc}
+
+    Dated Log                basic cfg file has been restored to default (${LOG_PATH}/basic_wts_to_be_restored.cfg)
+
+    ${file_name}   set variable     new_iphy_to_be_restored.xml
+    Run keyword and Ignore error      5GC002535_Keywords.Restore iPhy.xml file to Airphone    local_dir=${LOG_PATH}    file_name=${file_name}
+    Dated Log            /ffs/run/simmode/new_iphy.xml has been restored with default ${LOG_PATH}/${file_name}
+
+    ${ap_configfile}                Get XML AirPhoneConfig Path
+    return from Keyword if     '${ap_configfile}'=='${EMPTY}'
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.upload_file                 remote_path=${tl.core.dir_path}/${ap_configfile}
+    ...                             local_path=${LOG_PATH}/ApOamConfig_to_be_restored.xml
+    ...                             connection=${alias_epc}
+
+    Dated Log            ApOamConfig has been restored to default (${LOG_PATH}/ApOamConfig_to_be_restored.xml)
+
+
+Get program version based on gNB active version
+    ${sbts_trunk}    run keyword and return status     Should contain    ${Active_SW_version}    SBTS22R1
+    return from keyword if    ${sbts_trunk}      master
+    ${sbts_21b}    run keyword and return status     Should contain    ${Active_SW_version}    SBTS21B
+    return from keyword if    ${sbts_21b}      branch
+
+Test Suite Setup for 2535
+    [Documentation]          Test suite setup for all 2535 TCs.
+    ...                      It calls Test Suite Setup common KW and:
+    ...                      Saves existing configuration files (swconfig + WTS)
+    ...                      Configure common SCF parameters
+    ...                      Configure common swconfig parameters
+    ...                      Configure common WTS parameters
+    [Arguments]               ${default_mcs}=0
+
+    # Call to generic test suite setup KW
+    setup.Suite Setup
+
+    run Keyword           MyConstants.hello
+    ${mcshark_present}   ${MCShark}=      pcap.Check MCShark if present
+    ${msg}=   run Keyword if   "${mcshark_present}"=="True"    StringTool.getHeaderLine    MCShark plugin   ${MCShark}
+    ...   ELSE                                        StringTool.getHeaderLine    MCShark plugin     Not installed
+    run Keyword if   "${msg}"!="${EMPTY}"      Dated log      ${msg}
+    set suite variable    ${mcshark_present}
+    Dated Log New Line    COLLECT_LOGS if TEST STATUS is FAIL and EXCLUDE_LOGS_IF_FAIL == 0
+    Dated Log             COLLECT_LOGS if COLLECT_LOGS == 1
+    Dated log             default_test_strategy : WAIT_5G_CELL_ONAIR = ${WAIT_5G_CELL_ONAIR}
+    Dated Log             default_test_strategy : SHOULD_BE_COMMISSIONED_GNB_FIRST = ${SHOULD_BE_COMMISSIONED_GNB_FIRST}
+    Dated log             default_test_strategy : SHOULD_UPDATE_SCF_AND_RAD = ${SHOULD_UPDATE_SCF_AND_RAD}
+    Dated log             default_test_strategy : SHOULD_UPDATE_RAD = ${SHOULD_UPDATE_RAD}
+    Dated log             default_test_strategy : SHOULD_FORCE_XML_AP = ${SHOULD_FORCE_XML_AP}
+    Dated log             default_test_strategy : SHOULD_BE_RECOMMISSIONED_GNB = ${SHOULD_BE_RECOMMISSIONED_GNB}
+    Dated log             default_test_strategy : COLLECT_LOGS = ${COLLECT_LOGS}
+    Dated log             default_test_strategy : EXCLUDE_LOGS_IF_FAIL = ${EXCLUDE_LOGS_IF_FAIL}
+    Dated log             default_test_strategy : PCAP_XP_BIP_L1L2_ATTACH = ${PCAP_XP_BIP_L1L2_ATTACH}
+    Dated log             default_test_strategy : REMOVE_PDML_FILE_END_TEST_SUITE = ${REMOVE_PDML_FILE_END_TEST_SUITE}
+    Dated log             default_test_strategy : TRAFFIC_DL_RATE = ${TRAFFIC_DL_RATE}
+    Dated log             default_test_strategy : TRAFFIC_UL_RATE = ${TRAFFIC_UL_RATE}
+    Dated log             default_test_strategy : UL_DL_TPUT_CHECK_BASED_AASYSLOG = ${UL_DL_TPUT_CHECK_BASED_AASYSLOG}
+    Dated log             default_test_strategy : DL_TPUT_CHECK_BASED_PCAP = ${DL_TPUT_CHECK_BASED_PCAP}
+    Dated log             default_test_strategy : DL_TPUT_CHECK_BASED_TTITRACE = ${DL_TPUT_CHECK_BASED_TTITRACE}
+    Dated log             default_test_strategy : isUnitaryTest = ${isUnitaryTest}
+    Dated log             default_test_strategy : WITH_MCSHARK_INSTALATION = ${WITH_MCSHARK}
+    Dated log             default_test_strategy : SharkTool = ${SharkTool}
+    Dated log             default_test_strategy : SHOULD_UPDATE_DEBUG_L2PS_RAD = ${SHOULD_UPDATE_DEBUG_L2PS_RAD}
+
+    5GC002535_Keywords.Create Test Suite Folder
+
+    return from Keyword if     '${isUnitaryTest}' == '1'
+
+    run keyword and ignore error     5GC002535_Keywords.Get Orignal Configuration 2535
+    robot_extension.Run Keyword And Warn On Failure    Init Trace color
+
+    #define UE profiles
+    ${ueProfile1}         Tools.Dictionary Get       ${UE_SIMPLE}
+    Set To Dictionary     ${ueProfile1}      ue       1
+    ${ueProfile2}         Tools.Dictionary Get       ${UE_SIMPLE}
+    Set To Dictionary     ${ueProfile2}      ue       2
+    Set Suite Variable    ${ueProfile1}
+    Set Suite Variable    ${ueProfile2}
+
+    ${CAPTURE_L1L2_GNB_FS_2535}                Capture L1L2 Set Upon Config
+    Set Suite Variable              ${CAPTURE_L1L2_GNB_FS_2535}
+
+    Dated log                       Get SW Version from OAM
+    ${sw_version}=    5GC002535_Keywords.Fetch common OAM SW version
+    # Set Suite Variable              ${sw_version}   vCUCNF22R2_0.250.2916
+    Set Suite Variable              ${my_sw_version}                           ${sw_version}
+
+    5GC002535_Keywords.Software Converter    ${my_sw_version}    0
+    ${sw_version_list}     Split String   ${my_sw_version}   _
+    Set Suite Variable     ${trunk}     False
+    Set Suite Variable     ${branch}     None
+    Run Keyword If                  '${master_version}' == '0'        Set Suite Variable     ${trunk}     False
+    Run Keyword If                  '${master_version}' == '9999'     Set Suite Variable     ${trunk}     True
+    ${branch}              Get From List    ${sw_version_list}    0
+    Dated log                       \tGNB_SW_VERSION=${my_sw_version}
+    Dated log                       \tconvert_version=${convert_version}
+    Dated log                       \tmaster_version=${master_version}
+    Dated log                       \ttrunk=${trunk}
+    Dated log                       \tbranch=${branch}
+    Set Suite Variable     ${branch}
+
+    ${sw_version}=       pcap.Get Software Version
+    Set Suite Variable     ${current_sw_version_for_lua_gNB}     ${my_sw_version}
+    Dated log      sw version for lua gNB is ${current_sw_version_for_lua_gNB}
+    Run Keyword and ignore error    5GC002535_Kw_TestSetup.Get Topology from Common Agent File
+
+    ${the var}=    Get Variable Value    ${AF_PATH}
+    ${AF_PATH is set}=      Set Variable If    """${the var}""" != 'None'    ${True}    ${False}
+    Dated log     AF_PATH is set to ${AF_PATH is set} => set it to empty if False
+    set suite variable    ${AF_PATH is set}
+    run Keyword if   "${AF_PATH is set}"=="False"      set suite variable   ${AF_PATH}     ${empty}
+    ${the var}=    Get Variable Value    ${ENB_BUILD}
+    ${ENB_BUILD is set}=      Set Variable If    """${the var}""" != 'None'    ${True}    ${False}
+    Dated log     ENB_BUILD is set to ${ENB_BUILD is set} => set it to empty if False
+    set suite variable     ${ENB_BUILD is set}
+    run Keyword if   "${ENB_BUILD is set}"=="False"      set suite variable   ${ENB_BUILD}     ${empty}
+    Dated log    AF_PATH is ${AF_PATH}
+    Dated log    ENB_BUILD is ${ENB_BUILD}
+
+
+Test suite teardown for 2535
+    [Documentation]          Test suite teardown for all 2535 TCs.
+    ...                      Restores existing configuration files
+
+    run keyword and ignore error     5GC002535_Keywords.Restore Orignal Configuration 2535
+    Run Keyword If   '${REMOVE_PDML_FILE_END_TEST_SUITE}' == '1'   OperatingSystem.Remove File    ${LOG_PATH}/*.pdml
+    Run Keyword If   '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'     Dated Log           Recommissioning gNB with original SCF file
+    Run Keyword If   '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'   Run Keyword and Ignore Error   OAM Perform Full Commissioning   ${original_scf_file}
+    ${isOAMRebooted}      Run Keyword If        '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'      SSH Was OAM Rebooted         ${GNB_DU}
+    ...                             timeout=60
+    # If gNB was rebooted after re-commissioning, wait until it's ready again.
+    Run Keyword If   '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'  Run Keyword If  '${isOAMRebooted}' == 'True'  Airscale Wait for Ready  ${GNB_DU}
+    5GC002535_Keywords.Conn.ResetCache
+
+Get Temporary Scf From Current Plan
+    [Arguments]   ${gnb_index}=0    ${vdu_index}=0
+    [Documentation]  Get Temporary Scf From Current Plan
+    ...    | Input Parameters | Man. | Description |
+    ...	   | vdu_index | no | vdu_index, default is 0 |
+    ...
+    ...    *RETURN VALUE*
+    ...    scf file full name
+    ...
+    ...    Example
+    ...    | ${vdu_conf} | Get Temporary Scf From Current Plan |
+    ...
+    ${tmp_scf_path}=    5GC002535_Keywords.Prepare Logs Directory Path     subdir=temp_scf    with_timestamp=True
+    ${file_name}   5GC002535_Keywords.get unique id    prefix=scf_tmp_     suffix=.xml     precise=LOW
+    ${tmp_scf_full_path}             OAM Get SCF File            dir=${tmp_scf_path}      file=${file_name}
+    [Return]  ${tmp_scf_full_path}
+
+Get Unique ID
+    [Arguments]  ${prefix}=${EMPTY}   ${suffix}=${EMPTY}   ${precise}=HIGH
+    [Documentation]   Get Unique ID
+    ...    | Input Parameters | Man. | Description |
+    ...    | prefix       | no | prefix, default is ${EMTPY} |
+    ...    | suffix       | no | suffix, default is ${EMTPY} |
+    ...    | precise      | no | precise, HIGH or LOW, default is HIGH |
+    ...    *RETURN VALUE*
+    ...    None
+    ...    Example
+    ...  | ${tmp_id} | Get Unique ID |
+    ...  | ${tmp_id} | Get Unique ID | prefix=myprefix |
+    ...  | ${tmp_id} | Get Unique ID | prefix=myprefix | precise=HIGH |
+    ...  | ${tmp_id} | Get Unique ID | precise=HIGH |
+    ...  | ${tmp_id} | Get Unique ID | precise=LOW |
+    ${precise}  Set Variable  ${precise.upper()}
+    ${rtn}  Run Keyword If  "${precise}"=="HIGH"  5GC002535_Keywords.Get Unique ID High Precise  prefix=${prefix}   suffix=${suffix}
+    ...   ELSE   5GC002535_Keywords.Get Unique ID LOW Precise   prefix=${prefix}   suffix=${suffix}
+    [Return]    ${rtn}
+
+Get Unique ID High Precise
+    [Arguments]  ${prefix}=${EMPTY}   ${suffix}=${EMPTY}
+    ${unique_id}    Evaluate    str(uuid.uuid4())    modules=uuid
+    ${unique_id}    String.Replace String    ${unique_id}    -    ${EMPTY}
+    [Return]    ${prefix}${unique_id}${suffix}
+
+Get Unique ID LOW Precise
+    [Arguments]  ${prefix}=${EMPTY}   ${suffix}=${EMPTY}
+    ${unique_id}    Evaluate    str(time.time())    modules=time
+    ${unique_id}    String.Replace String    ${unique_id}    .    ${EMPTY}
+    [Return]    ${prefix}${unique_id}${suffix}
+
+Update nrCellType into "${testParam}" for CellId "${CellId}"
+    # Get SCF File (SCF.xml) done in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELL-1
+    ${nrCellType}	 scf.get_value_from_scf   p_name=nrCellType
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    ${testParam_dss}                 Tools.Dictionary Get              ${testParam}
+    ${testParam_dss.Context.nrCellType}      set Variable     ${nrCellType}
+    set suite variable    ${testParam_dss}
+    [Return]      ${testParam_dss}
+
+Init Trace color
+    ${consTraceColor}               Evaluate                    "${CYAN}"
+    ${consTraceColorRed}            Evaluate                    "${RED}"
+    ${defColor}                     Evaluate                    "${NORMAL}"
+    Set Suite Variable              ${consTraceColor}
+    Set Suite Variable              ${consTraceColorRed}
+    Set Suite Variable              ${defColor}
+
+update Get Mem Usage Variable
+    ${w_Get_Mem_Usage}    set Variable If   '${GNB_DU.bb[0].M.boardType}'=='ABIP'     True   False
+    set Test Variable     ${w_Get_Mem_Usage}
+
+Get Mem Usage
+    [Documentation]         Based of board id given in argument, check of the Total / Free / Available memory
+    ...                     depending on the period given in agument : before, during or after launching trafic
+    ...                     Tested and used for ABIP ONLY
+    [Arguments]         ${board_id}=1     ${period}=before    ${connection}=${NONE}   ${suffix}=MemUsage
+
+    ${CURRENT_DATE}=    Get current date    result_format=%Y-%m%d_%H:%M:%S
+
+    OperatingSystem.Run    mkdir -p ${testCaseDir}/${suffix}
+
+    ${RESET_RESULT_FILE}=   Catenate    SEPARATOR=_     Mem_Usage          ${CURRENT_DATE}_${period}.txt
+
+	${MemTotal}			ssh.execute			command=bsh ${board_id}:0 cat /proc/meminfo | grep -i MemTotal		connection=${connection}
+	...                 timeout=10s
+	${MemFree}			ssh.execute			command=bsh ${board_id}:0 cat /proc/meminfo | grep -i MemFree		connection=${connection}
+	...                 timeout=10s
+	${MemAvailable}		ssh.execute			command=bsh ${board_id}:0 cat /proc/meminfo | grep -i MemAvailable	connection=${connection}
+	...                 timeout=10s
+
+	dated log    MemTotal=${MemTotal}
+	dated log    MemFree=${MemFree}
+	dated log    MemAvailable=${MemAvailable}
+
+    ${valid_lines}    Get Lines Matching Regexp    ${MemTotal}    MemTotal    partial_match=true
+    ${valid_lines_last}    Set variable    ${valid_lines.split(':')[-1]}
+    ${MemTotal_value}      Set variable    ${valid_lines_last.split(' ')[-2]}
+    dated log    MemTotal_value=${MemTotal_value}
+    ${valid_lines}    Get Lines Matching Regexp    ${MemFree}    MemFree    partial_match=true
+    ${valid_lines_last}    Set variable    ${valid_lines.split(':')[-1]}
+    ${MemFree_value}      Set variable    ${valid_lines_last.split(' ')[-2]}
+    dated log    MemFree_value=${MemFree_value}
+
+    ${Marlin DDR usage}=   Evaluate   (${MemTotal_value} - ${MemFree_value})/int(${1000000})
+
+	${HugePages_Total}			ssh.execute		command=bsh ${board_id}:0 cat /proc/meminfo | grep -i HugePages_Total		connection=${connection}
+	...                 timeout=10s
+	${HugePages_Free}			ssh.execute		command=bsh ${board_id}:0 cat /proc/meminfo | grep -i HugePages_Free		connection=${connection}
+	...                 timeout=10s
+	${valid_lines}    Get Lines Matching Regexp    ${HugePages_Total}    HugePages_Total    partial_match=true
+    ${valid_lines_last}    Set variable    ${valid_lines.split(':')[-1]}
+    ${HugePages_Total_value}      Set variable    ${valid_lines_last.split(' ')[-1]}
+    dated log    HugePages_Total_value=${HugePages_Total_value}
+    ${valid_lines}    Get Lines Matching Regexp    ${HugePages_Free}    HugePages_Free    partial_match=true
+    ${valid_lines_last}    Set variable    ${valid_lines.split(':')[-1]}
+    ${HugePages_Free_value}      Set variable    ${valid_lines_last.split(' ')[-1]}
+    dated log    HugePages_Free_value=${HugePages_Free_value}
+    ${ABIP Marlin DDR HugePage used}=   Evaluate   ((${HugePages_Total_value} - ${HugePages_Free_value})*2048)/int(${1000000})
+
+    ${mpstat}		ssh.execute			command=bsh ${board_id}:0 mpstat -P 0,1,2,3  	connection=${connection}
+	...                 timeout=10s
+	dated log    mpstat=${mpstat}
+
+    ${df_k}		ssh.execute			command=bsh ${board_id}:0 df -k  	connection=${connection}
+	...                 timeout=10s
+	dated log    df_k=${df_k}
+
+	${valid_lines}    Get Lines Matching Regexp    ${df_k}    rootfs    partial_match=true
+    ${rootfs_%_value}      Set variable    ${valid_lines.split(' ')[-2]}
+    dated log    rootfs_value=${rootfs_%_value}
+    ${rootfs_value}      Set variable    ${valid_lines.split(' ')[-7]}
+    # Dated log   valid_lines=${valid_lines.split(' ')}
+    ${rootfs_value used}=   Evaluate   ${rootfs_value}/int(${1000})
+    ${valid_lines}    Get Lines Matching Regexp    ${df_k}    logs    partial_match=true
+    ${logs_%_value}      Set variable    ${valid_lines.split(' ')[-2]}
+    dated log    logs_value_used=${logs_%_value}
+    dated log  ${consTraceColor} ABIP Marlin logs used ${defColor}: ${consTraceColorRed}${logs_%_value}${defColor} used
+    ${logs_%_value}    Replace String    ${logs_%_value}    %    ${SPACE}
+    ${compare_result}=   Evaluate     int(${logs_%_value}) >= ${40}
+    Run Keyword if  '${compare_result}' == 'True'	ssh.execute	         command=echo "df -k results before CleanUp :" >> /tmp/${RESET_RESULT_FILE}
+    ...                                                                  connection=${connection}
+    Run Keyword if  '${compare_result}' == 'True'	ssh.execute	         command=bsh ${board_id}:0 df -k >> /tmp/${RESET_RESULT_FILE}
+    ...                                                                  connection=${connection}
+    Run Keyword if  '${compare_result}' == 'True'	ssh.execute	         command=bsh ${board_id}:0 ls -lrt /ffs/run/logs >> /tmp/${RESET_RESULT_FILE}
+    ...                                                                  connection=${connection}
+    Run Keyword if  '${compare_result}' == 'True'	ssh.execute          command=bsh ${board_id}:0 rm /ffs/run/logs/*.pcap*
+    ...                                                                  connection=${connection}
+	...                                                                  timeout=10s
+	Run Keyword if  '${compare_result}' == 'True'	  dated log       ${consTraceColorRed}=> CleanUp pcap in ${board_id}:0 /ffs/run/logs${defColor}
+
+	${valid_lines}    Get Lines Matching Regexp    ${df_k}    /tmp    partial_match=true
+    ${tmp_%_value}      Set variable    ${valid_lines.split(' ')[-2]}
+    ${tmp_value}      Set variable    ${valid_lines.split(' ')[-7]}
+    # Dated log   valid_lines=${valid_lines.split(' ')}
+    ${tmp_value used}=   Evaluate   ${tmp_value}/int(${1000})
+    dated log    tmp_value=${tmp_value}
+    dated log    tmp_value used=${tmp_value used}
+
+    dated log  ${consTraceColor} ABIP Marlin DDR usage ${defColor}: ${consTraceColorRed}${Marlin DDR usage}${defColor} GB
+    dated log  ${consTraceColor} ABIP Marlin DDR HugePage used ${defColor}: ${consTraceColorRed}${ABIP Marlin DDR HugePage used}${defColor} GB
+    dated log  ${consTraceColor} ABIP Marlin DDR /tmp used ${defColor}: ${tmp_value used} MB (${consTraceColorRed}${tmp_%_value}${defColor} used)
+    ${text}=   Catenate    SEPARATOR=    ABIP Marlin DDR rootfs used
+    dated log  ${consTraceColor} ${text} ${defColor}: ${rootfs_value used} MB (${consTraceColorRed}${rootfs_%_value}${defColor} used)
+
+    ssh.execute	    command=echo "ABIP Marlin DDR usage : ${Marlin DDR usage} GB" >> /tmp/${RESET_RESULT_FILE}     connection=${connection}
+    ssh.execute     command=echo "ABIP Marlin DDR HugePage used: ${ABIP Marlin DDR HugePage used} GB" >> /tmp/${RESET_RESULT_FILE}
+    ...               connection=${connection}
+    ssh.execute	    command=echo "ABIP Marlin DDR /tmp used: ${tmp_value used} MB (${tmp_%_value} used)" >> /tmp/${RESET_RESULT_FILE}
+    ...               connection=${connection}
+    ssh.execute
+    ...    command=echo "${text} : ${rootfs_value used} MB (${rootfs_%_value} used)" >> /tmp/${RESET_RESULT_FILE}  connection=${connection}
+
+	ssh.execute	    command=bsh ${board_id}:0 mpstat -P 0,1,2,3 >> /tmp/${RESET_RESULT_FILE}     connection=${connection}
+	ssh.execute	    command=bsh ${board_id}:0 cat /proc/meminfo >> /tmp/${RESET_RESULT_FILE}     connection=${connection}
+	ssh.execute	    command=bsh ${board_id}:0 df -k >> /tmp/${RESET_RESULT_FILE}       connection=${connection}
+	ssh.Download File    /tmp/${RESET_RESULT_FILE}    ${testCaseDir}/${suffix}/${RESET_RESULT_FILE}   connection=${connection}
+	ssh.execute	    command=rm -f /tmp/${RESET_RESULT_FILE}                  connection=${connection}
+
+# 0x58057A 	rdFeatureFlagBitmapLevel  0 VIP  1 ERROR  2 WARNING  3 INFO  4 DEBUG  5 INVALID
+# 0x58057B 	rdFeatureFlagBitmap0      Bit 12 DSS
+# 0x58057C 	rdFeatureFlagBitmap1      Bit 31 DL.PDSCH_DMRS_FDM    Bit 19 DL.DCI
+# L2PS_DSS_DEBUG_RAD_PARAMETERS = {    # Swconfig.txt
+#    '0x58057a': '4',
+#    '0x58057b': '0x1001',
+#    '0x58057c': '0x80080000',
+#}
+
+Set 2535 L2PS Debug Specific RAD
+    [Documentation]   Author: Ch SAMSON , set L2PS DSS and DL FDM debug Rad parameters
+    [Arguments]                      ${testParam}
+
+    ${l2ps_0x58057a}=      create dictionary          field=0x58057a     value=4
+    ${l2ps_0x58057b}=      create dictionary          field=0x58057b     value=0x1001
+    ${l2ps_0x58057c}=      create dictionary          field=0x58057c     value=0x80080000
+
+    ${swconfig_gnb}=       run Keyword if    '${SHOULD_UPDATE_DEBUG_L2PS_RAD}' == '1'     Create List     ${l2ps_0x58057a}
+    ...                                                                                                   ${l2ps_0x58057b}
+    ...                                                                                                   ${l2ps_0x58057c}
+    ...   ELSE                                                                      Create List
+
+    [return]    ${swconfig_gnb}
+

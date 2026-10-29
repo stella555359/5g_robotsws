@@ -1,0 +1,194 @@
+*** Settings ***
+Library           XML  use_lxml=True
+Resource    ../../COMPA/test_resources/COMPA__CM_Setup_environment.robot
+Resource    ../../CIT/test_resources/SWM__SCF_validation_errors_check.robot
+Resource    ../../CIT/test_resources/LOGS__Snapshot.robot
+Resource    ../../COMPA/test_resources/COMPA__SSH_snapshot.robot
+Resource    ../../CIT/test_resources/SWM__SW_download_and_activation__SBTS_to_SBTS.robot
+Resource    ../../COMPA/test_resources/SWM__DC_SBTS_SOAM_fallback_to_SBTS_SOAM_CONS_RLC.robot
+Resource    ../../COMPA/test_resources/COMPA__Uboot_downgrade.robot
+Resource    ../../CIT/test_resources/SWM__Upload_swconfig.robot
+Resource    ../../CIT/test_resources/SWM__Check_swconfig_file_presence.robot
+Resource    ../../CIT/test_resources/SWM__SW_update_without_SBTS_verifications.robot
+Documentation  Compa tests.
+
+Suite Setup   Run keywords    Map BuildShareTimi01
+
+*** Variables ***
+@{CUSTOMERS_LIST}         GENERIC
+# ${DISABLE_WATCHDOG}    ${TRUE}
+
+*** Test Cases ***
+_0___COMPA__CM_Setup_environment
+    TC__COMPA__CM_Setup_environment
+
+_1_Upload_swconfig
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${SWCONFIG_PATH}
+    ...    /home/ute/MN/UTE/robotws/testsuite/Timisoara/SBTS/test_line_specific/SBTS1602/swconfigs/swconfig.txt
+    ...    AND    Set Test Variable    ${ADDITIONAL_IGNORED_ALARMS}
+    ...    [['faultId', '4655', ' alarmId ', '7220'], ['faultId', '4654', 'alarmId', '7220']]
+    ...    AND    Modify Resource Search Order    SWM__Upload_swconfig
+    ...    AND    SWM__Upload_swconfig.TC Setup
+    TC__SWM__Upload_swconfig
+    [Teardown]    Run Keywords    SWM__Upload_swconfig.TC Teardown
+    ...    AND    Restore Resource Search Order
+    ...    AND    Run keyword if  '${bts_verification_status}'=='norun'  CIT Recover Test Line By Power Reset
+
+_2_check_swconfig
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Modify Resource Search Order    SWM__Check_swconfig_file_presence
+    ...    AND    SWM__Check_swconfig_file_presence.TC Setup
+    TC__SWM__Check_swconfig_file_presence
+    [Teardown]    Run Keywords    SWM__Check_swconfig_file_presence.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+_5___COMPA__Uboot_downgrade
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Modify Resource Search Order    COMPA__Uboot_downgrade
+    ...    AND    COMPA__Uboot_downgrade.TC Setup
+    TC__COMPA__Uboot_downgrade
+    [Teardown]    Run Keywords    COMPA__Uboot_downgrade.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+_3___SWM__SW_download_and_activation__SBTS_to_SBTS____BASE_SW
+    [Setup]    Run Keywords    Set Test Variable    ${Target SW name}    ${None}
+    ...    AND    Set Test Variable    ${Target SW dir}    /home/ute/BASE_SW
+    ...    AND    Set Test Variable    ${SW Update Timeout}    3600
+    ...    AND    Set Test Variable    ${Ping loss timeout}    900
+    ...    AND    Set Test Variable    ${Ping regain timeout}    1900
+    ...    AND    Set Test Variable    ${Ping stable timeout}    370
+    ...    AND    Set Test Variable    ${onAir Check Number}    150
+    ...    AND    Set Test Variable    ${First Cell On Air Timeout}    35
+    ...    AND    Set Test Variable    ${Test Timeout}    139
+    ...    AND    Modify Resource Search Order    SWM__SW_download_and_activation__SBTS_to_SBTS
+    ...    AND    SWM__SW_download_and_activation__SBTS_to_SBTS.TC Setup
+
+    [Timeout]    90 minutes
+    TC__SWM__SW_download_and_activation__SBTS_to_SBTS
+    [Teardown]    Run Keywords    SWM__SW_download_and_activation__SBTS_to_SBTS.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+_20___SWM__SCF_validation_errors_check
+    [Timeout]    14401
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${SKIP_PARAM_RELATION_ERRORS}    ${TRUE}
+    ...    AND    SWM__SCF_validation_errors_check.TC Setup
+    ...    AND    Modify Resource Search Order    SWM__SCF_validation_errors_check
+    TC__SWM__SCF_validation_errors_check
+    [Teardown]    Run Keywords    SWM__SCF_validation_errors_check.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+_21___SWM__SW_download_and_activation__SBTS_to_SBTS____TARGET_SW
+    [Setup]    Run Keywords    Set Test Variable    ${Target SW name}    ${None}
+    ...    AND    Set Test Variable    ${Target SW dir}    /home/ute/TARGET_SW
+    ...    AND    Set Test Variable    ${SW Update Timeout}    3600
+    ...    AND    Set Test Variable    ${Ping loss timeout}    900
+    ...    AND    Set Test Variable    ${Ping regain timeout}    1900
+    ...    AND    Set Test Variable    ${Ping stable timeout}    370
+    ...    AND    Set Test Variable    ${onAir Check Number}    150
+    ...    AND    Set Test Variable    ${First Cell On Air Timeout}    35
+    ...    AND    Set Test Variable    ${Test Timeout}    139
+    ...    AND    Modify Resource Search Order    SWM__SW_download_and_activation__SBTS_to_SBTS
+    ...    AND    SWM__SW_download_and_activation__SBTS_to_SBTS.TC Setup
+
+    [Timeout]    90 minutes
+    TC__SWM__SW_download_and_activation__SBTS_to_SBTS
+    [Teardown]    Run Keywords    SWM__SW_download_and_activation__SBTS_to_SBTS.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+_22___SWM__SCF_validation_errors_check
+    [Timeout]    14401
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${SKIP_PARAM_RELATION_ERRORS}    ${TRUE}
+    ...    AND    SWM__SCF_validation_errors_check.TC Setup
+    ...    AND    Modify Resource Search Order    SWM__SCF_validation_errors_check
+    TC__SWM__SCF_validation_errors_check
+    [Teardown]    Run Keywords    SWM__SCF_validation_errors_check.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+_23___LOGS__Snapshot
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${SNAPSHOT_TIMEOUT}    1200
+    ...    AND    Set Test Variable    ${ADDITIONAL_IGNORED_ALARMS}
+    ...    [['faultId', '4655', ' alarmId ', '7220'], ['faultId', '4654', 'alarmId', '7220']]
+    ...    AND    Modify Resource Search Order    LOGS__Snapshot
+    ...    AND    LOGS__Snapshot.TC Setup
+    TC__LOGS__Snapshot
+    [Teardown]    Run Keywords    LOGS__Snapshot.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+_24___SWM__SBTS_SOAM_rollback_to_SBTS_SOAM
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${PASSIVE_SW_STATE}    commissioned
+    ...    AND    Set Test Variable    ${RESTORE_TIMEOUT}    30m
+    ...    AND    Set Test Variable    ${PING_LOSS_TIMEOUT}    600
+    ...    AND    Set Test Variable    ${PING_REGAIN_TIMEOUT}    600
+    ...    AND    Set Test Variable    ${CONNECTION_RESET_ON_DEMAND}    ${TRUE}
+    ...    AND    Set Test Variable    ${ADDITIONAL_IGNORED_ALARMS}
+    ...    [['faultId', '4655', ' alarmId ', '7220'], ['faultId', '4654', 'alarmId', '7220']]
+    ...    AND    Modify Resource Search Order    SWM__SBTS_SOAM_rollback_to_SBTS_SOAM
+    ...    AND    SWM__SBTS_SOAM_rollback_to_SBTS_SOAM.TC Setup
+    TC__SWM__SBTS_SOAM_rollback_to_SBTS_SOAM
+    [Teardown]    Run Keywords    SWM__SBTS_SOAM_rollback_to_SBTS_SOAM.TC Teardown
+    ...    AND    Restore Resource Search Order
+    ...    AND    Run keyword if  '${bts_verification_status}'=='norun'  Run Keyword  CIT Recover Test Line By Power Reset
+
+
+_25___LOGS__Snapshot
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${SNAPSHOT_TIMEOUT}    1200
+    ...    AND    Set Test Variable    ${ADDITIONAL_IGNORED_ALARMS}
+    ...    [['faultId', '4655', ' alarmId ', '7220'], ['faultId', '4654', 'alarmId', '7220']]
+    ...    AND    Set Test Variable    ${cells_LTE_expected_states}
+    ...    administrativeState=unlocked, operationalState=enabled, availabilityStatus=degraded, blockingState=Unblocked
+    ...    AND    Set Test Variable    ${cells_WCDMA_expected_states}
+    ...    operationalState=enabled, availabilityStatus=degraded, blockingState=Unblocked, usageState=Active
+    ...    AND    Set Test Variable    ${cells_GSM_expected_states}
+    ...    administrativeState=Unlocked, operationalState=enabled, availabilityStatus=degraded, blockingState=Unblocked, usageState=Active
+    ...    AND    Modify Resource Search Order    LOGS__Snapshot
+    ...    AND    LOGS__Snapshot.TC Setup
+    TC__LOGS__Snapshot
+    [Teardown]    Run Keywords    LOGS__Snapshot.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+_26___COMPA__SSH_snapshot
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    COMPA__SSH_snapshot.TC Setup
+    ...    AND    Modify Resource Search Order    COMPA__SSH_snapshot
+    TC__COMPA__SSH_snapshot
+    [Teardown]    Run Keywords    COMPA__SSH_snapshot.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+*** Keywords ***
+
+Map BuildShareTimi01
+    Run  sudo mkdir -p /media/BuildShareTimi01
+    Run  sudo chown ute:ute /media/BuildShareTimi01
+    ${sudo_command}  Catenate  SEPARATOR=  sudo sh -c "echo //10.5.16.78/BuildShareTimi01 /media/BuildShareTimi01/ cifs _netdev,
+    ...  noperm,username=userbuild,,nosuid,noexec,password=Aikon_123456*8 0 0 >>/etc/fstab"
+    Run  ${sudo_command}
+    Run  sudo mount -a
+    Run  sudo cp -r /home/ute/testline_configuration/10_18_UTESRANCLOUD1602 /home/ute/

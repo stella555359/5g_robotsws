@@ -1,0 +1,199 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Common keywords of CB009158 feature
+...               Prerequisite :
+...               Scope : keywords for CB009158 configuration
+...
+...               Test Case Scenario author   : imen.mestiri@nokia.com
+...               Test Case Scenario contact  : imen.mestiri@nokia.com
+...               Test Case automation author : imen.mestiri@nokia.com
+...               Test Case automation contact: imen.mestiri@nokia.com
+...               Creation Date               : 06-05-2022
+...               Modified Date               : 06-05-2022
+...               Last Modified by            : philippe.daroux@nokia.com
+...               Version History   Date            Author                      Notes
+...               0.1               06-05-2022      imen.mestiri@nokia.com      Creation (1227 activation flag)
+...               0.2               06-06-2022      philippe.daroux@nokia.com   Modification (9158-G profile added)
+
+Library           OperatingSystem
+Library           ../../../../../resources/SWENG/python/ScfVendorOperations.py
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+
+
+
+*** Variables ***
+
+
+*** Keywords ***
+
+#Update 9158 Params in OAM SCF
+#Dated Log    ----> Adding configuration for mixed BW To Be Done  ......
+
+Update 9158-G Params in OAM SCF
+    [Arguments]                ${nb_of_cell}=3
+    ${SCF_ORI}                 Set Variable          ${SCF_SETUP_PATH}.origin
+    ${SCF_MODIFIED}            Set Variable          ${SCF_SETUP_PATH}.modif
+    # Backup the original SCF & save as ${SCF_SETUP_PATH}.origin
+    Copy File                  ${SCF_SETUP_PATH}     ${SCF_ORI}
+    Copy File                  ${SCF_SETUP_PATH}     ${SCF_MODIFIED}
+    # update the SCF and store the modified file as ${SCF_SETUP_PATH}.modif
+    Dated Log    ----> in Update 9158-G Params in OAM SCF : nb_of_cell : ${nb_of_cell}
+    Config Update 9158-G Activation               scf_file=${SCF_MODIFIED}   nbCell=${nb_of_cell}
+   Oam.OAM Perform Full Commissioning          scf_file=${SCF_MODIFIED}
+    WA Airscale Wait For Ready                  ${GNB_DU}
+
+Config Update 9158-G Activation
+    [Documentation]        This KW is used to update the NIDD Param:
+    # ...                    0) force the MRBTS_x/NRBTS-x/NRCELL-(1 and 2)/cellName to be : NRCELL-1 & NRCELL-2
+    ...                    1) To Acitvate 1227 & related feature :
+    ...                      MRBTS-x/NRBTS-x.actSlowPrbPooling to be "true", to activate 1227 feature (Baseband pooling)
+    ...                      MRBTS-x/NRBTS-x.actConnRrcPooling to be "true"
+    ...                      MRBTS-x/NRBTS-x.actScheUePooling to be "true"
+    ...                    2) To activate UPD017 interacting with 2538/2534 feature (PDSCH Extension in SSB and TRS slots) :
+    ...                      MRBTS_x/NRBTS-x/NRCELL-(1 and 2)/actPdschRmCsirsForTracking to be "true"
+    ...                      MRBTS_x/NRBTS-x/NRCELL-(1 and 2)/actPdschAtSsbSlots to be "true" to activate 2534 feature (PDSCH at SSB slots)
+    ...                    3) To activate VoNR :
+    ...                      MRBTS_x/NRBTS-x/NRCELL-(1 and 2)/actVoNR to be "true"
+    ...                    4) To allows more UEs for FDM multi UE :
+    ...                      MRBTS_x/NRBTS-x/NRCELL-(1 and 2)/maxNumPdschAllocationPerSlot to be  "4" (For FDM multi ue config)
+    ...                      MRBTS_x/NRBTS-x/NRCELL-(1 and 2)/maxNumPuschAllocationPerSlot to be  "4" (For FDM multi ue config)
+    ...                    5) To handle Dynamic Pdcch, adding a coreset4 config in BWP profile 33 dedicated Pdcch
+    ...                      and associate it to searchSpaceDedicated
+    ...                    6) Set MRBTS-1/EQM-1/APEQM-1/CABINET-1/BBMOD-1 param fddNrCellConfigTradeoff to be "max cells"
+    ...                    Then save the scf file with the modified value
+    ...                    7) To Acitvate 9158-G & interaction with 5GC002558 PRB blanking :
+    ...                       Set MRBTS-1/NRBTS-1 params actGeneralConnectivityGold to TRUE.
+    ...                       Set MRBTS-1/NRBTS-1/NRCELL-x params actPRBBlanking to TRUE.
+    ...                       Set MRBTS-1/NRBTS-1/NRCELL-x params:
+    ...                         nbrOfBlankedPRBsHighEdgeDL and nbrOfBlankedPRBsHighEdgeuL to 12
+    ...                       Set MRBTS-1/NRBTS-1/NRCELL-x params:
+    ...                         nbrOfBlankedPRBsLowEdgeDL and nbrOfBlankedPRBsLowEdgeuL to 14
+
+    [Arguments]            ${scf_file}      ${nbCell}=3
+    Set Dist Name Variables
+    SCF StartSession       scf_file=${scf_file}
+    Dated Log   ----> Here to update the GNB SCF with 1227 params  .....
+    SCF Set element        dist_name=${nrbts_dist_name}
+    ...                    element_name=actSlowPrbPooling
+    ...                    element_value=true
+    SCF Set element        dist_name=${nrbts_dist_name}
+    ...                    element_name=actConnRrcPooling
+    ...                    element_value=true
+    SCF Set element        dist_name=${nrbts_dist_name}
+    ...                    element_name=actScheUePooling
+    ...                    element_value=true
+    SCF Set element        dist_name=${BBMOD_1_dist_name}
+    ...                    element_name=fddNrCellConfigTradeoff
+    ...                    element_value=max cells
+    SCF Set element        dist_name=${nrbts_dist_name}
+    ...                    element_name=actGeneralConnectivityGold
+    ...                    element_value=true
+    Dated Log   ---> nbCell : ${nbCell}
+    FOR    ${cell_idx}    IN RANGE    1    ${nbCell}+1
+        Dated Log   ---> variable cell_idx : ${cell_idx}
+        ${nrcell_dist_name}           Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_idx}
+        SCF Set element        dist_name=${nrcell_dist_name}
+        ...                    element_name=actPdschRmCsirsForTracking
+        ...                    element_value=true
+        SCF Set element        dist_name=${nrcell_dist_name}
+        ...                    element_name=actVoNR
+        ...                    element_value=true
+        SCF Set element        dist_name=${nrcell_dist_name}
+        ...                    element_name=actPdschAtSsbSlots
+        ...                    element_value=true
+        SCF Set element        dist_name=${nrcell_dist_name}
+        ...                    element_name=maxNumPdschAllocationPerSlot
+        ...                    element_value=4
+        SCF Set element        dist_name=${nrcell_dist_name}
+        ...                    element_name=maxNumPuschAllocationPerSlot
+        ...                    element_value=4
+        SCF Set element        dist_name=${nrcell_dist_name}
+        ...                    element_name=actPRBBlanking
+        ...                    element_value=true
+        SCF Set element        dist_name=${nrcell_dist_name}
+        ...                    element_name=nbrOfBlankedPRBsHighEdgeDL
+        ...                    element_value=12
+        SCF Set element        dist_name=${nrcell_dist_name}
+        ...                    element_name=nbrOfBlankedPRBsHighEdgeUL
+        ...                    element_value=12
+        SCF Set element        dist_name=${nrcell_dist_name}
+        ...                    element_name=nbrOfBlankedPRBsLowEdgeDL
+        ...                    element_value=14
+        SCF Set element        dist_name=${nrcell_dist_name}
+        ...                    element_name=nbrOfBlankedPRBsLowEdgeUL
+        ...                    element_value=14
+        SCF Set element        dist_name=${nrcell_dist_name}
+        ...                    element_name=csiReportPeriodicity
+        ...                    element_value=slots40
+    END
+    # start : add coreset4 config
+    Dated Log         ----> start :  add coreset4 config for dynamic pdcch
+    ${list_name}                Set Variable     coresetDedicated
+    SCF Remove List             dist_name=${pdcch_dedicated_dist_name}
+    ...                         list_name=${list_name}
+    SCF Add List                dist_name=${pdcch_dedicated_dist_name}
+    ...                         list_name=${list_name}
+    &{item_dict}                Create Dictionary
+    ...                         cceToRegMapping=nonInterleaved
+    ...                         coresetId=4
+    ...                         cRbStart=0
+    ...                         duration=1
+    ...                         interleaverSize=none
+    ...                         regBundleSize=n6
+    ...                         size=102
+    SCF Add Items To List       dist_name=${pdcch_dedicated_dist_name}
+    ...                         list_name=${list_name}
+    ...                         elements=${item_dict}
+    # end : add coreset4 config
+    Dated Log      ----> end :  add coreset4 config
+    # start : associate coreset4 to searchSpaceDedicated list
+    Dated Log      ---> start :  associate coreset4 to searchSpaceDedicated
+    ${list_name_searchsp}      Set Variable     searchSpaceDedicated
+    SCF Remove List            dist_name=${pdcch_dedicated_dist_name}
+    ...                        list_name=${list_name_searchsp}
+    SCF Add List               dist_name=${pdcch_dedicated_dist_name}
+    ...                        list_name=${list_name_searchsp}
+    &{item_dict_1}             Create Dictionary
+    ...                        coresetId=4
+    ...                        dciFormat=formats0-0-And-1-0
+    ...                        duration=1
+    ...                        monitoringSymbolWithinSlot=symbol_0_1
+    ...                        numOfPdcchCandidatesInAL1=n0
+    ...                        numOfPdcchCandidatesInAL16=n0
+    ...                        numOfPdcchCandidatesInAL2=n0
+    ...                        numOfPdcchCandidatesInAL4=n4
+    ...                        numOfPdcchCandidatesInAL8=n0
+    ...                        periodicity=sl1
+    ...                        searchSpaceId=7
+    ...                        searchSpaceType=Type3
+    ...                        slotOffset=0
+    SCF Add Items To List       dist_name=${pdcch_dedicated_dist_name}
+    ...                         list_name=${list_name_searchsp}
+    ...                         elements=${item_dict_1}
+    &{item_dict_2}             Create Dictionary
+    ...                        coresetId=4
+    ...                        dciFormat=formats0-1-And-1-1
+    ...                        duration=1
+    ...                        monitoringSymbolWithinSlot=symbol_0_1
+    ...                        numOfPdcchCandidatesInAL1=n0
+    ...                        numOfPdcchCandidatesInAL16=n0
+    ...                        numOfPdcchCandidatesInAL2=n0
+    ...                        numOfPdcchCandidatesInAL4=n4
+    ...                        numOfPdcchCandidatesInAL8=n0
+    ...                        periodicity=sl1
+    ...                        searchSpaceId=8
+    ...                        searchSpaceType=UE-Specific
+    ...                        slotOffset=0
+    SCF Add Items To List       dist_name=${pdcch_dedicated_dist_name}
+    ...                         list_name=${list_name_searchsp}
+    ...                         elements=${item_dict_2}
+    # End : association coreset4
+    Dated Log   ----> end : association coreset4 config
+    Dated Log   ----> to call "SCF Set Element ... etc. for update ..."
+
+    SCF StopSession        scf_file=${scf_file}
+    Dated Log    ----> Modifications completed.\n

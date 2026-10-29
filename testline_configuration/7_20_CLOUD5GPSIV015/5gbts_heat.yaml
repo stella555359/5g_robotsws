@@ -1,0 +1,1999 @@
+heat_template_version: 2016-10-14
+
+description: Template for create all VNFCs
+
+parameters:
+  image:
+    type: string
+    description: image name or UUID
+  ssh_public_key:
+    type: string
+    description: key pair publich ssh key
+  vnf_name:
+    type: string
+    description: 5GBTS VNF name
+    default: 5gbts
+    constraints:
+      - allowed_pattern: "^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$"
+        description: "Invalid vnf_name format"
+      - length: {min: 4, max: 35}
+        description: "Invalid vnf_name length (should be [4,35])"
+  cluster_id:
+    description: Cluster identification.
+    type: string
+    default: "01"
+    constraints:
+      - length: {min: 1, max: 7}
+      - allowed_pattern: "[0-9]+"
+  vnfc_type_name_case:
+    description: vnfc name case
+    type: string
+    default: lower
+    constraints:
+      - allowed_values: [lower, upper]
+  vnfc_type_name_map:
+    description: vnfc name map
+    type: json
+    default:
+      lower:
+        oam: oam
+        cpcn: cpcn
+        cpue: cpue
+        upue: upue
+        cpif: cpif
+        cpnb: cpnb
+        cpcl: cpcl
+        cpnrt: cpnrt
+        uvm: uvm
+        db: db
+      upper:
+        oam: OAM
+        cpcn: CPCN
+        cpue: CPUE
+        upue: UPUE
+        cpif: CPIF
+        cpnb: CPNB
+        cpcl: CPCL
+        cpnrt: CPNRT
+        uvm: UVM
+        db: DB
+  flavors:
+    type: json
+    description: flavor to use
+    default:
+      oam: 5gbts_oam
+      cpcn: 5gbts_cpcn
+      cpue: 5gbts_cpue
+      upue: 5gbts_upue
+      cpif: 5gbts_cpif
+      cpnb: 5gbts_cpnb
+      cpcl: 5gbts_cpcl
+      cpnrt: 5gbts_cpnrt
+      uvm: 5gbts_uvm
+      db: 5gbts_db
+  timezone:
+    description: timezone region
+    type: string
+    constraints:
+      - {custom_constraint: timezone}
+  availability_zone:
+    description: availability zone region
+    type: string
+    default: ""
+  oam_network:
+    description: public network from which to allocate OAM IP
+    type: string
+    constraints:
+      - {custom_constraint: neutron.network}
+  oam_ip:
+    description: IP address for O&M and SSH accessing
+    type: string
+  ntp_servers:
+    description: list of servers to sync time from
+    type: comma_delimited_list
+    constraints:
+      - length: {min: 1, max: 3}
+  dns_forwarders:
+    description: list of servers to forward queries to
+    type: comma_delimited_list
+    constraints:
+      - length: {min: 0, max: 3}
+    default: []
+  external_networks:
+    description: External network to attach to a interface node
+    type: json
+  ext_port:
+    description: External interface vlans
+    type: json
+  internal_network:
+    description: Internal network uuid
+    type: string
+  internal_srv_network:
+    description: Internal service network uuid
+    type: string
+  internal_e1_network:
+    description: Internal e1 network uuid
+    type: string
+  internal_networks:
+    description: Internal subnet cidr and allocation pool
+    type: json
+  number_of_upue_nodes:
+    description: number of ues nodes to instantiate
+    type: number
+    constraints:
+      - range: {min: 1, max: 4}
+  number_of_cpue_nodes:
+    description: number of cpues nodes to instantiate
+    type: number
+    constraints:
+      - range: {min: 1, max: 2}
+  number_of_uvm_nodes:
+    description: number of ues nodes to instantiate]
+    type: number
+    constraints:
+      - range: {min: 0, max: 1}
+  extra_cloud_config_data:
+    type: json
+    default: {}
+  number_of_db_nodes:
+    description: number of db nodes
+    type: number
+    default: 0
+    constraints:
+      - range: {min: 0, max: 1}
+  int_port_type:
+    description: internals port type
+    type: string
+    default: virtio
+    constraints:
+      - allowed_values: [ virtio ]
+  ext_port_type:
+    description: external port type
+    type: string
+    default: sriov
+    constraints:
+      - allowed_values: [ sriov ]
+  oam_port_type:
+    description: oam port type
+    type: string
+    default: virtio
+    constraints:
+      - allowed_values: [ virtio ]
+  int_port_mtu:
+    description: mtu value for intenals port (vxlan)
+    type: number
+    default: 1400
+    constraints:
+    - range: {min: 1280, max: 9000}
+  ext_port_mtu:
+    description: mtu value for externals port (flat)
+    type: number
+    default: 1500
+    constraints:
+    - range: {min: 1280, max: 9000}
+  oam_port_mtu:
+    description: mtu value for oam(trace) port (vlan)
+    type: number
+    default: 1500
+    constraints:
+    - range: {min: 1280, max: 9000}
+  int_pmtu:
+    description: max mtu value supported by intenals port, i.e. provider network mtu
+    type: number
+    default: 9000
+    constraints:
+    - range: {min: 1280, max: 9000}
+  ext_pmtu:
+    description: max mtu value supported by external port, i.e. provider network mtu
+    type: number
+    default: 9000
+    constraints:
+    - range: {min: 1280, max: 9000}
+  oam_pmtu:
+    description: max mtu value supported by oam(trace) port, i.e. provider network mtu
+    type: number
+    default: 9000
+    constraints:
+    - range: {min: 1280, max: 9000}
+  config_drive:
+    description: Use config drive instead of metadata server
+    type: boolean
+    default: true
+  enable_sriov:
+    description: flag of enable sriov vlan tag function
+    type: boolean
+    default: true
+  cloudplatform:
+    description: cloud platform
+    type: string
+  vnf_layout:
+    description: vnf_layout
+    type: string
+    default: redundant
+    constraints:
+      - allowed_values: [basic, redundant]
+  enable_internal_dhcp:
+    type: boolean
+    description: Enable internal network dhcp
+    default: False
+  oam_default_gw:
+    description: oam network default gw
+    type: string
+  oam_security_group:
+    description: oam port security group
+    type: string
+    default: ''
+
+conditions:
+  deploy_basic_condition: {equals : [{get_param: vnf_layout}, "basic"]}
+  # deploy_redundant_condition: {equals : [{get_param: vnf_layout}, "redundant"]}
+  deploy_redundant_condition: {equals : [{get_param: vnf_layout}, "redundant"]}
+
+resources:
+  keypair:
+    type: OS::Nova::KeyPair
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-cbam-generated
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      public_key: {get_param: ssh_public_key}
+
+  network_setup:
+    type: 5GBTS::Network::Setup
+    properties:
+      oam_network: {get_param: oam_network}
+      external_networks: {get_param: external_networks}
+      ext_port_vlans: {get_param: ext_port}
+      internal_network: {get_param: internal_network}
+      internal_srv_network: {get_param: internal_srv_network}
+      internal_e1_network: {get_param: internal_e1_network}
+      internal_networks: {get_param: internal_networks}
+      enable_internal_dhcp: {get_param: enable_internal_dhcp}
+      name_prefix:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+
+  oam_node:
+    type: 5GBTS::Node::Oam
+    condition: deploy_basic_condition
+    depends_on: network_setup
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+            $idx: 0
+      roles: [management, external-connectivity, 5gbts_oam]
+      vnfindex: 0
+      instance_params:
+        server:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, oam]}
+          azId: {get_param: availability_zone}
+      key_name: {get_resource: keypair}
+      number_of_nodes_basic:
+        deployment:
+          number_of_cpcl: 1
+          number_of_cpue: {get_param: number_of_cpue_nodes}
+          number_of_upue: {get_param: number_of_upue_nodes}
+          min_number_of_cpcl: 1
+          min_number_of_cpue: 1
+          min_number_of_upue: 1
+          max_number_of_cpcl: 1
+          max_number_of_cpue: 7
+          max_number_of_upue: 4
+      oam_net:
+        name: oam
+        uuid: {get_attr: [network_setup, networks, oam]}
+        ip_address: {get_param: oam_ip}
+        port_type: { get_param: oam_port_type }
+        mtu:  { get_param: oam_port_mtu }
+        pmtu: { get_param: oam_pmtu }
+      internal_networks:
+        count: 2
+        net_list:
+        - name: internal
+          uuid: {get_attr: [network_setup, networks, internal]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: {get_param: int_port_mtu}
+          pmtu: {get_param: int_pmtu}
+        - name: internal_srv
+          uuid: {get_attr: [network_setup, networks, internal_srv]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_srv, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: { get_param: int_port_mtu }
+          pmtu: { get_param: int_pmtu }
+      external_networks:
+        count: 2
+        net_list:
+        - name: fm_a
+          uuid: {get_attr: [network_setup, networks, extnet_a]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_a]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_oam_a]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: fm_b
+          uuid: {get_attr: [network_setup, networks, extnet_b]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_b]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_oam_b]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+      lo_information:
+        count: 1
+        net_list:
+        - name: fm_lo
+          ip: {get_attr: [network_setup, networks, f1om_ip_oam]}
+          role: {get_attr: [network_setup, networks, f1om_role_oam]}
+      ntp_servers: {get_param: ntp_servers}
+      cluster_id:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      timezone: {get_param: timezone}
+      dns_forwarders: {get_param: dns_forwarders}
+      dpdk_type: oam_296_B
+      ha_cluster:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+            $idx: 0
+      cinder_volumes:
+        count: 1
+        vol_list:
+        - {size: 26, name: vol1}
+      lvm_local_volumes:
+        count: 1
+        vol_list:
+        - {size: 2500M, name: dbcm, mount: /mnt/dbcm, volume: vol1}
+      lvm_nfs_volumes:
+        count: 5
+        vol_list:
+        - {size: 10000M, name: ccs, mount: /mnt/ccs, volume: vol1}
+        - {size: 500M, name: mstate, mount: /mnt/mstate, volume: vol1}
+        - {size: 5000M, name: export, mount: /mnt/export, volume: vol1}
+        - {size: 1000M, name: log, mount: /mnt/log, volume: vol1}
+        - {size: 2000M, name: services, mount: /mnt/services, volume: vol1}
+      service_ip_meta:
+        get_attr: [network_setup, service_ip_map]
+      extra_cloud_config_data: {get_param: extra_cloud_config_data}
+      config_drive: {get_param: config_drive}
+      enable_sriov: {get_param: enable_sriov}
+      cloudplatform: {get_param: cloudplatform}
+      enable_internal_dhcp: {get_param: enable_internal_dhcp}
+      oam_default_gw: {get_param: oam_default_gw}
+      oam_security_group: {get_param: oam_security_group}
+
+  oam_node_in_redundant:
+    type: 5GBTS::Node::Oam::In::Redundant
+    condition: deploy_redundant_condition
+    depends_on: network_setup
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+            $idx: 0
+      roles: [management, external-connectivity, 5gbts_oam]
+      vnfindex: 0
+      vnf_layout: {get_param: vnf_layout}
+      instance_params:
+        server:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, oam]}
+          azId: {get_param: availability_zone}
+      key_name: {get_resource: keypair}
+      number_of_nodes_redundant:
+        deployment:
+          number_of_cpcl: 2
+          number_of_cpue: {get_param: number_of_cpue_nodes}
+          number_of_upue: {get_param: number_of_upue_nodes}
+          min_number_of_cpcl: 2
+          min_number_of_cpue: 1
+          min_number_of_upue: 1
+          max_number_of_cpcl: 2
+          max_number_of_cpue: 7
+          max_number_of_upue: 44
+      oam_net:
+        name: oam
+        uuid: {get_attr: [network_setup, networks, oam]}
+        ip_address: {get_param: oam_ip}
+        port_type: { get_param: oam_port_type }
+        mtu:  { get_param: oam_port_mtu }
+        pmtu: { get_param: oam_pmtu }
+      internal_networks:
+        count: 2
+        net_list:
+        - name: internal
+          uuid: {get_attr: [network_setup, networks, internal]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: {get_param: int_port_mtu}
+          pmtu: {get_param: int_pmtu}
+        - name: internal_srv
+          uuid: {get_attr: [network_setup, networks, internal_srv]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_srv, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: { get_param: int_port_mtu }
+          pmtu: { get_param: int_pmtu }
+      external_networks:
+        count: 2
+        net_list:
+        - name: fm_a
+          uuid: {get_attr: [network_setup, networks, extnet_a]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_a]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_oam_a]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: fm_b
+          uuid: {get_attr: [network_setup, networks, extnet_b]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_b]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_oam_b]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+      lo_information:
+        count: 1
+        net_list:
+        - name: fm_lo
+          ip: {get_attr: [network_setup, networks, f1om_ip_oam]}
+          role: {get_attr: [network_setup, networks, f1om_role_oam]}
+      ntp_servers: {get_param: ntp_servers}
+      cluster_id:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      timezone: {get_param: timezone}
+      dns_forwarders: {get_param: dns_forwarders}
+      dpdk_type: oam_296_B
+      ha_cluster:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+            $idx: 0
+      cinder_volumes:
+        count: 1
+        vol_list:
+        - {size: 26, name: vol1}
+      lvm_local_volumes:
+        count: 1
+        vol_list:
+        - {size: 2500M, name: dbcm, mount: /mnt/dbcm, volume: vol1}
+      lvm_nfs_volumes:
+        count: 5
+        vol_list:
+        - {size: 10000M, name: ccs, mount: /mnt/ccs, volume: vol1}
+        - {size: 500M, name: mstate, mount: /mnt/mstate, volume: vol1}
+        - {size: 5000M, name: export, mount: /mnt/export, volume: vol1}
+        - {size: 1000M, name: log, mount: /mnt/log, volume: vol1}
+        - {size: 2000M, name: services, mount: /mnt/services, volume: vol1}
+      service_ip_meta:
+        get_attr: [network_setup, service_ip_map]
+      extra_cloud_config_data: {get_param: extra_cloud_config_data}
+      config_drive: {get_param: config_drive}
+      enable_sriov: {get_param: enable_sriov}
+      cloudplatform: {get_param: cloudplatform}
+      enable_internal_dhcp: {get_param: enable_internal_dhcp}
+      oam_default_gw: {get_param: oam_default_gw}
+      oam_security_group: {get_param: oam_security_group}
+
+  cpif_nodes:
+    condition: deploy_basic_condition
+    depends_on: [oam_node, upue_nodes]
+    type: 5GBTS::Node::Common
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, cpif]}
+            $idx: 0
+      roles: [application, 5gbts_cpif]
+      vnfindex: 0
+      instance_params:
+        server:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, cpif]}
+          azId: {get_param: availability_zone}
+      internal_networks:
+        count: 3
+        net_list:
+        - name: internal
+          uuid: {get_attr: [network_setup, networks, internal]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: {get_param: int_port_mtu}
+          pmtu: {get_param: int_pmtu}
+        - name: internal_srv
+          uuid: {get_attr: [network_setup, networks, internal_srv]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_srv, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: {get_param: int_port_mtu}
+          pmtu: {get_param: int_pmtu}
+        - name: internal_e1
+          uuid: {get_attr: [network_setup, networks, internal_e1]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_e1, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: {get_param: int_port_mtu}
+          pmtu: {get_param: int_pmtu}
+      external_networks:
+        count: 6
+        net_list:
+        - name: fm_a
+          uuid: {get_attr: [network_setup, networks, extnet_a]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_a]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpif_a_0]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: fh_a
+          uuid: {get_attr: [network_setup, networks, extnet_a]}
+          sid: {get_attr: [network_setup, networks, fronthaul_cpif_sid_a]}
+          ip: {get_attr: [network_setup, networks, fronthaul_ip_cpif_a]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: bh_a
+          uuid: {get_attr: [network_setup, networks, extnet_a]}
+          sid: {get_attr: [network_setup, networks, backhaul_cpif_sid_a]}
+          ip: {get_attr: [network_setup, networks, backhaul_ip_cpif_a]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: fm_b
+          uuid: {get_attr: [network_setup, networks, extnet_b]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_b]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpif_b_0]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: fh_b
+          uuid: {get_attr: [network_setup, networks, extnet_b]}
+          sid: {get_attr: [network_setup, networks, fronthaul_cpif_sid_b]}
+          ip: {get_attr: [network_setup, networks, fronthaul_ip_cpif_b]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: bh_b
+          uuid: {get_attr: [network_setup, networks, extnet_b]}
+          sid: {get_attr: [network_setup, networks, backhaul_cpif_sid_b]}
+          ip: {get_attr: [network_setup, networks, backhaul_ip_cpif_b]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+      lo_information:
+        count: 3
+        net_list:
+        - name: fm_lo
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpif_0]}
+          role: {get_attr: [network_setup, networks, f1om_role_cpif_0]}
+        - name: fh_lo
+          ip: {get_attr: [network_setup, networks, fronthaul_ip_cpif]}
+          role: {get_attr: [network_setup, networks, fronthaul_role_cpif]}
+        - name: bh_lo
+          ip: {get_attr: [network_setup, networks, backhaul_ip_cpif]}
+          role: {get_attr: [network_setup, networks, backhaul_role_cpif]}
+      database_ip:
+        get_attr: [oam_node, internal_ip]
+      cluster_id:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      timezone: {get_param: timezone}
+      dpdk_type: cpif_vcp1_5g19
+      ha_cluster:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+            $idx: 0
+      storage_meta:
+        get_attr: [oam_node, volume_map]
+      extra_cloud_config_data: {get_param: extra_cloud_config_data}
+      config_drive: {get_param: config_drive}
+      enable_sriov: {get_param: enable_sriov}
+      cloudplatform: {get_param: cloudplatform}
+      enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  cpif_nodes_redundant:
+    condition: deploy_redundant_condition
+    depends_on: [oam_node_in_redundant, upue_nodes_redundant]
+    type: 5GBTS::Node::CPIF::Redundant
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, cpif]}
+      roles: [application, 5gbts_cpif_2n]
+      vnfindex: 0
+      vnf_layout: {get_param: vnf_layout}
+      instance_params:
+        server_0:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, cpif]}
+          azId: {get_param: availability_zone}
+        server_1:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, cpif]}
+          azId: {get_param: availability_zone}
+      internal_networks:
+        count: 3
+        net_list:
+        - name: internal
+          uuid: {get_attr: [network_setup, networks, internal]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: {get_param: int_port_mtu}
+          pmtu: {get_param: int_pmtu}
+        - name: internal_srv
+          uuid: {get_attr: [network_setup, networks, internal_srv]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_srv, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: {get_param: int_port_mtu}
+          pmtu: {get_param: int_pmtu}
+        - name: internal_e1
+          uuid: {get_attr: [network_setup, networks, internal_e1]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_e1, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: {get_param: int_port_mtu}
+          pmtu: {get_param: int_pmtu}
+      external_networks:
+        count: 6
+        net_list:
+        - name: fm_a
+          uuid: {get_attr: [network_setup, networks, extnet_a]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_a]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpif_a_0]}
+          ip_se: {get_attr: [network_setup, networks, f1om_ip_cpif_a_1]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: fh_a
+          uuid: {get_attr: [network_setup, networks, extnet_a]}
+          sid: {get_attr: [network_setup, networks, fronthaul_cpif_sid_a]}
+          ip: {get_attr: [network_setup, networks, fronthaul_ip_cpif_a]}
+          ip_se: {get_attr: [network_setup, networks, fronthaul_ip_cpif_a]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: bh_a
+          uuid: {get_attr: [network_setup, networks, extnet_a]}
+          sid: {get_attr: [network_setup, networks, backhaul_cpif_sid_a]}
+          ip: {get_attr: [network_setup, networks, backhaul_ip_cpif_a]}
+          ip_se: {get_attr: [network_setup, networks, backhaul_ip_cpif_a]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: fm_b
+          uuid: {get_attr: [network_setup, networks, extnet_b]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_b]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpif_b_0]}
+          ip_se: {get_attr: [network_setup, networks, f1om_ip_cpif_b_1]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: fh_b
+          uuid: {get_attr: [network_setup, networks, extnet_b]}
+          sid: {get_attr: [network_setup, networks, fronthaul_cpif_sid_b]}
+          ip: {get_attr: [network_setup, networks, fronthaul_ip_cpif_b]}
+          ip_se: {get_attr: [network_setup, networks, fronthaul_ip_cpif_b]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: bh_b
+          uuid: {get_attr: [network_setup, networks, extnet_b]}
+          sid: {get_attr: [network_setup, networks, backhaul_cpif_sid_b]}
+          ip: {get_attr: [network_setup, networks, backhaul_ip_cpif_b]}
+          ip_se: {get_attr: [network_setup, networks, backhaul_ip_cpif_b]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+      lo_information:
+        count: 3
+        net_list:
+        - name: fm_lo
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpif_0]}
+          ip_se: {get_attr: [network_setup, networks, f1om_ip_cpif_1]}
+          role: {get_attr: [network_setup, networks, f1om_role_cpif_0]}
+          role_se: {get_attr: [network_setup, networks, f1om_role_cpif_1]}
+        - name: fh_lo
+          ip: {get_attr: [network_setup, networks, fronthaul_ip_cpif]}
+          ip_se: {get_attr: [network_setup, networks, fronthaul_ip_cpif]}
+          role: {get_attr: [network_setup, networks, fronthaul_role_cpif]}
+          role_se: {get_attr: [network_setup, networks, fronthaul_role_cpif]}
+        - name: bh_lo
+          ip: {get_attr: [network_setup, networks, backhaul_ip_cpif]}
+          ip_se: {get_attr: [network_setup, networks, backhaul_ip_cpif]}
+          role: {get_attr: [network_setup, networks, backhaul_role_cpif]}
+          role_se: {get_attr: [network_setup, networks, backhaul_role_cpif]}
+      database_ip:
+        get_attr: [oam_node_in_redundant, internal_ip]
+      cluster_id:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      timezone: {get_param: timezone}
+      dpdk_type: cpif_vcp1_5g19
+      ha_cluster:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+            $idx: 0
+      storage_meta:
+        get_attr: [oam_node_in_redundant, volume_map]
+      service_ip_meta:
+        get_attr: [network_setup, service_ip_map]
+      extra_cloud_config_data: {get_param: extra_cloud_config_data}
+      config_drive: {get_param: config_drive}
+      enable_sriov: {get_param: enable_sriov}
+      cloudplatform: {get_param: cloudplatform}
+      enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  cpnrt_nodes:
+    condition: deploy_basic_condition
+    depends_on: [oam_node, upue_nodes]
+    type: 5GBTS::Node::Common
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, cpnrt]}
+            $idx: 0
+      roles: [application, 5gbts_cpnrt]
+      vnfindex: 0
+      instance_params:
+        server:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, cpnrt]}
+          azId: {get_param: availability_zone}
+      internal_networks:
+        count: 3
+        net_list:
+        - name: internal
+          uuid: {get_attr: [network_setup, networks, internal]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: {get_param: int_port_mtu}
+          pmtu: {get_param: int_pmtu}
+        - name: internal_srv
+          uuid: {get_attr: [network_setup, networks, internal_srv]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_srv, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: {get_param: int_port_mtu}
+          pmtu: {get_param: int_pmtu}
+        - name: internal_e1
+          uuid: {get_attr: [network_setup, networks, internal_e1]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_e1, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: {get_param: int_port_mtu}
+          pmtu: {get_param: int_pmtu}
+      external_networks:
+        count: 2
+        net_list:
+        - name: fm_a
+          uuid: {get_attr: [network_setup, networks, extnet_a]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_a]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpnrt_a]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: fm_b
+          uuid: {get_attr: [network_setup, networks, extnet_b]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_b]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpnrt_b]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+      lo_information:
+        count: 1
+        net_list:
+        - name: fm_lo
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpnrt]}
+          role: {get_attr: [network_setup, networks, f1om_role_cpnrt]}
+      database_ip:
+        get_attr: [oam_node, internal_ip]
+      cluster_id:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      timezone: {get_param: timezone}
+      dpdk_type: cpnrt_vcp1_5g19
+      ha_cluster:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+            $idx: 0
+      storage_meta:
+        get_attr: [oam_node, volume_map]
+      extra_cloud_config_data: {get_param: extra_cloud_config_data}
+      config_drive: {get_param: config_drive}
+      enable_sriov: {get_param: enable_sriov}
+      cloudplatform: {get_param: cloudplatform}
+      enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  cpnrt_nodes_redundant:
+    condition: deploy_redundant_condition
+    depends_on: [oam_node_in_redundant, upue_nodes_redundant]
+    type: 5GBTS::Node::Common
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, cpnrt]}
+            $idx: 0
+      roles: [application, 5gbts_cpnrt]
+      vnfindex: 0
+      instance_params:
+        server:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, cpnrt]}
+          azId: {get_param: availability_zone}
+      internal_networks:
+        count: 3
+        net_list:
+        - name: internal
+          uuid: {get_attr: [network_setup, networks, internal]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: {get_param: int_port_mtu}
+          pmtu: {get_param: int_pmtu}
+        - name: internal_srv
+          uuid: {get_attr: [network_setup, networks, internal_srv]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_srv, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: {get_param: int_port_mtu}
+          pmtu: {get_param: int_pmtu}
+        - name: internal_e1
+          uuid: {get_attr: [network_setup, networks, internal_e1]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_e1, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu: {get_param: int_port_mtu}
+          pmtu: {get_param: int_pmtu}
+      external_networks:
+        count: 2
+        net_list:
+        - name: fm_a
+          uuid: {get_attr: [network_setup, networks, extnet_a]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_a]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpnrt_a]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: fm_b
+          uuid: {get_attr: [network_setup, networks, extnet_b]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_b]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpnrt_b]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+      lo_information:
+        count: 1
+        net_list:
+        - name: fm_lo
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpnrt]}
+          role: {get_attr: [network_setup, networks, f1om_role_cpnrt]}
+      database_ip:
+        get_attr: [oam_node_in_redundant, internal_ip]
+      cluster_id:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      timezone: {get_param: timezone}
+      dpdk_type: cpnrt_vcp1_5g19
+      ha_cluster:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+            $idx: 0
+      storage_meta:
+        get_attr: [oam_node_in_redundant, volume_map]
+      extra_cloud_config_data: {get_param: extra_cloud_config_data}
+      config_drive: {get_param: config_drive}
+      enable_sriov: {get_param: enable_sriov}
+      cloudplatform: {get_param: cloudplatform}
+      enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  cpnb_nodes:
+    condition: deploy_basic_condition
+    depends_on: [oam_node, upue_nodes]
+    type: 5GBTS::Node::Common
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, cpnb]}
+            $idx: 0
+      roles: [application, 5gbts_cpnb]
+      vnfindex: 0
+      instance_params:
+        server:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, cpnb]}
+          azId: {get_param: availability_zone}
+      internal_networks:
+        count: 2
+        net_list:
+        - name: internal
+          uuid: {get_attr: [network_setup, networks, internal]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu:  {get_param: int_port_mtu}
+          pmtu: { get_param: int_pmtu }
+        - name: internal_srv
+          uuid: {get_attr: [network_setup, networks, internal_srv]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_srv, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu:  { get_param: int_port_mtu }
+          pmtu: { get_param: int_pmtu }
+      external_networks:
+        count: 2
+        net_list:
+        - name: fm_a
+          uuid: {get_attr: [network_setup, networks, extnet_a]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_a]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpnb_a_0]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: fm_b
+          uuid: {get_attr: [network_setup, networks, extnet_b]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_b]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpnb_b_0]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+      lo_information:
+        count: 1
+        net_list:
+        - name: fm_lo
+          ip: {get_attr: [ network_setup, networks, f1om_ip_cpnb_0]}
+          role: {get_attr: [ network_setup, networks, f1om_role_cpnb_0]}
+      database_ip:
+        get_attr: [oam_node, internal_ip]
+      cluster_id:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      timezone: {get_param: timezone}
+      dpdk_type: none
+      ha_cluster:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+            $idx: 0
+      storage_meta:
+        get_attr: [oam_node, volume_map]
+      extra_cloud_config_data: {get_param: extra_cloud_config_data}
+      config_drive: {get_param: config_drive}
+      enable_sriov: {get_param: enable_sriov}
+      cloudplatform: {get_param: cloudplatform}
+      enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  cpnb_nodes_redundant:
+    condition: deploy_redundant_condition
+    depends_on: [oam_node_in_redundant, upue_nodes_redundant]
+    type: 5GBTS::Node::Common::Redundant
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, cpnb]}
+      roles: [application, 5gbts_cpnb_2n]
+      vnfindex: 0
+      vnf_layout: {get_param: vnf_layout}
+      instance_params:
+        server_0:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, cpnb]}
+          azId: {get_param: availability_zone}
+        server_1:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, cpnb]}
+          azId: {get_param: availability_zone}
+      internal_networks:
+        count: 2
+        net_list:
+        - name: internal
+          uuid: {get_attr: [network_setup, networks, internal]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu:  {get_param: int_port_mtu}
+          pmtu: { get_param: int_pmtu }
+        - name: internal_srv
+          uuid: {get_attr: [network_setup, networks, internal_srv]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_srv, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu:  { get_param: int_port_mtu }
+          pmtu: { get_param: int_pmtu }
+      external_networks:
+        count: 2
+        net_list:
+        - name: fm_a
+          uuid: {get_attr: [network_setup, networks, extnet_a]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_a]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpnb_a_0]}
+          ip_se: {get_attr: [network_setup, networks, f1om_ip_cpnb_a_1]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: fm_b
+          uuid: {get_attr: [network_setup, networks, extnet_b]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_b]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpnb_b_0]}
+          ip_se: {get_attr: [network_setup, networks, f1om_ip_cpnb_b_1]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+      lo_information:
+        count: 1
+        net_list:
+        - name: fm_lo
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpnb_0]}
+          ip_se: {get_attr: [network_setup, networks, f1om_ip_cpnb_1]}
+          role: {get_attr: [network_setup, networks, f1om_role_cpnb_0]}
+          role_se: {get_attr: [network_setup, networks, f1om_role_cpnb_1]}
+      database_ip:
+        get_attr: [oam_node_in_redundant, internal_ip]
+      cluster_id:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      timezone: {get_param: timezone}
+      dpdk_type: none
+      ha_cluster:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+            $idx: 0
+      service_ip_meta:
+        get_attr: [network_setup, service_ip_map]
+      storage_meta:
+        get_attr: [oam_node_in_redundant, volume_map]
+      extra_cloud_config_data: {get_param: extra_cloud_config_data}
+      config_drive: {get_param: config_drive}
+      enable_sriov: {get_param: enable_sriov}
+      cloudplatform: {get_param: cloudplatform}
+      enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  cpcl_nodes:
+    condition: deploy_basic_condition
+    depends_on: [oam_node, upue_nodes]
+    type: 5GBTS::Node::Common
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, cpcl]}
+            $idx: 0
+      roles: [application, 5gbts_cpcl]
+      vnfindex: 0
+      instance_params:
+        server:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, cpcl]}
+          azId: {get_param: availability_zone}
+      internal_networks:
+        count: 2
+        net_list:
+        - name: internal
+          uuid: {get_attr: [network_setup, networks, internal]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu:  { get_param: int_port_mtu }
+          pmtu: { get_param: int_pmtu }
+        - name: internal_srv
+          uuid: {get_attr: [network_setup, networks, internal_srv]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_srv, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu:  { get_param: int_port_mtu }
+          pmtu: { get_param: int_pmtu }
+      external_networks:
+        count: 2
+        net_list:
+        - name: fm_a
+          uuid: {get_attr: [network_setup, networks, extnet_a]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_a]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpcl_a_0]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: fm_b
+          uuid: {get_attr: [network_setup, networks, extnet_b]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_b]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpcl_b_0]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+      lo_information:
+        count: 1
+        net_list:
+        - name: fm_lo
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpcl_0]}
+          role: {get_attr: [network_setup, networks, f1om_role_cpcl_0]}
+      database_ip:
+        get_attr: [oam_node, internal_ip]
+      cluster_id:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      timezone: {get_param: timezone}
+      dpdk_type: none
+      ha_cluster:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+            $idx: 0
+      storage_meta:
+        get_attr: [oam_node, volume_map]
+      extra_cloud_config_data: {get_param: extra_cloud_config_data}
+      config_drive: {get_param: config_drive}
+      enable_sriov: {get_param: enable_sriov}
+      cloudplatform: {get_param: cloudplatform}
+      enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  cpcl_nodes_redundant:
+    condition: deploy_redundant_condition
+    depends_on: [oam_node_in_redundant, upue_nodes_redundant]
+    type: 5GBTS::Node::Common::Redundant
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, cpcl]}
+      roles: [application, 5gbts_cpcl_2n]
+      vnfindex: 0
+      vnf_layout: {get_param: vnf_layout}
+      instance_params:
+        server_0:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, cpcl]}
+          azId: {get_param: availability_zone}
+        server_1:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, cpcl]}
+          azId: {get_param: availability_zone}
+      internal_networks:
+        count: 2
+        net_list:
+        - name: internal
+          uuid: {get_attr: [network_setup, networks, internal]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu:  { get_param: int_port_mtu }
+          pmtu: { get_param: int_pmtu }
+        - name: internal_srv
+          uuid: {get_attr: [network_setup, networks, internal_srv]}
+          addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_srv, cidr]}]
+          port_type: {get_param: int_port_type}
+          mtu:  { get_param: int_port_mtu }
+          pmtu: { get_param: int_pmtu }
+      external_networks:
+        count: 2
+        net_list:
+        - name: fm_a
+          uuid: {get_attr: [network_setup, networks, extnet_a]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_a]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpcl_a_0]}
+          ip_se: {get_attr: [network_setup, networks, f1om_ip_cpcl_a_1]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+        - name: fm_b
+          uuid: {get_attr: [network_setup, networks, extnet_b]}
+          sid: {get_attr: [network_setup, networks, f1om_sid_b]}
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpcl_b_0]}
+          ip_se: {get_attr: [network_setup, networks, f1om_ip_cpcl_b_1]}
+          port_type: {get_param: ext_port_type}
+          mtu: {get_param: ext_port_mtu}
+          pmtu: {get_param: ext_pmtu}
+      lo_information:
+        count: 1
+        net_list:
+        - name: fm_lo
+          ip: {get_attr: [network_setup, networks, f1om_ip_cpcl_0]}
+          ip_se: {get_attr: [network_setup, networks, f1om_ip_cpcl_1]}
+          role: {get_attr: [network_setup, networks, f1om_role_cpcl_0]}
+          role_se: {get_attr: [network_setup, networks, f1om_role_cpcl_1]}
+      database_ip:
+        get_attr: [oam_node_in_redundant, internal_ip]
+      cluster_id:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      timezone: {get_param: timezone}
+      dpdk_type: none
+      ha_cluster:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+            $idx: 0
+      service_ip_meta:
+        get_attr: [network_setup, service_ip_map]
+      storage_meta:
+        get_attr: [oam_node_in_redundant, volume_map]
+      extra_cloud_config_data: {get_param: extra_cloud_config_data}
+      config_drive: {get_param: config_drive}
+      enable_sriov: {get_param: enable_sriov}
+      cloudplatform: {get_param: cloudplatform}
+      enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  cpue_nodes:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_basic_condition
+    depends_on: [oam_node, upue_nodes]
+    properties:
+      count: {get_param: number_of_cpue_nodes}
+      resource_def:
+        type: 5GBTS::Node::Common::Nplus
+        properties:
+          name:
+            str_replace:
+              template: $vnf-$cid-$vm-$idx
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, cpue]}
+                $idx: '%index%'
+          roles: [application, 5gbts_cpue]
+          vnfindex: '%index%'
+          instance_params:
+            server:
+              imageId: {get_param: image}
+              flavorId: {get_param: [flavors, cpue]}
+              azId: {get_param: availability_zone}
+          internal_networks:
+            count: 2
+            net_list:
+            - name: internal
+              uuid: {get_attr: [network_setup, networks, internal]}
+              addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+              port_type: {get_param: int_port_type}
+              mtu:  { get_param: int_port_mtu }
+              pmtu: { get_param: int_pmtu }
+            - name: internal_srv
+              uuid: {get_attr: [network_setup, networks, internal_srv]}
+              addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_srv, cidr]}]
+              port_type: {get_param: int_port_type}
+              mtu:  { get_param: int_port_mtu }
+              pmtu: { get_param: int_pmtu }
+          external_networks:
+            count: 2
+            net_list:
+            - name: fm_a
+              uuid: {get_attr: [network_setup, networks, extnet_a]}
+              sid: {get_attr: [network_setup, networks, f1om_sid_a]}
+              ip: {get_attr: [network_setup, networks, f1om_ip_cpue_a]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+            - name: fm_b
+              uuid: {get_attr: [network_setup, networks, extnet_b]}
+              sid: {get_attr: [network_setup, networks, f1om_sid_b]}
+              ip: {get_attr: [network_setup, networks, f1om_ip_cpue_b]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+          lo_information:
+            count: 1
+            net_list:
+            - name: fm_lo
+              ip: {get_attr: [network_setup, networks, f1om_ip_cpue]}
+              role: {get_attr: [network_setup, networks, f1om_role_cpue]}
+          database_ip:
+            get_attr: [oam_node, internal_ip]
+          cluster_id:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          timezone: {get_param: timezone}
+          dpdk_type: none
+          ha_cluster:
+            str_replace:
+              template: $vnf-$cid-$vm-$idx
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+                $idx: 0
+          storage_meta:
+            get_attr: [oam_node, volume_map]
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+          config_drive: {get_param: config_drive}
+          enable_sriov: {get_param: enable_sriov}
+          cloudplatform: {get_param: cloudplatform}
+          enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  cpue_nodes_redundant:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_redundant_condition
+    depends_on: [oam_node_in_redundant, upue_nodes_redundant]
+    properties:
+      count: {get_param: number_of_cpue_nodes}
+      resource_def:
+        type: 5GBTS::Node::Common::Nplus
+        properties:
+          name:
+            str_replace:
+              template: $vnf-$cid-$vm-$idx
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, cpue]}
+                $idx: '%index%'
+          roles: [application, 5gbts_cpue]
+          vnfindex: '%index%'
+          vnf_layout: {get_param: vnf_layout}
+          instance_params:
+            server:
+              imageId: {get_param: image}
+              flavorId: {get_param: [flavors, cpue]}
+              azId: {get_param: availability_zone}
+          internal_networks:
+            count: 2
+            net_list:
+            - name: internal
+              uuid: {get_attr: [network_setup, networks, internal]}
+              addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+              port_type: {get_param: int_port_type}
+              mtu:  { get_param: int_port_mtu }
+              pmtu: { get_param: int_pmtu }
+            - name: internal_srv
+              uuid: {get_attr: [network_setup, networks, internal_srv]}
+              addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_srv, cidr]}]
+              port_type: {get_param: int_port_type}
+              mtu:  { get_param: int_port_mtu }
+              pmtu: { get_param: int_pmtu }
+          external_networks:
+            count: 2
+            net_list:
+            - name: fm_a
+              uuid: {get_attr: [network_setup, networks, extnet_a]}
+              sid: {get_attr: [network_setup, networks, f1om_sid_a]}
+              ip: {get_attr: [network_setup, networks, f1om_ip_cpue_a]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+            - name: fm_b
+              uuid: {get_attr: [network_setup, networks, extnet_b]}
+              sid: {get_attr: [network_setup, networks, f1om_sid_b]}
+              ip: {get_attr: [network_setup, networks, f1om_ip_cpue_b]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+          lo_information:
+            count: 1
+            net_list:
+            - name: fm_lo
+              ip: {get_attr: [network_setup, networks, f1om_ip_cpue]}
+              role: {get_attr: [network_setup, networks, f1om_role_cpue]}
+          database_ip:
+            get_attr: [oam_node_in_redundant, internal_ip]
+          cluster_id:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          timezone: {get_param: timezone}
+          dpdk_type: none
+          ha_cluster:
+            str_replace:
+              template: $vnf-$cid-$vm-$idx
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+                $idx: 0
+          storage_meta:
+            get_attr: [oam_node_in_redundant, volume_map]
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+          config_drive: {get_param: config_drive}
+          enable_sriov: {get_param: enable_sriov}
+          cloudplatform: {get_param: cloudplatform}
+          enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  upue_nodes:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_basic_condition
+    depends_on: oam_node
+    properties:
+      count: {get_param: number_of_upue_nodes}
+      resource_def:
+        type: 5GBTS::Node::Common::Nplus
+        properties:
+          name:
+            str_replace:
+              template: $vnf-$cid-$vm-$idx
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, upue]}
+                $idx: '%index%'
+          roles: [application, 5gbts_upue]
+          vnfindex: '%index%'
+          instance_params:
+            server:
+              imageId: {get_param: image}
+              flavorId: {get_param: [flavors, upue]}
+              azId: {get_param: availability_zone}
+          internal_networks:
+            count: 2
+            net_list:
+            - name: internal
+              uuid: {get_attr: [network_setup, networks, internal]}
+              addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+              port_type: {get_param: int_port_type}
+              mtu:  { get_param: int_port_mtu }
+              pmtu: { get_param: int_pmtu }
+            - name: internal_srv
+              uuid: {get_attr: [network_setup, networks, internal_srv]}
+              addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_srv, cidr]}]
+              port_type: {get_param: int_port_type}
+              mtu:  { get_param: int_port_mtu }
+              pmtu: { get_param: int_pmtu }
+          external_networks:
+            count: 6
+            net_list:
+            - name: fm_a
+              uuid: {get_attr: [network_setup, networks, extnet_a]}
+              sid: {get_attr: [network_setup, networks, f1om_sid_a]}
+              ip: {get_attr: [network_setup, networks, f1om_ip_upue_a]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+            - name: fh_a
+              uuid: {get_attr: [network_setup, networks, extnet_a]}
+              sid: {get_attr: [network_setup, networks, fronthaul_upue_sid_a]}
+              ip: {get_attr: [network_setup, networks, fronthaul_ip_upue_a]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+            - name: bh_a
+              uuid: {get_attr: [network_setup, networks, extnet_a]}
+              sid: {get_attr: [network_setup, networks, backhaul_upue_sid_a]}
+              ip: {get_attr: [network_setup, networks, backhaul_ip_upue_a]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+            - name: fm_b
+              uuid: {get_attr: [network_setup, networks, extnet_b]}
+              sid: {get_attr: [network_setup, networks, f1om_sid_b]}
+              ip: {get_attr: [network_setup, networks, f1om_ip_upue_b]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+            - name: fh_b
+              uuid: {get_attr: [network_setup, networks, extnet_b]}
+              sid: {get_attr: [network_setup, networks, fronthaul_upue_sid_b]}
+              ip: {get_attr: [network_setup, networks, fronthaul_ip_upue_b]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+            - name: bh_b
+              uuid: {get_attr: [network_setup, networks, extnet_b]}
+              sid: {get_attr: [network_setup, networks, backhaul_upue_sid_b]}
+              ip: {get_attr: [network_setup, networks, backhaul_ip_upue_b]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+          lo_information:
+            count: 3
+            net_list:
+            - name: fm_lo
+              ip: {get_attr: [network_setup, networks, f1om_ip_upue]}
+              role: {get_attr: [network_setup, networks, f1om_role_upue]}
+            - name: fh_lo
+              ip: {get_attr: [network_setup, networks, fronthaul_ip_upue]}
+              role: {get_attr: [network_setup, networks, fronthaul_role_upue]}
+            - name: bh_lo
+              ip: {get_attr: [network_setup, networks, backhaul_ip_upue]}
+              role: {get_attr: [network_setup, networks, backhaul_role_upue]}
+          database_ip:
+            get_attr: [oam_node, internal_ip]
+          cluster_id:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          timezone: {get_param: timezone}
+          dpdk_type: upue_296_B
+          ha_cluster:
+            str_replace:
+              template: $vnf-$cid-$vm-$idx
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+                $idx: 0
+          storage_meta:
+            get_attr: [oam_node, volume_map]
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+          config_drive: {get_param: config_drive}
+          enable_sriov: {get_param: enable_sriov}
+          cloudplatform: {get_param: cloudplatform}
+          enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  upue_nodes_redundant:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_redundant_condition
+    depends_on: oam_node_in_redundant
+    properties:
+      count: {get_param: number_of_upue_nodes}
+      resource_def:
+        type: 5GBTS::Node::Common::Nplus
+        properties:
+          name:
+            str_replace:
+              template: $vnf-$cid-$vm-$idx
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, upue]}
+                $idx: '%index%'
+          roles: [application, 5gbts_upue]
+          vnfindex: '%index%'
+          vnf_layout: {get_param: vnf_layout}
+          instance_params:
+            server:
+              imageId: {get_param: image}
+              flavorId: {get_param: [flavors, upue]}
+              azId: {get_param: availability_zone}
+          internal_networks:
+            count: 2
+            net_list:
+            - name: internal
+              uuid: {get_attr: [network_setup, networks, internal]}
+              addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+              port_type: {get_param: int_port_type}
+              mtu:  { get_param: int_port_mtu }
+              pmtu: { get_param: int_pmtu }
+            - name: internal_srv
+              uuid: {get_attr: [network_setup, networks, internal_srv]}
+              addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal_srv, cidr]}]
+              port_type: {get_param: int_port_type}
+              mtu:  { get_param: int_port_mtu }
+              pmtu: { get_param: int_pmtu }
+          external_networks:
+            count: 6
+            net_list:
+            - name: fm_a
+              uuid: {get_attr: [network_setup, networks, extnet_a]}
+              sid: {get_attr: [network_setup, networks, f1om_sid_a]}
+              ip: {get_attr: [network_setup, networks, f1om_ip_upue_a]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+            - name: fh_a
+              uuid: {get_attr: [network_setup, networks, extnet_a]}
+              sid: {get_attr: [network_setup, networks, fronthaul_upue_sid_a]}
+              ip: {get_attr: [network_setup, networks, fronthaul_ip_upue_a]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+            - name: bh_a
+              uuid: {get_attr: [network_setup, networks, extnet_a]}
+              sid: {get_attr: [network_setup, networks, backhaul_upue_sid_a]}
+              ip: {get_attr: [network_setup, networks, backhaul_ip_upue_a]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+            - name: fm_b
+              uuid: {get_attr: [network_setup, networks, extnet_b]}
+              sid: {get_attr: [network_setup, networks, f1om_sid_b]}
+              ip: {get_attr: [network_setup, networks, f1om_ip_upue_b]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+            - name: fh_b
+              uuid: {get_attr: [network_setup, networks, extnet_b]}
+              sid: {get_attr: [network_setup, networks, fronthaul_upue_sid_b]}
+              ip: {get_attr: [network_setup, networks, fronthaul_ip_upue_b]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+            - name: bh_b
+              uuid: {get_attr: [network_setup, networks, extnet_b]}
+              sid: {get_attr: [network_setup, networks, backhaul_upue_sid_b]}
+              ip: {get_attr: [network_setup, networks, backhaul_ip_upue_b]}
+              port_type: {get_param: ext_port_type}
+              mtu: {get_param: ext_port_mtu}
+              pmtu: {get_param: ext_pmtu}
+          lo_information:
+            count: 3
+            net_list:
+            - name: fm_lo
+              ip: {get_attr: [network_setup, networks, f1om_ip_upue]}
+              role: {get_attr: [network_setup, networks, f1om_role_upue]}
+            - name: fh_lo
+              ip: {get_attr: [network_setup, networks, fronthaul_ip_upue]}
+              role: {get_attr: [network_setup, networks, fronthaul_role_upue]}
+            - name: bh_lo
+              ip: {get_attr: [network_setup, networks, backhaul_ip_upue]}
+              role: {get_attr: [network_setup, networks, backhaul_role_upue]}
+          database_ip:
+            get_attr: [oam_node_in_redundant, internal_ip]
+          cluster_id:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          timezone: {get_param: timezone}
+          dpdk_type: upue_296_B
+          ha_cluster:
+            str_replace:
+              template: $vnf-$cid-$vm-$idx
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+                $idx: 0
+          storage_meta:
+            get_attr: [oam_node_in_redundant, volume_map]
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+          config_drive: {get_param: config_drive}
+          enable_sriov: {get_param: enable_sriov}
+          cloudplatform: {get_param: cloudplatform}
+          enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  upgrade_node:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_basic_condition
+    depends_on: oam_node
+    properties:
+      count: {get_param: number_of_uvm_nodes}
+      resource_def:
+        type: 5GBTS::Node::Common
+        properties:
+          name:
+            str_replace:
+              template: $vnf-$cid-$vm-$idx
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, uvm]}
+                $idx: 0
+          roles: [upgrade]
+          vnfindex: '%index%'
+          instance_params:
+            server:
+              imageId: {get_param: image}
+              flavorId: {get_param: [flavors, uvm]}
+              azId: {get_param: availability_zone}
+          internal_networks:
+            count: 1
+            net_list:
+              - name: internal
+                uuid: {get_attr: [network_setup, networks, internal]}
+                addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+                port_type: {get_param: int_port_type}
+                mtu: {get_param: int_port_mtu}
+                pmtu: {get_param: int_pmtu}
+          database_ip:
+            get_attr: [oam_node, internal_ip]
+          cluster_id:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          timezone: {get_param: timezone}
+          dpdk_type: none
+          ha_cluster:
+            str_replace:
+              template: $vnf-$cid-$vm-$idx
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+                $idx: 0
+          storage_meta:
+            get_attr: [oam_node, volume_map]
+          upgrade-node: true
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+          config_drive: {get_param: config_drive}
+          enable_sriov: {get_param: enable_sriov}
+          cloudplatform: {get_param: cloudplatform}
+          enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  upgrade_node_redundant:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_redundant_condition
+    depends_on: oam_node_in_redundant
+    properties:
+      count: {get_param: number_of_uvm_nodes}
+      resource_def:
+        type: 5GBTS::Node::Common
+        properties:
+          name:
+            str_replace:
+              template: $vnf-$cid-$vm-$idx
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, uvm]}
+                $idx: 0
+          roles: [upgrade]
+          vnfindex: '%index%'
+          instance_params:
+            server:
+              imageId: {get_param: image}
+              flavorId: {get_param: [flavors, uvm]}
+              azId: {get_param: availability_zone}
+          internal_networks:
+            count: 1
+            net_list:
+              - name: internal
+                uuid: {get_attr: [network_setup, networks, internal]}
+                addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+                port_type: {get_param: int_port_type}
+                mtu: {get_param: int_port_mtu}
+                pmtu: {get_param: int_pmtu}
+          database_ip:
+            get_attr: [oam_node_in_redundant, internal_ip]
+          cluster_id:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          timezone: {get_param: timezone}
+          dpdk_type: none
+          ha_cluster:
+            str_replace:
+              template: $vnf-$cid-$vm-$idx
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+                $idx: 0
+          storage_meta:
+            get_attr: [oam_node_in_redundant, volume_map]
+          upgrade-node: true
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+          config_drive: {get_param: config_drive}
+          enable_sriov: {get_param: enable_sriov}
+          cloudplatform: {get_param: cloudplatform}
+          enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  db_node:
+    condition: deploy_basic_condition
+    depends_on: oam_node
+    type: 5GBTS::Node::Common
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, db]}
+            $idx: 0
+      roles: [application, 5gbts_common_pre, 5gbts_db]
+      vnfindex: 0
+      instance_params:
+        server:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, db]}
+          azId: {get_param: availability_zone}
+      internal_networks:
+        count: 1
+        net_list:
+          - name: internal
+            uuid: {get_attr: [network_setup, networks, internal]}
+            addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+            port_type: {get_param: int_port_type}
+            mtu: {get_param: int_port_mtu}
+            pmtu: {get_param: int_pmtu}
+      database_ip:
+        get_attr: [oam_node, internal_ip]
+      cluster_id:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      timezone: {get_param: timezone}
+      dpdk_type: none
+      cinder_volumes:
+        count: 1
+        vol_list:
+        - {size: 4, name: vol1}
+      lvm_local_volumes:
+        count: 2
+        vol_list:
+        - {size: 1000M, name: db_pg_session, mount: /mnt/db_pg_sesssion, volume: vol1}
+        - {size: 2000M, name: db_redis_session, mount: /mnt/db_redis_session, volume: vol1}
+      ha_cluster:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+            $idx: 0
+      storage_meta:
+        get_attr: [oam_node, volume_map]
+      extra_cloud_config_data: {get_param: extra_cloud_config_data}
+      config_drive: {get_param: config_drive}
+      enable_sriov: {get_param: enable_sriov}
+      cloudplatform: {get_param: cloudplatform}
+      enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+  db_node_redundant:
+    condition: deploy_redundant_condition
+    depends_on: oam_node_in_redundant
+    type: 5GBTS::Node::DB::Redundant
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, db]}
+      roles: [application, 5gbts_common_pre, 5gbts_db]
+      vnfindex: 0
+      instance_params:
+        server_0:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, db]}
+          azId: {get_param: availability_zone}
+        server_1:
+          imageId: {get_param: image}
+          flavorId: {get_param: [flavors, db]}
+          azId: {get_param: availability_zone}
+      internal_networks:
+        count: 1
+        net_list:
+          - name: internal
+            uuid: {get_attr: [network_setup, networks, internal]}
+            addrpair:  [{get_attr: [network_setup, service_ip_map, internal-service-ip-pool, internal, cidr]}]
+            port_type: {get_param: int_port_type}
+            mtu: {get_param: int_port_mtu}
+            pmtu: {get_param: int_pmtu}
+      database_ip:
+        get_attr: [oam_node_in_redundant, internal_ip]
+      cluster_id:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      timezone: {get_param: timezone}
+      dpdk_type: none
+      cinder_volumes:
+        count: 1
+        vol_list:
+        - {size: 4, name: vol1}
+      lvm_local_volumes:
+        count: 2
+        vol_list:
+        - {size: 1000M, name: db_pg_session, mount: /mnt/db_pg_sesssion, volume: vol1}
+        - {size: 2000M, name: db_redis_session, mount: /mnt/db_redis_session, volume: vol1}
+      ha_cluster:
+        str_replace:
+          template: $vnf-$cid-$vm-$idx
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: {get_param: [vnfc_type_name_map, {get_param: vnfc_type_name_case}, oam]}
+            $idx: 0
+      storage_meta:
+        get_attr: [oam_node_in_redundant, volume_map]
+      extra_cloud_config_data: {get_param: extra_cloud_config_data}
+      config_drive: {get_param: config_drive}
+      enable_sriov: {get_param: enable_sriov}
+      cloudplatform: {get_param: cloudplatform}
+      enable_internal_dhcp: {get_param: enable_internal_dhcp}
+
+outputs:
+  management_ip:
+    description: Managemen IP address allocated to access the system
+    value: {get_attr: [oam_node, oam_ip]}
+    condition: deploy_basic_condition
+  int_ports:
+    value: {get_attr: [oam_node, int_ports]}
+    condition: deploy_basic_condition
+  ext_ports:
+    value: {get_attr: [oam_node, ext_ports]}
+    condition: deploy_basic_condition
+  oam_port:
+    value: {get_attr: [oam_node, oam_port]}
+    condition: deploy_basic_condition
+  ports:
+    value: {get_attr: [oam_node, ports]}
+    condition: deploy_basic_condition
+  ip-info:
+    value: {get_attr: [oam_node, ip-info]}
+    condition: deploy_basic_condition

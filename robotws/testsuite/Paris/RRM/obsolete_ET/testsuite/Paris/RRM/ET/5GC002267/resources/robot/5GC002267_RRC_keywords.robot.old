@@ -1,0 +1,188 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for 5GC002267 feature tests cases
+
+Library             taf.wts.runner                WITH NAME       wtsemu
+Library             ../../../resources/python/luashark_tools.py
+Library             luashark_tools.analyzer       WITH NAME       analyzer
+Resource            ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource            ../../../../../resources/SWENG/robot/Setup.robot
+Resource            ../../../../../resources/SWENG/robot/Traffic.robot
+Resource            ../../../../../resources/SWENG/robot/Counters.robot
+
+*** Keywords ***
+TC 2267
+    [Arguments]                ${TC_name}
+    Init Sequence              ${TC_name}
+    set suite variable         ${TC_name}
+    Step                       Set Reestablishment Parameter
+    Critical Step              Restart TL                                                   depends=Set Reestablishment Parameter
+    Critical Step              Setup Wtsemu SA
+    Critical Step              CallSetup.UE Register
+    Critical Step              CallSetup.Launch PDU Session
+    Critical Step              DL Traffic Feature BW                                        depends=CallSetup.Launch PDU Session
+    Critical Step              UL Traffic Feature BW                                        depends=CallSetup.Launch PDU Session
+    Critical Step              Test Check 2267 Robustness
+    Critical Step              DL Traffic Feature BW                                        depends=Test Check 2267 Robustness
+    Critical Step              UL Traffic Feature BW                                        depends=Test Check 2267 Robustness
+    Critical Step              Test Check 2267 Counters
+    # Critical Step              Test RRC Reestablishment SA                                  depends=Test Check 2267 Robustness
+    # Critical Step              Start capture CPRT
+    # Critical Step              Stop capture CPRT                                            depends=Start capture CPRT
+    # Critical Step              DL Traffic Feature BW                                        depends=CallSetup.Launch PDU Session
+    # Critical Step              UL Traffic Feature BW                                        depends=CallSetup.Launch PDU Session
+    # Critical Step              Test Check RRC Setup Cause                                   depends=Stop capture CPRT
+
+UL Traffic Feature BW
+  Traffic.Traffic UE UL    duration=30    throughput=10    ueSetting=${BASIC_UE_SA}    deviation=25
+
+DL Traffic Feature BW
+  Traffic.Traffic UE DL    duration=60    throughput=50    ueSetting=${BASIC_UE_SA}    deviation=25
+
+set Reestablishment Parameter
+    &{modify_param1}       Create Dictionary
+    ...                                         parameter=rrcReestabTypeSA
+    ...                                        dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ...                                         value=viaRRCSetup
+    &{modify_param2}   Create Dictionary
+    ...                                        parameter=reportingIntervalPm
+    ...                                        dist_name=MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/PMCADM-1
+    ...                                        value=15min
+    @{modify_param}    Create List             ${modify_param1}        ${modify_param2}
+    Dated Log          Parameters to modify:\n ${modify_param}
+    OAM Set Params                ${modify_param}
+
+Start capture CPRT
+   [Tags]                               CAPTURE
+   ${Capture_GNB}                       Capture CPRT Set Upon Config
+   set suite variable                   ${Capture_GNB}
+   Capture Init                         ${Capture_GNB}
+   Capture Start                        ${Capture_GNB}
+
+Test RRC Reestablishment SA
+    [Tags]                              REESTABLISHMENT
+    Launch_RRC_Reestablishment_SA
+
+Stop capture CPRT
+    [Tags]                              CAPTURE
+    Capture Stop                        ${Capture_GNB}
+
+Test Check RRC Setup Cause
+    [Tags]      RRC_Setup
+    Check RRC Setup Cause          pcapFile=${Capture_GNB.path}
+
+Test Check 2267 Robustness
+    [Tags]  UE_ROBUSTNESS
+    Check 2267 Robustness       iteration=3
+
+Test Check 2267 Counters
+    [Tags]  UE_COUNTERS
+    [Arguments]                ${passExecution}=${True}
+    Collect PM
+    Check 2267 Counters         iteration=3
+    run keyword if  ${passExecution}==${True}
+    ...             Pass Execution          message=END of TC A7
+
+Launch RRC Reestablishment SA
+    [Arguments]    ${id}=1    ${reestabcause}=otherFailure      ${gnb}=2    ${cell}=1
+    wtsemu.ue_rrc_reestablish         id=${id}        cause=${reestabcause}
+    ...                               gnb=${gnb}      cell=${cell}
+    ${output}                       wtsemu.Read Wtsemu Output Until Re
+    ...                             expected=Initial Context Setup Successful
+    ...                             timeout=120
+    sleep         5
+    [Return]      ${output}
+
+Check RRC Setup Cause
+    [Arguments]                     ${pcapFile}
+    ${filterPcap}                   analyzer.filter_pcap        ${pcapFile}     filterName=Reestablishment_Request     filterExp=nr-rrc or ngap
+    ${pdmlFile}=                    analyzer.pcap_to_pdml       ${filterPcap}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=nr-rrc.rrcReestablishmentRequest_element
+    ...                             path=reestablishmentCause$
+    ...                             value=2
+
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             kind=showname
+    ...                             packetName=nr-rrc.c1
+    ...                             path=nr-rrc.rrcSetup_element$
+    ...                             value=rrcSetup
+
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=ngap.NAS_PDU
+    ...                             kind=value
+    ...                             path=nas_5gs.mm.message_type$
+    ...                             startPacket=7
+    ...                             endPacket=7
+    ...                             value=43
+    BuiltIn.Log             \nRRC Fallback with cause otherFailure            console=yes
+
+Check 2267 Robustness
+    [Arguments]            ${iteration}
+    @{cause}    Create List     otherFailure      handoverFailure     reconfigurationFailure
+    FOR    ${key}    IN       @{cause}
+           Loop Traffic Reestablishment     iteration=${iteration}    cause=${key}
+    END
+
+Loop Traffic Reestablishment
+    [Arguments]            ${iteration}         ${cause}
+    FOR    ${i}    IN RANGE         0        ${iteration}
+          Launch_RRC_Reestablishment_SA        reestabcause=${cause}
+    END
+
+Collect PM
+    Dated log    Waiting for PM counters collection : 900s
+    Sleep        900
+    Set suite variable    ${pmDir}    ${LOG_PATH}/PM
+    Create Directory      ${pmDir}
+    Dated log          LOG_PATH/PM:${pmDir}
+    Collect PM files from BTS    ${pmDir}
+
+Check 2267 Counters
+    [Arguments]         ${iteration}
+    ${counter_values_1}       Retrieve Counter Sum of Values From Pm Files For Object With Name      ${pmDir}     NRCELL     M55124C00503
+    ${counter_values_2}       Retrieve Counter Sum of Values From Pm Files For Object With Name      ${pmDir}     NRCELL     M55124C00504
+    ${counter_values_3}       Retrieve Counter Sum of Values From Pm Files For Object With Name      ${pmDir}     NRCELL     M55124C00505
+    ${counter_values_4}       Retrieve Counter Sum of Values From Pm Files For Object With Name      ${pmDir}     NRCELL     M55124C00502
+    ${counter_values_5}       Retrieve Counter Sum of Values From Pm Files For Object With Name      ${pmDir}     NRCELL     M55124C00515
+    ${counter_values_6}       Retrieve Counter Sum of Values From Pm Files For Object With Name      ${pmDir}     NRCELL     M55124C00501
+    ${counter_values_7}       Retrieve Counter Sum of Values From Pm Files For Object With Name      ${pmDir}     NRDU       M55127C00501
+    ${counter_values_8}       Retrieve Counter Sum of Values From Pm Files For Object With Name      ${pmDir}     NRDU       M55127C00502
+    ${counter_values_9}       Retrieve Counter Sum of Values From Pm Files For Object With Name      ${pmDir}     NRDU       M55127C00503
+    ${counter_values10}       Retrieve Counter Sum of Values From Pm Files For Object With Name      ${pmDir}     NRDU       M55127C00513
+
+    ${statusFallback}=      Evaluate       ${iteration}*3
+    ${status_1}=      run keyword and return status      should be equal as integers     ${counter_values_1}          ${iteration}
+    ${status_2}=      run keyword and return status      should be equal as integers     ${counter_values_2}          ${iteration}
+    ${status_3}=      run keyword and return status      should be equal as integers     ${counter_values_3}          ${iteration}
+    ${status_4}=      run keyword and return status      should be equal as integers     ${counter_values_4}          ${statusFallback}
+    ${status_5}=      run keyword and return status      should be equal as integers     ${counter_values_5}          ${statusFallback}
+    ${status_6}=      run keyword and return status      should be equal as integers     ${counter_values_6}          0
+    ${status_7}=      run keyword and return status      should be equal as integers     ${counter_values_7}          ${iteration}
+    ${status_8}=      run keyword and return status      should be equal as integers     ${counter_values_8}          ${iteration}
+    ${status_9}=      run keyword and return status      should be equal as integers     ${counter_values_9}          ${iteration}
+    ${status_10}=     run keyword and return status      should be equal as integers     ${counter_values_10}         0
+
+    BuiltIn.Log       \nNRCELL       console=yes
+    BuiltIn.Log       \nM55124C00503 RRC Reestab Reconf Failure Cell : ${counter_values_1}/${iteration} Status : ${status_1}         console=yes
+    BuiltIn.Log       \nM55124C00504 RRC Reestab Ho Failure Cell : ${counter_values_2}/${iteration} Status : ${status_2}             console=yes
+    BuiltIn.Log       \nM55124C00505 RRC Reestab Other Failure Cell : ${counter_values_3}/${iteration} Status : ${status_3}          console=yes
+    BuiltIn.Log       \nM55124C00502 RRC Reestab Fallback Cell : ${counter_values_4}/${statusFallback} Status : ${status_4}          console=yes
+    BuiltIn.Log       \nM55124C00515 Reestab ACC Fallback Cell: ${counter_values_5}/${statusFallback} Status : ${status_5}           console=yes
+    BuiltIn.Log       \nM55124C00501 RRC Reestab Discard Cell: ${counter_values_6}/${statusFallback} Status : ${status_6}            console=yes
+
+    BuiltIn.Log       \nNRDU         console=yes
+    BuiltIn.Log       \nM55127C00501 RRC Reestab Reconf Failure DU : ${counter_values_7}/${iteration} Status : ${status_7}           console=yes
+    BuiltIn.Log       \nM55127C00502 RRC Reestab Ho Failure DU : ${counter_values_8}/${iteration} Status : ${status_8}               console=yes
+    BuiltIn.Log       \nM55127C00503 RRC Reestab Other Failure DU : ${counter_values_9}/${iteration} Status : ${status_9}            console=yes
+    BuiltIn.Log       \nM55127C00513 RRC Reestab Discard DU : ${counter_values_10}/${statusFallback} Status : ${status_10}           console=yes
+
+    Should be true          ${status_1}
+    Should be true          ${status_2}
+    Should be true          ${status_3}
+    Should be true          ${status_4}
+    Should be true          ${status_5}
+    Should be true          ${status_6}
+    Should be true          ${status_7}
+    Should be true          ${status_8}
+    Should be true          ${status_9}
+    Should be true          ${status_10}

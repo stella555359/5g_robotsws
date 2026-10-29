@@ -1,0 +1,10 @@
+# TMA Child Script
+forw mte SetUEContext  5
+
+FORW MTE NRNASCONFIGDEREGISTRATION 0
+
+forw mte Activate -1
+
+WAIT FOR "ACTIVATE" TIMEOUT 60
+
+WAIT 1

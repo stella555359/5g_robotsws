@@ -1,0 +1,64 @@
+# ; first value after semicolon means sleep after action command
+# ; parameter 'o' after semicolon means, that output of the command is required
+
+# CB008126-A-B34 Successful 5QI modification with simultaneous addition and release of other flows
+# Test verifies that:
+# gNB handles successfully NGAP:PDUSessionResourceModifyRequest with simultaneous modification of non-GBR 5QI, release of 5QI and addition of new 5QI
+# for the same PDU session
+
+# use lua SA_TDD_2c_1gNBSim.lua
+
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/5QI_1_2_3_4_71_72_76_128_170_212_254.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/vonr_gbr_activation.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/disable_ciphering.yaml
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/CB008126_enable.yaml
+pause
+
+!python /home/ute/MN/UTE/robotws/testsuite/Krakow/RRM/resources/Python/pdu_session_qosflow_modification.py save
+pause
+
+# attach UE1 with PDU=1 with 5QI6, 5QI7
+qosflow_modify qos_flow=12 ue=all default=true
+ue_change_location id=1 enb=2 cell=1
+ue_register id=1;2
+set_pdu_param ue=1 pdu=1 trf_type=internal
+ue_pdu_session_setup pdu=1 ue=1 gw=1 nwslice=1;2
+ue_pdu_session_modify ue=1 pdu=1 qosflows_to_add=13;1
+pause
+
+trf_data_start ue=1 pdu=1 qfi=1 dir=dl mbps=30 trf_id=1;1
+trf_data_start ue=1 pdu=1 qfi=1 dir=ul mbps=10 trf_id=1;1
+trf_data_start ue=1 pdu=1 qfi=2 dir=dl mbps=30 trf_id=1;1
+trf_data_start ue=1 pdu=1 qfi=2 dir=ul mbps=10 trf_id=1;10
+
+# Verify that traffic on QFI1 (5QI6) and QFI2 (5QI7) is ongoing
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;o
+bearer_stats ue=1 pdu=2 qfi=2 dir=dl;o
+bearer_stats ue=1 pdu=2 qfi=2 dir=ul;o
+pause
+
+# Release 5QI7, modify 5QI6->5QI7, setup 5QI=8
+!python /home/ute/MN/UTE/robotws/testsuite/Krakow/RRM/resources/Python/pdu_session_qosflow_modification.py m "12(5QI6->5QI7)";1
+ue_pdu_session_modify ue=1 pdu=1 qosflows_to_modify=12 qosflows_to_del=13 qosflows_to_add=14 by=amf
+# Verify in RRCConnectionReconfiguration that 2 DRBs are released, 2 DRBs are setup (for QFI1 and QFI3)
+# Verify, that gNB sent PDUSessionResourceModifyResponse with
+# -No PDUSessionResourceFailedToModifyListModRes
+# -PDUSessionResourceModifyListModRes with 2 QFIs, QFI1 (5QI7) and QFI3 (5QI8)
+pause
+
+# Verify that traffic is ongoing only on QFI1 (5QI7) and QFI3 (5QI8). QFI3 is already released.
+trf_data_start ue=1 pdu=1 qfi=3 dir=dl mbps=30 trf_id=1;1
+trf_data_start ue=1 pdu=1 qfi=3 dir=ul mbps=10 trf_id=1;10
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;o
+bearer_stats ue=1 pdu=2 qfi=2 dir=dl;o
+bearer_stats ue=1 pdu=2 qfi=2 dir=ul;o
+bearer_stats ue=1 pdu=2 qfi=3 dir=dl;o
+bearer_stats ue=1 pdu=2 qfi=3 dir=ul;o
+pause
+
+#cleanup after test
+!python /home/ute/MN/UTE/robotws/testsuite/Krakow/RRM/resources/Python/pdu_session_qosflow_modification.py restore
+ue_kill id=1;5
+exit

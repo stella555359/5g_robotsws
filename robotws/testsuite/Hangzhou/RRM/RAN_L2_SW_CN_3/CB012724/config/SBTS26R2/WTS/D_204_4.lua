@@ -1,0 +1,28 @@
+exec('set_pdu_param ue=17-18 pdu=1 trf_type=internal')
+exec('sleep 3')
+exec('ue_register id=17-18')
+exec('sleep 3')
+exec('ue_pdu_session_setup pdu=1 ue=17-18')
+exec('sleep 3')
+exec('trf_data_start ue=17-18 pdu=1 qfi=1 dir=dl mbps=2')
+exec('sleep 3')
+exec('trf_data_start ue=17-18 pdu=1 qfi=1 dir=ul mbps=1')
+exec('sleep 3')
+
+exec('set_pdu_param ue=13-16 pdu=1 trf_type=internal')
+exec('sleep 3')
+exec('ue_register id=13-16')
+exec('sleep 3')
+exec('ue_pdu_session_setup pdu=1 ue=13-16')
+exec('sleep 3')
+
+exec('trf_data_start ue=13-16 pdu=1 qfi=1 dir=dl mbps=2')
+exec('sleep 3')
+exec('trf_data_start ue=13-16 pdu=1 qfi=1 dir=dl mbps=2')
+exec('sleep 3')
+
+exec('ue_meas_cfg_disp id=13 meas_obj_type=nr')
+exec('sleep 3')
+
+--exec('ue_measurement_send_nr id=13-16 meas_id=19 report_type=event_triggered event=A4 srsrp_nr=10 phycell_id=52 nrsrp_nr=50')
+--exec('sleep 3')

@@ -1,0 +1,112 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB008830 Robustess step A
+...
+...               Test Case Scenario author   : imen.mestiri@nokia.com
+...               Test Case Scenario contact  : imen.mestiri@nokia.com
+...               Creation Date               : 08-04-2024
+...               Modified Date               : 08-04-2024
+...               2024-04-26    ying.yw.wu@gmail.com        add timer 7200 sec for step Robustness; 10 loops
+
+
+Resource                         ./CB008830-Keywords.robot
+Resource                         ./CB008830-A-Keywords.robot
+
+*** Variables ***
+
+&{SA_Cell1_Tput150M_Rank2_DMRSt1}     callType=SA     targetCell=1    throughput=150    DMRStype=1    rank=2
+&{SA_Cell1_Tput150M_Rank2_DMRSt2}     callType=SA     targetCell=1    throughput=150    DMRStype=2    rank=2
+
+@{UE_AC05_Robustness}
+...    ${SA_Cell1_Tput150M_Rank2_DMRSt1}     ${SA_Cell1_Tput150M_Rank2_DMRSt2}
+
+${nb_loops}                              10
+
+*** Keywords ***
+CB008830-A-5-Robustness
+    [Documentation]
+    ...               UEs configurations :
+    ...               +-----------------------+---------+---------+
+    ...               |      UE # ID          |   UE1   |  UE2    |
+    ...               +-----------------------+---------+---------+
+    ...               |    Target Cell #      |   CELL1 |  CELL1  |
+    ...               +-----------------------+---------+---------+
+    ...               |   Cell Type TDD/FDD   |   SA    |    SA   |
+    ...               +-----------------------+---------+---------+
+    ...               |      UE Ranking       |  RANK2  |  RANK2  |
+    ...               +-----------------------+---------+---------+
+    ...               | supportedDMRS-TypeDL  |  Type 1 | Type 2  |
+    ...               +-----------------------+---------+---------+
+    [Arguments]            ${UEdefListparam}
+
+    Init Sequence          ${UEdefListparam}
+    Critical Step          CB008830 define UEs                UEdefList=${UEdefListparam}
+    Critical Step          CB008830A SCF config
+    Critical Step          CB008830 Full Commissioning        scf=${DU_SCF}
+    Critical Step          WTS Setup                          shouldUseLua=False
+    Critical Step          CB008830 set rank                  ${UEs_list}
+    Step                   CB008830A Robustness               timeout=7200
+    [Teardown]             Display diagnosis
+
+########################  Step A KWs  ########################
+
+CB008830A Robustness
+    [Documentation]
+    [Arguments]
+
+    FOR        ${loop}      IN RANGE        ${nb_loops}
+        Dated log new line     ===> UE_ID FOR ITERATION ${loop} = ${loop%2}
+        CB008830 start TTI Capture          suffix=A05_${loop}
+        CB008830 attach SA 1 UE             UElist=${UEs_SA_list[${loop%2}]}
+        CB008830 stop TTI Capture           suffix=A05_${loop}_Attach
+        ${TTI_Attach}          Set Variable                       ${TTIpcap}
+        CB008830 start traffic DL 1 Ue      UElist=${UEs_SA_list[${loop%2}]}
+        CB008830 start TTI Capture          suffix=A05_${loop}
+        Traced Sleep                        duration=3s     msg=DL TTI traffic capture for iteration ${loop}
+        CB008830 stop TTI Capture           suffix=A05_${loop}_Traffic
+        ${TTI_Traffic}         Set Variable                       ${TTIpcap}
+        Traced Sleep                        duration=60s    msg=DL traffic iteration ${loop}
+        CB008830 stop traffic DL 1 Ue       UElist=${UEs_SA_list[${loop%2}]}
+        CB008830 get PM files
+        CB008830 get RNTI DMRStype1 Robustness         UElist=${UEs_SA_list[${loop%2}]}
+        CB008830A TTI check RACH DCI10      TTIpcap=${TTI_Attach}
+        Run Keyword If                      ${loop%2} == 1
+        ...                                 CB008830A TTI check antennaPort     TTIpcap=${TTI_Traffic}    RntiDmrsT1List=${UEs_DMRSt1_list}
+        CB008830 check DL BLER              cellID=${TDD_Cell_list[0].nrCellId}    maxBLER=1
+        CB008830 UE Deregister SA 1 UE      UElist=${UEs_SA_list[${loop%2}]}
+
+    END
+
+CB008830 attach SA 1 UE
+    [Arguments]            ${UElist}
+    ${RNTI}                 UE Register         ue=${UElist.ue}
+    Launch PDU Session      ue=${UElist.ue}     pdu=${UElist.pdu}    gw=${UElist.ue}
+    Set To Dictionary       ${UElist}    c_rnti    ${RNTI}
+
+CB008830 UE Deregister SA 1 UE
+    [Arguments]            ${UElist}
+        UE Deregister    id=${UElist.ue}
+        Dated log new line     ===> UE ${UElist.ue} is detached
+
+
+CB008830 start traffic DL 1 Ue
+    [Arguments]            ${UElist}
+        Traffic UE DL           ueSetting=${UElist}    throughput=${UElist.throughput}    deviation=10
+        ...                                            duration=2s                        shouldBeStop=${False}
+        Dated log new line     ===> traffic started
+
+CB008830 stop traffic DL 1 Ue
+    [Arguments]            ${UElist}
+        Traffic Stop            ueSetting=${UElist}    dir=dl
+        Dated log new line     ===> Traffic stopped
+
+CB008830 get RNTI DMRStype1 Robustness
+    [Arguments]            ${UElist}
+
+    ${UEs_DMRSt1_list}     Create List
+
+    Run Keyword If       ${UElist.DMRStype} == 1
+    ...                  Append To List    ${UEs_DMRSt1_list}    ${UElist.c_rnti}
+
+
+    Dated log new line     ===> UEs_DMRSt1_list: ${UEs_DMRSt1_list}
+    set Suite Variable     ${UEs_DMRSt1_list}

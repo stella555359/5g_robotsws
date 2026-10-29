@@ -1,0 +1,224 @@
+*** Settings ***
+
+Documentation     [SUITE PURPOSE]  Verification of tests for 5GC001248-M feature
+...               Test Case Scenario author   : yann.ah.herve@nokia.com
+...               Test Case Scenario contact  : yann.ah.herve@nokia.com
+...               Test Case automation author : yann.ah.herve@nokia.com
+...               Test Case automation contact: bernard.hoche@nokia.com
+...               Creation Date               : 26-March-2020
+...               Modified Date               : 16-June-2020
+...               Modified Date               : 17-June-2022
+...               Last Modified by            : laurent.puchelle@nokia.com
+...               06-10-2021           |        Snashot/sosReport are now triggered inside suite teardown
+...               06-15-2021           |        Reduce GP overlap duration to 5 mn instead of 15 mn
+...                                    |        5 % traffic deviation + cleanups
+...               08-04-2021           |        Add filter to remove SIB/MIB message because of SANSA
+...               06 Spet 2021         |        Fix for taking into account 2TX and 4TX rank counter
+...               11-Oct-2021          |        Change value for ue_eutra_nr_capabilities as a temporary WA
+...                                    |        for missing CAclass inside WTS configuraiotn
+...               16-Nov-2021          |        UE_CAPA and EUTRA allignment with new Samsung capabilities	
+...               26-Nov-2021          |        Remove test mode from AirphoneConfig.xml
+...                                    |        After doing some trials, behaviour semms now be ok on AP side
+...                                    |        when there is no MIMO capabilities (i.e.: only 1L). In this case
+...                                    |        I can see that the is no RI reported and call is OK
+...                                    |        It seems also ok in case of 2 layers capabilities. The default
+...                                    |        for RI is by default one => OK. So, AirphoneConfig.xml and also
+...                                    |        egate test modes seems not useful. Test was done by emptying AirphoneConfig.xml
+...                                    |        file and also with default one.
+...                                    |        Also changing rdDlRank (0x580017) RAD param is useless as no more 
+...                                    |        delivered inside swconfig.txt
+...               02-Dec-2021          |        Remove RAD param related keywords (cleanup, useless now)
+...               05-Jan-2022          |        Add 22R2 tag
+...               18-Jan-2022          |        Remove AP Config XML dependencies (no more used)
+...               09-May-2022          |        Remove 22R1/22R2 tag
+...               30-May-2022          |        Fix LUA output (Uint8)
+...               17-June-2022         |        Adaptation to use MC_SHARK
+...               03-August-2022       |        Move to MCShark instead of Luashark
+...               09-August-2022       |        Remove 22R3 tag for branch off
+...               24-Jul-2023          |        Update pdml tag for numOfLayers
+
+
+
+
+Library           ../resources/python/luashark_tools.py
+Library           luashark_tools.analyzer       WITH NAME       analyzer
+Library           taf.config.scf                WITH NAME       cscf
+Library           taf.gnb.oam.commissioning     WITH NAME       commissioning
+
+Variables         ../../../resources/SWENG/python/ReadConfig.py
+
+Resource          ../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../resources/SWENG/robot/CaptureFilter.robot
+
+Variables         ./resources/python/Constants.py
+
+Resource          resources/robot/5GC001248_Keywords.robot
+
+Force Tags        CA_5G_SW_FR-Villarceaux   RRM
+...               PY36
+...               CLOUD_5G_I_LO_AP_LO_SANSA_FS_ECPRI_CMWV_TDD       master_classicalbts_all
+...               SBTS00    SBTS23R1    SBTS22R4
+...               CONFIGURED    5G_RAN    RAN_5G    CRT
+
+Suite Setup         Suite Setup From Scratch          listBackupFiles=${FD_ALL}
+Suite Teardown      Setup.Suite Teardown
+
+Test Teardown       Test Teardown for 1248
+
+
+*** Variables ***
+${TestSharkTool}    MC_SHARK
+
+# UE capabilities with maxNumberMIMO-LayersPDSCH set to 2
+# Those capabilities no more work in 20A. So, use the one delivered within WTS WTS_1947213.32_4.0.12608
+# ${UE_CAPA_MIMO_2_LAYERS}        "05000000020008000001800000009B0008000001BC0000000000000CA8400000000000295080"
+
+${UE_CAPA_MIMO_2_LAYERS}       SEPARATOR=        
+...                   "E120700047D0FFB17DE8E6BC0A03406939F3489E7C003018807C07C0203F000B6F3800007BDEB70D0645020E0000075C0228B64
+...                    B540B027C873E808F18E7CC31E50B0381C3C19BCE00401EF7ADC341914083800001D7008A2D92D502C09F21CFA023C639F30C79
+...                    42C0E070F066F380D807BDEB70D0645020E0000075C0228B64B540B027C873E808F18E7CC31E50B0381C3C19BCF89A01EF7ADC3
+...                    41914083800001D7008A2D92D502C09F21CFA023C639F30C7942C0E070F0527FC9FF6F3802007BDEB70D0645020E0000075C022
+...                    8B64B540B027C873E808F18E7CC31E50B0381C3C19BCE00C01EF7ADC341914083800001D7008A2D92D502C09F21CFA023C639F3
+...                    0C7942C0E070F066F3803807BDEB70D0645020E0000075C0228B64B540B027C873E808F18E7CC31E50B0381C3C19BCE02601EF7
+...                    ADC341914083800001D7008A2D92D502C09F21CFA023C639F30C7942C0E070F066F3812807BDEB70D0645020E0000075C0228B6
+...                    4B540B027C873E808F18E7CC31E50B0381C3C19BCE04E01EF7ADC341914083800001D7008A2D92D502C09F21CFA023C639F30C7
+...                    942C0E070F066F3814007BDEB70D0645020E0000075C0228B64B540B027C873E808F18E7CC31E50B0381C3C19BCE09801EF7ADC
+...                    341914083800001D7008A2D92D502C09F21CFA023C639F30C7942C0E070F06FE0000002C03E002B1C040703F0500703E001CB40
+...                    0001C0001CA8A0003000008300000795414040E001E006A054000810181C4C040C2C4044486430606C7D0494989CA0915200"
+
+# UE capabilities without maxNumberMIMO-LayersPDSCH capability (i.e. should be understood as 1 by gNB)
+# Those capabilities no more work in 20A. So, use the one delivered within WTS WTS_1947213.32_4.0.12608
+# and remove two layers capability from them
+# ${UE_CAPA_NO_MIMO_LAYERS}       "05000000020008000001800000009B0008000001BC00000000000004A9000000000000A542"
+
+${UE_CAPA_NO_MIMO_LAYERS}      SEPARATOR=        
+...                   "E120700047D0FFB17DE8E6BC0A03406939F3489E7C003018807C07C0203F000B6F3800007BDEB70D0645020E0000075C0228B64
+...                    B540B027C873E808F18E7CC31E50B0381C3C19BCE00401EF7ADC341914083800001D7008A2D92D502C09F21CFA023C639F30C79
+...                    42C0E070F066F380D807BDEB70D0645020E0000075C0228B64B540B027C873E808F18E7CC31E50B0381C3C19BCF89A01EF7ADC3
+...                    41914083800001D7008A2D92D502C09F21CFA023C639F30C7942C0E070F0527FC9FF6F3802007BDEB70D0645020E0000075C022
+...                    8B64B540B027C873E808F18E7CC31E50B0381C3C19BCE00C01EF7ADC341914083800001D7008A2D92D502C09F21CFA023C639F3
+...                    0C7942C0E070F066F3803807BDEB70D0645020E0000075C0228B64B540B027C873E808F18E7CC31E50B0381C3C19BCE02601EF7
+...                    ADC341914083800001D7008A2D92D502C09F21CFA023C639F30C7942C0E070F066F3812807BDEB70D0645020E0000075C0228B6
+...                    4B540B027C873E808F18E7CC31E50B0381C3C19BCE04E01EF7ADC341914083800001D7008A2D92D502C09F21CFA023C639F30C7
+...                    942C0E070F066F3814007BDEB70D0645020E0000075C0228B64B540B027C873E808F18E7CC31E50B0381C3C19BCE09801EF7ADC
+...                    341914083800001D7008A2D92D502C09F21CFA023C639F30C7942C0E070F06FE0000002C03E002B1C040703F0500703E001CB40
+...                    0001C00014AA8000C000020C00001E550501038007801A81500020406071301030B101112190C181B1F412526272824548"
+
+@{bipMsgfilter}                   DlData_PdschSendReq
+
+#  variable set to "${True} to automatically save debug data (SOS report and snapshot)
+#  at the end of each TC
+${AutoSaveDebugData}    ${False}
+
+${eutra_nr_with_CAClass}         SEPARATOR=
+...                   "A10CF11A118000202040C081C389A00000008723A110003020040C081C389A00000408723A11000202060C0081C389A0000080872
+...                    320D8000202240C5C4D0000064641A00060440818B89A0000108C8340008089831071340000291D06800101030700E26800006023
+...                    F2320D800020204041C4D00000E4641A00060400808389A0000208C8260000800389A0000248E8160041C4D00001404391D08C080
+...                    1030206040E1C4D00000004391D0880818300206040E1C4D00000204391D06C08010102060E26800007021C8E8340408081830071
+...                    3400005810E46413022040E1C4D0000184641202260E01C4D00001A460160268000040180384D0B7AFA23200216C73E1C80085B1C
+...                    F87200216C73E1C60216C73E1C60216C73E1C60216C73E1C60216C73E1C60216C73E1C60216C73E1C4085B1CF870885B1CF872002
+...                    16C73E1C80085B1CF8718085B1CF8718085B1CF8710216C73E1C4085B1CF860542200000000000000000024440000002444000000
+...                    3444000000000180D2000040400010000004000002000080100240000800000202000080000040001002004800010000004000001
+...                    01000080002004008C00020200018000006000100200460001000000C040003000080100230000800000600000180804008011800
+...                    0400000100000080402004008C0002020000800000200010020046000100000040400010000801002200008080002000100200420
+...                    0030100801002300008000002000000808040080110000C040002000080100220001800000402010020040A112C0EC1009D040000
+...                    0007F00000000040D8201389A0000040FE00000000081B08027134003A080000080"
+
+*** Test Cases ***
+
+[1][1.0] 5GC001248_M_78_maxNumberMIMO-LayersPDSCH capability check case 1
+    5GC001248_M_Generic_TC          ue_capas=${UE_CAPA_NO_MIMO_LAYERS}       expected_layers_rrc=1      expected_rank_bip=1
+
+    # Sleep 5 mn in case of GP overlap
+    Traced Sleep  ${auto_1248_gp_period} minutes       msg=GP overlap
+
+    # Retrieve counters and compare with a reference
+    # Verify Object Counter cumulative values
+    ${status}             Run Keyword If        '${auto_1248_check_counters}' == 'True'
+    ...                                         Verify Counter Cumulative Values With Margin for 1248_M         TC_name=5GC001248_M_1
+
+[1][1.0] 5GC001248_M_79_maxNumberMIMO-LayersPDSCH capability check case 2
+    5GC001248_M_Generic_TC          ue_capas=${UE_CAPA_MIMO_2_LAYERS}       expected_layers_rrc=2      expected_rank_bip=2
+
+    # Sleep 5 mn in case of GP overlap
+    Traced Sleep  ${auto_1248_gp_period} minutes       msg=GP overlap
+
+    # Retrieve counters and compare with a reference
+    # Verify Object Counter cumulative values
+    ${status}             Run Keyword If        '${auto_1248_check_counters}' == 'True'
+    ...                                         Verify Counter Cumulative Values With Margin for 1248_M         TC_name=5GC001248_M_2
+
+
+*** Keywords ***
+
+5GC001248_M_Generic_TC
+   [Documentation]            Common KW for 1248 M checks
+
+   [Arguments]                     ${ue_capas}
+   ...                             ${expected_layers_rrc}
+   ...                             ${expected_rank_bip}
+
+    # Set MIMO layers inside UE capabilities inside UE configuration file
+    Modify Field in WtsEmu Cfg File     field=ue_nr_capabilities    value=${ue_capas}
+    Modify Field in WtsEmu Cfg File     field=ue_eutra_nr_capabilities    value=${eutra_nr_with_CAClass}
+
+    Restart TL
+
+    ${CaptureBIP}                   Capture L1L2 Set Upon Config             airscale=${GNB_DU}
+
+    WTS Setup
+
+    UE Cell Setup Check
+
+    Run Keyword If                  ${enable_sherpa}==${True}               Sherpa.Activate Sherpa
+
+    # Attach to 5G
+    ${CaptureCorePath}              SgNB Addition to ENB            ueSetting=${UE_SIMPLE}
+
+    # Seems not to be useful till now
+    Run Keyword If                  '${expected_rank_bip}'=='0x02'
+    ...                             Update RI reported values       ueSetting=${UE_SIMPLE}      ri_value=1
+
+    # Check nb of MIMO layers is set to 2 by gNB inside reconfiguration message:
+    ${pdmlFile}=                    analyzer.pcap_to_pdml          ${CaptureCorePath}
+
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=.*/nr-rrc.pdsch_ServingCellConfig/.*/nr-rrc.maxMIMO_Layers$
+    ...                             value=${expected_layers_rrc}
+
+    Capture Init                    ${CaptureBIP}                                   withTN=True
+    ${CaptureBIP.filter}            Get Filter For Particular Msgs                  bipMsgList=${bipMsgfilter}
+
+    Traffic UE DL                   throughput=5
+    ...                             captureCallback=Callback Capture L1L2
+    ...                             capture=${CaptureBIP}
+    ...                             duration=60s
+    ...                             deviation=5
+
+    # UE Detach
+    UE Detach Enb                   ueSetting=${UE_SIMPLE}
+
+    Dated log                       Checking DL rank in BIP messages
+
+    # Filter SIB / MIB message with RNIT = 0xFFFF
+    ${filterExp}=                   Set Variable                    (dldata_pdschsendreq)&&!(3gpp.rnti==0xffff)
+
+    ${filterPcap}                   analyzer.filter_pcap            ${CaptureBIP.path}
+    ...                             filterName=${filterExp}
+    ...                             filterExp=${filterExp}
+    ${pdmlFileBIP}=                 analyzer.pcap_to_pdml           ${filterPcap}
+
+    analyzer.check_list             pdmlFile=${pdmlFileBIP}
+    ...                             packetName=DlData_PdschGrant
+    ...                             path=.numOfLayers$
+    ...                             value=${expected_rank_bip}
+    ...                             startPacket=${1}
+    ...                             endPacket=${10}

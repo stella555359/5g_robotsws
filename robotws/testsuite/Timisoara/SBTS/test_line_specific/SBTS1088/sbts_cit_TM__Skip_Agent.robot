@@ -1,0 +1,1049 @@
+*** Settings ***
+Force Tags  QCD_MN_SRAN  QCP_SRAN_SBTS  SRAN  CLOUD_SRAN_LWG_1FSMF_2FBBC_3AHEGB_2FXFA  STATE_COMMISSIONED
+Library           XML  use_lxml=True
+Resource    ../../CIT/test_resources/BS-SM_RP001906_Output_file_format.robot
+Resource    ../../CIT/test_resources/BS_SM__RP001906_SFP_speeds_in_Cli_and_Infomodel.robot
+Resource    ../../CIT/test_resources/CLI__Admin_CLI_block_unblock_unit_remote.robot
+Resource    ../../CIT/test_resources/CLI__Admin_CLI_get_snapshot_remote.robot
+Resource    ../../CIT/test_resources/CLI__Admin_CLI_site_reset_remote.robot
+Resource    ../../CIT/test_resources/CM_CABLE_SPEED_CHANGE.robot
+Resource    ../../CIT/test_resources/CM_Cell_Addition_LTE.robot
+Resource    ../../CIT/test_resources/CM_Cell_Removal_LTE.robot
+Resource    ../../CIT/test_resources/CM_LTE_Cell_reconfiguration_to_different_antenna_port.robot
+Resource    ../../CIT/test_resources/CM__Commissioning__Configuration_reset.robot
+Resource    ../../CIT/test_resources/CM__Commissioning__Planned_commissioning.robot
+Resource    ../../CIT/test_resources/CM__Recommissioning_delta_commissioning_with_reset.robot
+Resource    ../../CIT/test_resources/CM__Recommissioning_delta_commissioning_without_reset.robot
+Resource    ../../CIT/test_resources/CM__Recommissioning_with_BTS_reset.robot
+Resource    ../../FM/test_resources/FM__RF_hot_remove_hot_insert.robot
+Resource    ../../FM/test_resources/FM__RF_module_alarm_with_reco_reset.robot
+Resource    ../../FM/test_resources/FM__Recovery_whole_multiple_Link_Break.robot
+Resource    ../../CIT/test_resources/LOGS__Memory_dump_files_creation_in_case_of_DSP_crash.robot
+Resource    ../../CIT/test_resources/LOGS__Postmortem_files_creation_in_snapshot_content_for_SMOD.robot
+Resource    ../../CIT/test_resources/LOGS__Snapshot.robot
+Resource    ../../CIT/test_resources/PM__LTE_counters_are_available_on_ram_disk_versus_NIDD_counter_list.robot
+Resource    ../../CIT/test_resources/PM__TNL_counters_are_available_on_ram_disk_versus_NIDD_counter_list.robot
+Resource    ../../CIT/test_resources/PM__WBTS_counters_are_available_on_ram_disk_versus_NIDD_counter_list.robot
+Resource    ../../CIT/test_resources/STATE__GSM_BCF_lock_unlock_from_BSC.robot
+Resource    ../../CIT/test_resources/STATE__GSM_BCF_reset_from_BSC.robot
+Resource    ../../CIT/test_resources/STATE__GSM_BTS_lock_unlock_from_BSC.robot
+Resource    ../../CIT/test_resources/STATE__GSM_TRX_block_unblock_from_ADMIN.robot
+Resource    ../../CIT/test_resources/STATE__GSM_TRX_lock_unlock_from_BSC.robot
+Resource    ../../CIT/test_resources/STATE__LTE_RAT_reset__parameter_change__ADMIN.robot
+Resource    ../../CIT/test_resources/STATE__LTE_RAT_reset_from_ADMIN.robot
+Resource    ../../CIT/test_resources/STATE__LTE_S1_Lock_Unlock.robot
+Resource    ../../CIT/test_resources/STATE__LTE_cell_block_unblock_from_ADMIN.robot
+Resource    ../../CIT/test_resources/STATE__LTE_cell_lock_unlock_from_ADMIN.robot
+Resource    ../../CIT/test_resources/STATE__Radio_module_reset_from_admin.robot
+Resource    ../../CIT/test_resources/STATE__S1_lock_reset_unlock.robot
+Resource    ../../CIT/test_resources/STATE__Site_power_reset.robot
+Resource    ../../CIT/test_resources/STATE__Site_reset.robot
+Resource    ../../CIT/test_resources/STATE__WCDMA_RAT_reset__parameter_change__ADMIN.robot
+Resource    ../../CIT/test_resources/STATE__WCDMA_RAT_reset_from_ADMIN.robot
+Resource    ../../CIT/test_resources/STATE__WCDMA_cell_block_unblock.robot
+Resource    ../../CIT/test_resources/STATE__WCDMA_cell_lock_unlock_from_RNC.robot
+Resource    ../../CIT/test_resources/STATE__sbts_block_unblock.robot
+Resource    ../../CIT/test_resources/SWM__Local_Software_Activation.robot
+Resource    ../../CIT/test_resources/SWM__Local_Software_Download.robot
+Resource    ../../CIT/test_resources/SWM__Local_Software_Download_Cancel.robot
+Resource    ../../CIT/test_resources/SWM__SBTS_SOAM_rollback_to_SBTS_SOAM.robot
+Resource    ../../CIT/test_resources/SWM__SCF_validation_errors_check.robot
+Resource    ../../CIT/test_resources/SWM__SW_download_and_activation__SBTS_to_SBTS.robot
+Resource    ../../CIT/test_resources/SWM__SW_update_for_RMOD_with_fault_23.robot
+
+Suite Setup      Map BuildShareTimi01 and move counters folder in test_line_specific
+
+*** Variables ***
+${SCF_ID}    01
+${HW_LOCATION_CODE}      Timisoara
+${SBTS_SW_tested}    SBTS00_ENB_9999_210519_000004
+
+*** Test Cases ***
+
+[1]Automated__SWM__SW_download_and_activation__SBTS_to_SBTS
+    [Tags]    STOPONFAIL
+    [Setup]    Run Keywords
+    ...    Set Test Variable    ${COMMISSIONING_PATH}
+    ...    /home/ute/robotlte/testsuite/robotws/testsuite/SBTS/test_line_specific/Timisoara/SBTS1440/commissioning/SCF_01_TRUNK.xml
+    ...    AND    Set Test Variable    ${Target SW name}    ${None}
+    ...    AND    Set Test Variable    ${Target SW dir}    /home/ute/robotlte/TARGET_SW
+    ...    AND    Set Test Variable    ${SW Update Timeout}    3600
+    ...    AND    Set Test Variable    ${Ping loss timeout}    900
+    ...    AND    Set Test Variable    ${Ping regain timeout}    1900
+    ...    AND    Set Test Variable    ${onAir Check Number}    150
+    ...    AND    Set Test Variable    ${First Cell On Air Timeout}    35
+    ...    AND    Set Test Variable    ${Test Timeout}    120
+    ...    AND    Modify Resource Search Order    SWM__SW_download_and_activation__SBTS_to_SBTS
+    ...    AND    SWM__SW_download_and_activation__SBTS_to_SBTS.TC Setup
+    ${first_cat_command}   Catenate  cat ../testline_init_results/node1/logs/INFO_log.txt | grep BTSSM-based |
+    ...                              tail -1 | awk -F 'from ' '{print $2}' | awk -F '.zip' '{print $1}'
+    ${second_cat_command}  Catenate  cat ../testline_init_results/logs/INFO_log.txt | grep BTSSM-based |
+    ...                              tail -1 | awk -F 'from ' '{print $2}' | awk -F '.zip' '{print $1}'
+    ${package}=  Run Keyword If  ${SMOD2_exists}  run   ${first_cat_command}
+    ...  ELSE   run   ${second_cat_command}
+    Log to console  Download SW packages ${package}.zip
+    Run  mkdir ${Target SW dir}
+    Run  sudo chmod 777 ${Target SW dir} -R
+    Run  wget ${package}.zip -P ${Target SW dir}
+    Run  wget files.ute.nsn-rdnet.net/builds/enb/base/${SBTS_SW_tested}/${SBTS_SW_tested}_release_BTSSM_downloadable.zip -P ${Target SW dir}
+    [Timeout]    45 minutes
+    TC__SWM__SW_download_and_activation__SBTS_to_SBTS
+    [Teardown]    Run Keywords    SWM__SW_download_and_activation__SBTS_to_SBTS.TC Teardown
+    ...    AND    Restore Resource Search Order
+    
+    
+[1][1.1] Automated__SWM__SCF_validation_errors_check
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${SKIP_PARAM_RELATION_ERRORS}    ${TRUE}
+    
+    ...    AND    SWM__SCF_validation_errors_check.TC Setup
+    ...    AND    Modify Resource Search Order    SWM__SCF_validation_errors_check
+    TC__SWM__SCF_validation_errors_check
+    [Teardown]    Run Keywords    SWM__SCF_validation_errors_check.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__CM__Commissioning__Configuration_reset
+    [Timeout]    20000
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${Configuration Reset Timeout}    1200
+    ...    AND    Set Test Variable    ${Conf_reset_by_AdminAPI}    ${TRUE}
+    ...    AND    Set Test Variable    ${RM_DETECTION_TIMEOUT}    35 min
+    ...    AND    Set Test Variable    ${SMOD2_CHECK_TIMEOUT}    25 min
+    
+    ...    AND    CM__Commissioning__Configuration_reset.TC Setup
+    ...    AND    Modify Resource Search Order    CM__Commissioning__Configuration_reset
+    TC__CM__Commissioning__Configuration_reset
+    [Teardown]    Run Keywords    CM__Commissioning__Configuration_reset.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__CM__Commissioning_planned_commissioning
+    [Timeout]    20000
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${COMMISSIONING_PATH}    
+    ...    AND    Set Test Variable    ${SKIP_PARAM_RELATION_ERRORS}    ${TRUE}
+    ...    AND    Set Test Variable    ${COMMISSIONING_TIMEOUT}    1200
+    ...    AND    Set Test Variable    ${STARTUP_TIMEOUT}    20
+    ...    AND    Set Test Variable    ${IPSEC_INSTALL}    ${FALSE}
+    ...    AND    Set Test Variable    ${POST_CHECK_ONLY_ALARMS}    ${FALSE}
+    ...    AND    Set Test Variable    ${POST_ALARMS_IGNORED_PATTERN}    ${EMPTY}
+    ...    AND    Set Test Variable    ${ALT_SCF_PATH}    ${EMPTY}
+    
+    ...    AND    CM__Commissioning__Planned_commissioning.TC Setup
+    ...    AND    Modify Resource Search Order    CM__Commissioning__Planned_commissioning
+    TC__CM__Commissioning__Planned_commissioning
+    [Teardown]    Run Keywords    CM__Commissioning__Planned_commissioning.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__FM__RF_hot_remove_hot_insert
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${RMOD_SN}    ${EMPTY}
+    ...    AND    Set Test Variable    ${PING_RMOD_TIMEOUT}    720
+    ...    AND    Set Test Variable    ${CELLS_ONLINE_TIMEOUT}    720
+    
+    ...    AND    FM__RF_hot_remove_hot_insert.TC Setup
+    ...    AND    Modify Resource Search Order    FM__RF_hot_remove_hot_insert
+    TC__FM__RF_hot_remove_hot_insert
+    [Teardown]    Run Keywords    FM__RF_hot_remove_hot_insert.TC Teardown
+    ...    AND    Restore Resource Search Order
+    
+
+
+[1]Automated__FM__RF_hot_remove_hot_insert
+    [Timeout]    14400 
+    [Setup]    Run Keywords
+    ...    Set Test Variable    ${RMOD_SN}    K9170226117
+    ...    AND    Set Test Variable    ${PING_RMOD_TIMEOUT}    600
+    ...    AND    Set Test Variable    ${CELLS_ONLINE_TIMEOUT}    600
+    ...    AND    FM__RF_hot_remove_hot_insert.TC Setup
+    ...    AND    Modify Resource Search Order    FM__RF_hot_remove_hot_insert
+    TC__FM__RF_hot_remove_hot_insert
+    [Teardown]    Run Keywords    FM__RF_hot_remove_hot_insert.TC Teardown
+    ...    AND    Restore Resource Search Order
+    
+
+
+[2]Automated__FM__RF_hot_remove_hot_insert
+    [Timeout]    14400 
+    [Setup]    Run Keywords
+    ...    Set Test Variable    ${RMOD_SN}    F7172208977
+    ...    AND    Set Test Variable    ${PING_RMOD_TIMEOUT}    600
+    ...    AND    Set Test Variable    ${CELLS_ONLINE_TIMEOUT}    600
+    ...    AND    FM__RF_hot_remove_hot_insert.TC Setup
+    ...    AND    Modify Resource Search Order    FM__RF_hot_remove_hot_insert
+    TC__FM__RF_hot_remove_hot_insert
+    [Teardown]    Run Keywords    FM__RF_hot_remove_hot_insert.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+[1]Automated__STATE__Site_reset
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${RESTORE_TIMEOUT}    60
+    ...    AND    Set Test Variable    ${GENERATE_JSON_KPI}    False
+    
+    ...    AND    STATE__Site_reset.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__Site_reset
+    TC__STATE__Site_reset
+    [Teardown]    Run Keywords    STATE__Site_reset.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__FM__RF_module_alarm_with_reco_reset
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${RMOD_SERIAL_NUMBER}    ${EMPTY}
+    ...    AND    Set Test Variable    ${CARRIERS_RESTORE_TIMEOUT}    180
+    ...    AND    Set Test Variable    ${Active_Carriers_Before}    0
+    ...    AND    Set Test Variable    ${Active_Carriers_After}    0
+    
+    ...    AND    FM__RF_module_alarm_with_reco_reset.TC Setup
+    ...    AND    Modify Resource Search Order    FM__RF_module_alarm_with_reco_reset
+    TC__FM__RF_module_alarm_with_reco_reset
+    [Teardown]    Run Keywords    FM__RF_module_alarm_with_reco_reset.TC Teardown
+    ...    AND    Restore Resource Search Order
+    
+
+
+[1]Automated__FM__RF_module_alarm_with_reco_reset
+    [Timeout]    14400 
+    [Setup]    Run Keywords
+    ...    Set Test Variable    ${RMOD_SERIAL_NUMBER}    K9170226117
+    ...    AND    Set Test Variable    ${CARRIERS_RESTORE_TIMEOUT}    181
+    ...    AND    Set Test Variable    ${Active_Carriers_Before}    0
+    ...    AND    Set Test Variable    ${Active_Carriers_After}    0
+    ...    AND    Set Test Variable    ${FAULT_ID}    1900
+    ...    AND    FM__RF_module_alarm_with_reco_reset.TC Setup
+    ...    AND    Modify Resource Search Order    FM__RF_module_alarm_with_reco_reset
+    TC__FM__RF_module_alarm_with_reco_reset
+    [Teardown]    Run Keywords    FM__RF_module_alarm_with_reco_reset.TC Teardown
+    ...    AND    Restore Resource Search Order
+    
+
+
+[1]Automated__FM__RF_module_alarm_with_reco_reset
+    [Timeout]    14400 
+    [Setup]    Run Keywords
+    ...    Set Test Variable    ${RMOD_SERIAL_NUMBER}    F7172208977
+    ...    AND    Set Test Variable    ${CARRIERS_RESTORE_TIMEOUT}    181
+    ...    AND    Set Test Variable    ${Active_Carriers_Before}    0
+    ...    AND    Set Test Variable    ${Active_Carriers_After}    0
+    ...    AND    Set Test Variable    ${FAULT_ID}    1900
+    ...    AND    FM__RF_module_alarm_with_reco_reset.TC Setup
+    ...    AND    Modify Resource Search Order    FM__RF_module_alarm_with_reco_reset
+    TC__FM__RF_module_alarm_with_reco_reset
+    [Teardown]    Run Keywords    FM__RF_module_alarm_with_reco_reset.TC Teardown
+    ...    AND    Restore Resource Search Order   
+
+
+
+[1]Automated__Admin_CLI_get_snapshot_remote
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${SKIP_PARAMETER_RELATION_ERRORS}    True
+    
+    ...    AND    CLI__Admin_CLI_get_snapshot_remote.TC Setup
+    ...    AND    Modify Resource Search Order    CLI__Admin_CLI_get_snapshot_remote
+    TC__CLI__Admin_CLI_get_snapshot_remote
+    [Teardown]    Run Keywords    CLI__Admin_CLI_get_snapshot_remote.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__CM__Recommissioning_with_BTS_reset
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${PARAMETER_SCF_DIST_NAME}    MRBTS-10088/MNL-1/MNLENT-1/SYNC-1/TIME-1
+    ...    AND    Set Test Variable    ${PARAMETER_IM_DIST_NAME}    //TIME_A-1
+    ...    AND    Set Test Variable    ${PARAMETER_ABBREVIATION}    timeZone
+    ...    AND    Set Test Variable    ${PARAMETER_OPERATION}    update
+    ...    AND    Set Test Variable    ${PARAMETER_VALUE}    (GMT+1) Europe/Vienna
+    ...    AND    Set Test Variable    ${SKIP_PARAM_RELATION_ERRORS}    ${TRUE}
+    ...    AND    Set Test Variable    ${RECOMMISSIONING_TIMEOUT}    1201
+    
+    ...    AND    CM__Recommissioning_with_BTS_reset.TC Setup
+    ...    AND    Modify Resource Search Order    CM__Recommissioning_with_BTS_reset
+    TC__CM__Recommissioning_with_BTS_reset
+    [Teardown]    Run Keywords    CM__Recommissioning_with_BTS_reset.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__CM__Recommissioning_delta_commissioning_without_reset
+    [Timeout]    14400 
+    [Setup]    Run Keywords
+    ...    Set Test Variable    ${DELTA_JSON_FILE_PATH}
+    ...    /home/ute/robotlte/testsuite/Timisoara/SBTS/test_line_specific/Timisoara/SBTS1088/json/name_delta.json
+    ...    AND    Set Test Variable    ${SKIP_PARAM_RELATION_ERRORS}    ${TRUE}
+    ...    AND    Set Test Variable    ${RECOMMISSIONING_TIMEOUT}    900
+    ...    AND    CM__Recommissioning_delta_commissioning_without_reset.TC Setup
+    ...    AND    Modify Resource Search Order    CM__Recommissioning_delta_commissioning_without_reset
+    TC__CM__Recommissioning_delta_commissioning_without_reset
+    [Teardown]    Run Keywords    CM__Recommissioning_delta_commissioning_without_reset.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__CM__Recommissioning_delta_commissioning_with_reset
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${DELTA_JSON_FILE_PATH}
+    ...           /home/ute/robotlte/testsuite/Timisoara/SBTS/test_line_specific/Timisoara/SBTS1088/json/time_zone_delta.json
+    ...    AND    Set Test Variable    ${SKIP_PARAM_RELATION_ERRORS}    ${TRUE}
+    ...    AND    Set Test Variable    ${RECOMMISSIONING_TIMEOUT}    601
+    ...    AND    Set Test Variable    ${STARTUP_TIMEOUT}    25
+    
+    ...    AND    CM__Recommissioning_delta_commissioning_with_reset.TC Setup
+    ...    AND    Modify Resource Search Order    CM__Recommissioning_delta_commissioning_with_reset
+    TC__CM__Recommissioning_delta_commissioning_with_reset
+    [Teardown]    Run Keywords    CM__Recommissioning_delta_commissioning_with_reset.TC Teardown
+    ...    AND    Restore Resource Search Order
+    
+
+
+[1]Automated__STATE__SBTS_block_unblock
+    [Timeout]    14400 
+    [Setup]    Run Keywords
+    ...    Set Test Variable    ${CUSTOM_BLOCKED_BTS_DISTNAME}    
+    ...    AND    Set Test Variable    ${CELLS_TIMEOUT_BEFORE_BLOCK}    301
+    ...    AND    Set Test Variable    ${CELLS_TIMEOUT_AFTER_BLOCK}    301
+    ...    AND    Set Test Variable    ${CELLS_TIMEOUT_AFTER_UNBLOCK}    901
+    ...    AND    Set Test Variable    ${bts_host}    192.168.255.129
+    ...    AND    Set Test Variable    ${GENERATE_JSON_KPI}    False
+    ...    AND    STATE__sbts_block_unblock.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__sbts_block_unblock
+    TC__STATE__SBTS_block_unblock
+    [Teardown]    Run Keywords    STATE__sbts_block_unblock.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__Radio_module_reset_from_Admin
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${RMOD_SERIAL_NUMBER}    
+    ...    AND    Set Test Variable    ${RESET_TIMEOUT}    3600
+    ...    AND    Set Test Variable    ${RESETTYPE}    Warm
+    ...    AND    Set Test Variable    ${BCF_VERIFICATION_TIMEOUT}    5 minutes
+    
+    ...    AND    STATE__Radio_module_reset_from_admin.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__Radio_module_reset_from_admin
+    TC__STATE__Radio_module_reset_from_admin
+    [Teardown]    Run Keywords    STATE__Radio_module_reset_from_admin.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__Radio_module_reset_from_Admin
+    [Timeout]    14400 
+    [Setup]    Run Keywords
+    ...    Set Test Variable    ${RMOD_SERIAL_NUMBER}    K9170226117
+    ...    AND    Set Test Variable    ${RESET_TIMEOUT}    600
+    ...    AND    Set Test Variable    ${RESETTYPE}    Hard
+    ...    AND    Set Test Variable    ${BCF_VERIFICATION_TIMEOUT}    5 minutes
+    ...    AND    STATE__Radio_module_reset_from_admin.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__Radio_module_reset_from_admin
+    TC__STATE__Radio_module_reset_from_admin
+    [Teardown]    Run Keywords    STATE__Radio_module_reset_from_admin.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__LTE_RAT_reset_from_ADMIN
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${LTE_RAT_RESET_TIMEOUT}    3600
+    ...    AND    Set Test Variable    ${GENERATE_JSON_KPI}    False
+    
+    ...    AND    STATE__LTE_RAT_reset_from_ADMIN.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__LTE_RAT_reset_from_ADMIN
+    TC__STATE__LTE_RAT_reset_from_ADMIN
+    [Teardown]    Run Keywords    STATE__LTE_RAT_reset_from_ADMIN.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__WCDMA_RAT_reset_from_ADMIN
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${WCDMA_RAT_RESET_TIMEOUT}    180
+    ...    AND    Set Test Variable    ${GENERATE_JSON_KPI}    False
+    
+    ...    AND    STATE__WCDMA_RAT_reset_from_ADMIN.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__WCDMA_RAT_reset_from_ADMIN
+    TC__STATE__WCDMA_RAT_reset_from_ADMIN
+    [Teardown]    Run Keywords    STATE__WCDMA_RAT_reset_from_ADMIN.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__WCDMA_cell_block_unblock
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${CELL_ID}    
+    
+    ...    AND    STATE__WCDMA_cell_block_unblock.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__WCDMA_cell_block_unblock
+    TC__STATE__WCDMA_cell_block_unblock
+    [Teardown]    Run Keywords    STATE__WCDMA_cell_block_unblock.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__LTE_S1_Lock_Unlock
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${LTE_STATES}
+    ...           availabilityStatus=Online, blockingState=Unblocked, administrativeState=Unlocked, operationalState=Enabled
+    ...    AND    Set Test Variable    ${LTE_STATES_S1_LOCKED}
+    ...           availabilityStatus=Offline, blockingState=Unblocked, administrativeState=Unlocked, operationalState=Disabled
+    ...    AND    Set Test Variable    ${WCDMA_STATES}
+    ...           availabilityStatus=Online, blockingState=Unblocked, operationalState=Enabled, usageState=Active
+    ...    AND    Set Test Variable    ${GSM_STATES}
+    ...           administrativeState=Unlocked, availabilityStatus=Online, blockingState=Unblocked, operationalState=Enabled, usageState=Active
+    ...    AND    Set Test Variable    ${RMOD_STATES}
+    ...           administrativeState=Unlocked, availabilityStatus=Online, blockingState=Unblocked, operationalState=Enabled, usageState=Active
+    
+    ...    AND    STATE__LTE_S1_Lock_Unlock.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__LTE_S1_Lock_Unlock
+    TC__STATE__LTE_S1_Lock_Unlock
+    [Teardown]    Run Keywords    STATE__LTE_S1_Lock_Unlock.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__S1_Lock_Reset_Unlock
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${LTE_STATES}
+    ...           availabilityStatus=Online, blockingState=Unblocked, administrativeState=Unlocked, operationalState=Enabled
+    ...    AND    Set Test Variable    ${LTE_STATES_S1_LOCKED}
+    ...           availabilityStatus=Offline, blockingState=Unblocked, administrativeState=Unlocked, operationalState=Disabled
+    ...    AND    Set Test Variable    ${WCDMA_STATES}
+    ...           availabilityStatus=Online, blockingState=Unblocked, operationalState=Enabled, usageState=Active
+    ...    AND    Set Test Variable    ${GSM_STATES}
+    ...           administrativeState=Unlocked, availabilityStatus=Online, blockingState=Unblocked, operationalState=Enabled, usageState=Active
+    ...    AND    Set Test Variable    ${RMOD_STATES}
+    ...           administrativeState=Unlocked, availabilityStatus=Online, blockingState=Unblocked, operationalState=Enabled, usageState=Active
+    ...    AND    Set Test Variable    ${RESTORE_TIMEOUT}    20
+    
+    ...    AND    STATE__S1_lock_reset_unlock.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__S1_lock_reset_unlock
+    TC__STATE__S1_Lock_Reset_Unlock
+    [Teardown]    Run Keywords    STATE__S1_lock_reset_unlock.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__LTE_RAT_reset__parameter_change__ADMIN
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${PARAMETER_SCF_DIST_NAME}    MRBTS-10088/LNBTS-10088
+    ...    AND    Set Test Variable    ${PARAMETER_ABBREVIATION}    cPlaneDscp
+    ...    AND    Set Test Variable    ${PARAMETER_VALUE}    47
+    ...    AND    Set Test Variable    ${SKIP_PARAM_RELATION_ERRORS}    ${TRUE}
+    ...    AND    Set Test Variable    ${RECOMMISSIONING_TIMEOUT}    600
+    ...    AND    Set Test Variable    ${LTE_OPERATIONAL_TIMEOUT}    360
+    
+    ...    AND    STATE__LTE_RAT_reset__parameter_change__ADMIN.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__LTE_RAT_reset__parameter_change__ADMIN
+    TC__STATE__LTE_RAT_reset__parameter_change__ADMIN
+    [Teardown]    Run Keywords    STATE__LTE_RAT_reset__parameter_change__ADMIN.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__WCDMA_RAT_reset__parameter_change__ADMIN
+    [Timeout]    20000
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${PARAMETER_SCF_DIST_NAME}    MRBTS-10088/WNBTS-1
+    ...    AND    Set Test Variable    ${PARAMETER_ABBREVIATION}    midIubDelayThreshold
+    ...    AND    Set Test Variable    ${PARAMETER_VALUE}    160
+    ...    AND    Set Test Variable    ${SKIP_PARAM_RELATION_ERRORS}    ${TRUE}
+    ...    AND    Set Test Variable    ${RECOMMISSIONING_TIMEOUT}    600
+    ...    AND    Set Test Variable    ${WCDMA_OPERATIONAL_TIMEOUT}    600
+    
+    ...    AND    STATE__WCDMA_RAT_reset__parameter_change__ADMIN.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__WCDMA_RAT_reset__parameter_change__ADMIN
+    TC__STATE__WCDMA_RAT_reset__parameter_change__ADMIN
+    [Teardown]    Run Keywords    STATE__WCDMA_RAT_reset__parameter_change__ADMIN.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+    
+
+
+[1]Automated__STATE__WCDMA_RAT_reset__parameter_change__ADMIN
+    [Timeout]    14400 
+    [Setup]    Run Keywords
+    ...    Set Test Variable    ${PARAMETER_SCF_DIST_NAME}    MRBTS-10088/WNBTS-1
+    ...    AND    Set Test Variable    ${PARAMETER_ABBREVIATION}    midIubDelayThreshold
+    ...    AND    Set Test Variable    ${PARAMETER_VALUE}    160
+    ...    AND    Set Test Variable    ${SKIP_PARAM_RELATION_ERRORS}    ${TRUE}
+    ...    AND    Set Test Variable    ${RECOMMISSIONING_TIMEOUT}    600
+    ...    AND    Set Test Variable    ${WCDMA_OPERATIONAL_TIMEOUT}    600
+    ...    AND    STATE__WCDMA_RAT_reset__parameter_change__ADMIN.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__WCDMA_RAT_reset__parameter_change__ADMIN
+    TC__STATE__WCDMA_RAT_reset__parameter_change__ADMIN
+    [Teardown]    Run Keywords    STATE__WCDMA_RAT_reset__parameter_change__ADMIN.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__LTE_cell_block_unblock_from_ADMIN
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${CELL_ID}    ${EMPTY}
+    ...    AND    Set Test Variable    ${STATES_ON_BLOCK}
+    ...           administrativeState=Unlocked, availabilityStatus=Offline, blockingState=Blocked, operationalState=Disabled
+    ...    AND    Set Test Variable    ${STATES_ON_UNBLOCK_LTE}
+    ...           administrativeState=Unlocked, availabilityStatus=Online, blockingState=Unblocked, operationalState=Enabled
+    ...    AND    Set Test Variable    ${STATES_ON_UNBLOCK_WCDMA}
+    ...           availabilityStatus=Online, blockingState=Unblocked, operationalState=Enabled
+    ...    AND    Set Test Variable    ${STATES_ON_UNBLOCK_GSM}
+    ...           administrativeState=Unlocked, availabilityStatus=Online, blockingState=Unblocked, operationalState=Enabled
+    ...    AND    Set Test Variable    ${LOG_TX_POWER}    True
+    
+    ...    AND    STATE__LTE_cell_block_unblock_from_ADMIN.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__LTE_cell_block_unblock_from_ADMIN
+    TC__STATE__LTE_cell_block_unblock_from_ADMIN
+    [Teardown]    Run Keywords    STATE__LTE_cell_block_unblock_from_ADMIN.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__LTE_cell_lock_unlock_from_ADMIN
+    [Timeout]    60 minutes
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${CELL_ID}    40881
+    
+    ...    AND    STATE__LTE_cell_lock_unlock_from_ADMIN.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__LTE_cell_lock_unlock_from_ADMIN
+    TC__STATE__LTE_cell_lock_unlock_from_ADMIN
+    [Teardown]    Run Keywords    STATE__LTE_cell_lock_unlock_from_ADMIN.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__WCDMA_cell_lock_unlock_from_RNC
+    [Timeout]    14400 
+    [Setup]    Run Keywords
+    ...    Set Test Variable    ${WBTS_NUMBER}    10088
+    ...    AND    Set Test Variable    ${WCELL_NUMBER}    
+    ...    AND    Set Test Variable    ${OMS_IP_ADDRESS}   
+    ...    AND    Set Test Variable    ${OMS_PASSWORD}    Nokia@123
+    ...    AND    STATE__WCDMA_cell_lock_unlock_from_RNC.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__WCDMA_cell_lock_unlock_from_RNC
+    TC__STATE__WCDMA_cell_lock_unlock_from_RNC
+    [Teardown]    Run Keywords    STATE__WCDMA_cell_lock_unlock_from_RNC.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__WCDMA_cell_lock_unlock_from_RNC
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${WBTS_NUMBER}    10088
+    ...    AND    Set Test Variable    ${WCELL_NUMBER}    30881
+    ...    AND    Set Test Variable    ${OMS_IP_ADDRESS}    
+    ...    AND    Set Test Variable    ${OMS_PASSWORD}    Nokia@123 
+    ...    AND    STATE__WCDMA_cell_lock_unlock_from_RNC.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__WCDMA_cell_lock_unlock_from_RNC
+    TC__STATE__WCDMA_cell_lock_unlock_from_RNC
+    [Teardown]    Run Keywords    STATE__WCDMA_cell_lock_unlock_from_RNC.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+
+[1]Automated__STATE__GSM_TRX_block_unblock_from_ADMIN
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${STARTUP_TIMEOUT}    60
+    ...    AND    Set Test Variable    ${GSM_BTS_ID}    881
+    ...    AND    Set Test Variable    ${CHANNEL_GROUP_ID}    1
+    ...    AND    Set Test Variable    ${TRX_LOCK_TIMEOUT}    20
+    
+    ...    AND    STATE__GSM_TRX_block_unblock_from_ADMIN.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__GSM_TRX_block_unblock_from_ADMIN
+    TC__STATE__GSM_TRX_block_unblock_from_ADMIN
+    [Teardown]    Run Keywords    STATE__GSM_TRX_block_unblock_from_ADMIN.TC Teardown
+    ...    AND    Restore Resource Search Order
+    
+
+
+[1]Automated__STATE__GSM_TRX_block_unblock_from_ADMIN
+    [Timeout]    14400 
+    [Setup]    Run Keywords
+    ...    Set Test Variable    ${STARTUP_TIMEOUT}    60
+    ...    AND    Set Test Variable    ${GSM_BTS_ID}    881
+    ...    AND    Set Test Variable    ${CHANNEL_GROUP_ID}    1
+    ...    AND    Set Test Variable    ${TRX_LOCK_TIMEOUT}    4
+    ...    AND    STATE__GSM_TRX_block_unblock_from_ADMIN.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__GSM_TRX_block_unblock_from_ADMIN
+    TC__STATE__GSM_TRX_block_unblock_from_ADMIN
+    [Teardown]    Run Keywords    STATE__GSM_TRX_block_unblock_from_ADMIN.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__LOGS__Memory_dump_files_creation_in_case_of_DSP_crash
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${DSP_ID}    ${Empty}
+    ...    AND    Set Test Variable    ${SITE_RESET}    False
+    ...    AND    Set Test Variable    ${STARTUP_TIMEOUT}    60
+    ...    AND    Set Test Variable    ${FAULT_TIMEOUT}    15
+    ...    AND    Set Test Variable    ${VERIFICATION_TIMEOUT}    60
+    ...    AND    Set Test Variable    ${MEMDUMP_PATTERN}    (\\d{4})\\w+MEMDUMP\\.bin\\.xz$
+    ...    AND    Set Test Variable    ${DSP_MEMDUMPER_PATTERN}    memdumper_{}.+\\.log\\.xz$
+    ...    AND    Set Test Variable    ${DSP_RUNTIME_PATTERN}    [1-2]011_crash_{}00_RT\\.log\\.zip$
+    ...    AND    Set Test Variable    ${DSP_MEMDUMP_PATTERN}    {}00\\w+MEMDUMP\\.bin.*
+    ...    AND    Set Test Variable    ${SRIO_DIO_INTERFACE_PATERN}    riomemfs-logdump
+    
+    ...    AND    LOGS__Memory_dump_files_creation_in_case_of_DSP_crash.TC Setup
+    ...    AND    Modify Resource Search Order    LOGS__Memory_dump_files_creation_in_case_of_DSP_crash
+    TC__LOGS__Memory_dump_files_creation_in_case_of_DSP_crash
+    [Teardown]    Run Keywords    LOGS__Memory_dump_files_creation_in_case_of_DSP_crash.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__FM__Recovery_whole_multiple_Link_Break
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${NUMBER_OF_LOOPS}    6
+    ...    AND    Set Test Variable    ${TIMEOUT_AFTER_RESTOR}    3600
+    
+    ...    AND    FM__Recovery_whole_multiple_Link_Break.TC Setup
+    ...    AND    Modify Resource Search Order    FM__Recovery_whole_multiple_Link_Break
+    TC__FM__Recovery_whole_multiple_Link_Break
+    [Teardown]    Run Keywords    FM__Recovery_whole_multiple_Link_Break.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__BS-SM_RP001906_Output_file_format
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    
+    ...    AND    BS-SM_RP001906_Output_file_format.TC Setup
+    ...    AND    Modify Resource Search Order    BS-SM_RP001906_Output_file_format
+    TC__BS-SM RP001906 SFP data availability via BTS CLI
+    [Teardown]    Run Keywords    BS-SM_RP001906_Output_file_format.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__BS_SM_RP001906 SFP speeds in Cli and Infomodel
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${sfp_r_query}    /SFP_R-*
+    ...    AND    Set Test Variable    ${sfp_l_query}    /SFP_L-*
+    
+    ...    AND    BS_SM__RP001906_SFP_speeds_in_Cli_and_Infomodel.TC Setup
+    ...    AND    Modify Resource Search Order    BS_SM__RP001906_SFP_speeds_in_Cli_and_Infomodel
+    TC__BS_SM__RP001906_SFP_speeds_in_Cli_and_Infomodel
+    [Teardown]    Run Keywords    BS_SM__RP001906_SFP_speeds_in_Cli_and_Infomodel.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__Admin_CLI_block_unblock_unit_remote
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${SKIP_PARAMETER_RELATION_ERRORS}    True
+    
+    ...    AND    CLI__Admin_CLI_block_unblock_unit_remote.TC Setup
+    ...    AND    Modify Resource Search Order    CLI__Admin_CLI_block_unblock_unit_remote
+    TC__CLI__Admin_CLI_block_unblock_unit_remote
+    [Teardown]    Run Keywords    CLI__Admin_CLI_block_unblock_unit_remote.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__Admin_CLI_site_reset_remote
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${SKIP_PARAMETER_RELATION_ERRORS}    True
+    ...    AND    Set Test Variable    ${ONAIR_VERIFICATION_TIMEOUT}    15
+    
+    ...    AND    CLI__Admin_CLI_site_reset_remote.TC Setup
+    ...    AND    Modify Resource Search Order    CLI__Admin_CLI_site_reset_remote
+    TC__CLI__Admin_CLI_site_reset_remote
+    [Teardown]    Run Keywords    CLI__Admin_CLI_site_reset_remote.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__PM__LTE_counters_are_available_on_ram_disk_versus_NIDD_counter_list
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${MEASUREMENT_PATH}
+    ....          /home/ute/robotlte/testsuite/Timisoara/SBTS/test_line_specific/Timisoara/SBTS1088/counters/SBTS19A_Counters_2019-07-01_limited.xlsx
+    ...    AND    Set Test Variable    ${ABBREVIATION_DICT_PATH}
+    ...           /home/ute/robotlte/testsuite/Timisoara/SBTS/test_line_specific/Timisoara/SBTS1088/counters/LTE_Abbreviations.xlsx
+    ...    AND    Set Test Variable    ${TO_FILTRATE_KEYS}    Product_types,Category,Document_state
+    ...    AND    Set Test Variable    ${TO_FILTRATE_VALUES}    Flexi_SBTS|Flexi_AirScale,Customer,Published
+    ...    AND    Set Test Variable    ${STARTUP_TIMEOUT}    15
+    
+    ...    AND    PM__LTE_counters_are_available_on_ram_disk_versus_NIDD_counter_list.TC Setup
+    ...    AND    Modify Resource Search Order    PM__LTE_counters_are_available_on_ram_disk_versus_NIDD_counter_list
+    TC__PM__LTE_counters_are_available_on_ram_disk_versus_NIDD_counter_list
+    [Teardown]    Run Keywords    PM__LTE_counters_are_available_on_ram_disk_versus_NIDD_counter_list.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__PM__TNL_counters_are_available_on_ram_disk_versus_NIDD_counter_list
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${MEASUREMENT_PATH}
+    ...           /home/ute/robotlte/testsuite/Timisoara/SBTS/test_line_specific/Timisoara/SBTS1088/counters/TRS_few_groups.xlsm
+    ...    AND    Set Test Variable    ${ABBREVIATION_DICT_PATH}
+    ...           /home/ute/robotlte/testsuite/Timisoara/SBTS/test_line_specific/Timisoara/SBTS1088/counters/TNL_Abbreviations.xlsx
+    ...    AND    Set Test Variable    ${TO_FILTRATE_KEYS}    Product_types,Category,Document_state
+    ...    AND    Set Test Variable    ${TO_FILTRATE_VALUES}    Flexi_SBTS|Flexi_AirScale,Customer,Published
+    ...    AND    Set Test Variable    ${STARTUP_TIMEOUT}    15
+    
+    ...    AND    PM__TNL_counters_are_available_on_ram_disk_versus_NIDD_counter_list.TC Setup
+    ...    AND    Modify Resource Search Order    PM__TNL_counters_are_available_on_ram_disk_versus_NIDD_counter_list
+    TC__PM__TNL_counters_are_available_on_ram_disk_versus_NIDD_counter_list
+    [Teardown]    Run Keywords    PM__TNL_counters_are_available_on_ram_disk_versus_NIDD_counter_list.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__PM__WBTS_counters_are_available_on_ram_disk_versus_NIDD_counter_list
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${MEASUREMENT_PATH}
+    ...           /home/ute/robotlte/testsuite/Timisoara/SBTS/test_line_specific/Timisoara/SBTS1088/counters/WCDMA_few_groups.xlsm
+    ...    AND    Set Test Variable    ${ABBREVIATION_DICT_PATH}
+    ...           /home/ute/robotlte/testsuite/Timisoara/SBTS/test_line_specific/Timisoara/SBTS1088/counters/WCDMA_Abbreviations.xlsx
+    ...    AND    Set Test Variable    ${WCDMA_TRS_COUNTERS}    M51\\d{2}C\\d+
+    ...    AND    Set Test Variable    ${TO_FILTRATE_KEYS}    Product_types,Category,Document_state
+    ...    AND    Set Test Variable    ${TO_FILTRATE_VALUES}    Flexi_SBTS|Flexi_AirScale,Customer,Published
+    ...    AND    Set Test Variable    ${STARTUP_TIMEOUT}    15
+    
+    ...    AND    PM__WBTS_counters_are_available_on_ram_disk_versus_NIDD_counter_list.TC Setup
+    ...    AND    Modify Resource Search Order    PM__WBTS_counters_are_available_on_ram_disk_versus_NIDD_counter_list
+    TC__PM__WBTS_counters_are_available_on_ram_disk_versus_NIDD_counter_list
+    [Teardown]    Run Keywords    PM__WBTS_counters_are_available_on_ram_disk_versus_NIDD_counter_list.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__LOGS__Snapshot_content__postmortem_files_creation_for_SMOD
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${SNAPSHOT_FILE_PATH}    /tmp/uri/DIAGN_FILES/
+    ...    AND    Set Test Variable    ${STARTUP_TIMEOUT}    10
+    ...    AND    Set Test Variable    ${SNAPSHOT_TIMEOUT}    600
+    
+    ...    AND    LOGS__Postmortem_files_creation_in_snapshot_content_for_SMOD.TC Setup
+    ...    AND    Modify Resource Search Order    LOGS__Postmortem_files_creation_in_snapshot_content_for_SMOD
+    TC__LOGS__Postmortem_files_creation_in_snapshot_content_for_SMOD
+    [Teardown]    Run Keywords    LOGS__Postmortem_files_creation_in_snapshot_content_for_SMOD.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__LOGS__Snapshot
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${SNAPSHOT_TIMEOUT}    1200
+    
+    ...    AND    LOGS__Snapshot.TC Setup
+    ...    AND    Modify Resource Search Order    LOGS__Snapshot
+    TC__LOGS__Snapshot
+    [Teardown]    Run Keywords    LOGS__Snapshot.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__CM_CABLE_SPEED_CHANGE
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${TIMEOUT}    900
+    
+    ...    AND    CM_CABLE_SPEED_CHANGE.TC Setup
+    ...    AND    Modify Resource Search Order    CM_CABLE_SPEED_CHANGE
+    TC__CM_Cable_Speed_Change
+    [Teardown]    Run Keywords    CM_CABLE_SPEED_CHANGE.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__CM_Cell_Removal_LTE
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${TIMEOUT}    360
+    ...    AND    Set Test Variable    ${CELL_ID}    
+    
+    ...    AND    CM_Cell_Removal_LTE.TC Setup
+    ...    AND    Modify Resource Search Order    CM_Cell_Removal_LTE
+    TC__CM_Cell_Removal_LTE
+    [Teardown]    Run Keywords    CM_Cell_Removal_LTE.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__CM__Cell_Addition_LTE
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${TIMEOUT}    360
+    ...    AND    Set Test Variable    ${CELL_ID}    40885
+    ...    AND    Set Test Variable    ${DELTA_PATH}
+    ...           /home/ute/robotlte/testsuite/Timisoara/SBTS/test_line_specific/Timisoara/SBTS1088/json/Delta_CM_Cell_Addition_10088.json
+    ...    AND    Set Test Variable    ${CALL_BEFORE}    ${FALSE}
+    ...    AND    Set Test Variable    ${CALL_AFTER}    ${FALSE}
+    ...    AND    Set Test Variable    ${FTP_LABEL}    FTP_SERVER
+    ...    AND    Set Test Variable    ${OLD_CELL_UE_SERIAL}    8f544f9b
+    ...    AND    Set Test Variable    ${NEW_CELL_UE_SERIAL}    ca67e07a
+    ...    AND    Set Test Variable    ${BANDWIDTH}    150M
+    ...    AND    Set Test Variable    ${OLD_DL_MAX}    105000000
+    ...    AND    Set Test Variable    ${OLD_DL_MIN}    80000000
+    ...    AND    Set Test Variable    ${OLD_UL_MAX}    53000000
+    ...    AND    Set Test Variable    ${OLD_UL_MIN}    40000000
+    ...    AND    Set Test Variable    ${NEW_DL_MAX}    150000000
+    ...    AND    Set Test Variable    ${NEW_DL_MIN}    80000000
+    ...    AND    Set Test Variable    ${NEW_UL_MAX}    53000000
+    ...    AND    Set Test Variable    ${NEW_UL_MIN}    40000000
+    
+    ...    AND    CM_Cell_Addition_LTE.TC Setup
+    ...    AND    Modify Resource Search Order    CM_Cell_Addition_LTE
+    TC__CM_Cell_Addition_LTE
+    [Teardown]    Run Keywords    CM_Cell_Addition_LTE.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__CM__LTE_Cell_reconfiguration_to_different_antenna_port
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${TIMEOUT}    600
+    ...    AND    Set delta path as a test variable
+    
+    ...    AND    CM_LTE_Cell_reconfiguration_to_different_antenna_port.TC Setup
+    ...    AND    Modify Resource Search Order    CM_LTE_Cell_reconfiguration_to_different_antenna_port
+    TC__CM_LTE_Cell_reconfiguration_to_different_antenna_port
+    [Teardown]    Run Keywords    CM_LTE_Cell_reconfiguration_to_different_antenna_port.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__SWM__Local_Software_Download
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${Target SW name}    ${None}
+    ...    AND    Set Test Variable    ${Target SW dir}    /home/ute/robotlte/TARGET_SW_T1
+    ...    AND    Set Test Variable    ${SW Download Timeout}    3200
+    
+    ...    AND    SWM__Local_Software_Download.TC Setup
+    ...    AND    Modify Resource Search Order    SWM__Local_Software_Download
+    [Tags]    STOPONFAIL
+    ${first_cat_command}   Catenate  cat ../testline_init_results/node1/logs/INFO_log.txt | grep BTSSM-based |
+    ...                              tail -1 | awk -F 'from ' '{print $2}' | awk -F '.zip' '{print $1}'
+    ${second_cat_command}  Catenate  cat ../testline_init_results/logs/INFO_log.txt | grep BTSSM-based |
+    ...                              tail -1 | awk -F 'from ' '{print $2}' | awk -F '.zip' '{print $1}'
+    ${package}=  Run Keyword If  ${SMOD2_exists}  run  ${first_cat_command}
+    ...  ELSE   run   ${second_cat_command}
+    Log to console  Download SW packages ${package}_testpackage_T1.zip
+    run  mkdir ${Target SW dir}
+    run  sudo chmod 777 ${Target SW dir} -R
+    # run  wget ${package}_testpackage_T1.zip -P ${Target SW dir}
+    ${wget_command}  Catenate  SEPARATOR=  wget files.ute.nsn-rdnet.net/builds/enb/base/${SBTS_SW_tested}
+    ...                                    /${SBTS_SW_tested}_release_BTSSM_downloadable_testpackage_T1.zip -P ${Target SW dir}
+    run  ${wget_command}
+#    ${ssh_command}  Catenate  ssh ute@${PC_IP2} "mkdir ${Target SW dir}; sudo chmod 777 ${Target SW dir} -R;
+#    ...                       wget ${package}_testpackage_T1.zip -P ${Target SW dir}"
+    # Run Keyword If  ${SMOD2_exists}  run  ${ssh_command}
+    [Timeout]    45 minutes
+    TC__SWM__Local_Software_Download
+    [Teardown]    Run Keywords    SWM__Local_Software_Download.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__SWM__Local_Software_Activation
+    [Timeout]    ${Test_Timeout} minutes
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${Target SW name}    ${None}
+    ...    AND    Set Test Variable    ${Target SW dir}    /home/ute/robotlte/TARGET_SW_T1
+    ...    AND    Set Test Variable    ${SW Activation Timeout}    2600
+    ...    AND    Set Test Variable    ${Ping loss timeout}    420
+    ...    AND    Set Test Variable    ${Ping regain timeout}    600
+    ...    AND    Set Test Variable    ${BTS_OnAir_Timeout}    15
+    ...    AND    Set Test Variable    ${Test_Timeout}    30
+    
+    ...    AND    SWM__Local_Software_Activation.TC Setup
+    ...    AND    Modify Resource Search Order    SWM__Local_Software_Activation
+    TC__SWM__Local_Software_Activation
+    [Teardown]    Run Keywords    SWM__Local_Software_Activation.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__SWM__SW_update_for_RMOD_with_fault_23
+    [Timeout]    ${Test Timeout} minutes
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${Target SW name}    ${None}
+    ...    AND    Set Test Variable    ${Target SW dir}    /home/ute/robotlte/TARGET_SW_T1
+    ...    AND    Set Test Variable    ${SW Update Timeout}    3200
+    ...    AND    Set Test Variable    ${Ping loss timeout}    240
+    ...    AND    Set Test Variable    ${Ping regain timeout}    600
+    ...    AND    Set Test Variable    ${Test Timeout}    90
+    ...    AND    Set Test Variable    ${EXPECTED_BTS_STATUS}    OnAir
+    ...    AND    Set Test Variable    ${onAir Check Number}    60
+    ...    AND    Set Test Variable    ${RM_DETECTION_TIMEOUT}    15 min
+    ...    AND    Set Test Variable    ${HW_OFF_ID_LIST}    
+    ...    AND    Set Test Variable    ${NUMBER_OF_RMODS_TO_TURN_OFF}    1
+    
+    ...    AND    SWM__SW_update_for_RMOD_with_fault_23.TC Setup
+    ...    AND    Modify Resource Search Order    SWM__SW_update_for_RMOD_with_fault_23
+    TC__SWM__SW_update_for_RMOD_with_fault_23
+    [Teardown]    Run Keywords    SWM__SW_update_for_RMOD_with_fault_23.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__GSM_BCF_reset_from_BSC
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    
+    ...    AND    STATE__GSM_BCF_reset_from_BSC.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__GSM_BCF_reset_from_BSC
+    TC__STATE__GSM_BCF_reset_from_BSC
+    [Teardown]    Run Keywords    STATE__GSM_BCF_reset_from_BSC.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__GSM_TRX_lock_unlock_from_BSC
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${TRX_ID}    
+    ...    AND    Set Test Variable    ${BTS_ID}    
+    
+    ...    AND    STATE__GSM_TRX_lock_unlock_from_BSC.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__GSM_TRX_lock_unlock_from_BSC
+    TC__STATE__GSM_TRX_lock_unlock_from_BSC
+    [Teardown]    Run Keywords    STATE__GSM_TRX_lock_unlock_from_BSC.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__GSM_BCF_lock_unlock_from_BSC
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${STARTUP_TIMEOUT}    10
+    
+    ...    AND    STATE__GSM_BCF_lock_unlock_from_BSC.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__GSM_BCF_lock_unlock_from_BSC
+    TC__STATE__GSM_BCF_lock_unlock_from_BSC
+    [Teardown]    Run Keywords    STATE__GSM_BCF_lock_unlock_from_BSC.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__STATE__GSM_BTS_lock_unlock_from_BSC
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${BCF_SECTOR_TO_LOCK}    
+    ...    AND    Set Test Variable    ${STARTUP_TIMEOUT}    5
+    
+    ...    AND    STATE__GSM_BTS_lock_unlock_from_BSC.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__GSM_BTS_lock_unlock_from_BSC
+    TC__STATE__GSM_BTS_lock_unlock_from_BSC
+    [Teardown]    Run Keywords    STATE__GSM_BTS_lock_unlock_from_BSC.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__SWM__SBTS_SOAM_rollback_to_SBTS_SOAM
+    [Tags]    STOPONFAIL    
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${PASSIVE_SW_STATE}    commissioned
+    ...    AND    Set Test Variable    ${RESTORE_TIMEOUT}    30m
+    ...    AND    Set Test Variable    ${CONNECTION_RESET_ON_DEMAND}    ${FALSE}
+    ...    AND    Set Test Variable    ${PING_LOSS_TIMEOUT}    600
+    ...    AND    Set Test Variable    ${PING_REGAIN_TIMEOUT}    600
+    
+    ...    AND    SWM__SBTS_SOAM_rollback_to_SBTS_SOAM.TC Setup
+    ...    AND    Modify Resource Search Order    SWM__SBTS_SOAM_rollback_to_SBTS_SOAM
+    TC__SWM__SBTS_SOAM_rollback_to_SBTS_SOAM
+    [Teardown]    Run Keywords    SWM__SBTS_SOAM_rollback_to_SBTS_SOAM.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+[1]Automated__SWM__Local_Software_Download_Cancel
+    [Tags]    STOPONFAIL    
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    Set Test Variable    ${COMMISSIONING_PATH}
+    ...    /home/ute/robotlte/testsuite/Timisoara/SBTS/test_line_specific/Timisoara/SBTS1088/commissioning/SCF_01_TRUNK.xml
+    ...    AND    Set Test Variable    ${Target SW name}    ${None}
+    ...    AND    Set Test Variable    ${Target SW dir}    /home/ute/robotlte/TARGET_SW_T2
+    ...    AND    Set Test Variable    ${SLEEP_BEFORE_CANCEL}    90
+    ...    AND    Set Test Variable    ${DOWNLOAD_TIMEOUT}    600
+    ...    AND    Set Test Variable    ${RM_DETECTION_TIMEOUT}    15 min
+    ...    AND    Modify Resource Search Order    SWM__Local_Software_Download_Cancel
+    ...    AND    SWM__Local_Software_Download_Cancel.TC Setup
+    ${first_cat_command}   Catenate  cat ../testline_init_results/node1/logs/INFO_log.txt | grep BTSSM-based |
+    ...                              tail -1 | awk -F 'from ' '{print $2}'
+    ${second_cat_command}  Catenate  cat ../testline_init_results/logs/INFO_log.txt | grep BTSSM-based |
+    ...                              tail -1 | awk -F 'from ' '{print $2}'
+    ${package}=  Run Keyword If  ${SMOD2_exists}  run   ${first_cat_command}
+    ...  ELSE   run   ${second_cat_command}
+    Log to console  Download SW packages ${package}
+    Run  mkdir ${Target SW dir}
+    Run  sudo chmod 777 ${Target SW dir} -R
+    Run  wget ${package} -P ${Target SW dir}
+    ${wget_command}  Catenate  SEPARATOR=  wget files.ute.nsn-rdnet.net/builds/enb/base/${SBTS_SW_tested}
+    ...                                    /${SBTS_SW_tested}_release_BTSSM_downloadable_testpackage_T2.zip -P ${Target SW dir}
+    Run  ${wget_command}
+    [Timeout]    45 minutes
+    TC__SWM__Local_Software_Download_Cancel
+    [Teardown]    Run Keywords    SWM__Local_Software_Download_Cancel.TC Teardown
+    ...    AND    Restore Resource Search Order    
+
+
+[1]Automated__STATE__Site_power_reset
+    [Timeout]    14400
+    [Setup]    Run Keywords
+    ...    No Operation
+    ...    AND    Set Test Variable    ${RESTORE_TIMEOUT}    60
+    ...    AND    Set Test Variable    ${GENERATE_JSON_KPI}    False
+    
+    ...    AND    STATE__Site_power_reset.TC Setup
+    ...    AND    Modify Resource Search Order    STATE__Site_power_reset
+    TC__STATE__Site_power_reset
+    [Teardown]    Run Keywords    STATE__Site_power_reset.TC Teardown
+    ...    AND    Restore Resource Search Order
+
+
+
+*** Keywords ***
+Set delta path as a test variable
+    ${DELTA_PATH}  Catenate  SEPARATOR=  /home/ute/robotlte/testsuite/Timisoara/SBTS/test_line_specific/Timisoara
+    ...                                  /SBTS1088/json/Delta_CM_LTE_Cell_reconfiguration_to_different_antenna_port_10088.json
+    Set test variable  ${DELTA_PATH}
+
+Map BuildShareTimi01 and move counters folder in test_line_specific
+    Run  sudo mkdir -p /media/BuildShareTimi01
+    Run  sudo chown ute:ute /media/BuildShareTimi01
+    ${sudo_command}  Catenate  SEPARATOR=  sudo sh -c "echo //10.5.16.78/BuildShareTimi01 /media/BuildShareTimi01/ cifs _netdev,
+    ...                                    noperm,username=userbuild,,nosuid,noexec,password=Aikon_123456*8 0 0 >>/etc/fstab"
+    Run  ${sudo_command}
+    Run  sudo mount -a
+    ${cp_command}  Catenate  cp /media/BuildShareTimi01/SBTS/Trunk/counters_for_CIT_Trunk/10088/*
+    ...                      /home/ute/MN/UTE/robotws/testsuite/Timisoara/SBTS/test_line_specific/SBTS10088/counters/
+    Run  ${cp_command}

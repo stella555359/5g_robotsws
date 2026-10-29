@@ -1,0 +1,144 @@
+*** Settings ***
+
+Documentation
+...   author: Mateusz Plinta, Justyna Balcerzak
+...   maintainer: Aleksandra Zbieg, Przemyslaw Herian, Anna Bien
+...   contact: aleksandra.zbieg@nokia.com, przemyslaw.herian@nokia.com, anna.bien@nokia.com
+...   description: CNI-87162
+
+Library    ta5g_enb
+Library    ute_fsmaccess
+Library    ta5g_iphy
+Library    ute_wtssim
+Library    ta5g_egate
+Library    ta5g_testline_management
+Library    ta5g_throughput
+Library    ta5g_tshark
+Library    ta_egate_cmd_parser
+Library    resources/suite_specific_keywords.py
+Library    resources/tti_traces/validation.py
+Library    resources/egate_actions.py
+Library    resources/wts/prep_wts_configs.py    WITH NAME    prep_wts_configs
+Library    testsuite.Paris.RRM.ET.resources_KRK.python.pm_counters
+Library    resources/pm_counters.py
+
+Resource   taf/rfrl/common_resources/robot/libraries_instances.robot
+Resource   resources/keywords.robot
+Resource   resources/tti_traces/tti_trace_keywords.robot
+
+Force Tags      STATE_CONFIGURED
+
+Suite Setup    Run Keywords    Set variables based on deployment and release
+...                     AND    Adjust parameters using delta   delta=${SUITE_DELTA}
+...                     AND    Change GSCNs in iphy file
+
+Suite Teardown    Run Keywords    Adjust parameters using delta   delta=${SUITE_DELTA_CLEANUP}
+...                        AND    Cleanup GSCNs in iphy file
+
+Variables    resources/variables.py
+Variables    resources/delta/deltas.py
+Variables    resources/wts/ue_caps_vars.py
+
+*** Test Cases ***
+[1]CNI111300_CNI_87162_018_USC2_DL_data_split_with_buffer_based_Scell_activation_with_SANSA
+    [Setup]     Run Keywords    Adjust parameters using delta method    GET_DELTA_LO_BASIC    sCellActivationMethod=bufferBased
+    ...                                                                                       sCellDeactivationTimerGNB=ms640
+    ...                 AND     prep_wts_configs.Create WTS config for LO_SANSA
+    ...                 AND     Prepare environment in robot     sib1_reception_dict=${CELLS_ENBx1_GNBx4}
+    ...                                                          wts_config_path=${WTS_CONFIG_PATH}
+    ...                 AND     Start collecting logs
+
+    ${sa_ue_id}=    Set Variable    1
+    ${nsa_ue_id}=    Set Variable    101
+    ${scells}=    Create List    51
+
+    # Cell is OnAir
+    Setup X2 link
+
+    # SA UE attached to TDD Primary Cell
+    Prepare internal traffic generator    ue_id=${sa_ue_id}
+    Attach UE and Establish PDU session    ue_id=${sa_ue_id}
+
+    # Start DL traffic such that the data rate is less than the Pcell capacity
+    Start traffic stream    ue=${sa_ue_id}   dir=dl    trf_id=1    pdu=1    mbps=175    seconds=300
+    Wait after throughput start    ${3}
+
+    # Verify if traffic is sent via Pcell only
+    Assert traffic is present on pcell and missing from scell    id=${sa_ue_id}    type=pdsch    scell=0-1
+
+    # Start DL data burst such that the data rate exceeds Pcell capacity
+    Start TTI trace collection
+    Start traffic stream    ue=${sa_ue_id}   dir=dl    trf_id=2    pdu=1    mbps=175    seconds=3    delay=${0}
+    Start traffic stream    ue=${sa_ue_id}   dir=dl    trf_id=3    pdu=1    mbps=175    seconds=3    delay=${0}
+    Start traffic stream    ue=${sa_ue_id}   dir=dl    trf_id=4    pdu=1    mbps=175    seconds=3    delay=${0}
+    Wait after throughput start    ${4}
+    Stop TTI trace collection    target_dir=${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/SA
+
+    # Verify if traffic is sent via Scell only
+    Assert traffic is present on scell    scell_id=1    id=${sa_ue_id}    type=pdsch    scell=0-1
+
+    Deregister UE   ue_id=${sa_ue_id}   by=ue   ue_deregister_type=switch_off
+    Verify if ping pong did not occur
+    Convert TTI trace from pcap
+    ...    format=excelCsv
+    ...    directory_name=${TTI_TRACE_DIR}/SA
+    ...    input_file_dir=${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/SA/l2stream3/tcpdump
+    Verify if ethScaled changed
+    ...    scell_ids=${scells}
+    ...    path_override=${TTI_TRACE_DIR}/SA
+
+    # NSA UE attached
+    Attach ue to enb   ue_id=${nsa_ue_id}    optional_parameters=profile\=1
+    Wait for ue to be active
+
+    # NSA UE added to TDD Primary Cell
+    Start gnb addition procedure    ue=${nsa_ue_id}    target_gnb=2    target_cells=1    bearer=2    dc_type=split_scg
+
+    # Start DL data burst such that the data rate exceeds Pcell capacity
+    Start traffic stream    ue=${nsa_ue_id}   dir=dl    trf_id=1    id=2    mbps=175    delay=${0}
+    Start traffic stream    ue=${nsa_ue_id}   dir=dl    trf_id=2    id=2    mbps=175    delay=${0}
+    Start traffic stream    ue=${nsa_ue_id}   dir=dl    trf_id=3    id=2    mbps=50     delay=${0}
+    Wait after throughput start    ${3}
+    Start TTI trace collection
+    Start traffic stream    ue=${nsa_ue_id}   dir=dl    trf_id=4    id=2    burst=42    size=6890    delay=${0}
+    Wait after throughput start    ${3}
+    Stop TTI trace collection    target_dir=${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/NSA
+
+    # Verify if traffic is sent via Scell only
+    Assert traffic is present on scell   scell_id=9    id=${nsa_ue_id}    type=pdsch    scell=8-9
+
+    Detach ue    ue_id=${nsa_ue_id}
+    Verify if ping pong did not occur
+    Convert TTI trace from pcap
+    ...    format=excelCsv
+    ...    directory_name=${TTI_TRACE_DIR}/NSA
+    ...    input_file_dir=${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/NSA/l2stream3/tcpdump
+    Verify if ethScaled changed
+    ...    scell_ids=${scells}
+    ...    path_override=${TTI_TRACE_DIR}/NSA
+
+    # Change value of NRBTS.NRCELL.actOptimizedFlowControl to 0 (nonOptimized) on all cells
+    Set actOptimizedFlowControl    nonOptimized
+
+    # SA UE attached to TDD Primary Cell
+    Attach UE and Establish PDU session    ue_id=${sa_ue_id}
+
+    # Start DL traffic such that the data rate is less than the Pcell capacity:
+    Start traffic stream    ue=${sa_ue_id}   dir=dl    trf_id=1    pdu=1    mbps=175    seconds=30
+    Wait after throughput start    ${3}
+
+    # Verify if traffic is sent via Pcell only:
+    Assert traffic is present on pcell and missing from scell    id=1  type=pdsch  scell=0-1
+
+    # Start DL data burst such that the data rate exceeds Pcell capacity
+    Start traffic stream    ue=${sa_ue_id}   dir=dl    trf_id=2    pdu=1    mbps=175    seconds=3
+    Start traffic stream    ue=${sa_ue_id}   dir=dl    trf_id=3    pdu=1    mbps=175    seconds=3
+    Start traffic stream    ue=${sa_ue_id}   dir=dl    trf_id=4    pdu=1    mbps=175    seconds=3
+    Wait after throughput start    ${4}
+
+    # Verify traffic after data burst ended - traffic is sent by Pcell only
+    Assert traffic is present on pcell and missing from scell    id=${sa_ue_id}  type=pdsch  scell=0-1
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Adjust parameters using delta    delta=${CLEANUP_DELTA_LO_BASIC}

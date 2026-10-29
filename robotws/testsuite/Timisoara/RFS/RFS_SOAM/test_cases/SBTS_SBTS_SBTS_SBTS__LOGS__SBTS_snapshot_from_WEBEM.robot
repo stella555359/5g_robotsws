@@ -1,0 +1,10 @@
+*** Settings ***
+Documentation    Test Suite
+Resource    ../test_resources/SBTS_SBTS_SBTS_SBTS__LOGS__SBTS_snapshot_from_WEBEM.robot
+
+*** Test Cases ***
+[1]SBTS_SBTS_SBTS_SBTS__LOGS__SBTS_snapshot_from_WEBEM
+    [Setup]    TC Setup
+    [Teardown]    TC Teardown
+    TC__SBTS_SBTS_SBTS_SBTS__LOGS__SBTS_snapshot_from_WEBEM
+

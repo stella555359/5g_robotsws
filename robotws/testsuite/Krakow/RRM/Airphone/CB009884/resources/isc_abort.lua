@@ -1,0 +1,7 @@
+exec('ue_ng_ctx_release by=amf id=1 cause=RN_radio_connection_with_ue_lost')
+sleep(2)
+exec('ue_nr_rrc_reconf_param if_contains=any delay=2500s id=1')
+sleep(1)
+exec('ue_im_exit id=1')
+sleep(1)
+exec('ue_ng_ctx_release by=amf id=1 cause=RN_radio_connection_with_ue_lost')

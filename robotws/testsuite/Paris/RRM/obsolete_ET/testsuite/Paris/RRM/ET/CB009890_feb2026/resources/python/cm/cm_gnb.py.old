@@ -1,0 +1,374 @@
+# -*- coding: utf-8 -*-
+"""
+:copyright: Nokia Networks
+"""
+import os
+import sys
+import re
+from robot.libraries.BuiltIn import BuiltIn
+from robot.libraries.OperatingSystem import OperatingSystem
+from ute_fsmaccess import ute_fsmaccess
+from taf.sbts.oam.coam.admin import admin
+from ta_xml import ta_xml
+# from ta_ssh_telnet import ta_ssh_telnet
+from testsuite.Paris.RRM.ET.CB009890.resources.python.common_lib import common_lib
+
+xml_declare = "<?xml version='1.0' encoding='UTF-8'?>"
+
+builtin_obj = BuiltIn()
+os_obj = OperatingSystem()
+comm_obj = common_lib()
+xml_obj = ta_xml()
+# ssh_obj = ta_ssh_telnet()
+
+
+class cm_base(object):
+    def __init__(self, alias):
+        self._setup_comm_flag = False
+        self._setup_vendor_control_flag = False
+        self.remote_host = None
+        self.bts_host = "192.168.255.129"
+        self.alias = alias
+        self.params_definition = {}
+
+    def _define_admin_port(self):
+        bts_port = "443"
+        use_ssl = True
+        return bts_port, use_ssl
+
+    def _set_admin_log_dir(self, alias):
+        if alias == "gnb1":
+            admin_log_dir = "{}/admin_logs/".format(builtin_obj.get_variable_value("${testCaseDir}"))
+            # admin_log_dir = "/home/ute/csamson/TRACES"
+        else:
+            admin_log_dir = "{}/{}/admin_logs/".format(
+                builtin_obj.get_variable_value("${testCaseDir}"), alias)
+        os_obj.create_directory(admin_log_dir)
+        return admin_log_dir
+
+    def _check_alias_exist_on_admin(self, admin_obj, alias_name):
+        if not admin_obj.store.all:
+            builtin_obj.log('zy:store does not have alias now')
+            return False
+        if alias_name in [i[0] for i in admin_obj.store.all]:
+            builtin_obj.log('zy:alias %s exists' % alias_name)
+            return True
+        else:
+            builtin_obj.log('zy:alias %s does not exist' % alias_name)
+            return False
+
+    def _ping_ok(self, ip):
+        out = comm_obj.execute_cmd_on_pc("ping %s -c 2" % ip)
+        if out.count("100% packet loss"):
+            return False
+        else:
+            return True
+
+    def get_swpool_path(self):
+        bbu_type = builtin_obj.get_variable_value("${BBU_TYPE}")
+        if bbu_type == "FSMF":
+            path = "/ffs/run"
+        else:  # ASIA, ASIB, ASIL
+            path = "/ffs/run/swpool/OAM"
+        return path
+
+    def _remove_empty_from_list(self, list_in):
+        list_out = []
+        list1 = []
+        if not isinstance(list_in, list):
+            list_in = [list_in]
+        for value in list_in:
+            is_python2 = sys.version_info.major == 2
+            if is_python2:
+                str_type = (unicode, bytes)
+            else:
+                str_type = (str, bytes)
+            if isinstance(value, str_type):
+                if len(value.strip()) != 0:
+                    list1.append(value.strip())
+            else:
+                list1.append(value.strip())
+        for value in list1:
+            remove_equal_emtpy = re.sub(r"\s*=\s*", "=", value)
+            remove_vertical_line_emtpy = re.sub(r"\s*\|\s*", "|", remove_equal_emtpy)
+            list_out.append(remove_vertical_line_emtpy)
+        return list_out
+
+    def _get_save_log_dir(self, alias):
+        if alias == "gnb1":
+            save_log_dir = builtin_obj.get_variable_value("${testCaseDir}")
+        else:
+            save_log_dir = "%s/%s/" % (builtin_obj.get_variable_value("${testCaseDir}"), alias)
+        os_obj.create_directory(save_log_dir)
+        return save_log_dir
+
+    def _setup_admin_if_alias_not_exist(self, admin_obj, alias, bts_host, remote_host):
+        if not self._check_alias_exist_on_admin(admin_obj, alias):
+            bts_port, use_ssl = self._define_admin_port()
+            admin_log_dir = self._set_admin_log_dir(alias)
+            ping_ok = self._ping_ok(bts_host)
+            if ping_ok:
+                admin_obj.setup_admin(alias=alias, bts_port=bts_port, use_ssl=use_ssl,
+                                      admin_api_log_dir=admin_log_dir, bts_host=bts_host)
+            else:
+                admin_obj.setup_admin(alias=alias, bts_port=bts_port, use_ssl=use_ssl,
+                                      admin_api_log_dir=admin_log_dir,
+                                      remote_host=remote_host,
+                                      bts_host="192.168.255.129")
+
+    def _setup_common(self):
+        if not self._setup_comm_flag:
+            self._setup_comm_flag = True
+            self.fsm_obj = ute_fsmaccess()
+            self.fsm_obj.setup_enb_fsm_access(remote_host=self.remote_host, alias=self.alias, fallback_prompt="#",
+                                              host="192.168.255.129")
+            self.fsm_obj.setup_wts_fsm_access(remote_host=self.remote_host, alias=self.alias, fallback_prompt="#")
+            self.admin_obj = admin()
+        self._setup_admin_if_alias_not_exist(self.admin_obj, self.alias, self.bts_host, self.remote_host)
+
+    def _setup_vendor_control(self):
+        if not self._setup_vendor_control_flag:
+            self._setup_vendor_control_flag = True
+            self._setup_common()
+            self.local_vendor_dir = self._get_save_log_dir(self.alias)
+
+    def _teardown(self):
+        pass
+
+    def __del__(self):
+        if self._setup_vendor_control_flag:
+            self.fsm_obj.teardown_enb_fsm_access(alias=self.alias)
+
+    def execute_cmd_on_gnb(self, cmd):
+        if self.alias == "gnb1":
+            return comm_obj.execute_cmd_on_gnb(cmd)
+        else:
+            return comm_obj.execute_cmd_on_gnb2(cmd)
+
+    def _mo_xpath(self, mo):
+        # consider mo ending with same string
+        if mo.count("MRBTS"):
+            xpath = "//managedObject[matches(@distName, '%s$')]" % mo
+        else:
+            xpath = "//managedObject[matches(@distName, '.*/%s$')]" % mo
+        return xpath
+
+    def _get_timestamp(self):
+        time_stamp = builtin_obj.get_time().replace("-", "").replace(" ", "").replace(":", "")
+        return time_stamp
+
+    def _match_param_name_to_xpath(self, key):
+        # param
+        if key.count(":") == 0:
+            key_xpath = "//*[@name='%s']" % key
+        # mo:param
+        elif key.count(":") == 1:
+            mo = key.split(":")[0]
+            para_name = key.split(":")[1]
+            if mo == "any":
+                key_xpath = "//*[@name='%s']" % para_name
+            else:
+                key_xpath = "%s/*[@name='%s']" % (self._mo_xpath(mo), para_name)
+        else:
+            mo = key.split(":")[0]
+            if mo != "any":
+                key_xpath = self._mo_xpath(mo)
+            else:
+                key_xpath = ""
+            for index in range(key.count(":") - 1):
+                key_xpath = key_xpath + \
+                            "//*[@name='%s']" % (key.split(":")[index + 1])
+            # mo:list_name:param|condtion1=value1&&condtion2=value2
+            if key.count("|") == 1:
+                target_key = key.split("|")[0]
+                condition_part = key.split("|")[1]
+                condition_key_0, condition_value_0 = condition_part.split("&&")[0].split("=")
+                key_xpath = key_xpath + "//*[@name='%s'][text()='%s']" % (condition_key_0, condition_value_0)
+                if condition_part.count("&&"):
+                    for condition in condition_part.split("&&")[1:]:
+                        condition_key_n, condition_value_n = condition.split("=")
+                        key_xpath = key_xpath + "/../*[@name='%s'][text()='%s']" % (condition_key_n, condition_value_n)
+                key_xpath = key_xpath + "/../*[@name='%s']" % (target_key.split(":")[-1])
+            # mo:list_name:param
+            else:
+                key_xpath = key_xpath + "//*[@name='%s']" % key.split(":")[-1]
+        return key_xpath
+
+    def _match_to_xpath(self, parameters):
+        """This keyword is to convert parameters format to xpath
+           parameters format:
+           (1)used in modify SCF scenario:
+            | 1) | mo:key=value | modify parameter value of managedObject |
+            | 2) | mo:list:key=value | modify parameter value of list |
+            | 3) | mo:list:key=value|condition_key=condition_value  |
+            modify parameters value of list if the list contains condition_key
+            whose value is condition_value |
+           (2)used in read SCF scenario:
+            | 1) | mo(:list):key     |
+            | 2) | mo:list:key|condition_key=condition_value  |
+           (3)used in delete SCF scenario
+            | 1) | mo:mo_name or pattern | match to xpath of managedObject |
+            | 2) | list:blacklistHoL | match to xpath of list |
+
+        Example1: modify SCF parameter
+        ${params_xpath} | match_to_xpath | ["PSGRP-1:lbpsISONCtlEnabled=true",
+        "PSGRP-1:lbpsCellList:lbpsCellSOOrder=50",
+        "PSGRP-2:lbpsPeriodList:lbpsStartTimeHour=1|lbpsDayOfWeek=Mon"] |
+        modify_and_upload_scf_file | C:\\SCFC_1.xml | ${params_xpath} |
+
+        Example2: read SCFC parameter
+        ${param_xpath} | match_to_xpath | PSGRP-1:lbpsISONCtlEnabled |
+        ${value} | read_xml | C:\\SCFC_1.xml | text|${param_xpath[0]} |
+        Should Be Equal | ${value} | true |
+
+        Example3: delete element from SCFC
+        ${param_xpath} | match_to_xpath | PSGRP-1 |
+        remove_xml_element | C:\\SCFC_1.xml | C:\\SCFC_modified.xml | ${param_xpath} |
+        """
+        parameters_xpath = []
+        if not isinstance(parameters, list):
+            if len(parameters.strip()) == 0:
+                return parameters
+            parameters = builtin_obj.create_list(parameters)
+        for para in parameters:
+            if len(para.strip()) == 0:
+                continue
+            if para.count("=") == 0 or para.count(
+                    "=") == 1 and para.count("|") == 1:
+                # format like "mo:LNRELW", "mo:LNADJ-\\d{3}", "list:blacklistHoL"
+                if para.count("mo:") == 1 and para.count("-") == 0:
+                    para_xpath = "//*[contains(@distName, '%s')]" % (
+                        para.split(":")[1])
+                elif para.count("mo:") == 1 and para.count("-") == 1:
+                    para_xpath = "//*[matches(@name, '%s')]" % (para.split(":")[1])
+                elif para.count("list:") == 1:
+                    para_xpath = "//list[@name='%s']" % (para.split(":")[1])
+                # mo:list:key|condition_key=condition_value&&condition_key2=condition_value2
+                else:
+                    para_xpath = self._match_param_name_to_xpath(para)
+            else:
+                # mo:key=value, mo:list:key=value
+                if para.count("|") == 0:
+                    key = para.split("=")[0].strip()
+                    value = para.split("=")[1].strip()
+                    key_xpath = self._match_param_name_to_xpath(key)
+                # mo:list:key=value|condition_key=condition_value&&condition_key2=condition_value2
+                elif para.count("|") == 1:
+                    target_key = para.split("|")[0].split("=")[0]
+                    value = para.split("|")[0].split("=")[1]
+                    condition = para.split("|")[1]
+                    key_xpath = self._match_param_name_to_xpath(
+                        target_key + "|" + condition)
+                para_xpath = "text|%s|%s" % (value, key_xpath)
+            parameters_xpath.append(para_xpath)
+        return parameters_xpath
+
+    def _get_active_vendor_path(self):
+        """ This keyword is used to return actual run directory from bts.
+            In some bts, the value of BTS_VENDOR_DIR (/ffs/run) is not the real run directory, it need to read it
+            from the link.
+
+             | Input Paramaters      | Man. | Description |
+             | host                  | No  | None by default |
+
+             Example:
+             1) connect the remote PC to run the readlink command
+             | get active vendor path | 10.69.64.134 |
+             2) run readlink command directory on the current connection
+             | get active vendor path |
+        """
+        run_dir = self.get_swpool_path()
+        if run_dir != "/ffs/run":
+            return run_dir
+
+        ret = self.execute_cmd_on_gnb("readlink %s" % run_dir)
+        return ret
+
+    def _get_active_vendor_version(self, vendor_dir):
+        ret = self.execute_cmd_on_gnb("ls %s | grep vendor" % vendor_dir)
+        tmp = re.search('(vendor.*.xml)', ret, re.M | re.I)
+
+        vendor_name = None
+        if tmp:
+            vendor_name = tmp.group(1)
+        if not vendor_name:
+            raise Exception("Not find vendor file in '%s'" % vendor_dir)
+        return vendor_name
+
+    def _modify_and_upload_vendor_file(self, parameters_xpath):
+        """modify source vendor according parameter list and then upload to enb.
+        | Input Parameters | Man. | Description |
+        | parameters_xpath  | Yes | modify parameters list, refer keyword "modify xml" |
+        | return           | tuple for src_vendor_name, src_vendor_path
+        Step:
+            | 1 | login FCTB, execute "ls /flash" get vendor name such as "vendor_JE720300.xml" |
+            | 2 | download vendor file |
+            | 3 | change vendor file by your argus |
+            | 4 | upload vendor file |
+        Example
+        # change vendor.xml ${NRCELLL1} inactivityTimer to 30.
+        | ${var} | set variable | text|30|//*[contains(@distName, '${NRCELL1}')]/*[@name='inactivityTimer'] |
+        | ${vendor_name} | ${vendor_save_path} | _modify_and_upload_vendor_file |  ${var} |
+        """
+        self._setup_vendor_control()
+        src_vendor = os.path.join(self.local_vendor_dir, "vendor_lte.xml")
+        mod_vendor = os.path.join(self.local_vendor_dir, "vendor_modified.xml")
+
+        builtin_obj.log("step: download current used vendor file to %s" % self.local_vendor_dir, console=True)
+        self.admin_obj.download_vendor_file(src_vendor, alias=self.alias)
+        builtin_obj.log("step: modify vendor file, modify parameter is %s" % parameters_xpath, console=True)
+        xml_obj.modify_xml(source_xml=src_vendor, target_xml=mod_vendor, modify_parameters=parameters_xpath)
+        builtin_obj.log("step: set vendor file with %s" % mod_vendor, console=True)
+        self.admin_obj.set_vendor_file(mod_vendor, alias=self.alias)
+        return mod_vendor
+
+    def _change_vendor(self, params):
+        params = self._remove_empty_from_list(params)
+        if len(params) == 0:
+            return
+        self._setup_vendor_control()
+        builtin_obj.log("change vendor with %s in %s" % (params, self.alias), console=True)
+        params_with_mo = []
+        for param in params:
+            if len(param.strip()):
+                params_with_mo.append("any:" + param)
+        xpath = self._match_to_xpath(params_with_mo)
+        _mod_vendor = self._modify_and_upload_vendor_file(xpath)
+        return _mod_vendor
+
+
+class cm_gnb1(object):
+    def __init__(self):
+        alias = "gnb1"
+        self.cm_base_instant_1 = cm_base(alias)
+
+    def change_vendor_parameters(self, params):
+        """This keyword is to change vendor parameters in local BTS
+        | Input Parameters | Man. | Description |
+        | params   |  Yes  | parameters to be modified |
+
+        format of argument1 params
+        | 1) | list:key=value | modify parameter in list |
+        | 2) | key=value | modify normal parameter |
+        Example
+        | ${parameters_in_vendor} | Create List |  | anrUtraInactivityTimer=5 | lBFastProfile:kLoad=4 |
+        | change_vendor_parameters | ${parameters_in_vendor} |
+        """
+        _mod_vendor = self.cm_base_instant_1._change_vendor(params)
+        return _mod_vendor
+
+    def recover_vendor_parameters(self):
+        """
+        No need to recover vendor because setup_admin in next suite will load default vendor file
+        """
+        return
+
+
+class cm_bts(cm_gnb1):
+    def __init__(self):
+        cm_gnb1.__init__(self)
+
+
+if __name__ == "__main__":
+    obj = cm_bts()
+    help(obj)

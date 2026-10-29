@@ -1,0 +1,21 @@
+{
+   "vDUCNF00_0.300.*": {
+     "qc_domain": "MN_RAN",
+     "qc_project": "RAN_VRF",
+     "label": ".*",
+	 "Root\\Test_Sets\\Trunk\\VRF_HAZ1\\VRF_HAZ1_T02\\CRT\\CloudRAN":
+        {
+            "CB009795-CR-B": ["CB009795_07_.*"]
+			
+        }
+   },
+    "vDUCNF25R2_25.300.*": {
+     "qc_domain": "MN_RAN",
+     "qc_project": "RAN_VRF",
+     "label": ".*",
+	 "Root\\Test_Sets\\25R2\\Regression\\VRF_HAZ1\\VRF_HAZ1_T02\\CRT\\CloudRAN\\":
+        {
+            "CB009795-CR-B": ["CB009795_07_.*"]
+        }
+   }
+}

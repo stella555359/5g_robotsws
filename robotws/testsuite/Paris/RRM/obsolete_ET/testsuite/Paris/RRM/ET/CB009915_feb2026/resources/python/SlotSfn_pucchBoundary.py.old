@@ -1,0 +1,235 @@
+# -*- coding: utf-8 -*
+
+"""
+:copyright: Nokia Networks
+:author: Christophe SAMSON
+:contact: christophe.samson@nokia.com
+:maintainer:
+:contact:
+"""
+
+import csv
+import io
+import logging
+from testsuite.Paris.resources.SWENG.python.StringTool import datedConsole, getHeaderLine, toDecimalStr
+
+
+def getFieldValue(raw, fieldName):
+    return raw[fieldName]
+
+# ======================================================================================
+
+
+class BitMap:
+    def __init__(self, len, ble=0, bhe=0):
+        self.len = len
+        # self.map = list("{}".format("0" * len))
+        self.map = list("{}{}{}".format("1" * ble, "0" * (len-ble-bhe), "1" * bhe))
+        self.errors = []
+
+    def __str__(self):
+        return "".join(self.map)
+
+    def setBit(self, index):
+        if index >= self.len:
+            self.errors.append("Unable to set bit {} since len is {}".format(index, self.len))
+        else:
+            val = int(self.map[index])
+            self.map[index] = "{}".format(val+1)
+            if val != 0:
+                self.errors.append("Overlap of bit {}".format(index))
+
+    def setRange(self, start=0, len=1):
+        for index in range(start, start+len):
+            self.setBit(index)
+
+    def isOK(self):
+        return len(self.errors) == 0
+
+    def getErrors(self):
+        str = ""
+        for error in self.errors:
+            str = str + "{}\n".format(error)
+        return str
+
+# =======================================================================================
+
+
+class SlotSfnRec:
+    SlotSfnList = []
+
+    def __init__(self, raw, prbMax, ble, bhe, pattern):
+        self.slot = getFieldValue(raw, "3gpp.slot")
+        self.sfn = getFieldValue(raw, "3gpp.sfn")
+        self.rntiList = []
+        self.bitMap_low_7symbols = BitMap(prbMax, ble, bhe)
+        self.bitMap_edge_7symbols = BitMap(prbMax, ble, bhe)
+
+    def addRnti(self, raw, pattern):
+        pattern_numPucchBoundaries = "UlData_pucchAreaBoundaries_t.numPucchBoundaries"
+        numPucchBoundaries = getFieldValue(raw, pattern_numPucchBoundaries)
+        # print('numPucchBoundaries = ' + numPucchBoundaries)
+        for i_PucchBoundaries in range(int(numPucchBoundaries)):
+            rnti = RntiPrb(raw, pattern, i_PucchBoundaries)
+            if rnti.isValid():
+                self.rntiList.append(rnti)
+                if rnti.StartSymbol == 0:
+                    self.bitMap_low_7symbols.setRange(start=rnti.startPrb, len=rnti.numOfPrb)
+                else:
+                    self.bitMap_edge_7symbols.setRange(start=rnti.startPrb, len=rnti.numOfPrb)
+
+    def __eq__(self, record):
+        return self.slot == record.slot and self.sfn == record.sfn
+
+    def __str__(self):
+        return "SLOT={} SFN={} PDCCH_BOUNDARIES:{} Check_low_7symbols:{} Check_edge_7symbols:{}".\
+            format(self.slot, self.sfn, len(self.rntiList), self.bitMap_low_7symbols.isOK(),
+                   self.bitMap_edge_7symbols.isOK())
+
+    def isMatchingLastRec(rec):
+        if len(SlotSfnRec.SlotSfnList) == 0:
+            return None
+        lastRec = SlotSfnRec.SlotSfnList[-1]
+        if rec == lastRec:
+            return lastRec
+        return None
+
+    def printRec(self, onlyKO):
+        if not self.bitMap_low_7symbols.isOK() or not self.bitMap_edge_7symbols.isOK() or not onlyKO:
+            datedConsole(self)
+            datedConsole("   bitMap_low_7symbols:{}".format(self.bitMap_low_7symbols))
+            datedConsole("   bitMap_edge_7symbols:{}".format(self.bitMap_edge_7symbols))
+            if not self.bitMap_low_7symbols.isOK():
+                datedConsole("   getErrorsBitMap low_7symbols:{}".format(self.bitMap_low_7symbols.getErrors()))
+            if not self.bitMap_edge_7symbols.isOK():
+                datedConsole("   getErrorsBitMap edge_7symbols:{}".format(self.bitMap_edge_7symbols.getErrors()))
+            for idx, rnti in enumerate(self.rntiList):
+                datedConsole("   {}:{}".format(idx+1, rnti))
+
+    def printBitmap(self, onlyKO):
+        if not self.bitMap_low_7symbols.isOK() or not self.bitMap_edge_7symbols.isOK() or not onlyKO:
+            datedConsole("   bitMap_low_7symbols:{}".format(self.bitMap_low_7symbols))
+            datedConsole("   bitMap_edge_7symbols:{}".format(self.bitMap_edge_7symbols))
+            for idx, rnti in enumerate(self.rntiList):
+                datedConsole("   {}:{}".format(idx + 1, rnti))
+
+
+# =======================================================================================
+
+
+class RntiPrb(object):
+    def __init__(self, raw, pattern, numPucchBoundaries):
+        self.raw = raw
+        self.rnti = getFieldValue(raw, "3gpp.rnti")
+        # pattern_numPucchBoundaries = "UlData_pucchAreaBoundaries_t.numPucchBoundaries"
+        # numPucchBoundaries = getFieldValue(raw, pattern_numPucchBoundaries)
+        pattern_start_prb = pattern + ".startPrb"
+        start_prb = getFieldValue(raw, pattern_start_prb)
+        start_prb_list = start_prb.split(',')
+        pattern_num_prb = pattern + ".numOfPrb"
+        num_prb = getFieldValue(raw, pattern_num_prb)
+        num_prb_list = num_prb.split(',')
+        # print('numPucchBoundaries = ' + str(numPucchBoundaries))
+        # print('start_prb_list = ' + str(start_prb_list))
+        pattern_startSymbol = pattern + ".startSymbol"
+        startSymbol = getFieldValue(raw, pattern_startSymbol)
+        startSymbol_list = startSymbol.split(',')
+        self.startPrb = int(float(toDecimalStr(start_prb_list[numPucchBoundaries])))
+        self.numOfPrb = int(float(toDecimalStr(num_prb_list[numPucchBoundaries])))
+        self.StartSymbol = int(float(toDecimalStr(startSymbol_list[numPucchBoundaries])))
+        # logging.info("=====> RntiPrb_startPrb=%s" % self.startPrb)
+        # logging.info("=====> RntiPrb_numOfPrb=%s" % self.numOfPrb)
+        # logging.info("=====> RntiPrb_StartSymbol=%s" % self.StartSymbol)
+        # for i in range(int(numPucchBoundaries)):
+        #     self.startPrb = int(float(toDecimalStr(start_prb_list[i])))
+        #     self.numOfPrb = int(float(toDecimalStr(num_prb_list[i])))
+
+#    def isValid(self):
+#        return self.rnti != "0x0000ffff"
+    def isValid(self):
+        return toDecimalStr(self.rnti) != toDecimalStr("0xFFFF")
+
+    def __str__(self):
+        str = "{}".format(self.raw)
+        return "PCK:{:30} RNTI:{} StartPRB:{:3} NumOfPrb:{:3}"\
+            .format(str, self.rnti, self.startPrb, self.numOfPrb)
+
+# =======================================================================================
+
+
+def createSlotSfnRecords(csvfile, prbMax, ble, bhe, pattern, verbose=True):
+    SlotSfnRec.SlotSfnList = []
+    with io.open(csvfile, 'rt', encoding="utf-8") as csvfile:
+        reader = csv.DictReader(csvfile,  delimiter=';')
+        for row in reader:
+            # print(row)
+            rec = SlotSfnRec(row, prbMax, ble, bhe, pattern)
+            # rec.printRec(onlyKO=False)
+            lastRec = SlotSfnRec.isMatchingLastRec(rec)
+            if lastRec is not None:
+                lastRec.addRnti(row, pattern)
+            else:
+                rec.addRnti(row, pattern)
+                SlotSfnRec.SlotSfnList.append(rec)
+    return SlotSfnRec
+
+
+def countSlotSfnRecord(SlotSfnRec):
+    return len(SlotSfnRec.SlotSfnList)
+
+
+def printPartOfSlotSfnRecord(SlotSfnRec, onlyKO):
+    for rec in SlotSfnRec.SlotSfnList:
+        rec.printBitmap(onlyKO)
+    return len(SlotSfnRec.SlotSfnList)
+
+
+def countPrbInconsistency(SlotSfnRec) -> object:
+    nbError = 0
+    for rec in SlotSfnRec.SlotSfnList:
+        if not rec.bitMap_low_7symbols.isOK():
+            nbError = nbError + 1
+    for rec in SlotSfnRec.SlotSfnList:
+        if not rec.bitMap_edge_7symbols.isOK():
+            nbError = nbError + 1
+    return nbError
+
+
+def printSlotSfnRec(SlotSfnRec, onlyKO):
+    for rec in SlotSfnRec.SlotSfnList:
+        rec.printRec(onlyKO)
+        # rec.printBitmap(onlyKO)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
+    csvfile = '/home/ute/csamson/TRACES/pcapprocessed_PRb_Blanking_uldata_pucchreceivereq_subcellId0.csv'
+    SlotSfnRec = createSlotSfnRecords(csvfile=csvfile, prbMax=273, ble=0, bhe=0, pattern='UlData_pucchBoundary_t')
+    # logging.info("=====> SlotSfnRec==%s" % SlotSfnRec)
+    printSlotSfnRec(SlotSfnRec, onlyKO=True)
+    countSlotSfnRecord_subcellId0 = countSlotSfnRecord(SlotSfnRec)
+    countPrbInconsistency_subcellId0 = countPrbInconsistency(SlotSfnRec)
+    logging.info("=====> countSlotSfnRecord_subcellId0=%s" % countSlotSfnRecord_subcellId0)
+    logging.info("=====> countPrbInconsistency_subcellId0=%s" % countPrbInconsistency_subcellId0)
+    if countPrbInconsistency_subcellId0 > 0:
+        nbr_err = countPrbInconsistency_subcellId0 / countSlotSfnRecord_subcellId0
+    else:
+        nbr_err = 0
+    logging.info("=====> nbr_err==%s" % nbr_err)
+    printPartOfSlotSfnRecord(SlotSfnRec, onlyKO=True)
+    # printPartOfSlotSfnRecord(SlotSfnRec, onlyKO=False)
+
+    csvfile = '/home/ute/csamson/TRACES/pcapprocessed_PRb_Blanking_uldata_pucchreceivereq_subcellId1.csv'
+    SlotSfnRec2 = createSlotSfnRecords(csvfile=csvfile, prbMax=273, ble=0, bhe=0, pattern='UlData_pucchBoundary_t')
+    # logging.info("=====> SlotSfnRec==%s" % SlotSfnRec2)
+    # printSlotSfnRec(SlotSfnRec2, onlyKO=True)
+    countSlotSfnRecord_subcellId1 = countSlotSfnRecord(SlotSfnRec2)
+    countPrbInconsistency_subcellId1 = countPrbInconsistency(SlotSfnRec2)
+    logging.info("=====> countSlotSfnRecord_subcellId1=%s" % countSlotSfnRecord_subcellId1)
+    logging.info("=====> countPrbInconsistency_subcellId1=%s" % countPrbInconsistency_subcellId1)
+    if countPrbInconsistency_subcellId1 > 0:
+        nbr_err = countPrbInconsistency_subcellId1 / countSlotSfnRecord_subcellId1
+    else:
+        nbr_err = 0
+    logging.info("=====> nbr_err==%s" % nbr_err)
+    printPartOfSlotSfnRecord(SlotSfnRec2, onlyKO=True)

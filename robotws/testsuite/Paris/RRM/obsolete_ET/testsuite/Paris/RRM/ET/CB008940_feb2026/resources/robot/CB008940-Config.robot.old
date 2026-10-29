@@ -1,0 +1,137 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Configuration related keywords for CB008940 feature
+...               Prerequisite :
+...               Scope : keywords for CB008940 Config...
+...               Test Case Scenario author   : ying.yw.wu@nokia.com
+...               Test Case Scenario contact  : ying.yw.wu@nokia.com
+...               Test Case automation author : ying.yw.wu@nokia.com
+...               Test Case automation contact: ying.yw.wu@nokia.com
+...               Creation Date               : 31-08-2022
+...               Modified Date               : 31-08-2022
+...               Last Modified by            : ying.yw.wu@nokia.com
+...               Version History   Date            Author                      Notes
+...               0.1               FB2218      ying.yw.wu@nokia.com            Creation
+...               0.2               FB2305      ying.yw.wu@nokia.com            Modify: adding 8940-J SCF param update
+...               0.3               FB2415      blandine.garnier@nokia.com      Add Modif param actTddCsirsAllocOptimization in vendor file
+
+Library           OperatingSystem
+Library           ../../../../../resources/SWENG/python/ScfVendorOperations.py
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+
+
+
+*** Keywords ***
+Set 8940 Dist Name Variables
+    ${nrbts_dist_name}              Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ${nrcell_1_dist_name}           Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ${nrcell_2_dist_name}           Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-2
+    ${nrcell_3_dist_name}           Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-3
+    Set Suite Variable              ${nrbts_dist_name}
+    Set Suite Variable              ${nrcell_1_dist_name}
+    Set Suite Variable              ${nrcell_2_dist_name}
+    Set Suite Variable              ${nrcell_3_dist_name}
+
+
+Update 8940 Params in OAM SCF And Recommissioning
+    [Arguments]                ${nb_of_cell}=3
+    ${SCF_ORI}                 Set Variable          ${SCF_SETUP_PATH}.origin
+    ${SCF_MODIFIED}            Set Variable          ${SCF_SETUP_PATH}.modif
+    # Backup the original SCF & save as ${SCF_SETUP_PATH}.origin
+    Copy File                  ${SCF_SETUP_PATH}     ${SCF_ORI}
+    Copy File                  ${SCF_SETUP_PATH}     ${SCF_MODIFIED}
+    # update the SCF and store the modified file as ${SCF_SETUP_PATH}.modif
+    Dated Log    ----> in Update 8940 related Params in OAM SCF : nb_of_cell : ${nb_of_cell}
+    Config Update 8940 Activation               scf_file=${SCF_MODIFIED}
+    Oam.OAM Perform Full Commissioning          scf_file=${SCF_MODIFIED}
+    WA Airscale Wait For Ready                  ${GNB_DU}
+
+Update 8940 J Params in OAM SCF And Recommissioning
+    [Arguments]                ${nb_of_cell}=3
+    ${SCF_ORI}                 Set Variable          ${SCF_SETUP_PATH}.origin
+    ${SCF_MODIFIED}            Set Variable          ${SCF_SETUP_PATH}.modif
+    # Backup the original SCF & save as ${SCF_SETUP_PATH}.origin
+    Copy File                  ${SCF_SETUP_PATH}     ${SCF_ORI}
+    Copy File                  ${SCF_SETUP_PATH}     ${SCF_MODIFIED}
+    # update the SCF and store the modified file as ${SCF_SETUP_PATH}.modif
+    Dated Log    ----> in Update 8940 related Params in OAM SCF : nb_of_cell : ${nb_of_cell}
+    Config Update 8940 J Activation               scf_file=${SCF_MODIFIED}
+    Oam.OAM Perform Full Commissioning          scf_file=${SCF_MODIFIED}
+    WA Airscale Wait For Ready                  ${GNB_DU}
+
+Config Update 8940 Activation
+    [Documentation]        This KW is used to update the NIDD Param:
+    ...                     list of Params NIDD to be updated
+    [Arguments]            ${scf_file}
+    Set 8940 Dist Name Variables
+    SCF StartSession       scf_file=${scf_file}
+    Dated Log   ----> Here to update the GNB SCF with 8940 related params  .....
+    # Dated Log   ----> related params : 8847 feature flag :  actScheUePooling
+    # SCF Set element        dist_name=${nrbts_dist_name}
+    # ...                    element_name=actUEPoolingTDD
+    # ...                    element_value=true
+    Dated Log   ----> related params : 8940 feature flag :  actExplicitCsirsPoolSolution
+    SCF Set element        dist_name=${nrbts_dist_name}
+    ...                    element_name=actExplicitCsirsPoolSolution
+    ...                    element_value=false
+    # SCF Set element        dist_name=${nrbts_dist_name}
+    # ...                    element_name=actSlowPrbPoolingTddFr1Ul
+    # ...                    element_value=true
+    SCF StopSession        scf_file=${scf_file}
+    Dated Log    ----> Modifications completed.\n
+
+Config Update 8940 J Activation
+    [Documentation]        This KW is used to update the NIDD Param:
+    ...                     list of Params NIDD to be updated
+    [Arguments]            ${scf_file}
+    Set 8940 Dist Name Variables
+    SCF StartSession       scf_file=${scf_file}
+    Dated Log   ----> related params : 8940 J flag :  actDlSrsBm
+    SCF Set element        dist_name=${nrcell_1_dist_name}
+    ...                    element_name=actDlSrsBm
+    ...                    element_value=true
+    SCF StopSession        scf_file=${scf_file}
+    Dated Log    ----> Modifications completed.\n
+
+
+Config Update Round Robin
+    Dated Log    ----> start : set BBPoolMode to Round Robin in Vendor File
+    SetConfig.Change NIDD Hidden param
+    Dated Log    ----> end : Round Robin config completed
+
+Vendor File Config With Specific Settings
+    [Documentation]                 Download vendor file, Modify bbPooling params, save the modified vendor file
+    ...                             validate the modified vendor file via OAM web UI
+    [Arguments]                     ${Vendor_Params}
+    ${original_vendorfile}          ${modified_vendorfile}              SetConfig.Download Vendor File
+    Dated Log       -----> Original Vendor File Name :
+    Dated Log       ${original_vendorfile}
+    Dated Log       -----> Modified Vendor File Name will be :
+    Dated Log       ${modified_vendorfile}
+
+    @{RR_PoolMode}=   Create List       bbPoolMode      round-robin
+    @{Param_To_Replace}=    Create List     ${RR_PoolMode}
+
+    ScfVendorOperations.setup reader         ${original_vendorfile}
+    ${mo_dict}          ScfVendorOperations.get moelements byclass
+    ...                 NRBTS
+    ${modified_mo}=     Run Keyword If     '${Vendor_Params.bbPoolMode}'=='round-robin'     ScfVendorOperations.replace params inMo
+    ...                 ${Param_To_Replace}
+    ...                 ${mo_dict}
+
+    @{set_9836}=            Create List       actTddCsirsAllocOptimization      false
+    @{Param_To_Replace}=    Create List       ${set_9836}
+    ${modified_mo}=         ScfVendorOperations.replace params inMo      ${Param_To_Replace}    ${mo_dict}
+
+    ScfVendorOperations.save back toxml     ${modified_vendorfile}
+    ${Tmp_file_ls}                    OperatingSystem.run               ls -altr ${modified_vendorfile}
+    Dated log                         Obtained file ${Tmp_file_ls}
+
+    &{args}    Create Dictionary    vendor_file="${modified_vendorfile}"
+    OAM Run Command    cmd=set_vendor_file    cmd_args=${args}
+
+

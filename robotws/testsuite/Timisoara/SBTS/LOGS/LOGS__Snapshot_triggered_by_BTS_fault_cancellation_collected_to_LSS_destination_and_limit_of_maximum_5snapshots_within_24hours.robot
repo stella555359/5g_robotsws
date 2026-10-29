@@ -1,0 +1,281 @@
+*** Settings ***
+Documentation
+    ...    Author: cristinel.sava@nokia.com
+
+Library     XML    use_lxml=${TRUE}
+Library     taf.sbts.oam.coam.admin  WITH NAME  coam
+Library     taf.ul.verify_snapshot   WITH NAME  snapshot
+Resource    ../resources/verdicts.robot
+Resource    ../resources/pm_logs_frame.robot
+Resource    ../resources/pm_logs_general.robot
+Resource    ../resources/bts_states.robot
+Resource    taf/rfrl/common_resources/common_step/interface.robot
+
+*** Variables ***
+${SNAPSHOT_COLLECTION_TIMEOUT}  1200
+
+*** Keywords ***
+TC__LOGS__Snapshot_triggered_by_BTS_fault_cancellation_collected_to_LSS_destination_and_limit_of_maximum_5snapshots_within_24hours
+    [Documentation]
+    ...  [CASE LINK]: https://jiradc.ext.net.nokia.com/browse/TAT-24257
+    ...  ******************
+    ...  History of changes
+    ...  ******************
+    ...  - 2022-12-06 - Damian Kotula - Test rewritten based on BOAM ET test:
+    ...    Automatic_snapshot_triggered_by_BTS_fault_cancellation_collected_to_LSS_destination_and_limit_of_maximum_5snapshots_within_24hours
+    ...  - 2023-03-10 - TAT-24917 - Hran_frame resource name change to ca_pm_logs_frame due to migration to robotws
+    ...  - 2023-05-17 - TAT-25384 - list_name= param added to KW AppendComplexItemToDelta
+    ...  - 29.05.2023 - TAT-25470 - Changed 'in range' operator to all caps to prevent warn
+    ...  ******************
+    ...  Basic information
+    ...  *****************
+    ...  Test case to check if snapshot is automatically triggered when fault 49 is cancelled. Fault is
+    ...  added to faultSnapshotTriggers list and reported after cell block.
+    ...  *******************
+    ...  Test case flowchart: https://gitlabe1.ext.net.nokia.com/panda-docs/hran_doc/-/blob/master/testsuite/SBTS/
+    ...  LOGS__Snapshot_triggered_by_BTS_fault_cancellation_collected_to_LSS_destination_and_limit_of_maximum_5snapshots_within_24hours.png
+    ...  *******************
+
+
+    Set Tags    CA-LOGS    OWNER-iuliia.taupeka@nokia.com    MAINTAINER-damian.kotula@nokia.com
+    ...    GROUP_IN_CHARGE-WRO_6_Vrf    PHASE-CRT    SW-SBTS23R1    FEATURE-RP002771
+
+    Step 0: Preconditions
+    Step 1: Configure Fault Snapshot Trigger
+    Step 2: Block And Unblock Cell To Trigger Snapshot, Check If Snapshot Is Collected And Present On Lss, Check Snapshot Content
+
+
+Step 0: Preconditions
+    [Documentation]
+    ...  In this step needed test variables are declared.
+
+    Log  \nPreconditions  console=${True}
+    Set Test Variable  ${TRBLCADM_MO_ADDED}  ${False}
+    Set Test Variable  ${FAULT_SNAPSHOT_TRIGGER_ADDED}  ${False}
+    Set Test Variable  ${CELL_BLOCKED}  ${False}
+    ${bts_id}  bts_states.Get BTS ID
+    Set Test Variable  ${BTS_ID}  ${bts_id}
+    ${SW}  coam.Get Sw Version
+    ${snapshot_name}  Set Variable  Snapshot_MRBTS-${bts_id}_*_${SW}_*
+    Set Test Variable  ${snapshot_name}
+    Set Snapshot Destination To  LSS
+
+Step 1: Configure Fault Snapshot Trigger
+    [Documentation]
+    ...  In this test step faultSnapshotTriggers list for foult 49 is created and added to configuration.
+
+    Log  \nStep 1: Configure Fault Snapshot Trigger  console=${True}
+    coam.Get Current Scf File   ${BTS_Files}  scf.xml  export_type=configuration
+    ${SCF}  Parse Xml  ${BTS_Files}/scf.xml
+    Set Test Variable  ${SCF}
+    ${trblcadm_element}  Evaluate Xpath  ${SCF}  //managedObject[contains(@class, 'TRBLCADM')]
+    ${delta_id}  Set Variable  fault
+    coam.Create Delta  ${delta_id}
+    ${mnlent_element}  Evaluate Xpath  ${SCF}  //managedObject[contains(@class, 'MNLENT')]
+    ${MNLENT_DISTNAME}  XML.Get Element Attribute  ${mnlent_element[0]}  distName
+    Set Test Variable  ${MNLENT_DISTNAME}
+    Run Keyword If  '${trblcadm_element}'=='[]'
+    ...  Create Trblcadm Mo  ${delta_id}
+    ...  ELSE  Create Fault Snapshot Triggers  ${delta_id}
+
+Step 2: Block And Unblock Cell To Trigger Snapshot, Check If Snapshot Is Collected And Present On Lss, Check Snapshot Content
+    [Documentation]
+    ...  In this test step test blocks one cell to generate fault 49, and unblock that cell to trigger snapshot,
+    ...  wait and check if snapshot was collected,
+    ...  log to lss server to check if snashot is present if yes zip it to snapshot.zip file,
+    ...  downloads zip snapshot file to VM local disk and check snapshot content,
+    ...  check if snapshot sent max 5 time to lss server.
+
+    FOR  ${i}  IN RANGE  1  6
+        Block And Unblock Cell To Trigger Snapshot  ${i}
+        Check If Snapshot Is Collected  ${i}
+        Check If Snapshot Is On LSS  ${i}
+        Validate Snapshot from LSS  ${i}
+        Log  Waiting 15min to generate next snapshot  console=${True}
+        Sleep  900s
+    END
+    Run Keyword  Block And Unblock Cell To Trigger Snapshot  6
+    Run Keyword  Check If Snapshot Collection Max Limit Reached
+    Log  Reset ongoing    console=${True}
+    Run keyword and ignore error     coam.Reset Site
+    Wait Until Keyword Succeeds  20m  30s  Check All Modules And All Cells Working States
+    Log    Reset site done test finished  console=${True}
+
+
+Block And Unblock Cell To Trigger Snapshot
+    [Arguments]  ${i}
+    [Documentation]
+    ...  In this test step cell block and unblock operations are performed to activate fault 49.
+    ...  Cancellation of fault 49 will cause snapshot to automatically trigger.
+
+    Log  \nStep 2.1.${i}: Perform Cell Block  console=${True}
+    ${CELL_DISTNAME}  Get Cell Distname
+    Set Test Variable  ${CELL_DISTNAME}
+    Log  Cell with distname ${CELL_DISTNAME} will be blocked  console=${True}
+    ${block_result}  Run Keyword And Ignore Error  coam.Block Cell  ${CELL_DISTNAME}
+    Run Keyword If  '${block_result[0]}'=='FAIL'
+    ...  verdicts.Set Test Failed  Cell block operation unsuccessful.  ${TRUE}
+    ...  ELSE  Run Keywords  Log  Cell block operation successful.  console=${True}
+    ...  AND  Set Test Variable  ${CELL_BLOCKED}  ${True}
+    Wait Until Keyword Succeeds  3m  10s  coam.Assert Alarm Active  faultId=49
+    Log  Fault Id=49 detected, cell with distname ${CELL_DISTNAME} will be unblocked  console=${True}
+    ${unblock_result}  Run Keyword And Ignore Error  coam.Unblock Cell  ${CELL_DISTNAME}
+    Run Keyword If  '${unblock_result[0]}'=='FAIL'
+    ...  verdicts.Set Test Failed  Cell unblock operation unsuccessful.  ${TRUE}
+    ...  ELSE  Run Keywords  Log  Cell unblock operation successful.  console=${True}
+    ...  AND  Set Test Variable  ${CELL_BLOCKED}  ${False}
+
+Check If Snapshot Is Collected
+    [Arguments]  ${i}
+    [Documentation]
+    ...  In this step it is checked if snapshot is triggered by fault 49 cancellation and collection is finished.
+
+    Log  \nStep 2.2.${i}: Check If Snapshot Is Collected  console=${True}
+    ${snapshot_triggering_status}  Query Infomodel  check //TECHREP_L-*/SNAPSHOT-* is [originator=Internal,stateInfo.usageState=Active]
+    ...  timeout=60  allow_negative_result=True
+    Run Keyword If  ${snapshot_triggering_status}
+    ...  Log  Snapshot was triggered by fault 49 cancellation.  console=${True}
+    ...  ELSE  verdicts.Set Test Failed  Snapshot was not triggered by fault 49 cancellation.  ${TRUE}
+
+    Log  Wait max ${SNAPSHOT_COLLECTION_TIMEOUT} seconds for snapshot to collect.  console=${True}
+    ${snapshot_collection_status}  Query Infomodel  none //TECHREP_L-*/SNAPSHOT-* is [originator=Internal]
+    ...  timeout=${SNAPSHOT_COLLECTION_TIMEOUT}  allow_negative_result=True
+    Run Keyword If  ${snapshot_collection_status}
+    ...  Log  Snapshot collection finished.  console=${True}
+    ...  ELSE  verdicts.Set Test Failed  Snapshot collection not finished in ${SNAPSHOT_COLLECTION_TIMEOUT} seconds.  ${TRUE}
+
+Check If Snapshot Is On LSS
+    [Arguments]  ${i}
+    [Documentation]
+    ...  In KW test login to lss server and check if snapshot is present
+    ...  if yes zip directory to snapshot.zip file after that download zip file to local disk
+    Log  \nStep 2.3.${i}: Chceck if snapshot is on LSS  console=${True}
+
+    ${lss_sever_ip}  Set Variable  10.5.20.200
+    ${lss_server_pass}  Set Variable  zO&n1W*ktp7!
+    ${lss_server_user}  Set Variable  coam
+
+    Log  Open SSH Connection to lss server  console=${true}
+    SSHLibrary.Open Connection                          ${lss_sever_ip}
+    ${ssh_status}  Run Keyword And Return Status
+    ...  SSHLibrary.Login                               ${lss_server_user}    ${lss_server_pass}
+    Run Keyword If  ${ssh_status}
+    ...  Log  Opening SSH session to lss server succeeded   console=${true}
+    ...  ELSE
+    ...  verdicts.Set Test Failed  TC failed - Open SSH connection to lss server failure.  ${TRUE}
+    Sleep    3s
+
+    ${snapshot_location_on_lss}  SSHLibrary.Execute Command  find / -type d -name "${snapshot_name}" -cmin -15 2>/dev/null
+    ${snapshot_file_name_on_lss}    Fetch From Right    ${snapshot_location_on_lss}    /
+    ${isEmpty}  Get length  ${snapshot_location_on_lss}
+    Log  ${isEmpty}
+    Run Keyword If  ${isEmpty}==0
+    ...  verdicts.Set Test Failed  Snapshot was`t found on lss server.  ${TRUE}
+    ...  ELSE  Log  Snapshot was found on lss server.   console=${true}
+    Sleep  3s
+    SSHLibrary.Execute Command  zip -r ${snapshot_name}_${i}.zip ${snapshot_location_on_lss}
+    Sleep  60s
+    Run  sshpass -p '${lss_server_pass}' scp ${lss_server_user}@${lss_sever_ip}:/home/coam/${snapshot_name}_${i}.zip ${BTS_Files}
+    Sleep  60s
+    SSHLibrary.Execute Command  rm -r /home/coam/${snapshot_file_name_on_lss}
+    Log  ${snapshot_file_name_on_lss} was removed from LSS server
+    Sleep  1s
+    SSHLibrary.Execute Command  rm /home/coam/${snapshot_name}_${i}.zip
+    Log  ${snapshot_name}_${i}.zip was removed from LSS server
+    ${path_to_snapshot_from_lss}  Set Variable  ${BTS_Files}/${snapshot_name}_${i}.zip
+    OperatingSystem.File Should Exist  ${BTS_Files}/${snapshot_name}_${i}.zip
+    Log  Snapshot was downloaded to local disk   console=${true}
+    Set Test Variable  ${path_to_snapshot_from_lss}
+    SSHLibrary.Close Connection
+
+Validate Snapshot from LSS
+    [Arguments]  ${i}
+    [Documentation]
+    ...  In KW test check snapshot content
+
+    Log    \nStep 2.4.${i}: Validate Snapshot from LSS    console=${True}
+
+    ${Found_file_dict}    snapshot.Get Data From Snapshot    ${path_to_snapshot_from_lss}
+    ${path_to_xml_spec_file}  join path  ${CURDIR}  tc_variables  snapshot_spec_from_lss.xml
+    snapshot.Validate Snapshot    ${Found_file_dict}    ${path_to_xml_spec_file}
+    Log    Validation success   console=${True}
+
+Check If Snapshot Collection Max Limit Reached
+    ${snapshot_triggering_status2}  Query Infomodel  check //TECHREP_L-*/SNAPSHOT-* is [originator=Internal,stateInfo.usageState=Active]
+    ...  timeout=60  allow_negative_result=True
+    Run Keyword If  ${snapshot_triggering_status2}
+    ...  verdicts.Set Test Failed  Snapshot was triggered by syslog substring.  ${True}
+    ...  ELSE  Log  \nSnapshot was not triggered by syslog substring  console=${True}
+
+Create Trblcadm Mo
+    [Arguments]  ${delta_id}
+    Log  Adding TRBLCADM managed object to configuration  console=${True}
+    coam.Append Managed Object To Delta  ${MNLENT_DISTNAME}/TRBLCADM-1  create  ${delta_id}
+    coam.Append Parameter Update To Delta  ${MNLENT_DISTNAME}/TRBLCADM-1  actCoreDumpFileCollection  true  ${delta_id}
+    coam.Append Parameter Update To Delta  ${MNLENT_DISTNAME}/TRBLCADM-1  actRemoteSyslogTransmission  false  ${delta_id}
+    coam.Append Parameter Update To Delta  ${MNLENT_DISTNAME}/TRBLCADM-1  snapshotUploadDelayForFault6450  24  ${delta_id}
+    coam.Append Parameter Update To Delta  ${MNLENT_DISTNAME}/TRBLCADM-1  diagSnapDestination  lss  ${delta_id}
+    Set Test Variable  ${TRBLCADM_MO_ADDED}  ${True}
+    Create Fault Snapshot Triggers  ${delta_id}
+
+Create Fault Snapshot Triggers
+    [Arguments]   ${delta_id}
+    ${fault_snapshot_triggers_dict}  Create Dictionary  faultNumber=49  triggerType=onFaultCancellation
+    coam.Append Parameter Update To Delta  ${MNLENT_DISTNAME}/TRBLCADM-1  actDefaultFaultSnapTriggers  false  ${delta_id}
+    coam.Append Parameter Update To Delta  ${MNLENT_DISTNAME}/TRBLCADM-1  snapshotUploadDelayForFault6450  24  ${delta_id}
+    coam.Append Complex Item To Delta  ${MNLENT_DISTNAME}/TRBLCADM-1  list_name=faultSnapshotTriggers  &{fault_snapshot_triggers_dict}
+    ...  delta_id=${delta_id}
+    coam.Get Delta  ${delta_id}
+    coam.Save Delta  ${BTS Files}/delta.json  ${delta_id}
+    coam.Perform Delta Recommissioning  ${BTS Files}/delta.json  skip_parameter_relation_errors=${True}
+    Set Test Variable  ${FAULT_SNAPSHOT_TRIGGER_ADDED}  ${True}
+
+Get Cell Distname
+    ${lncell_m_objects}  Query Infomodel  get list //LNCEL_R-*  allow_negative_result=True
+    Run Keyword If  ${lncell_m_objects}
+    ...  Return From Keyword  ${lncell_m_objects[0]['dist_name']}
+    ${wncell_m_objects}  Query Infomodel  get list //WNCEL_R-*  allow_negative_result=True
+    Run Keyword If  ${wncell_m_objects}
+    ...  Return From Keyword  ${wncell_m_objects[0]['dist_name']}
+    ${gncell_m_objects}  Query Infomodel  get list //GNCEL_R-*  allow_negative_result=True
+    Run Keyword If  ${gncell_m_objects}
+    ...  Return From Keyword  ${gncell_m_objects[0]['dist_name']}
+    ${nrcell_m_objects}  Query Infomodel  get list //NRCELL_R-*  allow_negative_result=True
+    Run Keyword If  ${nrcell_m_objects}
+    ...  Return From Keyword  ${nrcell_m_objects[0]['dist_name']}
+
+Custom Test Teardown
+    Log  \nCustom Test Teardown  console=${True}
+    Run Keyword If  ${CELL_BLOCKED}  Run Keywords
+    ...  Log  Cell with distname ${CELL_DISTNAME} will be unblocked  console=${True}
+    ...  AND  coam.Unblock Cell  ${CELL_DISTNAME}
+
+    ${delta_id}  Set Variable  teardown
+    coam.Create Delta  ${delta_id}
+
+    Run Keyword If  ${TRBLCADM_MO_ADDED} and ${FAULT_SNAPSHOT_TRIGGER_ADDED}  Run Keywords
+    ...  Log  Removing TRBLCADM managed object from configuration  console=${True}
+    ...  AND  coam.Append Managed Object To Delta  ${MNLENT_DISTNAME}/TRBLCADM-1  delete  ${delta_id}
+    ...  AND  coam.Get Delta  ${delta_id}
+    ...  AND  coam.Save Delta  ${BTS Files}/delta2.json  ${delta_id}
+    ...  AND  coam.Perform Delta Recommissioning  ${BTS Files}/delta2.json  skip_parameter_relation_errors=${True}
+    ...  ELSE IF  ${FAULT_SNAPSHOT_TRIGGER_ADDED} and not ${TRBLCADM_MO_ADDED}  Run Keywords
+    ...  Log  Removing faultSnapshotTriggers list from configuration  console=${True}
+    ...  AND  coam.Append Parameter Delete To Delta  ${MNLENT_DISTNAME}/TRBLCADM-1  faultSnapshotTriggers  ${delta_id}
+    ...  AND  coam.Get Delta  ${delta_id}
+    ...  AND  coam.Save Delta  ${BTS Files}/delta2.json  ${delta_id}
+    ...  AND  coam.Perform Delta Recommissioning  ${BTS Files}/delta2.json  skip_parameter_relation_errors=${True}
+
+    coam.Remove All Delta Id
+
+TC Setup
+    Common Test Setup
+
+TC Teardown
+    Run Keywords
+    ...    interface.Common step trigger
+    ...    AND    Setup Scout And Send Configuration
+    ...    AND    Custom Test Teardown
+    ...    AND    Common Test Teardown
+
+

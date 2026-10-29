@@ -1,0 +1,920 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for 5GC001347 feature tests cases
+...
+...               Automation author           : bernard.hoche@nokia.com
+...               Automation contact          : bernard.hoche@nokia.com
+...               Creation Date               : 05-June-2019
+...               18-08-2021                  |     1347 refactoring
+...               03-09-2021                  |     Updates to take into account OAM CU part
+...                                           |     + remove AIRSCALE_AP
+...               16-05-2022                  |     Refactoring for TDD VRAN 2.0 (cmw)
+...               17-05-2022                  |     Adaptation to use MC_SHARK
+...               14-04-2023                  |     Adding route on VDU for capture Sherpa in the case of VRAN
+...               12-05-2023                  |     Removing GeneralConnectivityBronze/Silver Sets
+...               20-05-2024 | vincent.boulet@nokia.com | Removing commented code related to route on VDU for capturing Sherpa trace
+
+Library           ../../../../../../Paris/RRM/ET/resources/python/luashark_tools.py
+Library           OperatingSystem
+
+Resource          ../../../../../../Paris/resources/SWENG/robot/Oam.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Restart.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Capture.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Tools.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Setup.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/PacketSearch.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Scf.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Counters.robot
+
+Variables         ../python/Constants.py
+
+*** Variables ***
+
+@{FIELDS_PDSCHSendReq}              dlDmrsAddPos
+@{FIELDS_PUSCHRecvReq}              ulDmrsAddPos
+
+&{dict_dmrs_mode}  automatic=Automatic
+...                forced=One additional DMRS
+...                disabled=No additional DMRS
+
+
+
+@{dl_counter_list_for_qpsk_mcs}    M55300C00000    M55300C00001    M55300C00002    M55300C00003
+...                                M55300C00004    M55300C00005    M55300C00006    M55300C00007
+...                                M55300C00008    M55300C00009
+
+@{dl_counter_list_for_16qam_mcs}   M55300C00010    M55300C00011    M55300C00012    M55300C00013
+...                                M55300C00014    M55300C00015    M55300C00016
+
+@{dl_counter_list_for_64qam_mcs}   M55300C00017    M55300C00018    M55300C00019    M55300C00020
+...                                M55300C00021    M55300C00022    M55300C00023    M55300C00024
+...                                M55300C00024    M55300C00025    M55300C00026    M55300C00027
+...                                M55300C00028
+
+@{ul_counter_list_for_qpsk_mcs}    M55302C00000    M55302C00001    M55302C00002    M55302C00003
+...                                M55302C00004    M55302C00005    M55302C00006    M55302C00007
+...                                M55302C00008    M55302C00009
+
+@{ul_counter_list_for_16qam_mcs}   M55302C00010    M55302C00011    M55302C00012    M55302C00013
+...                                M55302C00014    M55302C00015    M55302C00016
+
+@{ul_counter_list_for_64qam_mcs}   M55302C00017    M55302C00018    M55302C00019    M55302C00020
+...                                M55302C00021    M55302C00022    M55302C00023    M55302C00024
+...                                M55302C00024    M55302C00025    M55302C00026    M55302C00027
+...                                M55302C00028
+
+
+@{counter_list_initial_dl_transmission_qpsk}        M55300C00000    M55300C00001    M55300C00002    M55300C00003
+...                                                 M55300C00004    M55300C00005    M55300C00006    M55300C00007
+...                                                 M55300C00008    M55300C00009
+
+@{counter_list_initial_dl_transmission_16qam}       M55300C00010    M55300C00011    M55300C00012    M55300C00013
+...                                                 M55300C00014    M55300C00015    M55300C00016
+
+@{counter_list_initial_dl_transmission_64qam}       M55300C00017    M55300C00018    M55300C00019
+...                                                 M55300C00020    M55300C00021    M55300C00022    M55300C00023
+...                                                 M55300C00024    M55300C00025    M55300C00026    M55300C00027
+...                                                 M55300C00028
+
+
+@{counter_list_success_dl_transmission_qpsk}        M55300C02000    M55300C02001    M55300C02002    M55300C02003
+...                                                 M55300C02004    M55300C02005    M55300C02006    M55300C02007
+...                                                 M55300C02008    M55300C02009
+
+@{counter_list_success_dl_transmission_16qam}       M55300C02010    M55300C02011    M55300C02012    M55300C02013
+...                                                 M55300C02014    M55300C02015    M55300C02016
+
+@{counter_list_success_dl_transmission_64qam}       M55300C02017    M55300C02018    M55300C02019
+...                                                 M55300C02020    M55300C02021    M55300C02022    M55300C02023
+...                                                 M55300C02024    M55300C02025    M55300C02026    M55300C02027
+...                                                 M55300C02028
+
+&{dl_initial_trans_counter_dict}                    qpsk=${counter_list_initial_dl_transmission_qpsk}
+...                                                 qam16=${counter_list_initial_dl_transmission_16qam}
+...                                                 qam64=${counter_list_initial_dl_transmission_64qam}
+
+&{dl_success_trans_counter_dict}                    qpsk=${counter_list_success_dl_transmission_qpsk}
+...                                                 qam16=${counter_list_success_dl_transmission_16qam}
+...                                                 qam64=${counter_list_success_dl_transmission_64qam}
+
+
+@{counter_list_initial_ul_transmission_qpsk}        M55302C00000    M55302C00001    M55302C00002    M55302C00003
+...                                                 M55302C00004    M55302C00005    M55302C00006    M55302C00007
+...                                                 M55302C00008    M55302C00009
+
+@{counter_list_initial_ul_transmission_16qam}       M55302C00010    M55302C00011    M55302C00012    M55302C00013
+...                                                 M55302C00014    M55302C00015    M55302C00016
+
+@{counter_list_initial_ul_transmission_64qam}       M55302C00017    M55302C00018    M55302C00019
+...                                                 M55302C00020    M55302C00021    M55302C00022    M55302C00023
+...                                                 M55302C00024    M55302C00025    M55302C00026    M55302C00027
+...                                                 M55302C00028
+
+
+@{counter_list_success_ul_transmission_qpsk}        M55302C05000    M55302C05001    M55302C05002    M55302C05003
+...                                                 M55302C05004    M55302C05005    M55302C05006    M55302C05007
+...                                                 M55302C05008    M55302C05009
+
+@{counter_list_success_ul_transmission_16qam}       M55302C05010    M55302C05011    M55302C05012    M55302C05013
+...                                                 M55302C05014    M55302C05015    M55302C05016
+
+@{counter_list_success_ul_transmission_64qam}       M55302C05017    M55302C05018    M55302C05019
+...                                                 M55302C05020    M55302C05021    M55302C05022    M55302C05023
+...                                                 M55302C05024    M55302C05025    M55302C05026    M55302C05027
+...                                                 M55302C05028
+
+
+&{ul_initial_trans_counter_dict}                    QPSK=${counter_list_initial_ul_transmission_qpsk}
+...                                                 16QAM=${counter_list_initial_ul_transmission_16qam}
+...                                                 64QAM=${counter_list_initial_ul_transmission_64qam}
+
+&{ul_success_trans_counter_dict}                    QPSK=${counter_list_success_ul_transmission_qpsk}
+...                                                 16QAM=${counter_list_success_ul_transmission_16qam}
+...                                                 64QAM=${counter_list_success_ul_transmission_64qam}
+
+
+${rlc_counter_for_dl_data_volume}               M55310C01009
+${rlc_counter_for_ul_data_volume}               M55310C03009
+
+${debug_counters}                               False
+${max_bler}                                     10
+${vol_margin}                                   10
+${cell_index}                                   1
+
+*** Keywords ***
+#=======================================================================================================================
+# KW to perform checks in pcap files
+#=======================================================================================================================
+
+Check Additional DMRS Config in RRC Reconfiguration
+    [Arguments]         ${pcapFile}
+    ...                 ${dl_or_ul}
+    ...                 ${mode}
+    ...                 ${ptrs}
+
+    Run Keyword If      '${dl_or_ul}'=='DL'     Check DL Additional DMRS Config in RRC Reconfiguration
+    ...                                         pcapFile=${pcapFile}
+    ...                                         dmrs_mode=${mode}
+    ...                                         ptrs=${ptrs}
+
+    Run Keyword If      '${dl_or_ul}'=='UL'     Check UL Additional DMRS Config in RRC Reconfiguration
+    ...                                         pcapFile=${pcapFile}
+    ...                                         dmrs_mode=${mode}
+    ...                                         ptrs=${ptrs}
+
+Check DL Additional DMRS Config in RRC Reconfiguration
+    [Documentation]         Check DL DMRS configuration values sent to UE depending on:
+    ...                     DMRS mode
+    ...                     PTRS UE capabilities
+    [Arguments]             ${pcapFile}
+    ...                     ${dmrs_mode}
+    ...                     ${ptrs}
+
+    Run Keyword If          '${dmrs_mode}'=='forced' and '${ptrs}'=='on'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pdsch_Config      value=1
+    Run Keyword If          '${dmrs_mode}'=='automatic' and '${ptrs}'=='on'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pdsch_Config      value=0
+    Run Keyword If          '${dmrs_mode}'=='disabled' and '${ptrs}'=='on'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pdsch_Config      value=0
+
+    Run Keyword If          '${dmrs_mode}'=='forced' and '${ptrs}'=='off'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pdsch_Config      value=1
+    Run Keyword If          '${dmrs_mode}'=='automatic' and '${ptrs}'=='off'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pdsch_Config      value=1
+    Run Keyword If          '${dmrs_mode}'=='disabled' and '${ptrs}'=='off'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pdsch_Config      value=0
+
+    Run Keyword If          '${dmrs_mode}'=='forced' and '${ptrs}'=='none'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pdsch_Config      value=1
+    Run Keyword If          '${dmrs_mode}'=='automatic' and '${ptrs}'=='none'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pdsch_Config      value=1
+    Run Keyword If          '${dmrs_mode}'=='disabled' and '${ptrs}'=='none'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pdsch_Config      value=0
+
+Check UL Additional DMRS Config in RRC Reconfiguration
+    [Documentation]         Check UL DMRS configuration values sent to UE depending on:
+    ...                     DMRS mode
+    ...                     PTRS UE capabilities
+    [Arguments]             ${pcapFile}
+    ...                     ${dmrs_mode}
+    ...                     ${ptrs}
+
+    Run Keyword If          '${dmrs_mode}'=='forced' and '${ptrs}'=='on'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pusch_Config      value=1
+    Run Keyword If          '${dmrs_mode}'=='automatic' and '${ptrs}'=='on'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pusch_Config      value=0
+    Run Keyword If          '${dmrs_mode}'=='disabled' and '${ptrs}'=='on'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pusch_Config      value=0
+
+    Run Keyword If          '${dmrs_mode}'=='forced' and '${ptrs}'=='off'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pusch_Config      value=1
+    Run Keyword If          '${dmrs_mode}'=='automatic' and '${ptrs}'=='off'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pusch_Config      value=1
+    Run Keyword If          '${dmrs_mode}'=='disabled' and '${ptrs}'=='off'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pusch_Config      value=0
+
+    Run Keyword If          '${dmrs_mode}'=='forced' and '${ptrs}'=='none'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pusch_Config      value=1
+    Run Keyword If          '${dmrs_mode}'=='automatic' and '${ptrs}'=='none'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pusch_Config      value=1
+    Run Keyword If          '${dmrs_mode}'=='disabled' and '${ptrs}'=='none'
+    ...                     Check RRC Reconfiguration   pcapFile=${pcapFile}        prefix=nr-rrc.pusch_Config      value=0
+
+Check RRC Reconfiguration
+    [Arguments]                     ${pcapFile}
+    ...                             ${prefix}
+    ...                             ${value}=1
+    ${pcapFiltered}                 analyzer.filter_pcap
+    ...                                 pcapInFile=${pcapFile}
+    ...                                 filterName=X2AP
+    ...                                 filterExp=x2ap
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+    Dated Log New Line              In RRC Reconfiguration, check ${prefix}/.../nr-rrc.dmrs_AdditionalPosition is set to ${value}
+
+    ${msg}                          Set Variable                    SgNBAdditionRequestAcknowledge
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${prefix}/.*/nr-rrc.dmrs_AdditionalPosition$
+    ...                             value=${value}
+
+
+Check Additional DMRS in Traffic
+    [Arguments]         ${dl_or_ul}
+    ...                 ${mode}
+    ...                 ${ptrs}
+
+    Run Keyword If      '${dl_or_ul}'=='DL'     Check Additional DMRS in DL Traffic
+    ...                                         mode=${mode}
+    ...                                         ptrs=${ptrs}
+
+    Run Keyword If      '${dl_or_ul}'=='UL'     Check Additional DMRS in UL Traffic
+    ...                                         mode=${mode}
+    ...                                         ptrs=${ptrs}
+
+
+Check Additional DMRS in DL Traffic
+    [Documentation]                 Start DL traffic and call BIP DMRS checks
+    [Arguments]                     ${mode}
+    ...                             ${ptrs}
+
+    ${CaptureBIP_DL}                Capture L1L2 Set Upon Config            airscale=${GNB_DU}
+    ${file_name_wo_space}           getFormattedTestName
+
+    ${CaptureBIP_DL.prefix}         set variable                            ${CaptureBIP_DL.prefix}_${file_name_wo_space}_DL
+    Traffic UE DL                   ueSetting=${UE_SIMPLE}
+    ...                             throughput=2
+    ...                             captureCallback=Callback Capture L1L2
+    ...                             capture=${CaptureBIP_DL}
+    ...                             deviation=10
+
+    Check BIP DMRS in DL Traffic       pcapFile=${CaptureBIP_DL.path}         dmrs_mode=${mode}    ptrs=${ptrs}
+
+Check BIP DMRS in DL Traffic
+    [Documentation]                 KW for checking additional DMRS configuration inside PDSCH
+    ...                             depending on gNB configuration and UE capabilities.
+    [Arguments]                     ${pcapFile}
+    ...                             ${dmrs_mode}
+    ...                             ${ptrs}
+
+    ${filterPcap}                   analyzer.filter_pcap                               ${pcapFile}
+    ...                             filterName=dldata_pdschsendreq
+    ...                             filterExp=(dldata_pdschsendreq)&&!(3gpp.rnti==0xffff)
+    ${pdmlFile}=                    analyzer.pcap_to_pdml                              ${filterPcap}
+    Dated Log New Line              Checking dldata_Pdschsendreq BIP message
+    # Sample some packets and check additional DMRS configuration
+    Dated log new line              Getting some captured PdschSendReq
+    @{listSomePdschSendReq}         Get Packet Match List
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=dldata_pdschsendreq
+    ...                             pathList=${FIELDS_PDSCHSendReq}
+    ...                             startPacket=${1}
+    ...                             endPacket=${15}
+
+    ${lenPdschSendReq}              get length          ${listSomePdschSendReq}
+    Dated Log New Line              Total number of PdschSendReq msgs: ${lenPdschSendReq}
+    should be true                  ${lenPdschSendReq}!=0
+
+    FOR    ${packet}   IN           @{listSomePdschSendReq}
+           # Retrieve DMRS configuration
+           ${addition_dmrs_enabled}          Get Value In Packet Match
+           ...                               packetMatch=${packet}
+           ...                               field=dlDmrsAddPos
+
+           Dated log                Additional DMRS in DL is ${addition_dmrs_enabled}
+
+           Run Keyword If          '${dmrs_mode}'=='forced' and '${ptrs}'=='on'
+           ...                          should be true          ${addition_dmrs_enabled}==1
+           Run Keyword If          '${dmrs_mode}'=='automatic' and '${ptrs}'=='on'
+           ...                          should be true          ${addition_dmrs_enabled}==0
+           Run Keyword If          '${dmrs_mode}'=='disabled' and '${ptrs}'=='on'
+           ...                          should be true          ${addition_dmrs_enabled}==0
+           Run Keyword If          '${dmrs_mode}'=='forced' and '${ptrs}'=='off'
+           ...                          should be true          ${addition_dmrs_enabled}==1
+           Run Keyword If          '${dmrs_mode}'=='automatic' and '${ptrs}'=='off'
+           ...                          should be true          ${addition_dmrs_enabled}==1
+           Run Keyword If          '${dmrs_mode}'=='disabled' and '${ptrs}'=='off'
+           ...                          should be true          ${addition_dmrs_enabled}==0
+           Run Keyword If          '${dmrs_mode}'=='forced' and '${ptrs}'=='none'
+           ...                          should be true          ${addition_dmrs_enabled}==1
+           Run Keyword If          '${dmrs_mode}'=='automatic' and '${ptrs}'=='none'
+           ...                          should be true          ${addition_dmrs_enabled}==1
+           Run Keyword If          '${dmrs_mode}'=='disabled' and '${ptrs}'=='none'
+           ...                          should be true          ${addition_dmrs_enabled}==0
+    END
+
+Check Additional DMRS in UL Traffic
+    [Documentation]                 Start UL traffic and call BIP DMRS checks
+    [Arguments]                     ${mode}
+    ...                             ${ptrs}
+
+    ${CaptureBIP_UL}                Capture L1L2 Set Upon Config            airscale=${GNB_DU}
+    ${file_name_wo_space}           getFormattedTestName
+
+    ${CaptureBIP_UL.prefix}         set variable                            ${CaptureBIP_UL.prefix}_${file_name_wo_space}_UL
+    Traffic UE UL                   ueSetting=${UE_SIMPLE}
+    ...                             throughput=2
+    ...                             captureCallback=Callback Capture L1L2
+    ...                             capture=${CaptureBIP_UL}
+    ...                             deviation=10
+
+    Check BIP DMRS in UL Traffic       pcapFile=${CaptureBIP_UL.path}         dmrs_mode=${mode}    ptrs=${ptrs}
+
+Check BIP DMRS in UL Traffic
+    [Documentation]                 KW for checking additional DMRS configuration inside PUSCH
+    ...                             depending on gNB configuration and UE capabilities.
+    [Arguments]                     ${pcapFile}
+    ...                             ${dmrs_mode}
+    ...                             ${ptrs}
+
+    ${filterPcap}                   analyzer.filter_pcap                               ${pcapFile}
+    ...                             filterName=uldata_puschreceivereq
+    ...                             filterExp=(uldata_puschreceivereq)&&!(3gpp.rnti==0xffff)&&(3gpp.rnti>0)
+    ${pdmlFile}=                    analyzer.pcap_to_pdml                              ${filterPcap}
+    Dated Log New Line              Checking UlData_PuschReceiveReq BIP message
+    # Sample some packets and check additional DMRS configuration
+    Dated log new line              Getting some captured PuschReceiveReq
+    @{listSomePuschRecvReq}         Get Packet Match List
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=uldata_puschreceivereq
+    ...                             pathList=${FIELDS_PUSCHRecvReq}
+    ...                             startPacket=${1}
+    ...                             endPacket=${15}
+
+    ${lenPuschSendReq}              get length          ${listSomePuschRecvReq}
+    Dated Log New Line              Total number of PuschRecvReq msgs: ${lenPuschSendReq}
+    should be true                  ${lenPuschSendReq}!=0
+
+    FOR    ${packet}   IN           @{listSomePuschRecvReq}
+           # Retrieve DMRS configuration
+           ${addition_dmrs_enabled}          Get Value In Packet Match
+           ...                               packetMatch=${packet}
+           ...                               field=ulDmrsAddPos
+
+           Dated log                Additional DMRS in UL is ${addition_dmrs_enabled}
+
+           Run Keyword If          '${dmrs_mode}'=='forced' and '${ptrs}'=='on'
+           ...                          should be true          ${addition_dmrs_enabled}==${enablePtrsTrue}
+           Run Keyword If          '${dmrs_mode}'=='automatic' and '${ptrs}'=='on'
+           ...                          should be true          ${addition_dmrs_enabled}==${enablePtrsFalse}
+           Run Keyword If          '${dmrs_mode}'=='disabled' and '${ptrs}'=='on'
+           ...                          should be true          ${addition_dmrs_enabled}==${enablePtrsFalse}
+           Run Keyword If          '${dmrs_mode}'=='forced' and '${ptrs}'=='off'
+           ...                          should be true          ${addition_dmrs_enabled}==${enablePtrsTrue}
+           Run Keyword If          '${dmrs_mode}'=='automatic' and '${ptrs}'=='off'
+           ...                          should be true          ${addition_dmrs_enabled}==${enablePtrsTrue}
+           Run Keyword If          '${dmrs_mode}'=='disabled' and '${ptrs}'=='off'
+           ...                          should be true          ${addition_dmrs_enabled}==${enablePtrsFalse}
+           Run Keyword If          '${dmrs_mode}'=='forced' and '${ptrs}'=='none'
+           ...                          should be true          ${addition_dmrs_enabled}==${enablePtrsTrue}
+           Run Keyword If          '${dmrs_mode}'=='automatic' and '${ptrs}'=='none'
+           ...                          should be true          ${addition_dmrs_enabled}==${enablePtrsTrue}
+           Run Keyword If          '${dmrs_mode}'=='disabled' and '${ptrs}'=='none'
+           ...                          should be true          ${addition_dmrs_enabled}==${enablePtrsFalse}
+    END
+
+Verify MCS Per MCS Range
+    [Documentation]             Dedicated KW for MCS range counter checks.
+    ...                         ${pm_path} Path to PM files
+    ...                         ${dl_or_ul} if 'DL' or 'UL' MCS need to be verified
+    ...                         ${mcs_range} to check if 64QAM, 16QAM, QPSK were really used.
+    [Arguments]                 ${pm_path}      ${dl_or_ul}     ${mcs_range}
+
+    # Built list depending of what MCS range need to be checked.
+    @{counter_list}       Run Keyword If    '${dl_or_ul}'=='DL' and '${mcs_range}'=='64QAM'    Copy List   ${dl_counter_list_for_64qam_mcs}
+    ...                   ELSE IF           '${dl_or_ul}'=='DL' and '${mcs_range}'=='16QAM'    Copy List   ${dl_counter_list_for_16qam_mcs}
+    ...                   ELSE IF           '${dl_or_ul}'=='DL' and '${mcs_range}'=='QPSK'     Copy List   ${dl_counter_list_for_qpsk_mcs}
+    ...                   ELSE IF           '${dl_or_ul}'=='UL' and '${mcs_range}'=='64QAM'    Copy List   ${ul_counter_list_for_64qam_mcs}
+    ...                   ELSE IF           '${dl_or_ul}'=='UL' and '${mcs_range}'=='16QAM'    Copy List   ${ul_counter_list_for_16qam_mcs}
+    ...                   ELSE IF           '${dl_or_ul}'=='UL' and '${mcs_range}'=='QPSK'     Copy List   ${ul_counter_list_for_qpsk_mcs}
+
+    ${num_of_xxqam_mcs}         Set Variable                    0
+    FOR    ${counter}    IN    @{counter_list}
+
+        ${value}              Retrieve Counter Sum of Values From Pm Files For Object With Name
+        ...                   ${pm_path}     NRCELL         ${counter}
+
+        ${num_of_xxqam_mcs}     Evaluate        ${num_of_xxqam_mcs} + ${value}
+
+        Run Keyword If         '${debug_counters}'=='True'     Log To Console  Compteur: ${counter} - Value : ${value}
+
+    END
+
+    Log To Console         Total number of ${mcs_range} MCS in ${dl_or_ul} is : ${num_of_xxqam_mcs}
+    Should Be True         ${num_of_xxqam_mcs} != 0
+
+Verify BLER Level
+    [Documentation]             Dedicated KW for checking BLER counters
+    [Arguments]                 ${pm_path}      ${dl_or_ul}     ${modulation}
+
+    # Compute BLER level for QPSK
+    # 1. Initial transmission
+    @{counter_list_initial_transmission}            Run Keyword If          '${dl_or_ul}'=='DL'
+    ...                                             Copy List               ${dl_initial_trans_counter_dict}[${modulation}]
+    ...                                             ELSE
+    ...                                             Copy List               ${ul_initial_trans_counter_dict}[${modulation}]
+
+    ${num_of_initial_transmission}                  Set Variable                    0
+    FOR    ${counter}    IN    @{counter_list_initial_transmission}
+
+        ${value}              Retrieve Counter Sum of Values From Pm Files For Object With Name
+        ...                   ${pm_path}     NRCELL         ${counter}
+
+        ${num_of_initial_transmission}       Evaluate        ${num_of_initial_transmission} + ${value}
+
+        Run Keyword If         '${debug_counters}'=='True'     Log To Console  Compteur: ${counter} - Value : ${value}
+
+    END
+
+    Log To Console  Total number of initial transmission in ${dl_or_ul} for ${modulation} is : ${num_of_initial_transmission}
+
+    # 2. Successful transmission
+    @{counter_list_successful_transmission}         Run Keyword If          '${dl_or_ul}'=='DL'
+    ...                                             Copy List               ${dl_success_trans_counter_dict}[${modulation}]
+    ...                                             ELSE
+    ...                                             Copy List               ${ul_success_trans_counter_dict}[${modulation}]
+
+    ${num_of_successful_transmission}               Set Variable                    0
+    FOR    ${counter}    IN    @{counter_list_successful_transmission}
+
+        ${value}              Retrieve Counter Sum of Values From Pm Files For Object With Name
+        ...                   ${pm_path}     NRCELL         ${counter}
+
+        ${num_of_successful_transmission}       Evaluate        ${num_of_successful_transmission} + ${value}
+
+        Run Keyword If         '${debug_counters}'=='True'     Log To Console  Compteur: ${counter} - Value : ${value}
+
+    END
+
+    Log To Console  Total number of successful transmission in ${dl_or_ul} for ${modulation} is : ${num_of_successful_transmission}
+
+    ${bler_level}   Run Keyword If  ${num_of_initial_transmission}!=0
+    ...             Evaluate        (${num_of_initial_transmission} - ${num_of_successful_transmission})*100 / ${num_of_initial_transmission}
+    ...             ELSE
+    ...             Set Variable    100
+
+    Log To Console          Compute BLER level in ${dl_or_ul} for ${modulation} is: ${bler_level} %
+    Should Be True          ${bler_level} < ${max_bler}
+
+
+Verify Data Volume
+    [Documentation]             Dedicated KW for checking data rate counters
+    [Arguments]                 ${pm_path}      ${dl_or_ul}     ${expected_data_volume}
+
+    # Data rate
+    ${pm_data_volume_id}        Run Keyword If          '${dl_or_ul}'=='DL'
+    ...                         Set Variable        ${rlc_counter_for_dl_data_volume}
+    ...                         ELSE
+    ...                         Set Variable        ${rlc_counter_for_ul_data_volume}
+
+    ${pm_data_volume}           Retrieve Counter Sum of Values From Pm Files For Object With Name
+    ...                         ${pm_path}     NRCELL         ${pm_data_volume_id}
+
+    ${expected_data_volume_with_margin}    Evaluate       ${expected_data_volume} - ${expected_data_volume}*${vol_margin}/100
+    Log To Console  Sent or received data volume is: ${pm_data_volume}
+    Log To Console  Expected data volume in ${dl_or_ul} is: ${expected_data_volume} bytes (min : ${expected_data_volume_with_margin} bytes)
+
+    Should Be True         ${pm_data_volume} > ${expected_data_volume_with_margin}
+
+Verify Counter Cumulative Values With Margin
+    [Documentation]     KW used to check counters value in case of tests case changing MCS either
+    ...                 with L.A. (DL) or RAD params (UL).
+    ...                 It check that:
+    ...                 64QAM, 16QAM, QPSK MCS have been used by checking that:
+    ...                     M55300C000xx are not 0 in DL case
+    ...                     M55302C000xx are not 0 in UL case
+    ...                 BLER level is not too high by computing:
+    ...                     SUM(M55300C000xx) - SUM(M55300C010xx) / SUM(M55300C000xx) in DL
+    ...                     SUM(M55302C000xx) - SUM(M55302C040xx) / SUM(M55302C000xx) in UL
+    ...                     M55300C000xx : PDSCH initial transmissions with 64QAM MCS table using MCS xx
+    ...                     M55300C010xx : Successful PDSCH transmissions by initial transmission with 64QAM MCS table using MCS 0
+    ...                     M55302C000xx : PUSCH initial transmissions with CP-OFDM and 64QAM MCS table using MCS xx
+    ...                     M55302C040xx : Successful PUSCH transmissions by initial transmission with CP-OFDM and 64QAM MCS table using MCS 0
+    ...                 Data rate by computing:
+    ...                     M55319C02009 * 8 / Traffic duration in DL
+    ...                     M55319C05009 * 8 / Traffic duration in UL
+
+    [Arguments]                     ${dl_or_ul}         ${data_volume}    ${check_bler}=True
+
+
+    ${CURRENT_SCF}                  OAM Get SCF File
+    ...                             oam=${GNB_DU.oam}           file=SCF_DU_Current.xml
+    SCF StartSession                scf_file=${CURRENT_SCF}
+    # Retrieve GP value
+    ${reportingIntervalPm}          SCF Get Single Value        dist_name=MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/PMCADM-1
+    ...                                                         p_name=reportingIntervalPm
+    SCF StopSession                 scf_file=${CURRENT_SCF}
+    # Sleep till GP expired
+    Traced Sleep                    ${reportingIntervalPm}[0]   msg="Waiting for GP expirency to check counters"
+
+    ${date}                          Get Current Date
+    ${date_in_dir_name}              Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                   Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+
+    ${pm_latest}                     Collect PM files from BTS    ${log_path_pm}
+
+    # Verify all MCSs at once.
+    Run Keyword If      '${dl_or_ul}'=='DL'
+    ...                 Verify MCS Per MCS Range                ${log_path_pm}        ${dl_or_ul}      QPSK
+    Run Keyword If      '${dl_or_ul}'=='DL'
+    ...                 Verify MCS Per MCS Range                ${log_path_pm}        ${dl_or_ul}      16QAM
+    Run Keyword If      '${dl_or_ul}'=='DL'
+    ...                 Verify MCS Per MCS Range                ${log_path_pm}        ${dl_or_ul}      64QAM
+
+    Run Keyword If      '${dl_or_ul}'=='UL'
+    ...                 Verify MCS Per MCS Range                ${log_path_pm}        ${dl_or_ul}      QPSK
+    Run Keyword If      '${dl_or_ul}'=='UL'
+    ...                 Verify MCS Per MCS Range                ${log_path_pm}        ${dl_or_ul}      16QAM
+    Run Keyword If      '${dl_or_ul}'=='UL'
+    ...                 Verify MCS Per MCS Range                ${log_path_pm}        ${dl_or_ul}      64QAM
+
+	Run Keyword If		'${check_bler}'=='True'
+    ...			        Verify BLER Level                       ${log_path_pm}        ${dl_or_ul}       QPSK
+	Run Keyword If		'${check_bler}'=='True'
+    ...			        Verify BLER Level                       ${log_path_pm}        ${dl_or_ul}       16QAM
+	Run Keyword If		'${check_bler}'=='True'
+    ...			        Verify BLER Level                       ${log_path_pm}        ${dl_or_ul}       64QAM
+
+
+    Verify Data Volume               ${log_path_pm}        ${dl_or_ul}      ${data_volume}
+
+#=======================================================================================================================
+# KW to set some parameters in SCF
+#=======================================================================================================================
+
+Test Setup for 1347
+    [Documentation]    Configuration files are saved at test level
+    Backup Files        listFileDesc=${FD_ALL}
+
+
+Test Teardown for 1347
+    [Documentation]    Perform needed actions at the end of a test case
+    Dated log                       Test teardown : start
+    Restore Files                    listFileDesc=${FD_ALL}
+
+    # Stop Sherpa if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}             Sherpa.Deactivate Sherpa and Stop Collect
+    # "Test Teardown" KW from Setup.robot => will collect logs in case of failure
+    Test Teardown
+    Dated log                       Test teardown : end
+
+Set Frame Structure and Additional DMRS Config
+    [Documentation]                 Set suitable DMRS configuration inside SCF
+    [Arguments]                     ${band}=cmW
+    ...                             ${dmrs_mode}=Automatic
+    ...                             ${enable256qam}=False
+    ...                             ${tl_type}=classical
+
+    # Because there are cloud and classical TCs, try to retrieved both CU and DU SCF
+    ${CU_file_name_without_extension}   Set Variable        ${EMPTY}
+    OAM Get SCF Files
+
+    # Copy SCF file to not override existing one
+    ${DU_file_name_without_extension}      String.Replace string    ${SCF_SETUP_PATH}    .xml    ${EMPTY}
+    # In case of CU only (cloud BTS)
+    ${CU_file_name_without_extension}      Run Keyword If           '${SCF_CU_SETUP_PATH}'!='${EMPTY}'
+    ...                                    String.Replace string    ${SCF_CU_SETUP_PATH}    .xml    ${EMPTY}
+
+    # Remove spaces inside file name
+    ${test_file_name}                   getFormattedTestName
+    ${du_dedicated_scf_name_wo_space}   catenate    SEPARATOR=${EMPTY}    ${DU_file_name_without_extension}_${test_file_name}.xml
+    ${cu_dedicated_scf_name_wo_space}   Run Keyword If      '${CU_file_name_without_extension}'!='${EMPTY}'
+    ...                                 catenate    SEPARATOR=${EMPTY}    ${CU_file_name_without_extension}_${test_file_name}.xml
+
+    ${std_output}=                  Run         cp ${SCF_SETUP_PATH} ${du_dedicated_scf_name_wo_space}
+    Run Keyword If      '${CU_file_name_without_extension}'!='${EMPTY}'
+    ...                             Run         cp ${SCF_CU_SETUP_PATH} ${cu_dedicated_scf_name_wo_space}
+
+    # In case of FR1 (=cmW)
+    Run Keyword If                  '${band}'=='cmW' and not ${isAic}
+    ...                             Set cmW Configuration       scf_file=${du_dedicated_scf_name_wo_space}
+    Run Keyword If                  '${band}'=='cmW' and '${tl_type}'=='cloud'
+    ...                             Set cmW Configuration       scf_file=${cu_dedicated_scf_name_wo_space}     target_module=CU
+    Run Keyword If          '${band}'=='cmW' and ${isAic}
+    ...                     Set cmW Configuration       scf_file=${du_dedicated_scf_name_wo_space}     scf_file_cu=${cu_dedicated_scf_name_wo_space}
+
+    # In case of FR2 (=mmW)
+    Run Keyword If                  '${band}'=='mmW'
+    ...                             Set mmW Configuration       scf_file=${du_dedicated_scf_name_wo_space}     target_module=DU
+    Run Keyword If                  '${band}'=='mmW' and '${tl_type}'=='cloud'
+    ...                             Set mmW Configuration       scf_file=${cu_dedicated_scf_name_wo_space}     target_module=CU
+
+    # No frame structure change in FDD
+    Run Keyword If                  '${band}'=='fdd'
+    ...                             Dated Log New Line          "FDD mode => No frame structure change needed"
+
+    Set Additional DMRS Configuration        ${du_dedicated_scf_name_wo_space}
+    ...                                      dmrs_mode=${dmrs_mode}
+    ...                                      enable256qam=${enable256qam}
+
+    # Perform OAM DU commissioning and restart because of full commissioning
+    # AP is supposed to be also restarted because of GPS link drop
+    # As gNB was rebooted after re-commissioning, wait until AP is also ready.
+    # Is it the right way to do this ?:
+    # Because of commissioning, gNB restarts. It also triggers AP restart because of GPS loss
+    # gNB is ready before AP in this. We need to ensure that AP is ready before triggering WTS setup
+    # Another solution would be to call "Restart" KW, but because AP is already restarting just after
+    # commissioning I don't also don't know if it's a good idea.
+    # So, just wait for Airscale ready (ADET) after gNB recomissioning is done.
+    # Would it be better to also check F1 status ?
+    # It seems to work fine like this.
+
+    Run Keyword If                  not ${isAic}
+    ...                             Run Keywords
+    ...                             OAM Perform Full Commissioning          scf_file=${du_dedicated_scf_name_wo_space}
+    ...                             AND
+    ...                             Airscale Wait for Ready                     ${AP_DU}
+
+    # In case of gNB cloud, strategy is now as follow:
+    # There is no need to update CU parameters as only updating reportingIntervalPm is useless regarding PM counters.
+    # However, CU still needs to be restarted (???).
+    # So:
+    # 1. Perform DU commissioning
+    # 2. Wait DU is up again
+    # 3. Sleep a little bit
+    # 4. Restart both DU & CU using Restart TL KW
+    # CU COMMISSIONING IS NOT USED YET
+    # Run Keyword If                        ${CU_file_name_without_extension}!=${EMPTY}
+    # ...                                   OAM Perform Full Commissioning        scf_file=${cu_dedicated_scf_name_wo_space}
+
+    Run Keyword If                  ${isAic}
+    ...                             Run Keywords
+    ...                             OAM Perform Full Commissioning          scf_file=${du_dedicated_scf_name_wo_space}
+    ...                             AND
+    ...                             OAM Perform Full Commissioning          scf_file=${cu_dedicated_scf_name_wo_space}        oam=${GNB_CU.oam}
+    ...                             AND
+    ...                             Wait Vcu And Vdu Available
+
+    Run Keyword If                  '${tl_type}'=='cloud'        Run Keywords
+    ...                             Traced Sleep                1 minutes           msg="gNB Cloud: Waiting for 1 mn before restarting CU and DU"
+    ...                             AND
+    ...                             Restart TL
+
+    Run Keyword If                   ${isAic}
+    ...                              Restart TL
+
+	# Necessary pause for gNB recovery before WTS Setup when Classical
+    Run Keyword If                  not ${isAic}
+    ...                             Traced Sleep                5 minutes
+
+Set Additional DMRS Configuration
+    [Documentation]                 Inside SCF, sets paramters relaetd to addtional DMRS configuration
+    ...                             and also 256 QAM MCS activations
+    [Arguments]                     ${scf_file}
+    ...                             ${dmrs_mode}
+    ...                             ${enable256qam}
+
+    SCF StartSession                scf_file=${scf_file}
+
+    # Set DMRS mode (common to DL/UL)
+    ${scf_dmrs_mode}                Get From Dictionary     ${dict_dmrs_mode}     ${dmrs_mode}
+    SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             element_name=ulDMRSAdditionalPosition
+    ...                             element_value=${scf_dmrs_mode}
+    ...                             aicListEntity=vdu       scope=both
+
+    SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             element_name=dlDMRSAdditionalPosition
+    ...                             element_value=${scf_dmrs_mode}
+    ...                             aicListEntity=vdu       scope=both
+
+    Run keyword if                  ${isAic}==True
+    ...                             SCF Set element
+    ...                                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                                 element_name=actDlPtrs
+    ...                                 element_value=false
+    ...                                 aicListEntity=vdu       scope=both
+    ...         ELSE
+    ...                             SCF Set element
+    ...                                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                                 element_name=actDlPtrs
+    ...                                 element_value=true
+    ...                                 aicListEntity=vdu       scope=both
+
+    Run keyword if                  ${isAic}==True
+    ...                             SCF Set element
+    ...                                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                                 element_name=actUlPtrs
+    ...                                 element_value=false
+    ...                                 aicListEntity=vdu       scope=both
+    ...         ELSE
+    ...                             SCF Set element
+    ...                                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                                 element_name=actUlPtrs
+    ...                                 element_value=true
+    ...                                 aicListEntity=vdu       scope=both
+
+    # Set parameters related to 256QAM in case it's needed
+    # actGeneralConnectivityBronze is always set to true in FDD case. So, do the same.
+    #SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    #...                             element_name=actGeneralConnectivityBronze
+    #...                             element_value=true
+    #...                             aicListEntity=vdu       scope=both
+
+    #Run keyword if                  ${enable256qam}==True
+    #...                             SCF Set element
+    #...                                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    #...                                 element_name=actGeneralConnectivitySilver
+    #...                                 element_value=true
+    #...                                 aicListEntity=vdu       scope=both
+    #...         ELSE
+    #...                             SCF Set element
+    #...                                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    #...                                 element_name=actGeneralConnectivitySilver
+    #...                                 element_value=false
+    #...                                 aicListEntity=vdu       scope=both
+
+    Run keyword if                  ${enable256qam}==True
+    ...                             SCF Set element
+    ...                                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                                 element_name=actDl256Qam
+    ...                                 element_value=true
+    ...                                 aicListEntity=vdu       scope=both
+    ...         ELSE
+    ...                             SCF Set element
+    ...                                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                                 element_name=actDl256Qam
+    ...                                 element_value=false
+    ...                                 aicListEntity=vdu       scope=both
+
+    SCF Set element                     dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                                 element_name=actUl256Qam
+    ...                                 element_value=false
+    ...                                 aicListEntity=vdu       scope=both
+
+    # Restriction for AIC:
+    # actGeneralConnectivitySilver needs to be set to true for AIC.....
+    # because actGeneralConnectivityGold and actGeneralConnectivitySilver are set to true (by Default) in AIC
+    #Run keyword if                  ${isAic}
+    #...                             SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    #...                             element_name=actGeneralConnectivitySilver
+    #...                             element_value=true
+    #...                             aicListEntity=vdu       scope=aic
+    # End of restriction for AIC
+
+    SCF StopSession                 scf_file=${scf_file}
+
+Set cmW Configuration
+    [Documentation]                 Remove existing frame structure and add tdLTE frame structure
+    ...                             ${target_module} is not used yet. Reserved in case of cmW cloud TL
+    ...                             (does not exist ?)
+    [Arguments]                     ${scf_file}
+    ...                             ${scf_file_cu}=${EMPTY}
+    ...                             ${target_module}=DU
+#    ...                             ${destIpAddr_value}=10.0.1.1
+#    ...                             ${gateway_value}=172.16.2.101
+
+    SCF StartSession                scf_file=${scf_file}           second_scf_file=${scf_file_cu}
+
+    ${tdLte_fs}                     Create Dictionary       frameStructureType=tdLte
+    ...                                                     guardPeriodLength=4Symbols
+    ...                                                     lteToNrFrameShift=0ms
+    ...                                                     tdLteUlDlConfig=tdLteConfig2
+    ...                                                     ulDlDataSlotRatio=1/4
+
+    # 1. Remove existing tddFrameStructure from SCF
+    SCF Remove list                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=tddFrameStructure
+    ...                             aicListEntity=vdu       scope=both
+
+    # 2. Add new tddFrameStructure from SCF
+    SCF Add list                    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=tddFrameStructure
+    ...                             aicListEntity=vdu       scope=both
+
+    # 3. Fill in new object with previous elements (definition + value)
+    SCF Add items to list           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=tddFrameStructure
+    ...                             elements=${tdLte_fs}
+    ...                             aicListEntity=vdu       scope=both
+
+    # Also update PRACH CI to have consistent value regarding frame structure
+    SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             element_name=prachConfigurationIndex
+    ...                             element_value=96
+    ...                             aicListEntity=vduvcu       scope=both      bestEffort=${True}
+
+    # Disable release about inactivity
+# RDH: In 25R1 release, the actInactDetNSAUe is updated from false to true => it can not be set to false !
+#    SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+#    ...                             element_name=actInactDetNSAUe
+#    ...                             element_value=false
+#    ...                             aicListEntity=vduvcu       scope=both      bestEffort=${True}
+
+    SCF StopSession                 scf_file=${scf_file}           second_scf_file=${scf_file_cu}
+
+
+Set mmW Configuration DU part
+    [Documentation]                 Remove existing frame structure and add semiStatic frame structure
+    [Arguments]                     ${du_scf_file}
+
+    SCF StartSession                scf_file=${du_scf_file}
+
+    ${semistatic_fs}                Create Dictionary       frameStructureType=semiStatic
+    ...                                                     guardPeriodLength=2Symbols
+    ...                                                     tdLteUlDlConfig=tdLteConfig2
+    ...                                                     ulDlDataSlotRatio=1/4
+
+    # 1. Remove existing tddFrameStructure from SCF
+    SCF Remove list                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=tddFrameStructure
+
+    # 2. Add new tddFrameStructure from SCF
+    SCF Add list                    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=tddFrameStructure
+
+    # 3. Fill in new object with previous elements (definition + value)
+    SCF Add items to list           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=tddFrameStructure
+    ...                             elements=${semistatic_fs}
+
+    # Also update PRACH CI to have consistent value regarding frame structure
+    SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             element_name=prachConfigurationIndex
+    ...                             element_value=34
+
+    SCF StopSession                 scf_file=${du_scf_file}
+
+
+Set mmW Configuration CU part
+    [Documentation]                 Remove existing frame structure and add semiStatic frame structure
+    ...                             NOT USED ANYMORE
+    [Arguments]                     ${cu_scf_file}
+
+    SCF StartSession                scf_file=${cu_scf_file}
+
+    # Disable release about inactivity
+    SCF Set element                 dist_name=MRBTS-${MRBTS_ID_CU}/NRBTS-${NRBTS_ID_CU}
+    ...                             element_name=actInactDetNSAUe
+    ...                             element_value=false
+
+    SCF StopSession                 scf_file=${cu_scf_file}
+
+
+Set mmW Configuration
+    [Documentation]                 Remove existing frame structure and add semiStatic frame structure
+    [Arguments]                     ${scf_file}
+    ...                             ${target_module}=DU
+
+    Run Keyword If                  '${target_module}'=='DU'
+    ...                             Set mmW Configuration DU part        du_scf_file=${scf_file}
+
+    #Run Keyword If                  '${target_module}'=='CU'
+    #...                             Set mmW Configuration CU part        cu_scf_file=${scf_file}
+
+Set UE capa on UeSim
+    [Arguments]                     ${band}
+    ...                             ${ptrs_capa_on_or_off}
+
+    # Update capabilities to include PTRS support for cmW
+    Run Keyword If                  '${band}' == 'cmW' and '${ptrs_capa_on_or_off}'=='on'
+    ...                              Modify Field in WtsEmu Cfg File
+    ...                              field=ue_nr_capabilities            value=${ue_nr_capa_onePortsPTRS_11_fr1}
+
+    Run Keyword If                  '${band}' == 'cmW' and '${ptrs_capa_on_or_off}'=='off'
+    ...                              Modify Field in WtsEmu Cfg File
+    ...                              field=ue_nr_capabilities            value=${ue_nr_capa_onePortsPTRS_00_fr1}
+
+    Run Keyword If                  '${band}' == 'cmW' and '${ptrs_capa_on_or_off}'=='none'
+    ...                              Modify Field in WtsEmu Cfg File
+    ...                              field=ue_nr_capabilities            value=${ue_nr_capa_No_PTRS_fr1}
+
+    # Update capabilities to include PTRS support for mmW
+    Run Keyword If                  '${band}' == 'mmW' and '${ptrs_capa_on_or_off}'=='on'
+    ...                             Modify Field in WtsEmu Cfg File
+    ...                             field=ue_nr_capabilities             value=${ue_nr_capa_onePortsPTRS_11_fr2}
+
+    Run Keyword If                  '${band}' == 'mmW' and '${ptrs_capa_on_or_off}'=='off'
+    ...                              Modify Field in WtsEmu Cfg File
+    ...                              field=ue_nr_capabilities            value=${ue_nr_capa_onePortsPTRS_00_fr2}
+
+    Run Keyword If                  '${band}' == 'mmW' and '${ptrs_capa_on_or_off}'=='none'
+    ...                             Modify Field in WtsEmu Cfg File
+    ...                             field=ue_nr_capabilities             value=${ue_nr_capa_onePortsPTRS_00_fr2}
+
+    Run Keyword If                  '${band}' == 'fdd'
+    ...                             Dated Log New Line                   "No capabilitiy change needed in FDD"
+

@@ -1,0 +1,182 @@
+*** Settings ***
+
+Documentation
+...   description: CNI_87162
+...   last update: scout data and RF50 fixes
+
+Library     ta5g_testline_management
+Library     BuiltIn
+Library     String
+Library     Collections
+Library     suite_specific_keywords.py
+Library     egate_actions.py
+Library     ../../resources_KRK/python/utilities.py    WITH NAME    logger
+Library    taf.sw.scout                                WITH NAME    scout
+Library    taf.sw.reporting_portal                     WITH NAME    reporting_portal
+
+Resource    tti_traces/tti_trace_keywords.robot
+Resource    ../../../../resources/SWENG/robot/Setup.robot
+
+*** Keywords ***
+Attach UE and Establish PDU session
+    [Arguments]    ${ue_id}=1    ${timeout}=${15}
+    Attach UE    ue_id=${ue_id}
+    Establish PDU session    ue_id=${ue_id}    gw_id=${ue_id}   timeout=${timeout}
+    BuiltIn.Sleep    3s
+
+
+Attach SA UE to the beam on TDD Primary Cell and create PDU session
+    [Arguments]    ${ue_id}=1    ${profile_id}=3    ${pmi}=852
+    Set UE testmode NR beam control    ue_id=${ue_id}
+    CSI override testmode nr    profile_id=${profile_id}    pmi=${pmi}
+    Set UE testmode NR CSI override    ue_id=${ue_id}    profile_id=${profile_id}
+    Attach UE    ue_id=${ue_id}
+    Establish PDU session    ue_id=${ue_id}    gw_id=1   timeout=${15}
+
+
+Attach SA UE to the beam and create PDU session
+    [Arguments]    ${ue_id}=1
+    Set ue testmode nr beam control   ${ue_id}
+    Attach UE    ue_id=${ue_id}
+    Establish PDU session    ue_id=${ue_id}    gw_id=1   timeout=${15}
+
+
+Attach NSA UEs for MU_MIMO
+    Run egate command    beam_control_testmode_nr profile_id=101 ueBeamIndexInitial=0,1 csirs_bestbeam=1 csirs_rsrp_best=-44 csirs_rsrp_avg=-50
+    Run egate command    beam_control_testmode_nr profile_id=102 ueBeamIndexInitial=1,0 csirs_bestbeam=6 csirs_rsrp_best=-45 csirs_rsrp_avg=-120
+    Run egate command    ue_testmode_set_nr id=101 testmode=beam_control action=activate profile_id=101 beamaction=attach
+    Run egate command    ue_testmode_set_nr id=102 testmode=beam_control action=activate profile_id=102 beamaction=attach
+    Attach ue to enb     ue_id=101    optional_parameters=profile\=1
+    Start gnb addition procedure    ue=101    target_gnb=2    target_cells=1    bearer=2    dc_type=split_scg
+    Attach ue to enb     ue_id=102    optional_parameters=profile\=1
+    Start gnb addition procedure    ue=102    target_gnb=2    target_cells=1    bearer=2    dc_type=split_scg
+
+
+Prepare environment in robot
+    [Arguments]    ${sib1_reception_dict}    ${wts_config_path}=${None}
+    ${wts_config_path} =    decide_on_wts_config_file_source    ${wts_config_path}
+    ${test_prefix} =    suite_specific_keywords.get_test_prefix
+    Set Test Variable    ${TTI_COLLECTION_IN_PROGRESS}    ${False}
+    copy_wts_cfg_file_to_output_dir    ${wts_config_path}    ${test_prefix}
+    delete_localhost_ssh_key_from_known_hosts
+    add_nsa_specific_addresses
+    add_additional_specific_addresses
+    wait_for_testline_icmp_echo_replies_and_ssh_services
+    ensure_gnb_files_flags_are_in_order
+    log_gnb_build
+    log_airphone_build
+    setup_radiohead_and_wts_and_wait_for_mibsib_wrapper    wts_config_path=${wts_config_path}
+    ...                                                    sib1_reception_dict=${sib1_reception_dict}
+
+
+Collect additional logs
+    [Arguments]    ${prefix}
+    Collect gnb snapshot        output_filepath=${OUTPUT_DIR}/${prefix}/snapshot_gNB_${prefix}.zip
+    Collect sos report log      prefix=${prefix}    log_output_dir=${OUTPUT_DIR}/${prefix}
+    Collect airphone snapshot   output_filepath=${OUTPUT_DIR}/${prefix}/snapshot_AP_${prefix}.zip
+
+
+Collect additional logs if test failed
+    [Arguments]    ${prefix}
+    Run Keyword If Test Failed    Collect additional logs    ${prefix}
+
+
+Teardown collecting logs in robot
+    BuiltIn.Sleep    30s
+    ${prefix} =   suite_specific_keywords.Get test prefix
+    Run keyword if   ${TTI_COLLECTION_IN_PROGRESS}==${True}    Stop TTI trace collection
+    Teardown collecting logs
+    Collect additional logs if test failed    ${prefix}
+    Collect admin api logs    subdir=${prefix}    dir_name=admin_api_logs
+#    reset_units_and_wait_for_radio_head_online
+
+
+Change GSCNs in iphy file
+    Run Keyword If    '${RU_CARD_NAME}'=='AZQJ'    Run Keywords    Change GSCN In Iphy    gscn_value=7915    cell_id=${1}
+    ...                                                     AND    Change GSCN In Iphy    gscn_value=8019    cell_id=${2}
+    ...                                                     AND    Change GSCN In Iphy    gscn_value=5386    cell_id=${3}
+
+    Run Keyword If    '${RU_CARD_NAME}'=='AEQE'    Run Keywords    Change GSCN In Iphy    gscn_value=7915    cell_id=${1}
+    ...                                                     AND    Change GSCN In Iphy    gscn_value=8019    cell_id=${2}
+
+
+Cleanup GSCNs in iphy file
+    Run Keyword If    '${RU_CARD_NAME}'=='AZQJ'    Run Keywords    Change GSCN In Iphy    gscn_value=7880    cell_id=${1}
+    ...                                                     AND    Change GSCN In Iphy    gscn_value=7880    cell_id=${2}
+    ...                                                     AND    Change GSCN In Iphy    gscn_value=1582    cell_id=${3}
+
+    Run Keyword If    '${RU_CARD_NAME}'=='AEQE'    Run Keywords    Change GSCN In Iphy    gscn_value=7880    cell_id=${1}
+    ...                                                     AND    Change GSCN In Iphy    gscn_value=7880    cell_id=${2}
+
+
+Wait after throughput start
+    [Arguments]     ${sec}=1
+    BuiltIn.Sleep    ${sec}
+
+
+Prepare DSS
+    Run egate command    enb_xp_param id\=2 ignore_xp\=off xp_listening_socket\=on
+    Run egate command    enb_xp_param id\=2 xp_peers\=1     delay=${5}
+    Run egate command    enb_xp_link_up enb\=2 target\=1    pass_regexp=(Xp Link is already active|XpAP Link with GNB.*is up)
+    ...                                                     timeout=${300}
+    Run egate command    enb_x2_link_up enb\=2 target\=1    pass_regexp=Received DSS Keep Alive    timeout=${40}
+    Run egate command    enb_dss_param id\=2 feature_flag\=on message_sets\=DMS3
+    Run egate command    enb_cell_param enb\=2 id\=1 lte_nr_dss_mode\=DSS_PHASE_3 antenna_ports_num\=2
+    Run egate command    enb_cell_dss_feature enb\=2 id\=1 nr_dl_peak_rate_increase\=on
+    Run egate command    enb_cell_dss_feature enb\=2 id\=1 superfast_allocation\=off
+    Run egate command    enb_dss_cell_param enb\=2 id\=1 dl_resource_sharing_algo\=dl_prb_load_based    delay=${5}
+
+    Run egate command    enb_dss_configure_partnership enb\=2 cell\=1 dss_peer\=1:4     pass_regexp=ENB-2.*CRM Partnership Creation
+    ${enb_crm_cell_resource_reservation} =  catenate
+    ...     enb_crm_cell_resource_reservation enb\=2 cell\=1 tgt_enb\=1 tgt_cell\=4
+    ...         assigned_dl_minimum_share_to_nr\=30 assigned_dl_maximum_share_to_nr\=70
+    ...         assigned_dl_minimum_share_to_lte\=15 assigned_dl_maximum_share_to_lte\=70
+    ...         assigned_ul_minimum_share_to_nr\=20 assigned_ul_maximum_share_to_nr\=70
+    Run egate command    ${enb_crm_cell_resource_reservation}    delay=${5}
+    Run egate command    enb_crm_param id\=2 ul_qos_load_meas_timer\=200 dl_qos_load_meas_timer\=200    delay=${5}
+    Run egate command    enb_dss_establish_partnership enb\=2 cell\=1 tgt_enb\=1 tgt_cell\=4    pass_regexp=Partnership activated on both partners
+    ...                                                                                         delay=${10}
+    clear_egate_buffer_from_logs
+    ${rc} 	${output} = 	Run and Return RC and Output    cat /opt/iphy/latest/egate_console.log
+    Verify egate content    EN DSS DL Cell Resource Area Coordination success on remote NE
+    Verify egate content    EN DSS UL Cell Subcarrier Resource Coordination success on remote NE
+
+    Run egate command    enb_dss_cell_resource_reservation_dl enb\=2 cell\=1 reset
+    Run egate command    enb_dss_dl_resource_cell_reservation cell\=1 enb\=2 prb_area_reservation_list\=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    ${cmd_reserved_fixed_normal_subframes} =  catenate  SEPARATOR=
+    ...   enb_dss_dl_resource_cell_reservation cell\=1 enb\=2 reserved_fixed_normal_subframes\=0000000000-0000000000-0000000000-0000000000-
+    ...   0000000000-0000000000-0000000000-0000000000
+    Run egate command    ${cmd_reserved_fixed_normal_subframes}
+    Run egate command    enb_dss_dl_resource_cell_reservation cell\=1 enb\=2 min_lte_nr_dss_ratio\=30 max_lte_nr_dss_ratio\=100    delay=${10}
+
+    Run egate command    enb_dss_cell_resource_coordination enb\=2 cell\=1 tgt_enb\=1 tgt_cell\=4 dir\=DL
+    ...                          pass_regexp=ENB-2.*Update Indication.*EN DSS DL Cell Resource Area Coordination.*both NEs synchronized
+
+    Run egate command    enb_dss_ul_resource_cell_reservation cell\=1 enb\=2 minimum_prb_share\=30 maximum_prb_share\=70    delay=${5}
+    Run egate command    enb_dss_cell_resource_coordination enb\=2 cell\=1 tgt_enb\=1 tgt_cell\=4 dir\=UL
+    ...                          pass_regexp=ENB-2.*Update Indication.*EN DSS UL Cell Subcarrier Resource Coordination.*both NEs synchronized
+
+    ${cmd_dl_prb_area_allocation_list} =  catenate  SEPARATOR=
+    ...   enb_dss_resource_allocation enb\=2 cell\=1 tgt_enb\=1 tgt_cell\=4 dir\=DL allocation_start_time\=immediate dl_allocated_normal_
+    ...   subframes=0111101110-0111101110-0111101110-0111101110-0111101110-0111101110-0111101110-0111101110 dl_prb_area_allocation_list\=0:0,
+    ...   106+1:0,106+2:0,106+3:0,106+4:0,106+5:0,106+6:0,106+7:0,106+8:0,106+9:0,106+10:0,106+11:0,106+12:0,106+13:0,106+14:0,106+15:0,106+16:0,
+    ...   106+17:0,106+18:0,106+19:0,106+20:0,106+21:0,106+22:0,106+23:0,106+24:0,106+25:0,106+26:0,106+27:0,106+28:0,106+29:0,106+30:0,106+31:0,
+    ...   106+32:0,106+33:0,106+34:0,106+35:0,106+36:0,106+37:0,106+38:0,106+39:0,106+40:0,106+41:0,106+42:0,106+43:0,106+44:0,106+45:0,106+46:0,
+    ...   106+47:0,106+48:0,106+49:0,106+50:0,106+51:0,106+52:0,106+53:0,106+54:0,106+55:0,106+56:0,106+57:0,106+58:0,106+59:0,106+60:0,106+61:0,
+    ...   106+62:0,106+63:0,106+64:0,106+65:0,106+66:0,106+67:0,106+68:0,106+69:0,106+70:0,106+71:0,106+72:0,106+73:0,106+74:0,106+75:0,106+76:0,
+    ...   106+77:0,106+78:0,106+79:0,106
+    Run egate command    ${cmd_dl_prb_area_allocation_list}
+    ...                  pass_regexp=ENB-2.*Received DSS DL Resource Area Allocation Response SequenceNumber
+    ${cmd_enb_dss_resource_allocation} =  catenate
+    ...   enb_dss_resource_allocation enb\=2 cell\=1 tgt_enb\=1 tgt_cell\=4 dir\=UL allocation_start_time\=immediate
+    ...   ul_allocated_prb_list\=0,3|5,70|103,3
+    Run egate command    ${cmd_enb_dss_resource_allocation}
+    ...                  pass_regexp=ENB-2.*Received EN DSS UL Subcarrier Resource Allocation Response SequenceNumber
+
+
+Check if DSS is working
+    Run egate command    sim_state_disp
+    Run egate command    sim_state_disp
+
+    Verify egate content    ENB-2.*Received DSS DL Qos Load Indication SequenceNumber.*     occurrence=${1}
+    verify egate content    ENB-2.*Received EN DSS UL Qos Load Indication SequenceNumber.*     occurrence=${1}

@@ -1,0 +1,193 @@
+*** Settings ***
+Resource           5GC001348-Common_keywords.robot
+
+
+*** Variables ***
+
+*** Keywords ***
+===================================================================================================
+# CHECKS
+#============================================================================================================
+Check Pucch Resp HarqD Is In Rach Slot
+    [Arguments]                     ${param}
+    run keyword if                  "${param.csiReportPeriodicity}"!="slots20"
+    ...                             Check At least one Response
+    ...                                 respName=${ULDATA_PUCCH_RESP_HARQD.msg}
+    ...                                 expected=${param.PucchFlag}
+
+Check Pucch Resp Ps Is In Rach Slot
+    [Arguments]                     ${param}
+    Check At least one Response     respName=${ULDATA_PUCCH_RESP_PS.msg}
+    ...                             expected=${param.PucchFlag}
+
+Check Pucch Is In Rach Slot
+    [Arguments]                     ${param}
+    ${nbErrPs}                      Check Number Of Records in Responses
+    ...                                 respName1=${ULDATA_PUCCH_REQ.msg}
+    ...                                 respName2=${ULDATA_PUCCH_RESP_PS.msg}
+    should be true                  ${nbErrPs} < ${3}
+
+Check Pucch Resp HarqD DTX CRC
+    [Arguments]                     ${param}
+    Check Pucch Resp DTX CRC        respName=${ULDATA_PUCCH_RESP_HARQD.msg}
+
+Check Pucch Resp Ps DTX CRC
+    [Arguments]                     ${param}
+    Check Pucch Resp DTX CRC        respName=${ULDATA_PUCCH_RESP_PS.msg}
+
+Check Pucch Resp DTX CRC
+    [Arguments]                     ${respName}
+    ${nbErrDtx}                     Check Field in Response
+    ...                                 respName=${respName}
+    ...                                 field=dtx
+    ...                                 expected=${0}
+    ...                                 isSlotSfnStr=${True}
+    ${nbErrCrc}                     Check Field in Response
+    ...                                 respName=${respName}
+    ...                                 field=crc
+    ...                                 expected=${0}
+    ...                                 isSlotSfnStr=${True}
+    Should be true                 ${nbErrDtx} < ${3}
+    Dated log                             Nb error DTX=${nbErrDtx}
+    Should be true                 ${nbErrCRC} < ${3}
+    Dated log                             Nb error CRC=${nbErrCrc}
+
+Check Symbol Guard In Rach Slots
+    [Arguments]                     ${param}
+    ${nbErrTotal}                   Set variable                            ${0}
+    Dated log                       Check Symbol Guard In Rach Slots (firstSymbol==0x0000000d)  #and numOfPrb!=0x00000004)
+    FOR    ${trigger}   IN         @{ListTrigger}
+            ${nbErr}                Check Symbol Guard In Rach Slot         trigger=${trigger}
+            ${nbErrTotal}           Evaluate                                ${nbErrTotal}+${nbErr}
+    END
+    Should be equal                 ${nbErrTotal}                           ${0}
+    ...                             ${nbErrTotal} records don't have firstSymbol==0x0000000d and numOfPrb!=0x00000004
+
+Check Symbol Guard In Rach Slot
+    [Arguments]                     ${trigger}
+    @{listRec}                      Set Variable                            ${trigger.dictResp['${ULDATA_PUCCH_REQ.msg}'].listRec}
+    ${nbErrTotal}                   Set Variable                            ${0}
+    FOR    ${rec}  IN              @{listRec}
+            ${firstSymbol}          set variable                            ${rec.fields['firstSymbol']}
+            ${numOfPrb}             set variable                            ${rec.fields['numOfPrb']}
+            ${startPrb}             set variable                            ${rec.fields['startPrb']}
+            ${startPrb_int}         Convert To Integer                      ${startPrb}
+            ${nbErr}                Is Guard Symbol         ${firstSymbol}
+            ...                                             ${startPrb_int}
+            ...                                             ${prachPrbOffset_int}
+            ...                                             ${numOfPrb}
+            ${diag}                 Set variable if                         ${nbErr}==${0}
+            ...                     OK                                      ERROR
+            ${nbErrTotal}           Evaluate                                ${nbErrTotal}+${nbErr}
+            ${packetStr}            Get formated Packet name                ${rec}
+            ${prefix}               Set variable                            \tPacket:${packetStr} RNTI:${rec.rnti}
+            Dated log               ${prefix} FirstSymbol=${firstSymbol} : DIAG=${diag}
+    END
+    [Return]                        ${nbErrTotal}
+
+Check Prioritize Pucch For CSI
+    [Arguments]                     ${param}
+    ${nbErrTotal}                   Set variable                            ${0}
+    ${test}                         Set variable if                         ${param.PucchF2flag}
+    ...                             ==                                      !=
+    ${field}                        Set variable                            numOfPrb
+    ${expected}                     Set variable                            0x00000004
+    Dated log                       Check Prioritize Pucch For CSI (${field}${test}${expected})
+    ${nbErr}                        Check Field in Response                 respName=${ULDATA_PUCCH_REQ.msg}
+    ...                                 field=${field}
+    ...                                 expected=${expected}
+    ...                                 test=${test}
+    ...                                 isSlotSfnStr=${True}
+    ...                                 checkKind=AtLeastOne
+    Should be equal                 ${nbErr}                                ${0}
+    ...                             ${nbErr} Records with ${field} not ${test} ${expected}
+
+Check Pucch AN In Rach Slots
+    [Arguments]                     ${param}
+    ${nbErrTotal}                   Set variable                            ${0}
+    set suite variable              ${nbPucchFormatTo2}                     ${0}
+    Dated log                       Check Pucch AN In Rach Slots (PucchF2flag=${param.PucchF2flag})
+    FOR    ${trigger}   IN         @{ListTrigger}
+            ${nbErr}                Check Pucch AN In Rach Slot
+            ...                         trigger=${trigger}
+            ${nbErrTotal}           Evaluate                                ${nbErrTotal}+${nbErr}
+    END
+    Dated log                       \tNb pucchFormat set to 2=${nbPucchFormatTo2}
+    Should be equal                 ${nbErrTotal}                           ${0}
+    ...                             ${nbErrTotal} records have bad pucchFormat
+    ${errFormat2}                   set variable if
+    ...                                 ${param.PucchF2flag}==${True} and ${nbPucchFormatTo2}==${0}
+    ...                                 ${True}                             ${False}
+    should not be True              ${errFormat2}
+    ...                             No record found with pucchFormat set to 2, while PucchF2flag was True
+
+Check Pucch AN In Rach Slot
+    [Arguments]                     ${trigger}
+    @{listRec}                      Set Variable                            ${trigger.dictResp['${ULDATA_PUCCH_REQ.msg}'].listRec}
+    ${nbErr}                        Set Variable                            ${0}
+    FOR    ${rec}  IN              @{listRec}
+            ${pucchFormat}          Set variable                            ${rec.fields['pucchFormat']}
+            ${nANPucch}             Set variable                            ${rec.fields['nANPucch']}
+            ${numOfBitsOfUciInformation}    Set variable                    ${rec.fields['numOfBitsOfUciInformation']}
+            ${status}               Get Pucch Status
+            ...                         pucchFormat=${pucchFormat}
+            ...                         nANPucch=${nANPucch}
+            ...                         numOfBitsOfUciInformation=${numOfBitsOfUciInformation}
+            Dated log               numOfBitsOfUciInformation=${numOfBitsOfUciInformation}
+            ${diag}                 Set Variable if                         ${status}
+            ...                     OK                                      ERROR
+            ${nbErr}                Set Variable if                         ${status}
+            ...                     ${nbErr}                                ${nbErr}+${1}
+            ${packetStr}            Get formated Packet name                ${rec}
+            ${prefix}               Set variable                            \tPacket:${packetStr} RNTI:${rec.rnti}
+            Dated log               ${prefix} pucchFormat=${pucchFormat} nANPucch=${nANPucch} : DIAG=${diag}
+    END
+    [Return]                        ${nbErr}
+
+Get Pucch Status
+    [Arguments]                     ${pucchFormat}
+    ...                             ${nANPucch}
+    ...                             ${numOfBitsOfUciInformation}
+    ${nANPucchValue}                Get Decimal Value                       ${nANPucch}
+    ${newFormat2}                   Set variable if                         '${pucchFormat}'=='2'
+    ...                             ${1}                                    ${0}
+    ${nbPucchFormatTo2}             Evaluate                                ${nbPucchFormatTo2}+${newFormat2}
+    ${statusFormat2}                Get Status With Format 2                ${nANPucchValue}    ${numOfBitsOfUciInformation}
+    ${statusFormat0}                Get Status With Format 0                ${nANPucchValue}
+    Set suite variable              ${nbPucchFormatTo2}
+    Return From Keyword If          '${pucchFormat}'=='2'                   ${statusFormat2}
+    Return From Keyword If          '${pucchFormat}'=='1'                   ${statusFormat0}
+    [Return]                        ${False}
+
+Get Status With Format 2
+    [Arguments]                     ${nANPucchValue}
+    ...                             ${numOfBitsOfUciInformation}
+    return from keyword if          ${nANPucchValue}==0                     ${True}
+    return from keyword if          ${nANPucchValue}==1 and ${numOfBitsOfUciInformation}==0x00000009
+    ...                                                    ${True}
+    return from keyword if          ${nANPucchValue}==2 and ${numOfBitsOfUciInformation}==0x0000000a
+    ...                                                    ${True}
+    return from keyword if          ${nANPucchValue}>2                      ${True}
+
+    [Return]                        ${False}
+
+Get Status With Format 0
+    [Arguments]                     ${nANPucchValue}
+    return from keyword if          ${nANPucchValue}==1                     ${True}
+    return from keyword if          ${nANPucchValue}==2                     ${True}
+    [Return]                        ${False}
+
+
+Is Guard Symbol
+    [Arguments]                    ${A}
+    ...                            ${B}
+    ...                            ${C}
+    ...                            ${D}
+
+    #A:${firstSymbol} - B: ${startPrb_int} - C: ${prachPrbOffset_int} - D:${numOfPrb}
+
+    ${nbErr}      Set variable if
+	...    (((${A}==0x0000000c) and (${B}<${C} or ${B}>${C}+11))or ((${A}==0x0000000d) and ((${D}==0x00000004) or (${D}==0x00000005))))
+    ...                     ${0}                                    ${1}
+
+    [Return]                ${nbErr}

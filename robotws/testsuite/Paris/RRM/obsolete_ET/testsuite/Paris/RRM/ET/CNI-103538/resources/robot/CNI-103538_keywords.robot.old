@@ -1,0 +1,95 @@
+*** Settings ***
+
+# Libraries
+Library           taf.sbts.oam.coam.admin      WITH NAME    sbts_coam
+Library           ../python/extract_crash.py
+Library           ../../../../../resources/SWENG/python/CoamParameter.py      WITH NAME     coam_parameter
+
+# Resources
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+
+
+*** Keywords ***
+
+Step_Check_Crash_Via_Dedicated_Test_Mode
+    [Arguments]                ${crash_type}
+    Dated log                  Step_Check_Crash_Via_Dedicated_Test_Mode with crash_type ${crash_type}
+    set_cni103538_rad_params    ${crash_type}
+    wait until keyword succeeds    3times    1s    switch_to_dedicated_test_mode
+    start_downlink_test_mode
+    Step_Analyze_L2PS_Crash    ${crash_type}
+
+
+Step_Analyze_L2PS_Crash
+    [Arguments]             ${crash_type}
+    ${snapshot_file}        OAM Get Snapshot
+    Dated log               extract_crash
+    ${tl_topo}              convert to string    ${TLConfig.topo}
+    ${crash_line}           extract_crash    ${snapshot_file}    ${LOG_PATH}    ${CURDIR}/../../../CNI-81561/config/key/coreencrkey.p8
+    ...                     ${TLConfig.topo.gnbVersion}    ${tl_topo}    ${crash_type}
+    Dated log               Crash occured in L2PS line: ${crash_line}
+    ${branchName}           set variable    ${TLConfig.topo.getBranchName()}
+    Should Contain          ${crash_line}    l2ps::coreDumpGenerator::CoreDumpGenerator::generateInvalidAddrAccessCoreDump
+
+
+set_cni103538_rad_params
+    [Arguments]                     ${crash_type}
+    Dated log                       set_cni103538_rad_params with crash_type ${crash_type}
+    ${rdCni103538TestMode}           create dictionary    field=0x58071A    value=0x07E57AC7
+    ${rdCni103538TestType}           create dictionary    field=0x58071B    value=0xDEFACE${crash_type}
+    ${swconfig_gnb}                 Create List    ${rdCni103538TestMode}
+    ...                                            ${rdCni103538TestType}
+    Set Fields in swconfig DU       param_list=${swconfig_gnb}
+
+
+switch_to_dedicated_test_mode
+    Dated log                            switch_to_dedicated_test_mode
+    ${connection}                        sbts_coam.connect_to    name=gNodeB
+    sbts_coam.reset_to_test_dedicated    connection=${connection}
+    sbts_coam.teardown_admin             connection=${connection}
+    wait until keyword succeeds          10min    10s    check_bts_status
+    Dated log                            Sleeping 10s
+    Sleep                                10s
+
+
+check_bts_status
+    ${connection}                       sbts_coam.connect_to    name=gNodeB
+    ${bts_info}                         sbts_coam.get_bts_info    connection=${connection}
+    sbts_coam.teardown_admin            connection=${connection}
+    Dated log                           BTS status: ${bts_info["status"]}
+    should be equal as strings          ${bts_info["status"]["proceduralState"]}    Test
+
+
+start_downlink_test_mode
+    Dated log                           start_downlink_test_mode
+    ${beam_pattern_list}                Create List    1
+    ${connection}                       sbts_coam.connect_to    name=gNodeB
+    ${bts_info}                         sbts_coam.get_bts_info    connection=${connection}
+    run_keyword_and_ignore_error        sbts_coam.start_5g_downlink_test
+    ...                                 dist_name=${bts_info["id"]["internal"]}/NRBTS_R-1/NRCELL_R-1
+    ...                                 test_model=TM1_1_ETSI
+    ...                                 beam_pattern_id=${beam_pattern_list}
+    ...                                 polarization=P_plus45_or_0
+    ...                                 power_backoff=1
+    ...                                 ru_mode=NR_Only
+    ...                                 phys_cell_id=50
+    ...                                 codebook_2_antports=0
+    ...                                 i11_codebook_4_antports=0
+    ...                                 i2_codebook_4_antports=0
+    ...                                 i13_codebook_4_antports=0
+    ...                                 mimo_rank=1
+    ...                                 p_max=30
+    ...                                 load_type=flatLoad
+    ...                                 load_level_flat=medium
+    ...                                 connection=${connection}
+#    Dated log                           Sleeping 1min
+#    Sleep                               1min
+#    Dated log                           Reset BB as workaround to PR697064
+#    sbts_coam.reset_unit                dist_name=${bts_info["cabinets"][0]["id"]["internal"]}/BBMOD_R-1
+#    ...                                 reset_type=Warm
+#    ...                                 timeout=300
+#    ...                                 connection=${connection}
+    sbts_coam.teardown_admin            connection=${connection}
+    Dated log                           Sleeping 1min
+    Sleep                               1min

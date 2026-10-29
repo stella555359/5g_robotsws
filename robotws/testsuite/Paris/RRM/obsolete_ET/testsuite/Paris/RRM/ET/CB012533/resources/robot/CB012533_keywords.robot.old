@@ -1,0 +1,125 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB012533_A
+...               Test Case Scenario author   : blandine.garnier@nokia.com
+...               Test Case Scenario contact  : blandine.garnier@nokia.com
+...               Creation Date               : 22-Nov-2023
+...               Modified Date               : 24-Jan-2024         Add TP deviation %
+...               Version   Date              Author                             Notes
+...               1.0       21-Fev-2024       vincent.boulet@nokia.com           Parity testing to introduce dRNIC RINLINE2
+
+*** Variables ***
+
+*** Keywords ***
+
+CB012533_Setup_Mirroring
+    [Arguments]    ${prefix}
+
+    ${CAPTURE_CPRT}           Capture CPRT Set Upon Config
+    Set Suite Variable        ${CAPTURE_CPRT}
+
+    ${CAPTURE_CPRT.filter}    Get Filter For SCTP
+    ${CAPTURE_CPRT.prefix}    Set Variable    CPRT_${prefix}
+
+CB012533 Start Capture CPRT
+    Capture Init                   ${Capture_CPRT}
+    Capture Start                  ${Capture_CPRT}
+
+CB012533 Stop Capture CPRT
+    Capture Stop     ${Capture_CPRT}
+
+Cell Setup
+    [Arguments]    ${cell_number}=4
+
+    Setup Wtsemu SA               shouldUseLua=False    nbCell=${cell_number}
+
+Build UEs list SA Multi UEs
+
+    ${totalNbOfUe}          get length          ${dict_settings_all_ues}
+    Dated Log               Configure the setting for the ${totalNbOfUe} ue's
+    Set Global Variable     ${totalNbOfUe}
+    Dated Log New Line      ${dict_settings_all_ues}
+
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${totalNbOfUe}
+        ${current_ue}=                Evaluate                      ${dict_settings_all_ues[${current_id}].ue}
+        ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          pdu                 ${dict_settings_all_ues[${current_id}].pdu}
+        Set To Dictionary             ${current_ueSetting}          trf_id              ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          target_gnb          2
+        Set To Dictionary             ${current_ueSetting}          target_cells        ${dict_settings_all_ues[${current_id}].originalCell}
+        Set To Dictionary             ${current_ueSetting}          throughput_dl       ${dict_settings_all_ues[${current_id}].throughput_dl}
+        # ym : Add deviation
+        Set To Dictionary             ${current_ueSetting}          deviation_dl        ${dict_settings_all_ues[${current_id}].deviation_dl}
+		Set To Dictionary             ${current_ueSetting}          throughput_ul       ${dict_settings_all_ues[${current_id}].throughput_dl}
+        Set To Dictionary             ${current_ueSetting}          deviation_ul        ${dict_settings_all_ues[${current_id}].deviation_ul}
+        Append To List                ${listOfUes}                  ${current_ueSetting}
+    END
+    Dated Log New Line                UE_List=${listOfUes}
+
+    [Return]                          ${listOfUes}
+
+SA Attach and Start Traffic Multi UEs
+    [Arguments]                   ${param}  ${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Dated Log New Line     === SA Register UE ${current_elem.ue} on cell ${current_elem.target_cells} ===
+        CallSetup.UE Register                                   ue=${current_elem.ue}
+
+        CallSetup.Launch PDU Session                            ue=${current_elem.ue}
+        ...                                                     pdu=${current_elem.pdu}
+        ...                                                     gw=${current_elem.ue}
+    END
+
+# Start the Non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Dated Log New Line   === Start Traffic DL on UE ${current_elem.ue} ===
+        Traffic SA DL NOT Stopped
+        ...                                                     param=${param}
+        ...                                                     ueSetting=${current_elem}
+    END
+
+# Start the Non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Dated Log New Line   === Start Traffic UL on UE ${current_elem.ue} ===
+        Traffic SA UL NOT Stopped
+        ...                                                     param=${param}
+        ...                                                     ueSetting=${current_elem}
+    END
+
+Traffic SA DL NOT Stopped
+    [Documentation]
+    ...     Actions:        it manages the DL traffic on the UEs
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        DL traffic is passed
+    [Arguments]                   ${param}      ${ueSetting}
+#DL
+
+    Set To Dictionary       ${ueSetting}        trf_id    1
+    Traffic UE DL           ueSetting=${ueSetting}
+    ...                               throughput=${ueSetting.throughput_dl}
+    ...                               deviation=${ueSetting.deviation_dl}
+    ...                               captureCallback=None
+    ...                               capture=None
+    ...                               captureDuration=0
+    ...                               duration=3
+    ...                               shouldBeStop=False
+    ...                               shouldBeCheck=False
+
+Traffic SA UL NOT Stopped
+    [Documentation]
+    ...     Actions:        it manages the UL traffic on the UEs
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        UL traffic is passed
+    [Arguments]                   ${param}      ${ueSetting}
+#UL
+
+    Set To Dictionary       ${ueSetting}        trf_id    1
+    Traffic UE UL           ueSetting=${ueSetting}
+    ...                               throughput=${ueSetting.throughput_ul}
+    ...                               deviation=${ueSetting.deviation_ul}
+    ...                               captureCallback=None
+    ...                               capture=None
+    ...                               captureDuration=0
+    ...                               duration=3
+    ...                               shouldBeStop=False
+    ...                               shouldBeCheck=False

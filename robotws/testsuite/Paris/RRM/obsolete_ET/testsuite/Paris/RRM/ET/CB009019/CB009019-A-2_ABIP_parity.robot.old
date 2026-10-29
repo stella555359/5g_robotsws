@@ -1,0 +1,46 @@
+*** Settings ***
+
+Documentation
+...    author: Marcin Gorczyca
+...    contact: marcin.gorczyca@nokia.com
+...    Description: Suite description in QC
+
+Library        taf.ul.hanging_resources.listener    ${False}
+Resource       resources/CB009019_resources.robot
+
+Force Tags    CONFIGURED    CRT    PY39    RAN_5G    RAN_5G_TDD    SBTS00
+...           CLOUD_5G_I_MP_AP_LO
+...           VARIANT_SANSA_FS_ECPRI_CMWV_TDD
+
+Suite Setup    Run keywords    Prepare suite environment  egate_config=${lua_cfg_file}
+...     AND    Create aliases
+Suite Teardown    Clean suite environment
+
+*** Variables ***
+${lua_cfg_file}=   ${CURDIR}/config/config_TDD_FR1_ASIM_ABIP.cfg
+
+*** Test Cases ***
+CB009019-A2b_1_Online_modification_of_udpMaxDatagramSize_when_TCP_MSS_Clamping_is_enabled
+    [Tags]    CRT
+    [Documentation]    This test verifies that online modification of udpMaxDatagramSize parameter
+    ...                while TCP MSS Clamping is enabled causes change of TCP MSS value on new bearer.
+    Set feature flag act5gUserLayerTcpMssClamping to true
+    Set feature flag udpMaxDatagramSize to 1400
+    Register UE  UE_ID=1  CELL_ID=1
+    Establish PDU session  UE_ID=1
+    Set feature flag udpMaxDatagramSize to 1200
+    Start tshark
+    ...   log_filename=any.pcap
+    ...   eth_interface=any
+    ...   log_dirpath=${OUTPUT_DIR}/${TEST_NAME}
+    ...   alias=tcp_mss
+    Start 5 mbps DL data traffic on PDU1 for UE1
+    Establish PDU session  UE_ID=1  PDU_ID=2  GW_ID=2
+    Start 5 mbps DL data traffic on PDU2 for UE1
+    Stop capturing  alias=tcp_mss
+    Run Keyword And Continue On Failure  Verify value of MSS in TCP [SYN] packet  MSS=1337  source=72.23.0.1  destination=10.0.2.1
+    Run Keyword And Continue On Failure  Verify value of MSS in TCP [SYN,ACK] packet  MSS=1336  source=1.2.4.2  destination=10.0.2.1
+    Run Keyword And Continue On Failure  Verify value of MSS in TCP [SYN] packet  MSS=1137  source=72.24.0.1  destination=10.0.2.1
+    Run Keyword And Continue On Failure  Verify value of MSS in TCP [SYN,ACK] packet  MSS=1136  source=1.2.4.3  destination=10.0.2.1
+    Setup.Produce Scout Data
+    [Teardown]    Deregister UE1 and clear up test environment

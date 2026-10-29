@@ -1,0 +1,11 @@
+{
+    "SBTS26R2.*": {
+        "Root\\Test_Sets\\26R2\\Regression\\VRF_TSR\\VRF_TSR_T02\\CRT\\MTNRL61 - BT UK": {
+            "MTNRL61 - BT UK": [       
+                "[1][1.0] SW_Activation_Reset_in_loops",
+                "[1][1.0] Automated_RFS_UUF_SW_UPGRADE",
+                "[1][1.0] Automated_RFS_SBTS_SBTS__STATE__Enable_Disable_PIMC_Bypass_Mode"
+              ]
+         }
+    }
+}

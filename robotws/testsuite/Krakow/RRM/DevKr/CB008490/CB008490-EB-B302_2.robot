@@ -1,0 +1,155 @@
+*** Settings ***
+Documentation
+...      == COPYRIGHT ==
+...      Nokia Networks
+...
+...      == INTRODUCTION ==
+...      This sub-feature introduces successful procedure of inter-gNB NR-DC UE bulk release.
+...
+...      == TEST SET NAME ==
+...      CB008490-EB: Bulk UE release
+...
+...      == TESTING SPLIT ==
+...      CB008490-EB#B101 NG Full/Partial Reset - AMF initiated - MN side
+...      CB008490-EB#B102 XNAP: Reset Request reception - SN side
+...      CB008490-EB#B103 NG Partial Reset - AMF initiated  concurrency (SCT only)
+...      CB008490-EB#B201 NG Full/Patrial Reset - gNB initiated - MN side
+...      CB008490-EB#B202 XNAP: Reset Request sending from SN side
+...      CB008490-EB#B301 Partial Reset - Dropped Xn link
+...      CB008490-EB#B302 Pool Failure - SDL
+...
+...      == TESTING SCOPE ==
+...      CB008490-EB: Bulk UE release
+...
+...      == CONTACTS ==
+...         - Malgorzata Konior     <malgorzata.konior@nokia.com>
+...         - Tomasz Pyrek 			<tomasz.pyrek@nokia.com>
+...         - Maciej Madej          <maciej.madej@nokia.com>
+...
+...      == MAINTAINER ==
+...         - Tomasz Pyrek          <tomasz.pyrek@nokia.com>
+...         - Maciej Madej          <maciej.madej@nokia.com>
+...
+...      == REFERENCES ==
+...         CB008490 CFAM - https://gates.nsn-net.net/view/000271e7#o=1038
+...
+...      == HISTORY ==
+...      [08.07.2024] - Create Test Suite
+...      [23.07.2024]  - Review closed (https://collab.ext.net.nokia.com/ui#review:id=915535)
+...
+
+Resource    resources/CB008490-common_keywords.robot
+Resource    resources/CB008490_setup_and_teardowns.robot
+
+Force Tags    CONFIGURED    CRT    PY39    RAN_5G    RAN_5G_TDD    SBTS00
+...    CLOUD_5G_I_[LO][LO]_AP_[LOO]
+...    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD
+
+Suite Setup    Run setup
+
+*** Variables ***
+${LUA_CFG}=               ${CURDIR}/config/egate_2c_n78_n257_TDD_SA.cfg
+${SCF_gnb2_MN}=           Krakow/CB008490/scf_MN_GA_ABIP_3xsimSN_GMC.xml
+${SCF_gnb3_SN}=           Krakow/CB008490/scf_SN_GA_ABIP.xml
+${AP_XML}=                Krakow/CB008490/iphy_2cells_n78_n257.xml
+
+${BBMOD_GNB_DIST_NAME}=    MRBTS-1/EQM-1/APEQM-1/CABINET-1/BBMOD-1
+
+*** Test Cases ***
+CB008490-SR-EB-B302_SN_side_pool_failure
+    [Tags]
+    [Documentation]
+    ...  == DESCRIPTION ==
+    ...  Purpose of this test is to verify behaviour of MN and SN gNBs after Pool Failure on SN gNB is triggered
+    ...  by resetting ABIO baseband module.
+    ...
+    ...  == PRECONDITION ==
+    ...  Use common preconditions from AC (https://collab.ext.net.nokia.com/ui#review:id=904554)
+    ...  UE1 with configured inter-gNB NR-DC in SN gNB#1
+    ...
+    ...  == POSTCONDITION ==
+    ...  UE1 is released
+    ...
+    ...  == TESTING TOOLS ==
+    ...    AirPhone, 5GCSim, UTE
+    ...
+    ...  == TEST ENVIRONMENT ==
+    ...  - gNB classical BTS in SA mode as MN
+    ...  - gNB classical BTS in NR-DC-SN mode as SN
+    ...  - gNB module MN (ASIL + ABIO / ASIM + ABIP)
+    ...  - gNB module SN (ASIL + ABIO / ASIM + ABIP)
+    ...  - UE configured in SA, TDD
+    ...
+    ...  == REQUIREMENTS COVERAGE ==
+    ...  REQUIREMENTS IN SCOPE: 5G_RAN_USR_RRM_23638
+    ...
+    ...  == REQUIRED LOGS ==
+    ...  NR-RRC,NGAP,F1AP,E1AP,XNAP
+    ...
+    ...  == CONTACTS ==
+    ...  - Malgorzata Konior     <malgorzata.konior@nokia.com>
+    ...  - Tomasz Pyrek          <tomasz.pyrek@nokia.com>
+    ...  - Maciej Madej          <maciej.madej@nokia.com>
+    ...
+    ...  == REFERENCES ==
+    ...  Related CFAM US: CB008490-EB#B2 NG Full/Partial Reset - gNB initiated
+    ...
+    ...  == HISTORY ==
+    ...  [08.07.2024] - Create Test Suite
+    ...  [23.07.2024]  - Review closed (https://collab.ext.net.nokia.com/ui#review:id=915535)
+
+    [Setup]  Prepare test environment CB008490-EB-B302_2
+
+    Attach UE1 without ICS to MN gNB2 NRCELL-1
+
+    Set expected messages flows for PDU session and A4 measurement configuration for UE1 and AMF1
+    Add to UE1 initial PDU session with ICS and indexToRFSP equal 1
+    Verify expected messages flows for PDU session and A4 measurement configuration for UE1 and AMF1
+
+    Set expected messages flows for SNodeAddition for SN gNB3
+    Set expected messages flows for SNodeAddition for UE1, MN gNB2
+
+    UE1 sends A4 measurement with id=1 for NR-DC PSCell addition
+
+    Verify expected messages flows for SNodeAddition for SN gNB3
+    Verify expected messages flows for SNodeAddition for UE1, MN gNB2
+
+    Set expected messages flows for SN BBMOD reset for gNB3
+    Set expected messages flows for SN BBMOD reset for UE1, MN gNB2
+
+    Reset Unit ${BBMOD_GNB_DIST_NAME} on ADMIN ${ADMIN_gNB2}
+
+    Verify expected messages flows for SN BBMOD reset for gNB3
+    Verify expected messages flows for SN BBMOD reset for UE1, MN gNB2
+
+    Verify That E1AP GNBDUConfigurationUpdate contains NRDC cell id eq 3, GNB3
+    Verify that XNAP ResetRequest ResetRequestTypeInfo contains 'partialReset', gNB3
+    Verify that XNAP ResetRequest contains cause:misc:o-and-M-intervention, gNB3
+    Verify that E1AP Reset contains cause:misc:om-intervention, gNB3
+    Verify that F1AP Reset contains cause:misc:om-intervention, gNB3
+    Verify that NGAP NGReset contains cause:radioNetwork:release-due-to-ngran-generated-reason, gNB2
+    Verify that NGAP NGReset ResetType contains 'partOfNG-Interface', gNB2
+    Verify that E1AP Reset contains cause:transport:unspecified, gNB2
+    Verify that F1AP Reset contains cause:transport:unspecified, gNB2
+
+    [Teardown]    EB-B302_2 cleanup
+
+
+*** Keywords ***
+Attach UE${ue_id:\d+} and add initial PDU session to MN gNB NRCELL-${cell_id:\d+}
+    Attach UE${ue_id} without ICS to gNB2 cell${cell_id}
+    Set expected messages flows for PDU session and A4 measurement configuration for UE${ue_id} and AMF1
+    Add to UE${ue_id} initial PDU session with ICS and indexToRFSP equal 1
+    Verify expected messages flows for PDU session and A4 measurement configuration for UE${ue_id} and AMF1
+
+Set expected flows for SNodeAddition for UE${ue_id:\d+}, MN gNB${mn_id:\d+}, SN gNB${sn_id:\d+}
+    Set expected messages flows for SNodeAddition for SN gNB${sn_id}
+    Set expected messages flows for SNodeAddition for UE${ue_id}, MN gNB${mn_id}
+    Set expected not failed messages flows for SNodeAddition for UE${ue_id}, MN gNB${mn_id}
+    Set expected not failed messages flows for SNodeAddition for SN gNB${sn_id}
+
+Verify expected flows for SNodeAddition for UE${ue_id:\d+}, MN gNB${mn_id:\d+}, SN gNB${sn_id:\d+}
+    Verify expected messages flows for SNodeAddition for SN gNB${sn_id}
+    Verify expected messages flows for SNodeAddition for UE${ue_id}, MN gNB${mn_id}
+    Verify expected not failed messages flows for SNodeAddition for UE${ue_id}, MN gNB${mn_id}
+    Verify expected not failed messages flows for SNodeAddition for SN gNB${sn_id}

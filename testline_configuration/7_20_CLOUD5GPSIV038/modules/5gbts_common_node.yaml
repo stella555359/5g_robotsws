@@ -1,0 +1,135 @@
+heat_template_version: 2016-10-14
+description: 'v77: Template to instantiate application type of VM'
+parameters:
+  common_metadata:
+    type: json
+    description: common metadata parameters
+  common_userdata:
+    type: json
+    description: common cloud-init userdata parameters
+  config_drive:
+    type: boolean
+    description: use config drive instead of metadata server
+  dpdk_type:
+    type: string
+    description: type information for dpdk boot configuration
+    default: none
+  instance_params:
+    type: json
+    description: instance specific parameters
+  local_volumes:
+    type: json
+    description: Local volumes to be attached
+    default:
+      count: 0
+      volumes: []
+  name:
+    type: string
+    description: Name to be used as the host name for the instance
+  networks:
+    type: json
+    description: network parameters
+  roles:
+    type: comma_delimited_list
+    description: Deployment roles associated
+    default:
+    - application
+  storage_meta:
+    type: json
+    description: Storage user parameters for shared volumes
+  upgrade-node:
+    type: boolean
+    description: indicate whether it is upgrade node
+    default: false
+  index:
+    type: number
+    description: index to fetch own parameters
+    default: 0
+resources:
+  ports:
+    type: RCP::Network::Pool
+    properties:
+      count:
+        get_param: [networks, count]
+      networks:
+        get_param: [networks, net_list_0]
+      fixed_ips_index:
+        get_param: index
+  local_vol:
+    type: RCP::VolumeGroup::Local
+    properties:
+      volumes:
+        get_param: [local_volumes]
+  local_vol_attach:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count:
+        get_param: [local_volumes, count]
+      resource_def:
+        type: RCP::Volume::Attachment
+        properties:
+          index: '%index%'
+          server: {get_resource: server}
+          volumes:
+            get_attr: [local_vol, volume_id]
+  cloud_config:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        hostname: {get_param: name}
+
+  cloud_init:
+    type: OS::Heat::MultipartMime
+    properties:
+      parts:
+      - config: {get_param: [common_userdata, add_user]}
+        subtype: cloud-config
+      - config: {get_param: [common_userdata, run_cmd]}
+        subtype: cloud-config
+      - config: {get_resource: cloud_config}
+        subtype: cloud-config
+  server:
+    type: OS::Nova::Server
+    properties:
+      name: {get_param: name}
+      image:
+        get_param:
+        - instance_params
+        - server
+        - imageId
+      flavor:
+        get_param:
+        - instance_params
+        - server
+        - flavorId
+      availability_zone:
+        get_param:
+        - instance_params
+        - server
+        - azId
+      scheduler_hints:
+        group:
+          get_param:
+          - instance_params
+          - server
+          - server_group_id
+      networks:
+        get_attr: [ports, ports]
+      user_data_format: RAW
+      user_data: {get_resource: cloud_init}
+      metadata:
+        map_merge:
+        - {get_param: common_metadata}
+        - roles: {get_param: roles}
+          dpdk-conf-type: {get_param: dpdk_type}
+        - get_attr: [ports, ip-info]
+        - ext-ip-config-physical: {get_attr: [ports, ext-ip-config]}
+        - {get_param: storage_meta}
+        - get_attr: [local_vol, provider_map]
+        - upgrade-node: {get_param: upgrade-node}
+      config_drive: {get_param: config_drive}
+outputs:
+  internal_ip:
+    description: Internal IP address allocated to the instance
+    value:
+      get_attr: [ports, internal_ip]

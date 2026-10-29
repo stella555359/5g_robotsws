@@ -1,0 +1,61 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE] CNI-102921
+...               Prerequisite : GNB and Airphone should be installed
+...               Scope : CNI-102921
+...
+...               Test Case Scenario author   : fabrice.delecroix@nokia.com
+...               Test Case Scenario author   : fabrice.delecroix@nokia.com
+...               Test Case automation author : fabrice.delecroix@nokia.com
+...               Test Case automation contact: fabrice.delecroix@nokia.com
+...               Creation Date               : 17-Oct-2023
+...               Modified Date               : 17-Oct-2023
+...               Last Modified by            : fabrice.delecroix@nokia.com
+
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../resources/SWENG/robot/Setup.robot
+Resource          ../CB008661/resources/robot/CB008661_Keywords.robot
+
+Variables         ../../../resources/SWENG/python/ReadConfig.py
+
+Force Tags        CA_5G_SW_FR-Villarceaux   RRM
+...               PY36
+...               master_classicalbts_all
+...               SBTS00    CONFIGURED    RAN_5G    5G_RAN
+...               CLOUD_5G_O_E_AP_LOO_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD
+
+Suite Setup       Setup.suite setup from scratch    keepAllUeDataInCfgFile=${True}    #automaticTeardown=${True}
+#Suite Teardown    Setup.Suite Teardown       reset_ap=${False}
+
+
+*** Test Cases ***
+
+[0]CNI-102921_Campaign1_Prelude
+    Init Sequence          _
+    Step_TL_Init           ${CURDIR}    CNI-102921     cni102921    R3252512    no_sherpa    no_tti    fifo_debug=0
+    Step_TL_Custom_Config
+    Step                   Setup Wtsemu SA      nbCell=5
+
+[1]CNI-102921_Traffic_6CC_24UE_DlMedTputBler0_UlBler0_R3252512
+    Step                   Step_Traffic_6CC_24UE_DlMedTputBler0_UlBler0    timeout=12hours
+    Run Keyword if         '${Verdict_Traffic_6CC_24UE_DlMedTputBler0_UlBler0}' == 'FAILED'    FAIL    dependencies issue
+
+[1]CNI-102921_Collect_Emil_R3252512
+    set_oam_parameter      MRBTS-1/NRBTS-272260/NRCELL-0    administrativeState    Unlocked
+    dcap_start_container
+    ${trace_id}            dcap_start_cplane    duration_seconds=1200
+    Step                   Step_TL_Restart
+    Step                   Setup Wtsemu SA      nbCell=5
+    # Next lines to have direct access to scf and snapshot from Jenkins (needed for ScfConverter)
+    ${scf_file}            OAM Get SCF File     file=scf_CNI-102921_Collect_Emil_R3252512.xml
+    Run                    mv ${scf_file} ${OUTPUT_DIR}
+    ${snapshot_file}       OAM Get Snapshot
+    Run                    mv ${snapshot_file} ${OUTPUT_DIR}/snapshot_CNI-102921_Collect_Emil_R3252512.zip
+    Step                   run_script           once         AutoGen_UE_25_to_32_Setup_DL90mbps.sce
+    Step                   run_script           once         AutoGen_UE_33_to_48_Setup_DL300mbps.sce
+    Step                   run_script           once         AutoGen_UE_25_to_48_Release.sce
+    dcap_stop              ${trace_id}
+    dcap_get_results       ${trace_id}    ${OUTPUT_DIR}
+    dcap_stop_container
+
+[0]CNI-102921_Campaign1_Postlude
+    Step                   Step_Postlude

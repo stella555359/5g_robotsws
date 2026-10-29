@@ -1,0 +1,409 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  verification of 5GC002255-EB11 feature in the case of FDD+TDD Classical Fullstack SA
+...               Prerequisite : GNB and Airphone should be installed
+...               Scope : With configuration allowing interband CA, perform calls with DRX and checks that mecanism
+...               are running well
+...
+...               Test Case Scenario author   : axel.gouilly-frossard@nokia.com
+...               Test Case Scenario contact  : axel.gouilly-frossard@nokia.com
+...               Test Case automation author : axel.gouilly-frossard@nokia.com
+...               Test Case automation contact: axel.gouilly-frossard@nokia.com
+...               Creation Date               : 08-march-2021
+...               Modified Date               : 18-August-2023
+...               Last Modified by            : loic.marzin@nokia.com
+...                    10/08/21          Remove flexibleCAMode update in SCF + user check DRX from 2255_keyword, with args
+...                    03/09/2021        Replace frt-common KW
+...                    17/11/2022        Refactoring due to new QC management of test (no test dependencies allowed)
+...                    18/08/2023        Refactoring due to BOO_AP_LOO Migration
+...               Last Modified by            : richard.duthu@nokia.com
+...               Last Modification           : Scout data + some fixes for RF50
+
+Resource          ../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../resources/SWENG/robot/Counters.robot
+Variables         ../../../resources/SWENG/python/ReadConfig.py
+Resource          ../../../resources/SWENG/robot/Scf.robot
+Resource          robot/5GC002255_Keywords.robot
+
+
+Force Tags        CA_5G_SW_FR-Villarceaux   RRM
+...   PY36
+...               master_classicalbts_all
+...               CONFIGURED    5G_RAN    RAN_5G
+...               CONFIGS_IBCA/5GC002255/SBTS00/custom_config_2255.yaml
+
+Suite Setup       5GC002255_Keywords.setup 2255
+Suite Teardown    5GC002255_Keywords.teardown 2255
+
+*** Variables ***
+${TestSharkTool}      MC_SHARK
+
+# variable set to ${True} to automatically save SOS report and OAM snapshot
+# (by default, these information are saved only if a test is failed)
+${ForceDebugDataCollection}    ${False}
+#${ForceDebugDataCollection}    ${True}
+
+@{CAslNone}          none
+@{CAslFddFr1Tdd}     ca_Fdd_Fr1Tdd
+&{B_18}          carrierAggregationSupportList=${CAslNone}
+&{B_3}          carrierAggregationSupportList=${CAslFddFr1Tdd}
+
+
+${SmallThroughput}     1  # rateUnit=kb
+${MiddleThroughput}    1  # rateUnit=mb
+${HighThroughput}     10  # rateUnit=mb
+
+&{EB11}
+...                                 flexibleCAMode=MixedCAMode    #No more needed, in UTe template
+...                                 sCellActivationMethod=blind
+...                                 actInterNumerologyCa=true
+...                                 sCellAdditionMethod=blind
+...                                 carrierAggregationSupportList=ca_Fdd_Fr1Tdd_Sa
+...                                 pucchModeSelectTDD=longPucch
+...                                 pucchModeSelectFDD=longPucch
+...                                 maxNumScellsDl=1
+...                                 sCellActivationLevel_NRCELL3=1TTI
+...                                 sCellActivationLevel_NRCELL2=1TTI
+...                                 sCellActivationMinDataThreshold_NRCELL3=6000
+...                                 sCellActivationMinDataThreshold_NRCELL2=6000
+...                                 sCellDeactivationTimerGNB_NRCELL3=infinity
+...                                 sCellDeactivationTimerGNB_NRCELL2=infinity
+...                                 primaryPathMaxQueueingDelay_NRCELL3=10
+...                                 primaryPathMaxQueueingDelay_NRCELL2=0
+...                                 secondaryPathMaxQueueingDelay_NRCELL3=10
+...                                 secondaryPathMaxQueueingDelay_NRCELL2=10
+...                                 cellDepType_NRCELL3=SA+NSA
+...                                 cellDepType_NRCELL2=SA+NSA
+...                                 actBeamforming_NRCELL3=false
+...                                 actBeamforming_NRCELL2=false
+...                                 actFdmScheduling=true
+...                                 drxInactivityTimer_CELL3=100ms
+...                                 drxLongCycle_CELL3=320
+...                                 actCDrx_CELL3=true
+...                                 actCDrx_CELL2=true
+
+*** Test Cases ***
+
+[1][1.0] 5GC002255_EB11_DRX Activation_with IBCA_Configured_With_DataDRB_In_SA_Mode
+    [Tags]                          CRT        CLOUD_5G_I_BOO_AP_LOO
+    ...                             VARIANT    VARIANT_SANSA_FS_ECPRI_CMWV_FDD+TDD
+    ...                             SBTS00
+    [Documentation]                 Carrier Aggregation 2255-1390 Test EB11
+
+    Init Sequence                   ${EB11}
+    Critical Step                   Set MRBTSID and NRBTSID_RWorked
+    Step                            Set SCF Context    argument=EB11
+    Critical Step                   gNB_Startup_Ok_with_Flags
+    Critical Step                   gNB_CellSetup_Ok_with_Flags
+    Step                            5GC002255_E_B11_1_RRC_Reconf_Req_DRX_drxLongCycle_Sup_80
+    Step                            5GC002255_E_B11_3_RRC_Reconf_Resp_DRX_drxLongCycle_Sup_80
+    [Teardown]                      Teardown 5GC002255_EB11
+
+*** Keywords ***
+
+Set SCF Context
+    [Arguments]                     ${subfeature}=none
+    Dated log       ===================
+    Dated log       SCF settings for ${subfeature}
+    Dated log       ===================
+
+    Copy File                      ${SCF_SETUP_PATH}     ${SCF_SETUP_PATH}.NewDRX
+    ${newSCF}            Set Variable     ${SCF_SETUP_PATH}.NewDRX
+    Dated log                         ${newSCF}
+
+    SCF StartSession                  scf_file=${newSCF}
+
+    SCF Set element      dist_name=${MRBTS}
+    ...                  element_name=btsName
+    ...                  element_value=SCFforEB11
+    #Param1  #No more needed, in UTe template
+    SCF Set element      dist_name=${dist_nameDU}
+    ...                  element_name=flexibleCAMode
+    ...                  element_value=${param.flexibleCAMode}
+
+    #Param2
+    SCF Set element      dist_name=${DU}
+    ...                  element_name=sCellActivationMethod
+    ...                  element_value=${param.sCellActivationMethod}
+
+    #Param3
+    SCF Set element      dist_name=${dist_nameDU}
+    ...                  element_name=actInterNumerologyCa
+    ...                  element_value=${param.actInterNumerologyCa}
+
+    #Param4
+    SCF Set element      dist_name=${Meth_name}
+    ...                  element_name=sCellAdditionMethod
+    ...                  element_value=${param.sCellAdditionMethod}
+
+    #Param5
+    ${casl}             create list     ${param.carrierAggregationSupportList}
+    SCF Remove list            dist_name=${dist_nameDU}    list_name=carrierAggregationSupportList
+    SCF Add list  dist_name=${dist_nameDU}  list_name=carrierAggregationSupportList
+    SCF Add elements to list  dist_name=${dist_nameDU}
+    ...                       list_name=carrierAggregationSupportList
+    ...                       elements=${casl}
+
+    #Param6
+    SCF Set element      dist_name=${dist_name1}
+    ...                  element_name=pucchModeSelect
+    ...                  element_value=${param.pucchModeSelectTDD}
+
+    #Param7
+    SCF Set element      dist_name=${dist_name2}
+    ...                  element_name=pucchModeSelect
+    ...                  element_value=${param.pucchModeSelectFDD}
+
+    #Param8
+    SCF Set element      dist_name=${DU}
+    ...                  element_name=maxNumScellsDl
+    ...                  element_value=${param.maxNumScellsDl}
+
+    #Param9
+    SCF Set element      dist_name=${dist_name1}
+    ...                  element_name=sCellActivationLevel
+    ...                  element_value=${param.sCellActivationLevel_NRCELL3}
+
+    #Param10
+    SCF Set element      dist_name=${dist_name2}
+    ...                  element_name=sCellActivationLevel
+    ...                  element_value=${param.sCellActivationLevel_NRCELL2}
+
+    #Param11
+    SCF Set element      dist_name=${dist_name1}
+    ...                  element_name=sCellActivationMinDataThreshold
+    ...                  element_value=${param.sCellActivationMinDataThreshold_NRCELL3}
+
+    #Param12
+    SCF Set element      dist_name=${dist_name2}
+    ...                  element_name=sCellActivationMinDataThreshold
+    ...                  element_value=${param.sCellActivationMinDataThreshold_NRCELL2}
+
+    #Param13
+    SCF Set element      dist_name=${dist_name1}
+    ...                  element_name=sCellDeactivationTimerGNB
+    ...                  element_value=${param.sCellDeactivationTimerGNB_NRCELL3}
+
+    #Param14
+    SCF Set element      dist_name=${dist_name2}
+    ...                  element_name=sCellDeactivationTimerGNB
+    ...                  element_value=${param.sCellDeactivationTimerGNB_NRCELL2}
+
+    #Param15
+    SCF Set element      dist_name=${dist_name1}
+    ...                  element_name=primaryPathMaxQueueingDelay
+    ...                  element_value=${param.primaryPathMaxQueueingDelay_NRCELL3}
+
+    #Param16
+    SCF Set element      dist_name=${dist_name2}
+    ...                  element_name=primaryPathMaxQueueingDelay
+    ...                  element_value=${param.primaryPathMaxQueueingDelay_NRCELL2}
+
+    #Param17
+    SCF Set element      dist_name=${dist_name1}
+    ...                  element_name=secondaryPathMaxQueueingDelay
+    ...                  element_value=${param.secondaryPathMaxQueueingDelay_NRCELL3}
+
+    #Param18
+    SCF Set element      dist_name=${dist_name2}
+    ...                  element_name=secondaryPathMaxQueueingDelay
+    ...                  element_value=${param.secondaryPathMaxQueueingDelay_NRCELL2}
+
+    #Param19
+    SCF Set element      dist_name=${dist_name1}
+    ...                  element_name=cellDepType
+    ...                  element_value=${param.cellDepType_NRCELL3}
+
+    #Param20
+    SCF Set element      dist_name=${dist_name2}
+    ...                  element_name=cellDepType
+    ...                  element_value=${param.cellDepType_NRCELL2}
+
+    #Param21
+    SCF Set element      dist_name=${dist_name1}
+    ...                  element_name=actBeamforming
+    ...                  element_value=${param.actBeamforming_NRCELL3}
+
+    #Param22
+    SCF Set element      dist_name=${dist_name2}
+    ...                  element_name=actBeamforming
+    ...                  element_value=${param.actBeamforming_NRCELL2}
+
+    #Param23
+    SCF Set element      dist_name=${DU}
+    ...                  element_name=actFdmScheduling
+    ...                  element_value=${param.actFdmScheduling}
+
+    ####
+    SCF Set element in List           dist_name=${dist_name1}
+    ...                               list_name=drxProfile1
+    ...                               element_name=drxInactivityTimer
+    ...                               element_value=${param.drxInactivityTimer_CELL3}
+
+    SCF StopSession                   scf_file=${newSCF}
+    Dated Log    ----> Modifications completed. in ${newSCF} \n
+    Oam.OAM Perform Full Commissioning          scf_file=${newSCF}
+
+    Restart.WA Airscale Wait For Ready                  ${GNB_DU}
+
+
+gNB_Startup_Ok_with_Flags
+    [Tags]  RESTART_STARTUP                  _
+    Restart.Restart TL
+
+
+gNB_CellSetup_Ok_with_Flags
+    [Tags]  Cell_Setup
+    CallSetup.Setup Wtsemu SA
+
+
+5GC002255_E_B11_1_RRC_Reconf_Req_DRX_drxLongCycle_Sup_80
+    [Tags]  Check_DRXConfigInRRCReconf
+    Traced sleep    20s  msg=short pause before register
+    CallSetup.UE Register           ue=3
+    Traced sleep   10s  msg=Pause 10s to avoid initial context setup failure
+    CallSetup.Launch PDU Session  ue=3  pdu=3  gw=3
+    Traced sleep   10s  msg=Pause to get all messages exchanges
+    CallSetup.Empty Buffer For Egate
+    Traced sleep   10s  msg=wait 10s for flush
+    5GC002255_Keywords.5GC002255_Check_DRX_Mode    LongCycleStart=ms160   InactivityTimer=ms80
+
+
+5GC002255_E_B11_3_RRC_Reconf_Resp_DRX_drxLongCycle_Sup_80
+    Check rrc-transactionId
+
+
+5GC002255_E_B11_5_Traffic_DL_UL_drxLongCycle_Sup_80
+    [Tags]  SlowTraffic
+    5GC002255_Keywords.Start Capture BIP ABIO 2slots
+    wtsemu.trf_data_start    ue=3    pdu=3    qfi=1    dir=dl    trf_id=1   kbps=${SmallThroughput}
+    Traced sleep   60s  msg=SlowTraffic on going, getting traces
+    5GC002255_Keywords.Stop Capture L1L2
+    Check_PsPeerCtrl_ScellUeSchedulingInd    ${CaptureL1L2.path}
+    wtsemu.trf_data_start    ue=3    pdu=3    qfi=1    dir=dl    trf_id=2   mbps=${HighThroughput}
+    wtsemu.trf_data_start    ue=3    pdu=3    qfi=1    dir=ul    trf_id=3   mbps=${MiddleThroughput}
+    Traced sleep   10s  msg=pause to get the real throughput
+    ${traffic_ul}      Get Average Traffic Rate  ue=3  pdu=3  qfi=1  trf_id=3  dir=ul
+    ${traffic_dl}      Get Average Traffic Rate  ue=3  pdu=3  qfi=1  trf_id=2  dir=dl
+    Dated Log  traffic dl: ${traffic_dl}  ${true}  2
+    Dated Log  traffic ul: ${traffic_ul}  ${true}  2
+    Should Be True    ${HighThroughput} * 900000 <= ${traffic_dl} <= ${HighThroughput} * 1100000
+    Should Be True    ${MiddleThroughput} * 900000  <= ${traffic_ul} <= ${MiddleThroughput} * 1100000
+    wtsemu.Trf Data Stop    ue=3  pdu=3  qfi=1  trf_id=2  dir=dl
+    wtsemu.Trf Data Stop    ue=3  pdu=3  qfi=1  trf_id=3  dir=ul
+
+
+5GC002255_E_B11_7_UE_Release_drxLongCycle_Sup_80
+    [Tags]  restart traffic
+    CallSetup.UE Deregister     id=3
+    CallSetup.UE Register           ue=3
+    CallSetup.Launch PDU Session  ue=3  pdu=3  gw=3
+    5GC002255_Keywords.Start Capture BIP ABIO 2slots
+    wtsemu.trf_data_start    ue=3    pdu=3    qfi=1    dir=dl    trf_id=1   mbps=${HighThroughput}
+    wtsemu.trf_data_start    ue=3    pdu=3    qfi=1    dir=ul    trf_id=1   mbps=${MiddleThroughput}
+    Traced sleep   10s  msg=pause to get the real throughput
+    ${traffic_ul}      Get Average Traffic Rate  ue=3  pdu=3  qfi=1  trf_id=3  dir=ul
+    ${traffic_dl}      Get Average Traffic Rate  ue=3  pdu=3  qfi=1  trf_id=2  dir=dl
+    Dated Log  traffic dl: ${traffic_dl}  ${true}  2
+    Dated Log  traffic ul: ${traffic_ul}  ${true}  2
+    Should Be True    ${HighThroughput} * 900000 <= ${traffic_dl} <= ${HighThroughput} * 1100000
+    Should Be True    ${MiddleThroughput} * 900000  <= ${traffic_ul} <= ${MiddleThroughput}* 1100000
+    wtsemu.Trf Data Stop    ue=3  pdu=3  qfi=1  trf_id=2  dir=dl
+    wtsemu.Trf Data Stop    ue=3  pdu=3  qfi=1  trf_id=3  dir=ul
+    5GC002255_Keywords.Stop Capture L1L2
+    Check_PsPeerCtrl_ScellUeSchedulingInd01    ${CaptureL1L2.path}
+
+
+Check rrc-transactionId
+    ${cmd}      Catenate
+    ...                      cd ${tl.core.dir_path};
+    ...                       grep -i drx-onDurationTimer -A 9 -B 15 egate_console.log
+    ...                     | grep rrc-Tran
+    ...                     | awk -F "rrc-TransactionIdentifier" '{print $2}'
+    ...                     | awk -F "," '{print $1}'
+    ...                     | tail -1
+    #${rrctransacid-req}   common_frt.Ssh Execute With Timeout   command=${cmd}   connection=lteemu
+    ${rrctransacid-req}     Connect.SSH Wait For Connect and Cmd  command=${cmd}  host=${HOST_EPCSIM}
+
+    ${cmd}      Catenate
+    ...                      cd ${tl.core.dir_path};
+    ...                       grep -i rrcReconfigurationComplete -B 10 egate_console.log
+    ...                     | grep rrc-Tran
+    ...                     | awk -F "rrc-TransactionIdentifier" '{print $2}'
+    ...                     | awk -F "," '{print $1}'
+    ...                     | tail -1
+
+    ${rrctransacid-resp}     Connect.SSH Wait For Connect and Cmd  command=${cmd}  host=${HOST_EPCSIM}
+
+    should be equal        ${rrctransacid-req}    ${rrctransacid-resp}
+
+
+Check_PsPeerCtrl_ScellUeSchedulingInd
+   [Arguments]                     ${pcapFile}
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFile}
+    ${drxon}                        set variable
+    ...                             itf_l2_ps_peerctrl_ScellUeSchedulingInd.allocatedPucchList_item_0.isSentDuringDrxOn$
+    #Dated Log                       pdmlFile=${pdmlFile}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_peerctrl_ScellUeSchedulingInd
+    ...                             path=${drxon}
+    ...                             value=01
+    ...                             kind=value
+    ...                             test=MATCH
+
+
+Check_PsPeerCtrl_ScellUeSchedulingInd01
+   [Arguments]                     ${pcapFile}
+   [Tags]
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFile}
+    ${drxon}                        set variable
+    ...                             itf_l2_ps_peerctrl_ScellUeSchedulingInd.allocatedPucchList_item_0.isSentDuringDrxOn$
+    @{list_msg}       analyzer.get_match_from_path
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_peerctrl_ScellUeSchedulingInd
+    ...                             path=${drxon}
+    ...                             debugFilter=True
+   ${paquet}        set variable    ${list_msg[0]}
+   @{listpathfound}   Get Dictionary Keys  ${paquet.fields}
+   ${path}          set variable    ${listpathfound[0]}
+   ${InitValue}     set variable    ${list_msg[0].fields['${path}'].value}
+   ${equal}=         set variable    ${false}
+   FOR    ${msg}    IN    @{list_msg}
+       ${NewValue}  set variable   ${msg.fields['${path}'].value}
+       ${equal}   Set Variable if     "${InitValue}"!="${NewValue}"  ${true}    ${equal}
+   END
+   Should Be True    ${equal}
+
+
+Get Average Traffic Rate
+    [Documentation]    Get Average Traffic Rate from bearer stat WTS function
+
+    [Arguments]    ${ue}=1    ${pdu}=1    ${qfi}=1    ${trf_id}=1    ${dir}=dl
+    ...            ${expected_data_rate}=5    ${deviation_in_percent}=5
+    Dated log  Arguments : ${ue} ${pdu} ${qfi} ${trf_id} ${dir}
+
+    wtsemu.Bearer Stats             ue=${ue}
+    ...                             dir=${dir}                        trf_id=${trf_id}
+    ...                             qfi=${qfi}                        pdu=${pdu}
+    ${status}    ${output}     Run Keyword And Ignore Error            wtsemu.read_wtsemu_output_until
+    ...                        expected=Average packet interval        timeout=20
+    ${output}=                 Get Lines Containing String             ${output}          Average data rate
+    ${output}=                 Replace String      ${output}      Average data rate       ${EMPTY}
+    @{words}=                  Split String        ${output}      (
+    ${average_out}=            Strip String        ${words[0]}
+    [Return]    ${average_out}
+
+
+Teardown 5GC002255_EB11
+    [Documentation]    collect Sos Report if a TC is failed or if the user need traces ForceDebugDataCollection
+    Dated log                       Teardown for 5GC002255_EB11
+    Produce Scout Data
+    Run Keyword If                  ${ForceDebugDataCollection}   Get Sos Report
+    [Teardown]                      GenericTest.Display diagnosis

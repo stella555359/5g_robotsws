@@ -1,0 +1,23 @@
+#!/bin/bash
+
+runner_dir=`dirname "$(realpath $0)"`
+
+#Execute as dryrun every tc found on the list for the specified load
+python ${runner_dir}/../python/tc_runner.py\
+ --conf-dir ~/testline_configuration/7_20_UTE5GCLASSSV374/\
+ --gnb-builds $1\
+ --gnb-target-directory /5gswload/\
+ --tc-files-or-dirs\
+   ../../../5GC002056-AGAD/TestCases/\
+ --tc-log-dir /tmp\
+ --tc-robot-opts "\-e B_255 \-e B_256 \-e B_359 \-e C_422"\
+ --qc-report\
+ --qc-file\
+  ../../../5GC002056-AGAD/TestCases/5GC002056_AGAD.qc\
+ --username dutheil1
+
+
+# --tc-robot-opts "\-\-dryrun"\
+# --tc-robot-opts "\-\-dryrun \-i B_361 \-i C_423"\
+# --gnb-dl-only\
+#   ../../../5GC000511/TestCases/5GC000511_E_132_133_NSA_trunk.robot\

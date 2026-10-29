@@ -1,0 +1,198 @@
+*** Settings ***
+
+Documentation
+...   author: X.X
+
+Force Tags    CONFIGURED    CRT    PY39    RAN_5G    RAN_5G_TDD    SBTS00
+...           CLOUD_5G_I_BOO_AP_LOO
+...           VARIANT_SANSA_FS_ECPRI_CMWV_FDD+TDD
+
+Resource   ./resources/CB008533_resources.robot
+Library    taf.ul.hanging_resources.listener    ${False}
+
+Suite Setup    Run keywords    Prepare suite environment  egate_config=${lua_cfg_file}  scfc=${SCFC}  ap_xml=${AP_XML}
+...            AND  Create aliases
+Suite Teardown  Clean suite environment
+
+*** Variables ***
+${lua_cfg_file}=  ${CURDIR}${/}config${/}egate_config_FDD_TDD_6Cells_SANSA_4CC_CA_2UEs.cfg
+${SCFC}=          ${CURDIR}${/}config${/}SCFC_FDD_TDD_6Cells_FS_SANSA_4CC_CA_FTTF.xml
+${AP_XML}=        ${CURDIR}${/}config${/}iphy_AHLOA_AHCA_AHFIB_AEQE_AEQE_6Cells.xml
+${counters}       M55138C03001, M55138C03002, M55139C03001, M55139C03002, M55118C09502, M55118C09503, M55118C09501
+
+*** Test Cases ***
+CB008533-A-B2a_Blind_SCell_Addition
+    [Documentation]
+    ...  1.DESCRIPTION
+    ...     This user scenario describes the successful operation of Blind SCell Addition where gNB performs SCell selection for 4CC mixed mode CA
+    ...     with PCell as FDD in SA mode. Up to 4 NRRELs are configured as CA enabled. In blind mode, SCells are added when UE connects with PCell,
+    ...     based on calculated SCell weight factor. CA relations are defined with multiple FDD and TDD cells as SCells.
+    ...  2.TEST ENVIRONMENT AND SETTINGS
+    ...     This item is testing in UTE environment:
+    ...     •	5G Classical SA CMWV L1Bypass cloud test line (CLOUD_5G_I_BOO_AP_KLLL_SANSA_L1B_ECPRI_CMWV_TDD) gNB (ASIB, 2xABIO, AMIA),
+    ...     UE simulator (Airphone ASIK + 3xABIL), WTS 5G core simulator (Egate)
+    ...     •	gNB has configured 4CC for Carrier Aggregation: 2 Cell FDD and 2 Cells TDD (CA relations created)
+    ...     •	simulated Radio (AHLOA, AHFIB, AEQE, AHCA)
+    ...     Used HW: gNB (ASIB, 2xABIO, AMIA), UE simulator (Airphone ASIK + 3xABIL)
+    ...     Simulated RRH (AHLOA) – gNB ABIO-1 RF1, AP ABIL-1: Cell-1 – FDD FR1 20MHz ( band n71 )
+    ...     Simulated RRH (AHFIB) – gNB ABIO-1 RF2, AP ABIL-2: Cell-1 – FDD FR1 20MHz ( band n66 ), Cell-5 – FDD FR1 20MHz ( band n25 )
+    ...     Simulated RRH (AEQE) – gNB ABIO-1 RF7, AP ABIL-3: Cell-2 – TDD FR1 100MHz ( band n41 ), Cell-6 – TDD FR1 100MHz ( band n77 )
+    ...     Simulated RRH (AHCA) – gNB ABIO-2 RF1, AP ABIL-1: Cell-3 – FDD FR1 20MHz ( band n5 )
+    ...     Both TDD Cells are configured on the same RU so they are mapped to the same L2-RT instance!
+    ...  2.1 Testing Tools
+    ...     •	gNB: Nokia 5G BTS
+    ...     •	Airphone (AP) – UEs simulator
+    ...     •	WTS – ePC simulator - 5G core network simulator
+    ...     •	Tcpdump & Wireshark – tools for capturing messages
+    ...     •	BTSLog (cli) for collecting gNB & AP remote syslog
+    ...     •	Robot Framework and Python runtime environment to automate the testing process
+    ...     •	Web Element Manager
+    ...  2.2 Test Automation
+    ...     Automation in robotframework
+    ...  3. DEFINITIONS FROM THE TEST SET
+    ...     Test case covers: 5G_RAN_USR_RRM_14519
+    ...  3.1 Definitions from the Test Plan
+    ...  3.2 Required Logs
+    ...     •	Wireshark/TCPdump Logs (NGAP, NR-RRC, E1AP, F1AP)
+    ...     •	TTI Trace
+    ...     •	Counters
+    ...     •	Default gNB & AP SysLog
+    ...     •	BTS Snapshot
+    ...     •	BIP logs
+    ...     •	Sherpa Trace
+    ...  4. TESTING INSTRUCTIONS
+    ...  4.1 Preconditions
+    ...     •	gNB is configured with FDD (20MHz) and TDD FR1 (100MHz) cells on one ABIO card
+    ...     •	All FDD cells are configured to allow SA access.
+    ...     o	NRBTS/NRCELL.cellDepType is set to 1 (SA) or 10 (SA+NSA)
+    ...     •	CA relations are configured for each FDD cell by 4 NRRELs pointing to:
+    ...      o	2 FDD and 2 TDD FR1 cells
+    ...     •	Within each NRREL object NRBTS/NRCELL/NRREL.sCellAdditionMethod parameter is set to 0 (blind)
+    ...     •	SCell activation method is set to buffer based:
+    ...     o	NRBTS.sCellActivationMethod = 1 (bufferBased)
+    ...     •	Initial number of SCells to be activated jointly is set:
+    ...     o	MRBTS/NRBTS/NRCELL.iniNumSCellsToActivate = 2
+    ...     •	DRX is disabled in both FDD and TDD FR1 cells:
+    ...     o	NRBTS/NRCELL.actCDrx = false
+    ...     •	DSS features are disabled in FDD Cells:
+    ...     o	NRBTS.actLteNrDss = false
+    ...     •	Aperiodic CSI reporting for PCell only is enabled:
+    ...     o	NRBTS.NRCELL.actAperCsi = true
+    ...     •	TDD cells are configured with subframe configuration according to 5GC001116-B
+    ...     o	frameStructureType = tdLte
+    ...     o	guardPeriodLength = 6 symbols (SSF6)
+    ...     o	lteToNrFrameShift = 0ms
+    ...     o	prachConfiguration = 97 (format A2 in subframe 7)
+    ...     o	ssBurstSetPeriod = 20ms
+    ...     •	TDD cells are configured with beamforming:
+    ...     o	NRBTS/NRCELL.actBeamforming = true
+    ...     •	Beam Refinement is activated on TDD cells:
+    ...     o	NRBTS/NRCELL.nrBtsBeamRefinementP2 = true
+    ...     •	TDD cells are configured without 5GC002200:
+    ...     o	NRBTS/NRCELL.dlMimoMode <> 70 (8x4 Closed Loop Spatial Multiplexing)
+    ...     •	FDM scheduling is enabled:
+    ...     o	NRBTS.actFdmScheduling = true
+    ...     o	NRBTS/NRCELL.actIncreasedFdmUsersPerSlot = true
+    ...     Note: for detailed configuration of FDM see URSCs in CB006667/CB007859
+    ...     •	FDD and TDD FR1 cells are configured and on-air
+    ...     •	Activate feature CB008533 by:
+    ...     o	configuring parameter NRBTS/NRCELL.maxNumSCellsDlFr1 = 3
+    ...     •	FDD PCell (Cell 1) belongs to n71
+    ...     •	Cell 1 has NRRELs that point to
+    ...     o	Cell 2: FDD ( band n66 )
+    ...     o	Cell 3: TDD ( band n41 )
+    ...     o	Cell 4: FDD ( band n5 )
+    ...     o	Cell 6: TDD ( band n77 )
+    ...     •	PCell (Cell 1) has less than NRCELL-maxNumOfUsersNRCell connected UEs
+    ...     •	PCell (Cell 1) has less than NRCELL-maxNumOfCaUsersNRCell connected UEs with FR1 CA configured
+    ...     •	SCells (Cell 2, Cell 3, Cell 4, Cell 6) have less than NRCELL-maxNumOfUsersNRCell connected UEs each
+    ...     •	SCells (Cell 2, Cell 3, Cell 4, Cell 6) have less than NRCELL-maxNumOfSCellAlloc DL SCell allocations each
+    ...     •	SCell weights (NRBTS/NRCELL.weightForSCellSelection) are configured as below:
+    ...     o	Cell 6 (TDD) > Cell 4 (FDD) > Cell 3 (TDD) > Cell 2 (FDD)
+    ...     •	Loading (number of UEs) in each SCell is the same
+    ...     •	UE supports Inter-band 4CC band combinations –
+    ...     o	CA_n71A-n5A-n77A-n41A (FDD + FDD + TDD + TDD)
+    ...     o	CA_n71A-n66A-n77A-n41A (FDD + FDD + TDD + TDD)
+    ...     o	CA_n41C-n25A-n71A (TDD + TDD + FDD + FDD)
+    ...     •	UE has successfully attached to the PCell either via ICS or incoming HO
+    ...  4.2 Test Step
+    ...     Step-1: Band Combination and SCell Selection for SCell Addition by gNB-CU
+    ...     Description:
+    ...     1.	4CC capable NR-UE is registered in PCell
+    ...     2.	PDU session for NR-UE is established
+    ...     Expected:
+    ...     •	SCell Addition is triggered on gNB-CU due to non-zero number of NRRELs with scellAdditionMethod configured
+    ...     •	gNB-CU selects Cell 4 (FDD), Cell 6(TDD) and Cell 3(TDD) as SCells for 4CC CA, considering SCell weight and load factor
+    ...     and gNB-UE band combination matching (CA_n71A-n5A-n77A-n41A with n71(FDD) as PCell) as the best band combination
+    ...     •	The gNB-CU proceeds with SCell Addition:
+    ...     	The gNB CU includes the Cell 4, Cell 6 and Cell 3 in the SCell-ToBeSetupMod-List within F1AP: UE Context Modification Request.
+    ...     	The allowedBC-ListMRDC IE with the selected band combination BandCombinationInfo (band combination index and feature set entry index)
+    ...     pointing to CA_n71A-n5A-n77A-n41A is also included in the message.
+    ...  4.3 Postconditions
+    ...     •	UE is attached to the PCell (Cell 1) and configured with 4CC CA as per band combination CA_n71A-n5A-n77A-n41A with one
+    ...     FDD SCell (Cell 4) and two TDD SCells (Cell 6 and Cell 3), after SCell Addition is completed
+    ...     [CB008533-B]
+    ...     •	The corresponding counters for RAC and SCell Addition are updated accordingly
+    ...     	GNB_SCELL_3_ADMI_REQ_SA
+    ...     	GNB_SCELL_3_ADMI_SUCC_SA
+    ...     	GNB_DU_SCELL_3_ADMI_REQ_SA
+    ...     	GNB_DU_SCELL_3_ADMI_SUCC_SA
+    ...     	RRC_RECONF_ADD3DLSCELL_ATT_SA
+    ...     	RRC_RECONF_ADD3DLSCELL_SUCC_SA
+    ...     	UE_PCELL_3_CONF_SCELL_DL_SA
+    ...     [End CB008533-B]
+    ...  5.REFERENCES
+    ...     [1] CFAM for CB008533 - https://gates.nsn-net.net/view/00025e8a#o=0
+    ...  6.HISTORY
+    ...     v0.1 2021.11.16 Lukasz Gdowski – test case draft
+    ...     v0.2 2021.12.17 Lukasz Gdowski – correct cells, correct requirements, correct band combinations.
+
+   [Setup]  Run keywords    Wait for next full PM Interval
+
+    Set pdu param for internal traffic  UE_ID=2
+    Register UE  UE_ID=2  CELL_ID=1
+    Establish PDU session for NR-UE2 message flow check
+    Establish PDU session  UE_ID=2  RRC_CHECK=False
+
+
+    Verify SCell-ToBeSetupMod-List IE whether TDD Cell and FDD Cell were selected to 4CC CA for NR-UE2
+    Verify sCellToAddModList IE whether TDD Cells and FDD Cell were added as SCells for NR-UE2
+    Verify allowedBC-ListMRDC IE whether CA_n71A-n5A-n77A-n41A band combination was selected to 4CC CA for NR-UE2
+    Verify counters for successful 4CC FFTT CA
+
+    Release PDU session   UE_ID=2
+    Deregister UE  UE_ID=2
+
+    Change weightForSCellSelection for Cell-2 and Cell-4
+
+    Set pdu param for internal traffic  UE_ID=2
+    Register UE  UE_ID=2  CELL_ID=1
+    Establish PDU session for NR-UE2 message flow check
+    Establish PDU session  UE_ID=2  RRC_CHECK=False
+
+
+    Verify sCellToAddModList IE whether TDD Cells and FDD Cell with higher weightForSCellSelection were added as SCells for NR-UE2
+    Verify allowedBC-ListMRDC IE whether CA_n71A-n5A-n77A-n41A band combination was selected to 4CC CA with higher weight for NR-UE2
+
+    Release PDU session   UE_ID=2
+    Deregister UE  UE_ID=2
+
+    Wait for next full PM Interval
+
+    Set pdu param for internal traffic  UE_ID=3
+    Register UE  UE_ID=3  CELL_ID=1
+    Establish PDU session  UE_ID=3  RRC_CHECK=False
+
+    Verify counters for successful 3CC FTT CA
+    Verify counters for successful 4CC FFTT CA not increased
+
+    Release PDU session   UE_ID=3
+
+    Deregister UE  UE_ID=3
+
+    ${pm_counter_file}=    Get Latest Unpacked Full Pm Counters File
+    Get counters value and report to rp  counters=${counters}  filepath=${pm_counter_file}  localmoid=NRCELL-1
+
+    Produce Scout Data
+
+    [Teardown]  Deconfigure all

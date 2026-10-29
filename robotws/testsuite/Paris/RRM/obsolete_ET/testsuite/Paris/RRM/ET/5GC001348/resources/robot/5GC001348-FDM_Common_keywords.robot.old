@@ -1,0 +1,278 @@
+*** Settings ***
+Resource           5GC001348-Common_keywords.robot
+
+*** Variables ***
+
+
+
+*** Keywords ***
+
+Check Pusch In Rach Sfn and Slot
+    [Documentation]                 Find the corresponding uldata_puschreceivereq to any
+    ...                             uldata_prachreceivereq packet, and check that
+    ...                             StartPrb and NumOfPrb values are corrects
+
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${Capture_BIP_GNB.path}
+    #${pdmlFile}=                    analyzer.pcap_to_pdml           /home/aacolats/1348/tcpdumpL2L1_filtering_off.pcap
+    #${pdmlFile}=                     Set variable                    /home/aacolats/1348/gNB_bip_traffic_ue2_attach_ue2.pdml
+    # 1 - Retrieve from pdml all pucchReq
+    Dated log new line              Getting all uldata_prachreceivereq.PdmlFile=${pdmlFile} pathlist=${FIELDS_PRACH_REQ}
+    @{listAllPrachReceiveReq}       analyzer.get_match_from_paths
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=uldata_prachreceivereq
+    ...                             pathList=${FIELDS_PRACH_REQ}
+    ${lenPrachReq}                  get length                          ${listAllPrachReceiveReq}
+    Set Test Variable               @{listAllPrachReceiveReq}
+    Dated log                       NB of uldata_prachreceivereq:${lenPrachReq}
+    # Show Packet Match List          listPacketMatch=${listAllPrachReceiveReq}
+    # ...                             fields=${FIELDS_PRACH_REQ}          isDisplayShort=${False}
+
+    # 2 - Retrieve from pdml all puschReceiveReq
+    Dated log                       Getting all uldata_puschreceivereq
+    @{listAllPuschReceiveReq}       analyzer.get_match_from_paths
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=uldata_puschreceivereq
+    ...                             pathList=${FIELDS_PUSCH_RECEIVED_REQ}
+#    ...                             filter='dtx$'==00
+    # Show Packet Match List          listPacketMatch=${listAllPuschReceiveReq}
+    # ...                             fields=${FIELDS_PUSCH_RECEIVED_REQ}          isDisplayShort=${False}
+    ${lenPuschReceiveReq}           get length                   ${listAllPuschReceiveReq}
+    Dated log                       NB of uldata_puschreceivereq:${lenPuschReceiveReq}
+
+
+    # 3 - Retrieve from pdml all puschReceiveRespHarqU
+    Dated log                       Getting all uldata_puschreceiverespharqu
+    @{listAllPuschReceiveRespHarqU}       analyzer.get_match_from_paths
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=uldata_puschreceiverespharqu
+    ...                             pathList=${FIELDS_PUSCH_RECEIVE_RESP_HARQU}
+#    ...                             filter='dtx$'==00
+    # Show Packet Match List          listPacketMatch=${listAllPuschReceiveRespHarqU}
+    # ...
+    ${lenPuschReceiveRespHarqU}           get length                   ${listAllPuschReceiveRespHarqU}
+    Dated log                       NB of uldata_puschreceivereq:${lenPuschReceiveRespHarqU}
+
+    ${cntPuschReceiveReq}                  Set Variable                        ${0}
+    ${cntPuschReceiveRespHarpU}            Set Variable                        ${0}
+    # 4 - For each prachReq, find corresponding puschReceiveReq and pucchRespHarqU (same slot/sfn) and check ackNack
+    ${ListParser}                   analyzer.newListParser              ${listAllPuschReceiveReq}
+    FOR    ${packet}   IN          @{listAllPrachReceiveReq}
+    #       Retrieve slot and sfn for current pucchReq
+            ${slot}                 Get Value In Packet Match
+            ...                     packetMatch=${packet}
+            ...                     field=slot
+            ${sfn}                  Get Value In Packet Match
+            ...                     packetMatch=${packet}
+            ...                     field=sfn
+    #       From list of all puschReceivedReq, extract those with same slot/sfn as current pucchReq
+            ${ListParser}                 analyzer.newListParser              ${listAllPuschReceiveReq}
+            ${listMatchPuschReceiveReq}   analyzer.getNextFromlistParser
+            ...                           parser=${ListParser}
+            ...                           filter='slot$'==${slot} and 'sfn$'==${sfn}
+            ...                           maxDeep=10
+            ${lenPuschReceiveReq}           get length                    ${listMatchPuschReceiveReq}
+            Dated log                       lenPuschReceiveReq:${lenPuschReceiveReq}
+            ${cntPuschReceiveReq}           Evaluate                      ${cntPuschReceiveReq}+${lenPuschReceiveReq}
+            Dated log                       cntPuschReceiveReq:${cntPuschReceiveReq}
+            Show Packet Match List          listPacketMatch=${listMatchPuschReceiveReq}
+            ...                             fields=${FIELDS_PUSCH_RECEIVED_REQ}          isDisplayShort=${False}
+    #       compute list of index of those pucchResp
+    #       Compare numOfBitsOfUciInformation and ackNack and update stats upon results
+            run keyword if                    ${lenPuschReceiveReq}!=${0}    verifyStartPrbAndNumOfPrb
+            ...                                                              reqPacket=${packet}
+            ...                                                              respPacketList=${listMatchPuschReceiveReq}
+           # ${cnt}=    run keyword if        ${lenPuschReceiveReq}!=${0}          Evaluate                            ${cnt}+1
+    #       From list of all puschReceivedRepHardU, extract those with same slot/sfn as current pucchReq
+            ${ListParser}                   analyzer.newListParser              ${listAllPuschReceiveRespHarqU}
+            ${listMatchPuschReceiveRespHarqU}   analyzer.getNextFromlistParser
+            ...                           parser=${ListParser}
+            ...                           filter='slot$'==${slot} and 'sfn$'==${sfn}
+            ...                           maxDeep=10
+            ${lenPuschReceiveRespHarqU}            get length                    ${listMatchPuschReceiveRespHarqU}
+            ${cntPuschReceiveRespHarpU}            Evaluate                      ${cntPuschReceiveRespHarpU}+${lenPuschReceiveRespHarqU}
+            Show Packet Match List          listPacketMatch=${listMatchPuschReceiveRespHarqU}
+            ...                             fields=${FIELDS_PUSCH_RECEIVE_RESP_HARQU}          isDisplayShort=${False}
+            Dated log      lenPuschReceiveRespHarqU:${lenPuschReceiveRespHarqU}
+    #       compute list of index of those pucchResp
+            ${listStr}              List Packet Match Index             ${listMatchPuschReceiveRespHarqU}
+    #       Compare numOfBitsOfUciInformation and ackNack and update stats upon results
+            run keyword if                    ${lenPuschReceiveRespHarqU}!=${0}    verifDtxAndCrc
+            ...                                                              reqPacket=${packet}
+            ...                                                              respPacketList=${listMatchPuschReceiveRespHarqU}
+    END
+    Dated log              cntPuschReceiveReq:${cntPuschReceiveReq}
+    Dated log              cntPuschReceiveRespHarpU:${cntPuschReceiveRespHarpU}
+    Should Not Be Equal    ${cntPuschReceiveReq}          ${0}
+    Should Not Be Equal    ${cntPuschReceiveRespHarpU}    ${0}
+
+verifyStartPrbAndNumOfPrb
+    [Documentation]                 Check one and only one pucchResp was found for a pucchReq
+    ...                             then check numOfBitsOfUciInformation is in line with ackNack
+    ...                             return a string ending with OK, ERROR or NONE
+    [Arguments]                     ${reqPacket}
+    ...                             ${respPacketList}
+    ${lenResp}                      get length                          ${respPacketList}
+    #return from keyword if          ${lenResp}!=${1}                    NONE
+    ${respPacket}                   set variable                        ${respPacketList[0]}
+    # Extracting startPrb and numOfPrb from puschReiceiveReq
+    ${startPrb}                     Get Value In Packet Match
+    ...                             packetMatch=${respPacket}
+    ...                             field=startPrb                       kind=show
+
+    Dated log      startPrb:${startPrb}
+
+    # ${startPrbInHexa}        transformInHexa          pdml_value=${startPrb}     reverse=True
+    # Dated log      numOfPrbInHexa:${startPrbInHexa}
+    ${startPrbInInteger}     Convert To Integer       ${startPrb}
+    Dated log      numOfPrbInInteger:${startPrbInInteger}
+
+    ${numOfPrb}                     Get Value In Packet Match
+    ...                             packetMatch=${respPacket}
+    ...                             field=numOfPrb                       kind=show
+
+    Dated log      startPrb:${numOfPrb}
+
+    # ${numOfPrbInHexa}        transformInHexa          pdml_value=${numOfPrb}     reverse=True
+    # Dated log      numOfPrbInHexa:${numOfPrbInHexa}
+    ${numOfPrbInInteger}     Convert To Integer       ${numOfPrb}
+    Dated log      numOfPrbInInteger:${numOfPrbInInteger}
+
+    # Check those 2 parameters are aligned
+    ${status}                         Compute StartPrbAndNumOFfPrb Diag
+    ...                             startPrb=${startPrbInInteger}
+    ...                             numOfPrb=${numOfPrbInInteger}
+
+    Dated log      status:${status}
+
+    Should Be Equal         ${status}             OK
+
+  #  [Return]                        ${status}
+
+
+Compute StartPrbAndNumOFfPrb Diag
+    [Documentation]                 Check a numOfBitsOfUciInformation is aligned with a ackNack
+    ...                             return a string ending with : and OK or  ERROR
+    [Arguments]                     ${startPrb}
+    ...                             ${numOfPrb}
+
+    ${prachPrbOffset}               Get Value In Packet Match
+    ...                             packetMatch=${listAllPrachReceiveReq[0]}
+    ...                             field=prachPrbOffset
+
+    Dated log      prachPrbOffset:${prachPrbOffset}
+
+    ${prachPrbOffsetInteger}        Convert To Integer       ${prachPrbOffset}
+
+    # ${prachPrbOffset}               set variable    ${32}
+    ${startPrb_value}               Evaluate     ${prachPrbOffsetInteger}+12
+    ${numOfPrb_value}               Evaluate     273-${startPrb_value}
+    ${verdict}                         set variable if
+    ...                             ('${startPrb}'=='${startPrb_value}' and '${numOfPrb}'=='${numOfPrb_value}')
+    ...                             OK                                  ERROR
+    [Return]                        ${verdict}
+
+
+verifDtxAndCrc
+     [Documentation]                 Check one and only one pucchResp was found for a pucchReq
+    ...                             then check numOfBitsOfUciInformation is in line with ackNack
+    ...                             return a string ending with OK, ERROR or NONE
+    [Arguments]                     ${reqPacket}
+    ...                             ${respPacketList}
+    # ${lenResp}                      get length                          ${respPacketList}
+    # return from keyword if          ${lenResp}!=${1}                    NONE
+    ${respPacket}                   set variable                        ${respPacketList[0]}
+    Dated log      respPacket:${respPacket}
+    # Extracting dtx and crc from puschReiceiveRespHarqU
+    ${dtx}                          Get Value In Packet Match
+    ...                             packetMatch=${respPacket}
+    ...                             field=dtx                       kind=show
+
+    Dated log      Dtx:${dtx}
+
+    # ${startPrbInHexa}        transformInHexa          pdml_value=${startPrb}     reverse=True
+    # Dated log      numOfPrbInHexa:${startPrbInHexa}
+    ${dtxInInteger}     Convert To Integer       ${dtx}
+    Dated log      dtxInInteger:${dtxInInteger}
+
+    ${crc}                      Get Value In Packet Match
+    ...                             packetMatch=${respPacket}
+    ...                             field=crc                       kind=show
+
+    Dated log      Crc:${crc}
+
+    # ${numOfPrbInHexa}        transformInHexa          pdml_value=${numOfPrb}     reverse=True
+    # Dated log      numOfPrbInHexa:${numOfPrbInHexa}
+    ${crcInInteger}     Convert To Integer       ${crc}
+    Dated log      crcInInteger:${crcInInteger}
+
+    ${verdict}                         set variable if
+    ...                             ('${dtx}'=='${0}' and '${crc}'=='${0}')
+    ...                             OK                                  ERROR
+
+    Should Be Equal         ${verdict}             OK
+
+
+Check Pusch Receive Req Is In Rach Slot
+    [Arguments]                     ${param}
+    Check At least one Response     respName=${ULDATA_PUSCH_RECEIVE_Req.msg}
+
+Check Pusch Resp HarqU Is In Rach Slot
+    [Arguments]                     ${param}
+    Check At least one Response     respName=${ULDATA_PUSCH_RECEIVE_RESP_HARQU.msg}
+
+Check Pusch Receive Req Match Resp HarqU In Rach Slot
+    [Arguments]                     ${param}
+    ${nbErrPs}                      Check Number Of Records in Responses
+    ...                                 respName1=${ULDATA_PUSCH_RECEIVE_Req.msg}
+    ...                                 respName2=${ULDATA_PUSCH_RECEIVE_RESP_HARQU.msg}
+    should be true                 ${nbErrPs} <${10}
+
+
+Check Pusch Resp HarqU DTX CRC
+    [Arguments]                     ${param}
+    Check Pusch Resp DTX CRC        respName=${ULDATA_PUSCH_RECEIVE_RESP_HARQU.msg}
+
+Check Pusch Resp DTX CRC
+    [Arguments]                     ${respName}
+    ${nbErrDtx}                     Check Field in Response
+    ...                                 respName=${respName}
+    ...                                 field=dtx
+    ...                                 expected=${0}
+    ...                                 isSlotSfnStr=${True}
+    ${nbErrCrc}                     Check Field in Response
+    ...                                 respName=${respName}
+    ...                                 field=crc
+    ...                                 expected=${0}
+    ...                                 isSlotSfnStr=${True}
+    Should be true                 ${nbErrDtx} < ${10}
+    Dated log                             Nb error DTX=${nbErrDtx}
+    Should be true                 ${nbErrCRC} < ${10}
+    Dated log                       Nb error CRC=${nbErrCrc}
+
+
+Check StartPrb And NumOfPrb In Pusch Receive Req
+    [Arguments]                     ${param}
+    ${expected_startPrb}            Evaluate    ${prachPrbOffset_int}+12
+    ${expected_numOfPrb}            Evaluate    273-${expected_startPrb}
+    ${expected_startPrb_hexa}       Evaluate    StringTool.toHexastr(${expected_startPrb})    modules=StringTool
+    ${expected_numOfPrb_hexa}       Evaluate    StringTool.toHexastr(${expected_numOfPrb})    modules=StringTool
+
+    ${nbErr_startPrb}               Check Field in Response
+    ...                                 respName=${ULDATA_PUSCH_RECEIVE_Req.msg}
+    ...                                 field=startPrb
+    ...                                 expected=${expected_startPrb_hexa}
+
+    ${nbErr_numOfPrb}               Check Field in Response
+    ...                                 respName=${ULDATA_PUSCH_RECEIVE_Req.msg}
+    ...                                 field=numOfPrb
+    ...                                 expected=${expected_numOfPrb_hexa}
+
+    Should be equal                 ${nbErr_startPrb}                             ${0}
+    ...                             Nb error startPrb=${nbErr_startPrb}
+    Should be equal                 ${nbErr_numOfPrb}                             ${0}
+    ...                             Nb error numOfPrb=${nbErr_numOfPrb}
+
+Check Pdcch Send Req Is In SSB Slot
+    [Arguments]                         ${param}
+    Check At least one Response SSB     respName=${DLDATA_PDCCH_SEND_REQ.msg}
+    # Check Pusch Receive Req in Pucch slot + ${param.k2min}

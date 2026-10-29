@@ -1,0 +1,287 @@
+"""
+:copyright: Nokia Networks
+:author: Mateusz Plinta, Justyna Balcerzak
+:maintainer: Mateusz Plinta, Justyna Balcerzak
+:contact: mateusz.plinta@nokia.com, justyna.balcerzak@nokia.com
+"""
+
+from time import sleep
+import re
+import shutil
+import json
+import glob
+
+from robot.errors import ExecutionFailed
+from robot.api import logger
+from robot.libraries.OperatingSystem import OperatingSystem
+from robot.libraries.BuiltIn import BuiltIn
+
+from ta5g_testline_management import ta5g_testline_management
+from ta5g_interface_tools import ta5g_interface_tools
+
+import testsuite.Paris.RRM.ET.resources_KRK.python.common_gnb as common_gnb
+import testsuite.Paris.RRM.ET.resources_KRK.python.utilities as utilities
+from testsuite.Paris.RRM.ET.resources_KRK.python.swconfig import GnbSwconfigManager
+from testsuite.Paris.RRM.ET.resources_KRK.python.file_management import create_dir_at_output_dir
+import testsuite.Paris.RRM.ET.resources_KRK.python.pm_counters as pm_counters
+from testsuite.Paris.RRM.ET.resources_KRK.python.common_airphone import (
+    collect_airphone_snapshot, log_airphone_build
+)
+from testsuite.Paris.RRM.ET.resources_KRK.python.common_wts import (
+    start_wts_and_wait_for_ready_state,
+    copy_egate_console_log_to_specified_dir,
+    copy_wts_files_to_epcsim_dir_path,
+    stop_wts_and_collect_its_logs,
+    collect_sos_report_log,
+    stop_wts_and_clear,
+    attach_ue_and_perform_sgnb_addition
+)
+
+from variables import *
+
+
+class UnhandledVariableAssignmentForUnit(Exception):
+    pass
+
+
+def set_variables_based_on_deployment_and_release():
+    capacity_unit = common_gnb.get_capability_unit_name()
+    release = common_gnb.get_gnb_build_release(convert_to_trunk=True)
+    release_no_conv = common_gnb.get_gnb_build_release(convert_to_trunk=False)
+    pm_interval = pm_counters.get_measurement_period_from_scf()
+    pm_interval = int(pm_interval.replace('min', ''))
+    BuiltIn().set_suite_variable("${PM_PERIOD}", pm_interval)
+    BuiltIn().set_suite_variable("${UNIT_NAME}", capacity_unit)
+    BuiltIn().set_suite_variable("${RELEASE}", release)
+    BuiltIn().set_suite_variable("${RELEASE_NO_CONV}", release_no_conv)
+
+
+def get_test_prefix():
+    tc_name = ta5g_interface_tools().get_robot_test_name()
+    match = re.search(r'CB00(?P<feature>8204)_(?P<fsplit>\w)(?P<tc>\d+)_.*', tc_name)
+    prefix = "{}_{}{}".format(match.group("feature"), match.group("fsplit"), match.group("tc")) if match else tc_name
+    BuiltIn().set_test_variable("${TEST_PREFIX}", prefix)
+    return prefix
+
+
+def ensure_gnb_files_flags_are_in_order():
+    common_gnb.ensure_syslog_flags_existence_in_swconfig()
+    common_gnb.ensure_cplane_flags_existence_in_swconfig()
+    common_gnb.ensure_cp_runtime_ini_has_LoggingSeverity_set_on_trace()
+    GnbSwconfigManager().log_swconfig_contents()
+
+
+def add_nsa_specific_addresses():
+    common_gnb.add_ip_addr_on_vm("10.0.1.131/24", "eth3")
+    common_gnb.add_ip_addr_on_vm("10.0.1.132/24", "eth3")
+    common_gnb.add_ip_addr_on_vm("10.0.1.133/24", "eth3")
+    common_gnb.add_ip_addr_on_vm("10.0.1.134/24", "eth3")
+    common_gnb.add_ip_addr_on_vm("10.0.1.135/24", "eth3")
+    common_gnb.add_ip_addr_on_vm("10.0.1.136/24", "eth3")
+    common_gnb.add_ip_addr_on_vm("10.0.1.137/24", "eth3")
+
+
+def add_additional_specific_addresses():
+    common_gnb.add_ip_addr_on_vm("10.0.2.1/24", "eth4")
+    common_gnb.add_ip_addr_on_vm("10.0.2.2/24", "eth4")
+    common_gnb.add_ip_addr_on_vm("10.0.2.3/24", "eth4")
+    common_gnb.add_ip_addr_on_vm("10.0.2.4/24", "eth4")
+    common_gnb.add_ip_addr_on_vm("10.0.2.5/24", "eth4")
+    common_gnb.add_ip_addr_on_vm("10.0.1.112/24", "eth3")
+    common_gnb.add_ip_addr_on_vm("10.0.1.121/24", "eth3")
+
+
+def adjust_parameters_using_delta(delta):
+    common_gnb.perform_recomissioning_with_delta(path_to_delta=json.dumps(delta))
+
+
+def copy_default_wts_config_from_current_deployment():
+    wts_config_filename = "wts_{}.cfg".format(get_test_prefix())
+    wts_config_path = os.path.join(EPCSIM_DIR_PATH, wts_config_filename)
+    OperatingSystem().copy_file(source=DEFAULT_WTS_CONFIG_PATH, destination=wts_config_path)
+    BuiltIn().set_test_variable("${WTS_CONFIG_PATH}", wts_config_path)
+    return wts_config_path
+
+
+def copy_wts_cfg_file_to_output_dir(wts_config_path=None, subdir="wts/"):
+    output_dir = BuiltIn().get_variable_value("${OUTPUT_DIR}")
+    if not wts_config_path:
+        wts_config_path = BuiltIn().get_variable_value("${WTS_CONFIG_PATH}")
+    if not subdir.endswith('/'):
+        subdir += '/'
+    OperatingSystem().copy_file(source=wts_config_path, destination=os.path.join(output_dir, subdir))
+
+
+def prepare_environment(sib1_reception_dict, wts_config_path=None, skip_reset=False):
+    if wts_config_path:
+        OperatingSystem().copy_file(source=wts_config_path, destination=EPCSIM_DIR_PATH)
+    else:
+        wts_config_path = copy_default_wts_config_from_current_deployment()
+
+    copy_wts_cfg_file_to_output_dir(wts_config_path, get_test_prefix())
+    common_gnb.delete_localhost_ssh_key_from_known_hosts()
+    add_nsa_specific_addresses()
+    add_additional_specific_addresses()
+    ta5g_testline_management().wait_for_testline_icmp_echo_replies_and_ssh_services()
+    ensure_gnb_files_flags_are_in_order()
+    common_gnb.log_gnb_build()
+    log_airphone_build()
+    ru_tries = mib_sib_tries = 0
+    ru_tries_max = mib_sib_tries_max = 4
+    while ru_tries < ru_tries_max and mib_sib_tries < mib_sib_tries_max:
+        if ru_tries != 0 or mib_sib_tries != 0:
+            utilities.logger_console_info("I will restart environment preparation")
+        try:
+            common_gnb.reset_units_and_wait_for_radio_head_online(skip_reset=skip_reset)
+            start_wts_and_wait_for_ready_state(
+                wts_config_filename=wts_config_path,
+                sib_reception_dict=sib1_reception_dict,
+                edaemon_port=22222,
+                timeout=720
+            )
+        except common_gnb.RadioHeadTimeoutException:
+            utilities.logger_warning("RadioHeadTimeoutException occurred")
+            ru_tries += 1
+        except (ValueError, ExecutionFailed) as e:
+            utilities.logger_warning("MibSibAcquisitionFailed exception occurred")
+            ta5g_egate_instance = BuiltIn().get_library_instance('ta5g_egate')
+            ta5g_egate_instance._ute_wtssim_instance.teardown_all_aliases_for_wts()
+            mib_sib_tries += 1
+        else:
+            break
+
+        if skip_reset is True:
+            if ru_tries > 0:
+                raise common_gnb.RadioHeadTimeoutException("RadioHeadTimeoutException occurred")
+            if mib_sib_tries > 0:
+                raise common_gnb.MibSibAcquisitionFailed("MIB-SIB Acquisition failed")
+
+        if ru_tries >= ru_tries_max:
+            raise common_gnb.RadioHeadTimeoutException("RadioHeadTimeoutException occurred over {} times".format(
+                ru_tries_max))
+        elif mib_sib_tries >= mib_sib_tries_max:
+            raise common_gnb.MibSibAcquisitionFailed("MIB-SIB Acquisition failed over {} retries".format(
+                mib_sib_tries))
+
+
+def start_collecting_logs(prefix=""):
+    log_dirpath = ta5g_interface_tools().get_robot_output_dir()
+    if not prefix:
+        prefix = get_test_prefix()
+
+    common_gnb.collect_scf_file(prefix="before", subdir=prefix, name=prefix)
+    ta5g_syslog = BuiltIn().get_library_instance('ta5g_syslog')
+    ta5g_tshark = BuiltIn().get_library_instance('ta5g_tshark')
+    ta5g_syslog.start_syslog_for_enb(logs_dirpath=log_dirpath + '/' + prefix,
+                                     log_filename_prefix="syslog_gnb_{}_".format(prefix))
+    ta5g_tshark.start_tshark(alias=BuiltIn().get_variable_value("${ALIAS_TSHARK_WTS}"),
+                             log_filename="tcpdump_WTS_" + prefix + ".pcap",
+                             log_dirpath=log_dirpath + "/" + prefix,
+                             capture_filter="sctp",
+                             eth_interface='any')
+    ta5g_tshark.start_tcpdump_on_remote_interface(log_filename_prefix="tcpdump_GNB_" + prefix,
+                                                  log_dirpath=log_dirpath + "/" + prefix)
+    sleep(2)
+
+
+def prepare_env_and_start_collecting_logs(wts_config_filename=None, sib1_reception_dict=None):
+    prepare_environment(wts_config_filename, sib1_reception_dict)
+    start_collecting_logs()
+
+
+def teardown_collecting_logs():
+    log_dirpath = ta5g_interface_tools().get_robot_output_dir()
+    ta5g_tshark = BuiltIn().get_library_instance('ta5g_tshark')
+    ta5g_syslog = BuiltIn().get_library_instance('ta5g_syslog')
+    ute_tshark = BuiltIn().get_library_instance('ute_tshark')
+    ta5g_egate = BuiltIn().get_library_instance("ta5g_egate")
+    ta5g_tshark.stop_tcpdump_on_remote_interface()
+    ute_tshark.teardown_all_aliases_for_tshark()
+    ta5g_syslog.collect_syslog_results()
+    ta5g_syslog.teardown_all_aliases_for_syslog()
+    ta5g_egate._ute_wtssim_instance.teardown_all_aliases_for_wts()
+    test_prefix = get_test_prefix()
+    copy_egate_console_log_to_specified_dir(subdirectory=test_prefix, prefix=test_prefix)
+    common_gnb.collect_scf_file(prefix="after", subdir=test_prefix, name=test_prefix)
+
+
+def cleanup_logs_dir_at_teardown():
+    dest_dir = create_dir_at_output_dir(dir_name=get_test_prefix() + "/ta_messaging_processing")
+    log_output_dir = ta5g_interface_tools().get_robot_output_dir()
+    files = [file for prefix in ['csv*', 'messaging*', 'PARSED*'] for file in
+             glob.glob(os.path.join(log_output_dir, prefix))]
+    for file in files:
+        logger.info("Move {} to {}".format(file, dest_dir))
+        shutil.move(file, dest_dir)
+
+
+def wait_for_ue_to_be_active(sec=2):
+    sleep(int(sec))
+
+
+def wait_for_ul_traffic_finish(sec=15):
+    sleep(sec)
+
+
+def wait_for_throughput_stable(sec=10):
+    sleep(sec)
+
+
+def wait_for_x2_establishment(sec=10):
+    sleep(sec)
+
+
+def wait_for_scf_activate(sec=90):
+    sleep(sec)
+
+
+def wait_cplane_uplane_will_be_ready(sec=450):
+    sleep(sec)
+
+
+def set_cfgTAcounters(value):
+    common_gnb.update_parameter_value(parameter="cfgTAcounters", value=value,
+                                      dist_name="MRBTS-1/NRBTS-1/NRPMRNL-1/NRPMCCP-1")
+
+
+def cleanup_parameters_after_testcase(delta):
+    adjust_parameters_using_delta(delta)
+
+
+def check_CA_is_working_NSA():
+    ta5g_egate_instance = BuiltIn().get_library_instance('ta5g_egate')
+    ta5g_egate_instance.verify_egate_content(expected_pattern=r'SCellIndex 9 activated successfully at airphone.')
+
+
+def prepare_swconfig_for_A03():
+    GnbSwconfigManager().ensure_flags_existence_in_swconfig(flags=["0x580591=0", "0x58056b=0", "0x580307=0x5fe"])
+    GnbSwconfigManager().log_swconfig_contents()
+
+
+def clean_swconfig_after_A03():
+    GnbSwconfigManager().delete_flags_from_swconfig(flags=["0x580591=0", "0x58056b=0", "0x580307=0x5fe"])
+    GnbSwconfigManager().log_swconfig_contents()
+
+
+def add_swconfig_flags_for_l2ps_ta():
+    GnbSwconfigManager().ensure_flags_existence_in_swconfig(flags=["0x58057a=3", "0x58057c=2097152", "0x58057d=2048"])
+    GnbSwconfigManager().log_swconfig_contents()
+
+
+def add_swconfig_flag_for_timing_advance():
+    GnbSwconfigManager().ensure_flags_existence_in_swconfig(flags=["0x5800E3=500"])
+    GnbSwconfigManager().log_swconfig_contents()
+
+
+def get_testline_name():
+    # Returns the name of the Testline. Ex: 2_16_UTE5GCLASSICAL4246
+    for module in sys.modules.copy().values():
+        if type(module) is ModuleType:
+            if "tl" in dir(module):
+                return os.path.basename(os.path.dirname(module.__file__))
+    raise Exception('No Testline Module Loaded!')
+
+
+def check_if_cm_execution():
+    # returns False if the test was launched by the CloudManager, otherwise returns True.
+    return False if os.environ.get("CM_EXECUTION_ID") is None else True

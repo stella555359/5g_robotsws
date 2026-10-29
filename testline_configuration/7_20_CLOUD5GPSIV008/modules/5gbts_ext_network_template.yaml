@@ -1,0 +1,78 @@
+# Copyright (c) Nokia 2017
+
+heat_template_version: 2016-04-08
+description: Template for creating external network with instance spesific configuration parameters
+
+parameters:
+  index:
+    description: Instance index to use to fetch spesific parameters from params list
+    type: number
+
+  dns_forwarders:
+    description: Comma separated list of servers to forward queries to
+    type: comma_delimited_list
+
+  vnf_name:
+    type: string
+    description: 5gbts vnf name
+    default: vBTS
+    constraints:
+      - length: {min: 4, max: 26}
+        description: ( VNF NAME must be length <4-26>)
+
+  external_networks:
+    description: List of instance spesific parameters for each network to create
+    type: json
+
+resources:
+  net:
+    type: OS::Neutron::Net
+    properties:
+      admin_state_up: true
+      name:
+        str_replace:
+          template: $vnf-$net_net-v$version
+          params:
+            $vnf: {get_param: vnf_name}
+            $net: {get_param: [external_networks, {get_param: index}, name]}
+            $version: {get_param: [external_networks, {get_param: index}, ip_ver]}
+      shared: true
+      value_specs:
+        router:external: true
+        provider:physical_network: {get_param: [external_networks, {get_param: index}, provider]}
+        provider:network_type: {get_param: [external_networks, {get_param: index}, net_type]}
+        provider:segmentation_id: {get_param: [external_networks, {get_param: index}, sid]}
+
+  subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$net_subnet-v$version
+          params:
+            $vnf: {get_param: vnf_name}
+            $net: {get_param: [external_networks, {get_param: index}, name]}
+            $version: {get_param: [external_networks, {get_param: index}, ip_ver]}
+      cidr: {get_param: [external_networks, {get_param: index}, cidr]}
+      network_id: {get_resource: net}
+      dns_nameservers: {get_param: [dns_forwarders]}
+      enable_dhcp: false
+      ip_version: {get_param: [external_networks, {get_param: index}, ip_ver]}
+      gateway_ip: {get_param: [external_networks, {get_param: index}, gateway]}
+      allocation_pools:
+        -
+          start: {get_param: [external_networks, {get_param: index}, start]}
+          end: {get_param: [external_networks, {get_param: index}, end]}
+
+outputs:
+  net_uuid:
+    description: Network with uuid
+    value:
+      str_replace:
+        template: |
+          $vnf-$net_net-v$version: $uuid
+        params:
+          $vnf: {get_param: vnf_name}
+          $net: {get_param: [external_networks, {get_param: index}, name]}
+          $version: {get_param: [external_networks, {get_param: index}, ip_ver]}
+          $uuid: {get_resource: net}

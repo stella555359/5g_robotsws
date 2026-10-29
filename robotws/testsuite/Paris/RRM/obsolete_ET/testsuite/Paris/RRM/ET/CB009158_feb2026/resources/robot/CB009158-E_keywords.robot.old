@@ -1,0 +1,414 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Keywords for CB009158-E
+...               Prerequisite :
+...               Scope : keywords for CB009158 mix DSS/non DSS
+...
+...               Test Case Scenario author   :     ilakcoumi.pareemanen@nokia.com
+...               Test Case Scenario contact  :     ilakcoumi.pareemanen@nokia.com
+...               Test Case automation author :     ilakcoumi.pareemanen@nokia.com
+...               Test Case automation contact:     ilakcoumi.pareemanen@nokia.com
+...               Creation Date               :     02-06-2022
+...               Version History   Date            Author                          Notes
+...               0.1               02-06-2022      ilakcoumi.pareemanen@nokia.com            Creation
+...               0.2               17-06-2022      ilakcoumi.pareemanen@nokia.com            Modification- add B4
+...               0.3               05-07-2022      ilakcoumi.pareemanen@nokia.com            Modification- Refacto
+...               0.4               FB2219          ying.yw.wu@nokia.com                      Fix DSS Cell BB Pooling
+...                                                                                           Counter UL value (25 instead of 21)
+...               0.5               13-10-2023      blandine.garnier@nokia.com                Passage en LO_LOOO avec variant
+...               0.6               04-03-2024      ilakcoumi.pareemanen@nokia.com            Sum_pusch_min_values & sherpa removal
+
+Library           taf.wts.runner                WITH NAME       wtsemu
+Library           ute_wtssim                    WITH NAME       wts
+Library           taf.sbts.oam.coam.admin       WITH NAME       coam
+Library           taf.lteemu                    WITH NAME       lteemu
+
+Library            ../../../resources/python/luashark_tools.py
+Resource          taf/rfrl/common_resources/robot/preconditions.robot
+
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../../../resources/SWENG/robot/Container.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+Resource          ../../../resources/common/TtiTrace/ttitrace.robot
+Resource          ../../../5GC001227/resources/robot/Config1227.robot
+Resource          ../../../5GC001227/resources/robot/5GC001227-Common_keywords.robot
+Resource          ../../../5GC001227/resources/robot/5GC001227-A-UPD006_keywords.robot
+Resource          ../../../5GC001227/resources/robot/NEW_5GC001227-E_keyword.robot
+Resource          ../../../5GC001227/resources/robot//5GC001227-Counters_keywords.robot
+Resource          ./CB009158-D_keywords.robot
+
+Variables           ../../../../../resources/SWENG/python/Colors.py
+
+*** Variables ***
+# Variables for ue profile and traffic
+&{Profile_UE_1}                 ue_id=1     pdu=1       gw=1
+...                             dl_tput=120     ul_tput=50      deviation=70
+&{Profile_UE_2}                 ue_id=2     pdu=2       gw=2
+...                             dl_tput=50      ul_tput=10      deviation=60
+&{Profile_UE_3}                 ue_id=3     pdu=3       gw=3
+...                             dl_tput=50      ul_tput=10      deviation=60
+# Pooling Counter, updated expected value due to PR656245 implementation
+&{9158E_Pooling_Counters_Expected_B1}      NRCELL_ID=1    PDSCH_PRB_Expected=46    PUSCH_PRB_Expected=30
+&{9158E_Pooling_Expectation_B1}            Sum_pdsch_min_values=190     Sum_pdsch_max_values=206
+...                                        Sum_pusch_min_values=91      Sum_pusch_max_values=115
+
+# &{9158E_Pooling_Counters_Expected_B1}      NRCELL_ID=1    PDSCH_PRB_Expected=52    PUSCH_PRB_Expected=37
+# &{9158E_Pooling_Expectation_B1}            Sum_pdsch_min_values=200     Sum_pdsch_max_values=206
+# ...                                        Sum_pusch_min_values=110     Sum_pusch_max_values=115
+
+&{9158E_Pooling_Counters_Expected_B4}      NRCELL_ID=1    PDSCH_PRB_Expected=42    PUSCH_PRB_Expected=25
+# &{9158E_Pooling_Counters_Expected_B4}      NRCELL_ID=1    PDSCH_PRB_Expected=42    PUSCH_PRB_Expected=21
+&{9158E_Pooling_Expectation_B4}            Sum_pdsch_min_values=132     Sum_pdsch_max_values=160
+...                                        Sum_pusch_min_values=95      Sum_pusch_max_values=117
+
+
+# &{9158E_Pooling_Counters_Expected_B4}      NRCELL_ID=1    PDSCH_PRB_Expected=48    PUSCH_PRB_Expected=33
+# &{9158E_Pooling_Expectation_B4}            Sum_pdsch_min_values=150     Sum_pdsch_max_values=160
+# ...                                        Sum_pusch_min_values=112     Sum_pusch_max_values=117
+
+
+# DSS counter
+&{DSS_Counter_Expectation_1_E_B1}    NRCELL_ID=1     DL_Ratio_Expected=0.95    UL_Ratio_Expected=0.75
+&{DSS_Counter_Expectation_1_E_B4}    NRCELL_ID=1     DL_Ratio_Expected=0.95    UL_Ratio_Expected=0.83
+#cell id for non DSS counter
+${NRCELL_ID_2}      2
+${NRCELL_ID_3}      3
+
+
+#help to see deeper DSS egate logs
+${Enable_Xp_msg_dbg}            ${False}
+
+# Now, the TestLine is configured during Suite Setup
+# Custom Config File to be used during "Suite Setup"
+${custom_config_file_E_B1}       ${CURDIR}/../../../../../../../custom-config/POOLING/CB009158/CB009158_E/custom_config_9158_E_B1.yaml
+${custom_config_file_E_B4}       ${CURDIR}/../../../../../../../custom-config/POOLING/CB009158/CB009158_E/custom_config_9158_E_B4.yaml
+
+*** Keywords ***
+
+Suite Setup CB009158-E-B1
+    [Documentation]
+    ...     Conditions:    it needs no conditions
+    ...     Actions:       it performs the generic suite setup and backup the configurations files
+    ...     Checks:        it checks nothing more than already done on lib.
+    ...     Verdict:       suite setup is passed
+    Setup.Suite Setup From Scratch
+    ...                    keepAllUeDataInCfgFile=${True}
+    ...                    automaticTeardown=${True}
+    ...                    yamlPathname=${custom_config_file_E_B1}
+    Backup Files
+    ${scf_suite_setup_backup}        OAM Get SCF File           file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable               ${scf_suite_setup_backup}
+    Dated Log                        SCF backup file = ${scf_suite_setup_backup}
+
+Suite Setup CB009158-E-B4
+    [Documentation]
+    ...     Conditions:    it needs no conditions
+    ...     Actions:       it performs the generic suite setup and backup the configurations files
+    ...     Checks:        it checks nothing more than already done on lib.
+    ...     Verdict:       suite setup is passed
+    Setup.Suite Setup From Scratch
+    ...                    keepAllUeDataInCfgFile=${True}
+    ...                    automaticTeardown=${True}
+    ...                    yamlPathname=${custom_config_file_E_B4}
+    Backup Files
+    ${scf_suite_setup_backup}        OAM Get SCF File           file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable               ${scf_suite_setup_backup}
+    Dated Log                        SCF backup file = ${scf_suite_setup_backup}
+
+TC DSS_Non DSS PRB allocation check
+    [Documentation]        DSS/non DSS PRB allocation check using mix of DSS Phase 3 and non DSS cells
+    ...                    The purpose is to check prb allocation on DSS Cell and non DSS Cells
+    ...                    Check also DSS counter values greater than zero for Cell 1 only
+    ...                    Cell 1 DSS cell and Cell 2 & 3 Non Dss cells
+    [Arguments]            ${Param}     ${Vendor_Param}     ${B1_DSS_cellsetup}     ${alias}=default
+    Set Suite Variable     ${Param}
+    Init Sequence          ${Param}
+    Step                   Set RAD Params Of 1227
+    Step                   Config1227.Vendor File Config With Specific Settings     argument=${Vendor_Param}
+    Step                   Recommissioning
+#    Critical Step          Restart TL
+    Step                   Start WTS                        argument=${alias}
+    Step                   Xp link Setup                    argument=${alias}              depends=Start WTS
+    Step                   X2Ap link Setup                  argument=${alias}              depends=Start WTS
+    Step                   DSS_CellSetup_9158E_default      argument=${B1_DSS_cellsetup}   depends=Xp link Setup
+    Step                   sleep                            argument=120s
+    Step                   Check SIB MultiCell              nbCell=${Param.nbCell}          depends=DSS CellSetup
+    Step                   SA Call With UE Profile          argument=${Profile_UE_1}
+    Step                   sleep                            argument=5s
+    Step                   SA Call With UE Profile          argument=${Profile_UE_2}
+    Step                   sleep                            argument=5s
+    Step                   SA Call With UE Profile          argument=${Profile_UE_3}
+    Step                   sleep                            argument=10s
+    Step                   Get TTI Logs
+    Step                   sleep                            argument=720s
+    Step                   Collect All Current PM Counters Files
+    Step                   Set 1227 PM Counters ID Variables
+    Step                   Check BB Pooling PM Counters By CellID And Expected values           argument=${9158E_Pooling_Counters_Expected_B1}
+    Step                   Check PRB available for PDSCH & PUSCH Counters for Cell 2 and 3      argument=${9158E_Pooling_Expectation_B1}
+    Step                   Set 1227 E DSS Counters ID Variables
+    Step                   Verify 1227 E LoadBased DSS counters By CellID And Ratio Expected    argument=${DSS_Counter_Expectation_1_E_B1}
+    Step                   Check DSS counter for non DSS cells                                  argument=${NRCELL_ID_2}
+    Step                   Check DSS counter for non DSS cells                                  argument=${NRCELL_ID_3}
+
+TC DSS_Non DSS PRB Blanking check
+    [Documentation]        DSS/non DSS PRB Blanking check using mix of DSS Phase 3 and non DSS cells
+    ...                    The purpose is to check prb allocation on DSS Cell and non DSS Cells with PRB blanking
+    ...                    Check also DSS counter values greater than zero for Cell 1 only
+    ...                    Cell 1 DSS cell + blanking both edge, Cell 2 & Cell 3 Non Dss cells with blanking both edge
+    [Arguments]            ${Param}     ${Vendor_Param}     ${B4_DSS_cellsetup}     ${alias}=default
+    Set Suite Variable     ${Param}
+    Init Sequence          ${Param}
+    Step                   Set RAD Params Of 1227
+    Step                   Config1227.Vendor File Config With Specific Settings     argument=${Vendor_Param}
+    Step                   Recommissioning
+    Critical Step          Restart TL
+    Step                   Start WTS                        argument=${alias}
+    Step                   Xp link Setup                    argument=${alias}              depends=Start WTS
+    Step                   X2Ap link Setup                  argument=${alias}              depends=Start WTS
+    Step                   DSS_CellSetup_9158E_default      argument=${B4_DSS_cellsetup}   depends=Xp link Setup
+    Step                   sleep                            argument=120s
+    Step                   Check SIB MultiCell              nbCell=${Param.nbCell}         depends=DSS CellSetup
+    Step                   sleep                            argument=120s
+    Step                   SA Call With UE Profile          argument=${Profile_UE_1}
+    Step                   sleep                            argument=5s
+    Step                   SA Call With UE Profile          argument=${Profile_UE_2}
+    Step                   sleep                            argument=5s
+    Step                   SA Call With UE Profile          argument=${Profile_UE_3}
+    Step                   sleep                            argument=10s
+    Step                   Get TTI Logs
+    Step                   sleep                            argument=720s
+    Step                   Collect All Current PM Counters Files
+    Step                   Set 1227 PM Counters ID Variables
+    Step                   Check BB Pooling PM Counters By CellID And Expected values           argument=${9158E_Pooling_Counters_Expected_B4}
+    Step                   Check PRB available for PDSCH & PUSCH Counters for Cell 2 and 3      argument=${9158E_Pooling_Expectation_B4}
+    Step                   Set 1227 E DSS Counters ID Variables
+    Step                   Verify 1227 E LoadBased DSS counters By CellID And Ratio Expected    argument=${DSS_Counter_Expectation_1_E_B4}
+    Step                   Check DSS counter for non DSS cells                                  argument=${NRCELL_ID_2}
+    Step                   Check DSS counter for non DSS cells                                  argument=${NRCELL_ID_3}
+
+Check PRB available for PDSCH & PUSCH Counters for Cell 2 and 3
+    [Documentation]                 M55308C10005   PRB_AVAIL_PDSCH_BB_POOL
+    ...                             M55308C10006   PRB_AVAIL_PUSCH_BB_POOL
+    ...                             Check counter for Cell 2 and 3
+    Dated Log New Line          =================================================================
+    Dated Log                      PM Counter: M55308C10005 &  M55308C10006 for Cell 2 and 3
+    Dated Log                   =================================================================
+
+    [Arguments]                     ${9158E_Pooling_Expectation_B1}
+    ${NRCELL_ID_Cell_2}             Set Variable         2
+    ${NRCELL_ID_Cell_3}             Set Variable         3
+
+
+    # Collect counter value for Cell 2 & 3
+    Dated Log                      ${9158E_Pooling_Expectation_B1}
+    ${Value_PM_pdsch_Cell2}        Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                            ${LATEST_PM_FILE}       ${PM_PRB_Avail_PDSCH_BB_Pool}       ${NRCELL_ID_2}
+    ${Value_PM_pdsch_Cell3}        Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                            ${LATEST_PM_FILE}       ${PM_PRB_Avail_PDSCH_BB_Pool}       ${NRCELL_ID_3}
+    ${Num_PRB_PDSCH_Per_Slot_Cell2}         Evaluate  int(${Value_PM_pdsch_Cell_2}/300000)
+    Dated Log                       Value of pdsch per slot for Cell 2 : ${Num_PRB_PDSCH_Per_Slot_Cell2}
+    ${Num_PRB_PDSCH_Per_Slot_Cell3}         Evaluate  int(${Value_PM_pdsch_Cell_3}/300000)
+    Dated Log                       Value of pdsch per slot for Cell 3 : ${Num_PRB_PDSCH_Per_Slot_Cell3}
+    ${Sum_PRB_PDSCH_Per_Slot_Cell2_3}       Evaluate  int(${Num_PRB_PDSCH_Per_Slot_Cell2}+${Num_PRB_PDSCH_Per_Slot_Cell3})
+    Dated Log                      Sum of Values for Cell 2 and 3 :  ${Sum_PRB_PDSCH_Per_Slot_Cell2_3}
+    should be true                 ${9158E_Pooling_Expectation_B1.Sum_pdsch_min_values} <= ${Sum_PRB_PDSCH_Per_Slot_Cell2_3}
+    ...                            <= ${9158E_Pooling_Expectation_B1.Sum_pdsch_max_values}
+
+    ${Value_PM_pusch_Cell2}        Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                            ${LATEST_PM_FILE}       ${PM_PRB_Avail_PUSCH_BB_Pool}       ${NRCELL_ID_2}
+    ${Value_PM_pusch_Cell3}        Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                            ${LATEST_PM_FILE}       ${PM_PRB_Avail_PUSCH_BB_Pool}       ${NRCELL_ID_3}
+    ${Num_PRB_PUSCH_Per_Slot_Cell2}         Evaluate  int(${Value_PM_pusch_Cell_2}/300000)
+    Dated Log                       Value of pusch per slot for Cell 2 : ${Num_PRB_PUSCH_Per_Slot_Cell2}
+    ${Num_PRB_PUSCH_Per_Slot_Cell3}         Evaluate  int(${Value_PM_pusch_Cell_3}/300000)
+    Dated Log                       Value of pusch per slot for Cell 3 : ${Num_PRB_PUSCH_Per_Slot_Cell3}
+    ${Sum_PRB_PUSCH_Per_Slot_Cell2_3}       Evaluate  int(${Num_PRB_PUSCH_Per_Slot_Cell2}+${Num_PRB_PUSCH_Per_Slot_Cell3})
+    Dated Log                      Sum of Values for Cell 2 and 3 :  ${Sum_PRB_PUSCH_Per_Slot_Cell2_3}
+    should be true                 ${9158E_Pooling_Expectation_B1.Sum_pusch_min_values} <= ${Sum_PRB_PUSCH_Per_Slot_Cell2_3}
+    ...                            <= ${9158E_Pooling_Expectation_B1.Sum_pusch_max_values}
+
+
+Check DSS counter for non DSS cells
+    [Documentation]                 Check that non DSS cells counters values for Cell 2 and 3 are zero
+    ...                             Number of DL Slots assigned to NR (M55332C00001)
+	...                             Number of UL PRBs assigned to NR (M55332C01001)
+	...                             Total number of available DL Slots (M55332C02001)
+	...                             Total number of available UL PRBs (M55332C02002)
+    Dated Log                   ============================================================================
+    Dated Log                   ${DL_Slots_NR} : Number of DL Slots Assigned to NR
+    Dated Log                   ${UL_PRB_NR} : Number of UL PRBs assigned to NR
+    Dated Log                   ${DL_Slots_Total} : Number of available DL Slots
+    Dated Log                   ${UL_PRB_Total} : Total number of available UL PRBs
+    Dated Log                   ============================================================================
+    [Arguments]                 ${NRCELL_ID}
+    ${Value_DL_Slots_NR_nonDSS}=        Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${DL_Slots_NR}       ${NRCELL_ID}
+    Dated Log                           Value of ${DL_Slots_NR} : ${Value_DL_Slots_NR_nonDSS}
+    ${Value_UL_PRB_NR_nonDSS}=          Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${UL_PRB_NR}       ${NRCELL_ID}
+    Dated Log                           Value of ${UL_PRB_NR} : ${Value_UL_PRB_NR_nonDSS}
+    ${Value_DL_Slots_Total_nonDSS}=     Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${DL_Slots_Total}       ${NRCELL_ID}
+    Dated Log                           Value of ${DL_Slots_Total} : ${Value_DL_Slots_Total_nonDSS}
+    ${Value_UL_PRB_Total_nonDSS}=       Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${UL_PRB_Total}       ${NRCELL_ID}
+    Dated Log                           Value of ${UL_PRB_Total} : ${Value_UL_PRB_Total_nonDSS}
+
+    should be true              ${Value_DL_Slots_NR_nonDSS}==0
+    should be true              ${Value_UL_PRB_NR_nonDSS}==0
+    should be true              ${Value_DL_Slots_Total_nonDSS}==0
+    should be true              ${Value_UL_PRB_Total_nonDSS}==0
+
+DSS_CellSetup_9158E_default
+    [Arguments]     ${B1_DSS_cellsetup}
+    ${cellidx}      Set Variable    1
+        Set Suite Variable      ${cellidx}
+        Dated Log   ---> Perform DSS CellSetup on cell index : ${cellidx}
+        DSS_CellSetup_Phase3_9158E_default        ${B1_DSS_cellsetup}
+
+DSS_CellSetup_Phase3_9158E_default
+
+    [Arguments]                 ${B1_DSS_cellsetup}
+
+    Log to console   \n${blue}***DSS ${Param.lteNrDssMode} CRM CellSetup BW=${Param.bandwidth} alias=${B1_DSS_cellsetup}[0]*** ${normal}
+
+    wts.execute egate command    cmd=enb_dss_param id=${Param.enbid} feature_flag=on message_sets=DMS3    alias=${B1_DSS_cellsetup}[0]
+    Sleep   2
+    wts.execute egate command    cmd=enb_cell_param enb=${Param.enbid} id=${cellidx} lte_nr_dss_mode=DSS_PHASE_3 antenna_ports_num=2
+    ...     alias=${B1_DSS_cellsetup}[0]
+    Sleep   2
+    wts.execute egate command    cmd=enb_cell_dss_feature enb=${Param.enbid} id=${cellidx} nr_dl_peak_rate_increase=on
+    ...     alias=${B1_DSS_cellsetup}[0]
+    Sleep   2
+    wts.execute egate command    cmd=enb_cell_dss_feature enb=${Param.enbid} id=${cellidx} superfast_allocation=off   alias=${B1_DSS_cellsetup}[0]
+    Sleep   2s
+    ${cmd}    Catenate    enb_cell_dss_param enb=${Param.enbid} id=${cellidx} dl_resource_sharing_algo=dl_buffer_level_based
+    ...     alias=${B1_DSS_cellsetup}[0]
+    wts.execute egate command    cmd=${cmd}     alias=${B1_DSS_cellsetup}[0]
+    Sleep   2s
+    ${cmd}    Catenate    enb_dss_configure_partnership enb=${Param.enbid} cell=${cellidx} dss_peer=${Param.gnbid}:${cellidx}
+    wts.execute egate command    cmd=${cmd}      alias=${B1_DSS_cellsetup}[0]
+    sleep   2
+
+    ${cmd}    Catenate    enb_crm_cell_resource_reservation enb=${Param.enbid} cell=${cellidx} tgt_enb=${Param.gnbid} tgt_cell=${cellidx}
+    ...         assigned_dl_minimum_share_to_nr=15 assigned_dl_maximum_share_to_nr=70 assigned_dl_minimum_share_to_lte=15
+    ...         assigned_dl_maximum_share_to_lte=70 assigned_ul_minimum_share_to_nr=20 assigned_ul_maximum_share_to_nr=70
+
+    wts.execute egate command      cmd=${cmd}    alias=${B1_DSS_cellsetup}[0]
+
+    ${cmd}    Catenate    enb_crm_param id=${Param.enbid} ul_qos_load_meas_timer=${Param.ul_qos_load_meas_timer}
+    ...                                      dl_qos_load_meas_timer=${Param.dl_qos_load_meas_timer}
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${B1_DSS_cellsetup}[0]
+
+    sleep    30
+
+    ${pattern}    Set Variable    EN DSS UL Cell Subcarrier Resource Coordination success on remote NE
+    ${cmd}      Catenate       enb_dss_establish_partnership enb=${Param.enbid} cell=${cellidx} tgt_enb=${Param.gnbid} tgt_cell=${cellidx}
+    ${output}    wts.Execute Egate Command And Wait For Data    cmd=${cmd}
+    ...    pass_regexp=${pattern}    timeout=30     alias=${B1_DSS_cellsetup}[0]
+    ${output}    String.Get Lines Matching Regexp    ${output}    ${pattern}    partial_match=True
+    Log To Console    \n${output}
+
+    sleep   10
+
+    Log To Console    ***\nStart reset dl resource cell reservation... with alias=${B1_DSS_cellsetup}[0]
+    ${command}    Set Variable    enb_dss_cell_resource_reservation_dl enb=${Param.enbid} cell=${cellidx} reset
+    Dated Log New Line       ${command}
+    wts.Execute Egate Command    ${command}        alias=${B1_DSS_cellsetup}[0]
+    Sleep    2s    reason=make sure the cmd take affect
+
+    Log To Console    ***\nStart reset ul resource cell reservation... with alias=${B1_DSS_cellsetup}[0]
+    ${command}    Set Variable    enb_dss_cell_resource_reservation_ul enb=${Param.enbid} cell=${cellidx} reset
+    Dated Log New Line       ${command}
+    wts.Execute Egate Command    ${command}      alias=${B1_DSS_cellsetup}[0]
+    Sleep    2s    reason=make sure the cmd take affect
+
+    ${cmd}    Catenate    enb_dss_dl_resource_cell_reservation enb=${Param.enbid} cell=${cellidx}
+    ...                                           prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${B1_DSS_cellsetup}[0]
+
+    ${cmd}    Catenate    enb_dss_dl_resource_cell_reservation enb=${Param.enbid} cell=${cellidx}
+    ...                     reserved_fixed_normal_subframes=0000000000-0000000000-0000000000-0000000000-0000000000-0000000000-0000000000-0000000000
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${B1_DSS_cellsetup}[0]
+
+    ${cmd}    Catenate    enb_dss_dl_resource_cell_reservation enb=${Param.enbid} cell=${cellidx} min_lte_nr_dss_ratio=30 max_lte_nr_dss_ratio=70
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${B1_DSS_cellsetup}[0]
+
+    ${cmd}    Catenate    enb_dss_cell_resource_coordination enb=${Param.enbid} cell=1 tgt_enb=${Param.gnbid} tgt_cell=${cellidx} dir=DL
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${B1_DSS_cellsetup}[0]
+
+    ${cmd}    Catenate    enb_dss_ul_resource_cell_reservation enb=${Param.enbid} cell=${cellidx}  minimum_prb_share=30 maximum_prb_share=70
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${B1_DSS_cellsetup}[0]
+
+    ${cmd}    Catenate    enb_dss_cell_resource_coordination enb=${Param.enbid} cell=1 tgt_enb=${Param.gnbid} tgt_cell=${cellidx} dir=UL
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${B1_DSS_cellsetup}[0]
+
+    Sleep    2s    reason=make sure the cmd take affect
+
+    ${output}    wts.execute egate command and wait for data      cmd=enb_crm_status enb=${Param.enbid} cell=${cellidx}
+    ...     alias=${B1_DSS_cellsetup}[0]
+    Log To Console    \n${output}
+
+    Sleep    2s    reason=make sure the cmd take affect
+
+    ${dl_prb_area_allocation_list}=    Catenate    SEPARATOR=    ${B1_DSS_cellsetup}[3]
+
+
+     ${cmd}    Catenate     enb_dss_resource_allocation enb=${Param.enbid} cell=${cellidx} tgt_enb=${Param.gnbid}
+     ...                    tgt_cell=${cellidx} dir=DL allocation_start_time=immediate
+     ...                    dl_allocated_normal_subframes=${B1_DSS_cellsetup}[2]
+     ...                    dl_prb_area_allocation_list=${dl_prb_area_allocation_list}
+
+     wts.execute egate command      cmd=${cmd}      alias=${B1_DSS_cellsetup}[0]
+     Sleep    2s
+
+    ${cmd}     Catenate     enb_dss_resource_allocation enb=${Param.enbid} cell=${cellidx} tgt_enb=${Param.gnbid}
+    ...                     tgt_cell=${cellidx}         dir=UL          allocation_start_time=immediate
+    ...                     ul_allocated_prb_list=${B1_DSS_cellsetup}[1]
+
+    wts.execute egate command      cmd=${cmd}      alias=${B1_DSS_cellsetup}[0]
+    Sleep     2s
+
+Get TTI Logs
+
+    # TTI capture configuration
+    ${TTIdir}                             Get TTI Trace Path    dir_suffix=TTI
+
+    # Start TTI capture
+    Dated Log New Line                    Start TTI traces capture
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+    Traced Sleep                5         msg=DL TTI traffic capture 5 seconds
+
+    # Stop TTI capture
+    Dated Log New Line                    Stop TTI traces capture
+    ${TTIpcap}                            Stop TTI Traces in Streaming mode
+    ...                                   tti_trace_path=${TTIdir}
+    ...                                   tti_trace_filename=TTI_TC8940
+
+    Dated Log New Line                    Convert TTItrace to json and csv
+    ${TTIjson}                            Convert TTItrace from pcap to others
+    ...                                   input_file_path=${TTIpcap}
+    ${TTIcsv}                             ttitrace_tools.decode_tti_traces_json_using_TtitraceReaderEvtDec
+    ...                                   jsonPathName=${TTIjson}   #  num_of_events=10000
+
+    Dated Log New Line                    === TTI csv path : ${TTIcsv} ===
+    Set Global Variable                   ${TTIcsv}
+
+    Dated Log New Line                    === TTI json path : ${TTIjson} ===
+    Set Global Variable                   ${TTIjson}

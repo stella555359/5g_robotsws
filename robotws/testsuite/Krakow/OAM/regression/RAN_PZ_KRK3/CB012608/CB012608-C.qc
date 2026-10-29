@@ -1,0 +1,22 @@
+{
+   "SBTS00_ENB_9999_.*":{
+      "label":".*",
+      "qc_domain":"MN_RAN",
+      "qc_project":"RAN_VRF",
+      "Root\\Test_Sets\\Trunk\\VRF_KRK\\VRF_KRK_T03\\CB012608":{
+         "CB012608":[
+            "CB012608-SR-C_E2E_TL_SW_upgrade_rollback_with_OAM_KPI_and_L3_Call"
+         ]
+      }
+   },
+   "SBTS26R1_ENB_0000_*":{
+      "label":".*",
+      "qc_domain":"MN_RAN",
+      "qc_project":"RAN_VRF",
+      "Root\\Test_Sets\\26R1\\Regression\\VRF_KRK\\VRF_KRK_T03\\CB012608":{
+         "CB012608":[
+            "CB012608-SR-C_E2E_TL_SW_upgrade_rollback_with_OAM_KPI_and_L3_Call"
+         ]
+      }
+   }
+}

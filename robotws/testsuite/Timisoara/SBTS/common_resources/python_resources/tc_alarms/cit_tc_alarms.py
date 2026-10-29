@@ -1,0 +1,177 @@
+from alarms_resource import *
+
+BS_RF__CPRI_Chaining_Deactivation_Activation_via_WebEM = dict(
+    FAULT_4084=FAULT_4084
+)
+CIT__TDS = dict(
+    FAULT_7300=FAULT_7300,
+    FAULT_7319=FAULT_7319,
+    FAULT_4592=FAULT_4592
+)
+CIT__useFullCapacity_parameter_change = dict(
+    FAULT_1868=FAULT_1868
+)
+CLI__Admin_CLI_site_reset_remote = dict(
+    FAULT_7300=FAULT_7300,
+    FAULT_7319=FAULT_7319,
+    FAULT_4592=FAULT_4592
+)
+CM_CABLE_SPEED_CHANGE = dict(
+    FAULT_6327=FAULT_6327
+)
+CM_Cell_Removal_LTE = dict(
+    FAULT_4590=FAULT_4590
+)
+CM__Commissioning__Configuration_reset = dict(
+    FAULT_23=FAULT_23,
+    FAULT_23_ALARM_7115=FAULT_23_ALARM_7115,
+    FAULT_4082=FAULT_4082
+)
+CM__Commissioning__Planned_commissioning = dict(
+    FAULT_23=FAULT_23
+)
+CM__Recommissioning_delta_commissioning_with_reset = dict(
+    FAULT_7300=FAULT_7300,
+    FAULT_7319=FAULT_7319
+)
+CM__Recommissioning_with_BTS_reset = dict(
+    FAULT_7300=FAULT_7300,
+    FAULT_7319=FAULT_7319,
+    FAULT_4291=FAULT_4291
+)
+LOGS__Memory_dump_files_creation_in_case_of_DSP_crash = dict(
+    FAULT_7300=FAULT_7300,
+    FAULT_7319=FAULT_7319,
+    FAULT_4592=FAULT_4592,
+    FAULT_6450=FAULT_6450,
+    FAULT_6707_RAT_AUTO_RST=FAULT_6707_RAT_AUTO_RST,
+    FAULT_6707_DSP_GROUP_AUTO_RST=FAULT_6707_DSP_GROUP_AUTO_RST,
+    FAULT_4291=FAULT_4291
+)
+LOGS__Postmortem_files_creation_in_snapshot_content = dict(
+    FAULT_7300=FAULT_7300,
+    FAULT_7319=FAULT_7319,
+    FAULT_4592=FAULT_4592,
+    FAULT_62003=FAULT_62003,
+    FAULT_4291=FAULT_4291
+)
+LOGS__Snapshot = dict(
+    FAULT_4082=FAULT_4082,
+    FAULT_4459=FAULT_4459,
+    FAULT_4291=FAULT_4291,
+    FAULT_4082_ALARM_7651=FAULT_4082_ALARM_7651
+)
+STATE__5G_RAT_Reset_From_WebEM = dict(
+    FAULT_7300=FAULT_7300,
+    FAULT_7319=FAULT_7319
+)
+STATE__GSM_TRX_block_unblock_from_ADMIN = dict(
+    FAULT_49=FAULT_49,
+    FAULT_4399=FAULT_4399
+)
+STATE__LTE_cell_block_unblock_from_ADMIN = dict(
+    FAULT_49=FAULT_49,
+    FAULT_49_ALARM_7653=FAULT_49_ALARM_7653,
+    FAULT_4291=FAULT_4291
+)
+STATE__LTE_cell_lock_unlock_from_ADMIN = dict(
+    FAULT_4291=FAULT_4291
+)
+STATE__LTE_RAT_reset_from_ADMIN = dict(
+    FAULT_7107=FAULT_7107
+)
+STATE__LTE_RAT_reset__parameter_change__ADMIN = dict(
+    FAULT_7107=FAULT_7107,
+    FAULT_4291=FAULT_4291
+)
+STATE__RF_Module_lock_unlock = dict(
+    FAULT_7300=FAULT_7300,
+    FAULT_7319=FAULT_7319,
+    FAULT_4592=FAULT_4592
+)
+STATE__S1_Lock_Reset_Unlock = dict(
+    FAULT_7300=FAULT_7300,
+    FAULT_7319=FAULT_7319,
+    FAULT_4592=FAULT_4592,
+    FAULT_6327=FAULT_6327
+)
+STATE__SBTS_block_unblock = dict(
+    FAULT_50=FAULT_50,
+    FAULT_50_ALARM_7650=FAULT_50_ALARM_7650,
+    FAULT_7300=FAULT_7300,
+    FAULT_7319=FAULT_7319,
+    FAULT_4592=FAULT_4592
+)
+STATE__Site_power_reset = dict(
+    FAULT_7300=FAULT_7300,
+    FAULT_7319=FAULT_7319,
+    FAULT_4592=FAULT_4592,
+    FAULT_4589_UNIT_POWER_RST=FAULT_4589_UNIT_POWER_RST,
+    FAULT_62003=FAULT_62003,
+    FAULT_6327=FAULT_6327
+)
+STATE__Site_reset = dict(
+    FAULT_7300=FAULT_7300,
+    FAULT_7319=FAULT_7319,
+    FAULT_4592=FAULT_4592,
+    FAULT_62003=FAULT_62003,
+    FAULT_7523=FAULT_7523,
+    FAULT_4291=FAULT_4291,
+    FAULT_6327=FAULT_6327
+)
+STATE__WCDMA_cell_block_unblock = dict(
+    FAULT_49=FAULT_49
+)
+STATE__LTE_S1_Lock_Unlock = dict(
+    FAULT_4291=FAULT_4291
+)
+SWM__Local_Software_Activation = dict(
+    FAULT_62003=FAULT_62003,
+    FAULT_7300=FAULT_7300
+)
+SWM__SBTS_SOAM_rollback_to_SBTS_SOAM = dict(
+    FAULT_62003=FAULT_62003,
+    FAULT_4291=FAULT_4291,
+    FAULT_7319=FAULT_7319,
+    FAULT_7300=FAULT_7300,
+    FAULT_4592=FAULT_4592
+)
+SWM__SCF_validation_errors_check = dict(
+    FAULT_4291=FAULT_4291,
+    FAULT_4459=FAULT_4459
+)
+SWM__SW_download_and_activation__SBTS_to_SBTS_uncomm = dict(
+    FAULT_10_Minor=FAULT_10_Minor,
+    FAULT_23_ALARM_7115=FAULT_23_ALARM_7115
+)
+SWM__SW_update_for_new_RF_unit_uncommissioned = dict(
+    FAULT_23=FAULT_23,
+    FAULT_23_ALARM_7115=FAULT_23_ALARM_7115
+)
+SWM__SW_update_for_RMOD_with_fault_23 = dict(
+    FAULT_23=FAULT_23,
+    FAULT_10_Critical=FAULT_10_Critical,
+    FAULT_1815=FAULT_1815,
+    FAULT_4589_UNIT_POWER_RST=FAULT_4589_UNIT_POWER_RST,
+    FAULT_7300=FAULT_7300,
+    FAULT_1972=FAULT_1972,
+    FAULT_4406=FAULT_4406
+)
+SWM__Upload_swconfig = dict(
+    FAULT_4589_UNIT_POWER_RST=FAULT_4589_UNIT_POWER_RST,
+    FAULT_4590=FAULT_4590,
+    FAULT_7319=FAULT_7319,
+    FAULT_7300=FAULT_7300,
+    FAULT_4459=FAULT_4459
+)
+SWM__Upload_swconfig_Site_Reset_Loop = dict(
+    FAULT_4589_UNIT_POWER_RST=FAULT_4589_UNIT_POWER_RST,
+    FAULT_4590=FAULT_4590
+)
+SWM__SW_download_and_activation__SBTS_to_SBTS = dict(
+    FAULT_4590=FAULT_4590,
+    FAULT_4592=FAULT_4592
+)
+SWM__SW_Update_in_loop_x3 = dict(
+    FAULT_7300=FAULT_7300
+)

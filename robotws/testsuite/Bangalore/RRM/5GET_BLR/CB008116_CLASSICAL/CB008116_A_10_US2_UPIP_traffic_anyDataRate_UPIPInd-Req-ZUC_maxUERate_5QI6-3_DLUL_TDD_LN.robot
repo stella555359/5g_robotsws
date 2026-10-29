@@ -1,0 +1,170 @@
+*** Settings ***
+Force Tags      CLOUD_5G_I_LN_AP_LO_SANSA_FS_ECPRI_CMWV_TDD
+...             CRT    RAN_5G_TDD    RAN_5G    5G_RAN_TDD    5G_SC_TDD    5G_RAN     SBTS00     SBTS23R2     CONFIGURED
+
+Resource         ./basic_resource.robot
+Resource         ../resources/robot/common_log_collection.robot
+
+Suite Setup         Run keywords     Suite setup from scratch
+##Suite Setup         Run keywords    Prepare TL with all config files
+...                 AND     update_delta_and_create.update_and_gen    ${CURDIR}/config/SBTS23R2/basic_delta_5QI3.json
+...                 ${intgr}    ${ciph}
+...                 AND     Sleep       10
+#...                 AND     Perform SCF Delta Commissioning with delta_gen.json
+...                 AND     Perform SCF Delta Commissioning with 8116_A10.json
+...                 AND     sleep     120
+...                 AND     Reboot gNB System Module from Console and check Airscale is ready
+...                 AND     update_delta_and_create.update_cfg  ${CURDIR}/config/wts/basic_setup_2CC_tdd_ref.cfg
+...                 ${ue_profile}
+...                 AND     Start Default Logging    output_dirpath=${LOG_PATH}
+...                 AND     Start WTS Using WTS_Runner      ${wts_cfg_file}
+
+Suite Teardown      Run Keywords     Run Keyword and Ignore Error    Kill WTS processes Using WTS_Runner
+...                 AND     Stop Default Logging    output_dirpath=${LOG_PATH}
+Test Teardown       Run Keywords
+...                 Run Keyword if test failed     Stop CPRT capture  ${CaptureCPRT}
+...                 AND    Log To Console       Test_Case_Tear_down
+
+Documentation
+...
+...             author:            navin.kumar_ray@nokia.com
+...             maintainer:        navin.kumar_ray@nokia.com
+...             INTRODUCTION:     This test case describes the behaviour of Nokia gNB in
+...                               SA mode during the establishment of the PDU Session
+...         the integrity protection security information IE, Integrity Protection Indication is set as ?required?.
+...            TEST SET NAME:    CB008116_A_10_US2_UPIP_traffic_anyDataRate_UPIPInd-Req-ZUC_maxUERate_5QI6-3_DLUL_TDD_LN
+...             TESTING SPLIT:    See CB008116 testplan
+...             CONTACTS:         I_MN_RAN_L2_5G_BLR_ET_ALL_GMS <I_MN_RAN_L2_5G_BLR_ET_ALL@internal.nsn.com>
+...             REFERENCES:       CB008116 CFAM
+...             Requirement ID:   5G_RAN_USR_RRM_16457,5G_CP_OTH_8630
+
+*** Variables ***
+${SCFC}=        ${CURDIR}/config/SCF/8116_A10_SCF.xml
+${AP_XML}=      ${CURDIR}/config/SCF/8116_A10_IPHY.xml
+
+#${wts_cfg_file}     ${CURDIR}/config/wts/basic_setup_gen.cfg
+${wts_cfg_file}     ${CURDIR}/config/wts/basic_setup_A_10_gmc.cfg
+${WTS_DIR}          /opt/iphy/latest
+&{WTS}         Ip=127.0.0.1        Username=ute         Connection=Wts
+${epc_log_path}    /tmp/
+&{ciph}         nea0=1      nea1_128=2  nea2_128=4  nea3_128=3
+&{intgr}        nia0=1      nia1_128=2  nia2_128=4  nia3_128=3
+${ip_prof}      null
+${ip_prof1}      snow3g
+${ip_prof2}      aes
+${ip_prof3}      zuc
+&{ue_profile}    ${1}=${ip_prof3}    ${2}=${ip_prof2}
+
+&{ip_ie}    ${1}=required      ${2}=preferred
+&{max_ip_rate}    ${1}=maximum-UE-rate     ${2}=maximum-UE-rate
+&{max_ip_rate_dl}    ${1}=maximum-UE-rate      ${2}=maximum-UE-rate
+&{ip_result}      ${1}=performed     ${2}=not-performed
+
+${st_ue_id}      ${1}
+${en_ue_id}      ${1}
+
+# GFBR and MFBR profile <qos flow id>_gfbr_<dir>=speed
+&{gfbr_mfbr_profile}                5_gfbr_ul=10   5_gfbr_dl=20    5_mfbr_ul=40     5_mfbr_dl=50
+
+#Make sure VONR Traffic profile should in kbps for 5QI128 and 5QI 129 i.e QFI 2 and 3
+
+@{QOS_Prof1}               1        2          3
+@{QOS_Prof1_speed_ul}      2       32         amr_wb_18_25
+@{QOS_Prof1_speed_dl}      2       32         amr_wb_18_25
+@{QOS_Prof1_unit}          mbps    kbps        rtp_codec
+
+@{QOS_Prof3}                1           5
+@{QOS_Prof3_speed_ul}       2           5
+@{QOS_Prof3_speed_dl}       2           5
+@{QOS_Prof3_unit}           mbps        mbps
+
+*** Test Cases ***
+[1]CB008116_A_10_US2_UPIP_traffic_anyDataRate_UPIPInd-Req-ZUC_maxUERate_5QI6-3_DLUL_TDD_LN
+
+    Set Suite Variable    ${ip_ie}      &{ip_ie}
+    Set Suite Variable    ${max_ip_rate}      &{max_ip_rate}
+    Set Suite Variable    ${max_ip_rate_dl}      &{max_ip_rate_dl}
+    Set Suite Variable    ${ip_result}      &{ip_result}
+    Set Suite Variable    ${ue_profile}      &{ue_profile}
+
+    Increase Buffer Size for VM and IPHY
+
+    ${qos_profile}               Create Dictionary   ${1}=${QOS_Prof3}              ${2}=${QOS_Prof1}
+    ${qos_profile_speed_ul}      Create Dictionary   ${1}=${QOS_Prof3_speed_ul}     ${2}=${QOS_Prof1_speed_ul}
+    ${qos_profile_speed_dl}      Create Dictionary   ${1}=${QOS_Prof3_speed_dl}     ${2}=${QOS_Prof1_speed_dl}
+    ${qos_profile_unit}          Create Dictionary   ${1}=${QOS_Prof3_unit}         ${2}=${QOS_Prof1_unit}
+
+    ${ue_to_bearer_list}=  MultiUE Register should be Successful Custom      ${st_ue_id}    ${en_ue_id}
+	...     pdu_session_setup   ${ip_ie}      ${max_ip_rate}     pdu_id=1    nw_id=1
+
+    Create Modify PDU session   ${st_ue_id}     ${en_ue_id}    ${qos_profile}   pdu_id=1
+    ...    gfbr_mfbr_profile=${gfbr_mfbr_profile}   ue_to_bearer_list=${ue_to_bearer_list[1]}
+    ${duration}      Set Variable    180
+    ${trf_id}      Set Variable    ${1}
+    Start Data Transfer     ${st_ue_id}     ${en_ue_id}     ${duration}    both   ${trf_id}
+    ...     ${qos_profile_unit}  ${qos_profile_speed_ul}    ${qos_profile_speed_dl}    ${qos_profile}
+    sleep   ${duration}s
+
+   Check Integrity failure count
+   ${nongbr_tp_read}=     Verify data transfer and get tp gbr_nongbr    ${st_ue_id}    ${en_ue_id}    ${duration}
+    ...    both   ${trf_id}     ${qos_profile_unit}    ${qos_profile_speed_ul}     ${qos_profile_speed_dl}
+    ...       ${qos_profile}
+
+   [Teardown]  Run Keywords   MultiUE Deregister should be Successful      ${st_ue_id}    ${en_ue_id}
+
+   ...         AND        Link SCOUT SCF to Configuration ID for Reporting
+
+*** Keywords ***
+Create Modify PDU session
+    [Arguments]     ${st_ue_id}     ${en_ue_id}    ${qos_profile}   ${pdu_id}     ${gfbr_mfbr_profile}=-1
+         ...        ${num_ues}=${en_ue_id}          ${ue_to_bearer_list}=${bearer_list}   ${ho}=${-1}
+    [Documentation]    This keyword is wrepar for the ADD PDU  session and modification
+    FOR     ${ue_id}    IN RANGE    ${st_ue_id}    ${en_ue_id}+${1}
+        ${QOS_prof}=      Set Variable  ${qos_profile}[${ue_id}][1:]
+        ${len}=     Get Length  ${QOS_prof}
+        ${QOS_strng}=    Run Keyword If  ${len} >0   Evaluate    ",".join(${QOS_prof})  #Got the QOS string
+        ${pdu_id}=   Set Variable If      '2' in ${QOS_prof} or '3' in ${QOS_prof} or '4' in ${QOS_prof}   2   1
+
+        ${gw_id}=       Evaluate    ${ue_id}+${num_ues}
+        ${capture_cprt}     Capture CPRT Set Upon Config
+        Set test variable    ${CaptureCPRT}    ${capture_cprt}
+        Run Keyword if  ${len} >0       Set CPRT capture    ${CaptureCPRT}
+
+
+        Run Keyword if  ${len} >0   Add PDU session     ${ue_id}      ${pdu_id}      ${gw_id}     ${QOS_strng}
+        ...    ue_to_bearer_list=${ue_to_bearer_list}    ho=${ho}
+
+        Run Keyword if  ${len} >0     Stop CPRT capture  ${CaptureCPRT}
+
+        Run Keyword if  ${len} >0     Move File    ${LOG_PATH}/NODECPRT_GNB.pcap
+        ...     ${LOG_PATH}/NODECPRT_GNB_UE_${ue_id}_PDU.pcap
+        Run Keyword if  ${pdu_id}==2 and ${ho} == ${-1}  Verify PDU Session Request
+        ...     ${LOG_PATH}/NODECPRT_GNB_UE_${ue_id}_PDU.pcap   ${ue_id}
+    END
+    Log to Console      ${gfbr_mfbr_profile}
+
+Start Data Transfer
+    [Arguments]    ${st_ue_id}     ${en_ue_id}    ${duration}    ${Dir}  ${trf_id}   ${qos_profile_unit}
+    ...     ${qos_profile_speed_ul}    ${qos_profile_speed_dl}    ${qos_profile}
+    [Documentation]    This keyword is used to start the data transfer in UL and DL
+    FOR     ${ue_id}    IN RANGE    ${st_ue_id}    ${en_ue_id}+${1}
+        ${ul_timestamp}=    Run Keyword If  '${Dir}' == 'ul'
+        ...    UE Trigger Traffic for SA QFI Based    ${ue_id}    Traffic_rate=${qos_profile_unit}[${ue_id}]
+        ...    data_rate=${qos_profile_speed_ul}[${ue_id}]    dir=${Dir}    pdu_id=1    trf_id=${trf_id}
+        ...     qfi_id=${qos_profile}[${ue_id}]   sec=${duration}
+
+         ${dl_timestamp}=   Run Keyword If  '${Dir}' == 'dl'
+        ...    UE Trigger Traffic for SA QFI Based    ${ue_id}    Traffic_rate=${qos_profile_unit}[${ue_id}]
+        ...    data_rate=${qos_profile_speed_dl}[${ue_id}]    dir=${Dir}    pdu_id=1
+        ...    trf_id=${trf_id}    qfi_id=${qos_profile}[${ue_id}]  sec=${duration}
+
+        ${dl_timestamp1}=   Run Keyword If  '${Dir}' == 'both'
+        ...    UE Trigger Traffic for SA QFI Based    ${ue_id}    Traffic_rate=${qos_profile_unit}[${ue_id}]
+        ...    data_rate=${qos_profile_speed_dl}[${ue_id}]    dir=dl    pdu_id=1    trf_id=${trf_id}
+        ...   qfi_id=${qos_profile}[${ue_id}]   sec=${duration}
+        ${ul_timestamp1}=   Run Keyword If  '${Dir}' == 'both'
+        ...    UE Trigger Traffic for SA QFI Based    ${ue_id}    Traffic_rate=${qos_profile_unit}[${ue_id}]
+        ...    data_rate=${qos_profile_speed_ul}[${ue_id}]    dir=ul    pdu_id=1    trf_id=${trf_id}
+        ...    qfi_id=${qos_profile}[${ue_id}]  sec=${duration}
+    END
+

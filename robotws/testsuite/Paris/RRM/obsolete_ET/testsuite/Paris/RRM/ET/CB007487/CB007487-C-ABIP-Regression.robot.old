@@ -1,0 +1,160 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  CB007487-C - ABIP regression
+...               Scope : Performance Test regression in NSA
+...
+...               Test Case Scenario author   : Christophe.samson@nokia.com
+...               Test Case Scenario contact  : denis.taupin@nokia.com
+...               Test Case automation contact:
+...               Creation Date               : 17-November-2022
+...               Modified Date               : 14-December-2022
+...               Last Modified by            : denis.taupin@nokia.com
+
+Library           DateTime
+Library    		  taf.sbts.oam.coam.admin        WITH NAME       coam
+Library           taf.sbts.oam.coam.admin.interface
+Library           taf.transport.ssh              WITH NAME       ssh
+
+Library           resources/python/Constants.py  WITH NAME       MyConstants
+Library           resources/python/tools.py                      WITH NAME    nps_7487_tools
+Library           ../../../resources/SWENG/python/StringTool.py
+Library           ./resources/python/CB007487_checkTTItrace.py
+
+Library           ../../../resources/SWENG/python/OldMultiScf.py      WITH NAME   scf
+
+Resource          ./resources/robot/btslog.robot
+Resource          ./resources/robot/connect.robot
+Resource          ./resources/robot/CB007487_PerfKPI_Keywords.robot
+Resource          ./resources/robot/CB007487-C_Keywords.robot
+
+Variables         resources/python/Constants.py
+
+Suite Setup            Run Keywords    Fetch common OAM SW version
+...                    AND             CB007487_PerfKPI_Keywords.Test Suite Setup for CB007487
+...                    AND             Get Testline Name
+...                    AND             run keyword and ignore error   Remove RAD param for Link Adaptation on swconfig if present
+...                    AND             Get_Private_variables_Suite_setup
+...                    AND             Create Header Csv Test result
+...                    AND             btslog.Create cplane runtime file to gnb
+...                    AND             Set Global Variable    ${WAIT_5G_CELL_ONAIR}   1
+Suite Teardown                         CB007487_PerfKPI_Keywords.Test Suite Teardown for CB007487
+Test Setup             Run Keywords    CB007487_PerfKPI_Keywords.Test Setup for CB007487
+...                    AND             Update local SCF
+...                    AND             set test variable      ${2_2_nrCellType_to_update_Cell1}   ${False}
+...                    AND             set test variable      ${4_4_nrCellType_to_update_Cell1}   ${False}
+Test Teardown                          CB007487_PerfKPI_Keywords.Test Teardown for CB007487
+
+*** Variables ***
+
+${subFeature}   CB007484-C
+
+${BENCHMARK_ID}    1
+
+# auto-valorized of w/wo BF from scf during suite setup
+${BF}           False
+# auto-valorized of Higher cipher/Integrity from scf during suite setup
+${higher_cipher}         AES
+${higher_integrity}      AES
+${Test Line}           Run Keyword And Ignore Error    OperatingSystem.run      echo \$HOSTNAME|sed 's/-/_/g'
+# auto-valorized of DL Modulation from scf during suite setup
+${DL Mod}       64QAM
+${DL MCS}       Max
+${UL Mod}       64QAM
+${UL Mimo}      2X2
+${UL MCS}       Max
+
+&{BM_CB007487_C1}
+...    DL_MIMO=4x4   DL_Mod=256QAM   DL_MCS=max   UL_MIMO=2x2   UL_Mod=64QAM    UL_MCS=max    Encrypt=aes
+
+${NIDD_VERSION}                  MNL22R4_2213_100
+
+*** Test Cases ***
+
+Test Case Setup
+    [Tags]    NSA  SA  CELL1  CELL2  FULL_RUN
+    Dated log     BENCHMARK_ID is ${BENCHMARK_ID}
+    set Suite Variable    ${current_BM_CB007487_C}  ${dict_BM["${BENCHMARK_ID}"]}
+    Dated Log new line  ${consTraceColor}====> TC ${TEST NAME} running with :\n\t\t${current_BM_CB007487_C} ${defColor}
+    # test that cipher and Integrity is configured in scf as expected
+    ${cypher_OK}=   Evaluate   '${higher_cipher}'=='${current_BM_CB007487_C.Encrypt}'
+    ${msg_err}=   Catenate     ${consTraceColorRed} Cypher configured in SCF [${higher_cipher}] is not as
+    ...                                                    EXPECTED [expected=${current_BM_CB007487_C.Encrypt}]  => Need to update ${defColor}
+    Run Keyword if   '${cypher_OK}'=='False'
+    ...                       Dated log  ${msg_err}
+    ...  ELSE                 Dated log  Cypher configured in SCF [${higher_cipher}] is as Expected [expected=${current_BM_CB007487_C.Encrypt}]
+    ${integrity_OK}=   Evaluate   '${higher_Integrity}'=='${current_BM_CB007487_C.Encrypt}'
+    ${msg_err}=   Catenate     ${consTraceColorRed} Integrity configured in SCF [${higher_Integrity}] is not as
+    ...                                                    EXPECTED [expected=${current_BM_CB007487_C.Encrypt}] => Need to update ${defColor}
+    Run Keyword if  '${integrity_OK}'=='False'
+    ...                 Dated log  ${msg_err}
+    ...  ELSE           Dated log  Integrity configured in SCF [${higher_Integrity}] is as Expected [expected=${current_BM_CB007487_C.Encrypt}]
+    ${Need_to_Perform_Commissioning_1}  ${Need_to_Perform_Commissioning_2}  CB007487-C_Testline_settings   ${current_BM_CB007487_C}   CellId=1
+    ${Need_to_Perform_Commissioning_3}  ${Need_to_Perform_Commissioning_4}  CB007487-C_Testline_settings   ${current_BM_CB007487_C}   CellId=2
+    ...                                                                                                    Need_To_Update_CellMapping_Cell1=${True}
+    ${Commissioning_1}  Evaluate   ${Need_to_Perform_Commissioning_1}==${True} or ${Need_to_Perform_Commissioning_2}==${True}
+    ${Commissioning_2}  Evaluate   ${Need_to_Perform_Commissioning_3}==${True} or ${Need_to_Perform_Commissioning_4}==${True}
+    Run Keyword if   ${Commissioning_1}==${True} or ${Commissioning_2}==${True}       Commissioning SCF  ${test_scf_file}
+    Run Keyword and ignore Error    Update_Private_variables_Suite_setup
+
+[1][1.0] CB007487_C_24_ABIP_L3_Call_TDD_eCPRI_w_beamforming
+    [Tags]    NSA   CELL2   FULL_RUN
+    [Documentation]  TC under QC : [1][1.0] CB007487_C_24_ABIP_L3_Call_TDD_eCPRI_w_beamforming
+    ...            => NSA Call Setup/Call Release in Cell2, with 60 seconds of low UL/DL traffic.
+    ...            5G TDD cell is in "OnAir" state.
+    ...            AES encryption is configured.
+    ...            To activate AES ciphering, under NRBTS/cipherPrefL list, set nea2_128 to 1 and other parameters to 0.
+    ...            actDl256Qam is set to True.
+    ...            MCS is forced to MCS3 through following R&D parameters:
+    ...            - rdSupportedDl64QamMcs 0x58000f
+    ...            - rdSupportedUlMCS 0x580010
+    ...            set w_UE_CSI_TM_for_4_4_DL_MIMO=True to Activate ue csi TM with cqi reported = 15 and RI reported = 3
+    ...            set w_UE_beamControl=True to Activate AP test mode for UE with mode beamSet6 and active beam = 5
+    ...            => BENCHMARK_ID = 1 is used for this testcase
+    ${BENCHMARK_ID}    set variable     1
+    Dated log     BENCHMARK_ID is ${BENCHMARK_ID}
+    set Test Variable      ${current_BM_CB007487_C}    ${dict_BM["${BENCHMARK_ID}"]}
+    Dated log  ====> TC ${TEST NAME} running with ${current_BM_CB007487_C}
+    ${w_UE_CSI_TM_for_4_4_DL_MIMO}=   set Variable if   '${current_BM_CB007487_C.DL_MIMO}'=='4x4'    True
+    ...                                                                                              False
+    ${w_UE_beamControl}     set variable     True
+    # zuc and snow3G shall not be used for TPut higher than 25Mbps as they computationally intensive algorithms
+    # and are supported by Airphone only for functional tests.
+    ${DLTput_Target}=    set Variable if    '${current_BM_CB007487_C.Encrypt}'=='snow' or '${current_BM_CB007487_C.Encrypt}'=='zuc'    100
+    ...                                                                                                                                1100
+    ${ULTput_Target}=    set Variable if    '${current_BM_CB007487_C.Encrypt}'=='snow' or '${current_BM_CB007487_C.Encrypt}'=='zuc'    70
+    ...                                                                                                                                70
+    &{dictParam}                    Create Dictionary       loopNb=1
+    ...                                                     UEnb=1
+    ...                                                     CallType=NSA
+    ...                                                     Cell=2
+    ...                                                     TrafficDuration=60
+    ...                                                     DLthroughput=${DLTput_Target}
+    ...                                                     ULthroughput=${ULTput_Target}
+    ...                                                     deviation=10
+    ...                                                     shouldBeStop=False
+    ...                                                     shouldBeCheck=False
+    ...                                                     w_UE_CSI_TM_for_4_4_DL_MIMO=${w_UE_CSI_TM_for_4_4_DL_MIMO}
+    ...                                                     w_UE_beamControl=${w_UE_beamControl}
+    ...                                                     GetTtiTraceTime=5
+    ...                                                     GetL1L2TraceTime=0
+    ...                                                     num_of_cells_cellsetup=2
+    ...                                                     w_ue_detach=True
+    ...                                                     GetBtsLog=1
+    ...                                                     isOAMRebooted=False
+    ...                                                     w_Get_Mem_Usage=False
+
+    # Ue Capa update in cfg file  => to remove later !!!!
+    # Modify maxNumberMIMO-LayersPDSCH Ue Capa for WTS     ue_nr_capa_value=${ue_nr_capabilities_maxNumberMIMO_4_LayersPDSCH_NSA}
+    # ...                                                  ue_ue_eutra_nr_capa=${ue_ue_eutra_nr_capabilities_maxNumberMIMO_4_LayersPDSCH_NSA}
+
+    ${msg}   Catenate   "${current_BM_CB007487_C}"
+    ${tc_name}    Set variable    Test Case Setup
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    Run keyword if    '${tc_status}'!='PASS'
+    ...       Run Keywords      Testline_settings   ${current_BM_CB007487_C}   CellId=1
+    ...          AND            Testline_settings   ${current_BM_CB007487_C}   CellId=2
+    CB007487-C_Attach_Traffic      ${dictParam}   ${msg}
+
+
+
+
+

@@ -1,0 +1,1066 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  verification of All tests from CB009007 feature Classical
+...               Test Case Scenario author   : adrien.hervat@nokia.com
+...               Test Case Scenario contact  : adrien.hervat@nokia.com
+...               Test Case automation author : adrien.hervat@nokia.com
+...               Test Case automation contact: adrien.hervat@nokia.com
+...               Creation Date               : 2022-04-19
+...               2022-10-07                  : adrien.hervat@nokia.com 7-October-2022 ReTxn TC13 addition TC15 Counters modification
+...               2023-05-16                  : tony.huynh-quang@nokia.com add new SCF parameter isRplCellForPSCell
+...               2024-03-27                  : vincent.boulet@nokia.com remove usage of Add route to capture TTI because not yet used
+
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../../resources/SWENG/robot/CfgFilesTools.robot
+Resource          ../../../../../resources/SWENG/robot/Hardening.robot
+Resource          ../../../resources/common/TtiTrace/ttitrace.robot
+
+Library           ../../../resources/python/luashark_tools.py
+Library           luashark_tools.analyzer       WITH NAME       analyzer
+Library           taf.config.scf                WITH NAME      scf
+Library           ../../../../../resources/SWENG/python/PandasCsv.py
+Library           Collections
+Library           ../python/CB009007_CheckTTITraceDL.py
+
+
+
+*** Keywords ***
+
+#=======================================================================================================================
+# KW to test ressource leak robustness
+#=======================================================================================================================
+
+Resource Leak Endurance with DL traffic
+
+    [Arguments]                 ${UEsList}
+    Set Suite Variable          ${Verdict_Endurance}   FAILED
+
+    SA Traffic Multi UEs        UEsList=${UEsList}
+    SA Detach Multi UEs         UEsList=${UEsList}
+
+    Dated log                   Resource usage Reference is going to be created
+    ${resources_usage1}         Hardening.Get Resources
+
+    FOR     ${i}   IN RANGE    0         ${num_iteration}
+        ${iteration}=           Evaluate                     ${i} + 1
+        Dated Log New Line      ========== Iteration ${iteration}/${num_iteration} for resource usage leak checking ==========
+        SA Attach Multi UEs     UEsList=${UEsList}
+        SA Traffic Multi UEs    UEsList=${UEsList}
+        SA Detach Multi UEs     UEsList=${UEsList}
+
+        ${resources_usage2}     Hardening.Get Resources
+        ${resources_diff}       Hardening.Compare Resources With Tolerance    ${resources_usage1}    ${resources_usage2}
+        ...                     ${CURDIR}/../../config/resource_usage/tolerance.csv
+        Write_to_Report         Iteration ${iteration}, Resource usage differences: ${resources_diff}
+        Should be empty         ${resources_diff}
+    END
+
+    Set Suite Variable     ${Verdict_Endurance}        PASS
+
+
+
+Write_to_Report
+
+    [Arguments]            ${report_string}
+    ${date}                DateTime.Get Current Date
+    ${formatted_date}      DateTime.Convert Date    ${date}    result_format=%Y%m%d_%Hh%Mm%S
+    Dated Log New Line     ${report_string}
+    Append To File         ${OUTPUT_DIR}/report.txt    ${formatted_date} Step ${StepNb} - ${report_string} \n
+    Append To File         ${OUTPUT_DIR}/../report.txt    ${formatted_date} Step ${StepNb} - ${report_string} \n
+
+
+
+Build UEs list SA Multi UEs Cell1
+
+    Dated Log           Configure the setting for the ${Num_Of_UE} ue's
+    @{UEsList}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${Num_Of_UE}
+        ${current_ue}=                Evaluate                      ${current_id} + 1
+        ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          pdu                 ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          target_gnb          ${gNbID}
+        Set To Dictionary             ${current_ueSetting}          target_cells        ${cellID}
+
+        Append To List                ${UEsList}                  ${current_ueSetting}
+    END
+    Dated Log New Line                UE_List:${UEsList}
+    [Return]                          ${UEsList}
+
+
+
+Wtsemu SA for muti UEs
+
+    [Arguments]                     ${UEsList}
+    Dated Log New Line              ======= WTS setup ===
+    Dated Log New Line              List of Cells :${NRCELL_DN_LIST[${CellID}-1]}
+    Dated Log New Line              List of Cells :${NRCELL_DN_LIST[${CellID}]}
+
+    Setup Wtsemu SA                 nbUe=${Num_Of_UE}
+    ...                             nbSaUe=${Num_Of_UE}
+    ...                             shouldUseLua=${True}
+    ...                             list_of_UE_tobe_created=${UEsList}
+
+
+
+SA Attach Multi UEs
+    [Arguments]                    ${UEsList}
+    ${UEsAttached}=                Create List
+    ${nbUE}                        get length    ${UEsList}
+    FOR    ${UEcurrent}    IN      @{UEsList}
+        Dated Log New Line         - SA Register on cell ${UEcurrent.target_cells}: UE ${UEcurrent.ue} / ${nbUE}
+        ${RegStatus}=              Run Keyword And Return Status
+        ...                        UE Register    ue=${UEcurrent.ue}
+        #Verify AP Classical UE attach SA
+        ${Status}=                 Run Keyword If    ${RegStatus}
+        ...                        Run Keyword And Return Status
+        ...                        Launch PDU Session    ue=${UEcurrent.ue}    pdu=${UEcurrent.ue}    gw=${UEcurrent.ue}    nwslice=1
+        Run Keyword If             ${Status}
+        ...                        Append to list              ${UEsAttached}        ${UEcurrent}
+    END
+    [Return]                       ${UEsAttached}
+
+
+
+SA Detach Multi UEs
+    [Arguments]                    ${UEsList}
+    ${UEsDetached}=                Create List
+    ${nbUE}                        get length    ${UEsList}
+    FOR    ${UEcurrent}    IN      @{UEsList}
+        Dated Log New Line         - SA DeRegister on cell ${UEcurrent.target_cells}: UE ${UEcurrent.ue} / ${nbUE}
+        ${Status}=                 Run Keyword And Return Status
+        ...                        UE Deregister    id=${UEcurrent.ue}
+        Run Keyword If             ${Status}
+        ...                        Append to list              ${UEsDetached}        ${UEcurrent}
+    END
+    [Return]                       ${UEsDetached}
+
+
+
+SA Traffic Multi UEs
+    [Arguments]            ${UEsList}
+    ${nbUe}                get length    ${UEsList}
+
+    Dated Log New Line    === Launch DL traffic on ${nbUE} UE(s) ===
+    Traffic UEs DL            ueSettingList=${UEsList}
+    ...                       throughput=${param.throughput}
+    #...                      shouldBeCheck= False      shouldBeStop= False
+
+
+
+#=======================================================================================================================
+# KW to set test mode for ReTxn and start traffic with TTI capture
+#=======================================================================================================================
+
+Set test Mode and start traffic with TTI capture
+
+    # TTI capture configuration
+    ${TTIdir}                             Get TTI Trace Path    dir_suffix=TC13_ReTxn
+
+    # BLER profile to have systematic NACK for RV=0, 2, 3 and ACK for RV=1
+    wtsemu.bler_testmode_nr               profile_id=1
+    ...                                   num_harq_nack=3
+
+    ${timeStartTraffic}                   Get Current Date
+    Dated Log New Line                    Start packets sending at ${timeStartTraffic}
+    DL ReTxn Traffic SA_NO_BIP
+
+    wtsemu.ue_testmode_set_nr             id=${BASIC_UE_SA.ue}
+    ...                                   testmode=bler
+    ...                                   profile_id=1
+    ...                                   action=activate
+
+    Traced Sleep                          5 seconds
+
+    # Start TTI capture
+    Dated Log New Line                    Start TTI traces capture
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+    Traced Sleep                          10               msg=DL TTI traffic capture 10 seconds
+
+    # Stop TTI capture
+    ${TTIpcap}                            Stop TTI Traces in Streaming mode
+    ...                                   tti_trace_path=${TTIdir}
+    ...                                   tti_trace_filename=TTI_TC13_ReTxn
+
+    Dated Log New Line                    Convert TTItrace to json and csv
+    ${TTIjson}                            Convert TTItrace from pcap to others
+    ...                                   input_file_path=${TTIpcap}
+    ${TTIcsv}                             decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson}    num_of_events=10000
+
+    Dated Log New Line                    Check retransmission PRB and adaptive MCS in TTI trace
+    ${Results}                            checkAdaptiveDLMaxCodeRate            jsonPathName=${TTIjson}
+    ...                                   rdAdaptiveReTxNackCount=${rdAdaptiveReTxNackCount}
+
+    # BLER profile deactivation
+    # Deactivate BLER by steps
+    wtsemu.bler_testmode_nr               profile_id=1
+    ...                                   num_harq_nack=2
+    Traced Sleep                          2 seconds
+
+    wtsemu.bler_testmode_nr               profile_id=1
+    ...                                   num_harq_nack=1
+    Traced Sleep                          2 seconds
+
+    wtsemu.ue_testmode_set_nr             id=${BASIC_UE_SA.ue}
+    ...                                   testmode=bler
+    ...                                   profile_id=1
+    ...                                   action=deactivate
+
+   # CQI test mode deactivation
+    wtsemu.ue_testmode_set_nr             id=${BASIC_UE_SA.ue}
+    ...                                   testmode=csi_override
+    ...                                   profile_id=1
+    ...                                   action=deactivate
+
+    ${timeStopTraffic}                    Get Current Date
+    Dated Log New Line                    Stop packets sending and detach UE at ${timeStopTraffic}
+    Traffic Stop                          ueSetting=${UE_SIMPLE}             dir=dl
+    UE Deregister                         id=${BASIC_UE_SA.ue}
+
+    # Max 3 % error
+    Dated Log New Line                    Error percentage is ${Results}[ErrorRatio] % < ${MaxAdaptiveReTxErrorRatio}
+
+    Dated log                             Reserved MCS detected: ${Results}[reservedMcsDetected]
+    Dated Log                             Unexpected MCS detected: ${Results}[unexpectedMcsDetected]
+    Dated Log                             Unexpected PRB detected: ${Results}[unexpectedPRBDetected]
+    Dated Log                             Unexpected RBG detected: ${Results}[unexpectedRBGDetected]
+
+    Dated Log                             Number of checks with more ressources: ${Results}[moreResourceChecks]
+    Dated Log                             Number of checks with less ressources: ${Results}[lessResourceChecks]
+    Dated Log                             Number of checks with same ressources: ${Results}[sameResourceChecks]
+
+    Dated Log                             Number of ReTxn from Sliv30 to Dl: ${Results}[ReTxnSliv30_Dl]
+    Dated Log                             Number of ReTxn from sliv30 to Sliv57: ${Results}[ReTxnSliv30_Sliv57]
+    Dated Log                             Number of ReTxn from sliv30 to Sliv30: ${Results}[ReTxnSliv30_Sliv30]
+    Dated Log                             Number of ReTxn from Sliv57 to Dl Slot: ${Results}[ReTxnSliv57_Dl]
+    Dated Log                             Number of ReTxn from sliv57 to Sliv57: ${Results}[ReTxnSliv57_Sliv57]
+    Dated Log                             Number of ReTxn from sliv57 to Sliv30: ${Results}[ReTxnSliv57_Sliv30]
+    Dated Log                             Number of ReTxn from Dl to Dl: ${Results}[ReTxnDl_Dl]
+    Dated Log                             Number of ReTxn from Dl to Sliv57: ${Results}[ReTxnDl_Sliv57]
+    Dated Log                             Number of ReTxn from Dl to Sliv30: ${Results}[ReTxnDl_Sliv30]
+
+    Should Be True                        ${Results}[ErrorRatio] < ${MaxAdaptiveReTxErrorRatio}
+
+    Should Be True                        ${Results}[ErrorRatio] < ${MaxAdaptiveReTxErrorRatio}
+
+    Run Keyword if                        ${Results}[ReTxnSliv30_Dl] == 0
+    ...                   Dated Log       ReTxn are NOT done from SLIV 30 to Dl
+    Run Keyword if                        ${Results}[ReTxnSliv57_Dl] == 0
+    ...                   Dated Log       ReTxn are NOT done from SLIV 57 to Dl
+    Run Keyword if                        ${Results}[ReTxnDl_Sliv57] == 0
+    ...                   Dated Log       ReTxn are NOT done from Dl to SLIV 57
+    Run Keyword if                        ${Results}[ReTxnDl_Sliv30] == 0
+    ...                   Dated Log       ReTxn are NOT done from Dl to SLIV 30
+
+    Run Keyword if
+    ...    ${Results}[ReTxnSliv30_Dl] > 0 and ${Results}[ReTxnSliv57_Dl] > 0 and ${Results}[ReTxnDl_Sliv57] > 0
+    ...                   Dated Log       ReTxn are done in both directions >> from BI6:4 Slot to Dl Slot and from Dl Slot to BI6:4 Slot
+    ...    ELSE           FAIL            Some ReTxn between BI6:4 Slot and Dl Slot are not done
+
+
+
+#=======================================================================================================================
+# KW to perform checks in pcap files
+#=======================================================================================================================
+
+Calling Panda Extract Csv function
+
+    ${TestName}                   getFormattedName
+    ${file_path_micro_l1l2} =     set variable    ${sherpa_output_path}/${TestName}/micro__l1l2Trace.csv
+
+    PandasCsv.Setup Reader        ${file_path_micro_l1l2}
+
+    ${Pdsch_file}                 PandasCsv.extract_cvs_files_forcolumn    select_columns=TIME,`SHERPA TTI`,`AIR TTI`,MSGID,PCI,TEXT
+    ...                           filter_column=TEXT    by_value=MSGID    filter=PdschSendReq
+    ...                                      list_grp=None    csv_sep=;
+    Dated Log                     PdschSendReq File here : ${Pdsch_file}
+    Set Global Variable           ${Pdsch_file}
+
+    ${CsiRs_file}                 PandasCsv.extract_cvs_files_forcolumn    select_columns=TIME,`SHERPA TTI`,`AIR TTI`,MSGID,PCI,TEXT
+    ...                           filter_column=TEXT    by_value=MSGID    filter=CsiRsSendReqEvent
+    ...                                      list_grp=None    csv_sep=;
+    Dated Log                     CsiRsSendReq File here : ${CsiRs_file}
+    Set Global Variable           ${CsiRs_file}
+
+
+
+#=======================================================================================================================
+# KW to check PDSCH is well scheduled in Special Slots
+#=======================================================================================================================
+
+# KW that set Frame structure and PCI used
+Check SLIV in Special Slots
+
+    ${Frame_List}      Run Keyword If            '${param.frameStructureType}'=='tdLte' and '${param.lteToNrFrameShift}'=='0ms'
+    ...                     Copy List            ${frame 1116}
+    ...            ELSE IF                       '${param.frameStructureType}'=='tdLte' and '${param.lteToNrFrameShift}'=='3ms'
+    ...                     Copy List            ${frame 1116 3ms}
+
+    ${Pci_list}        Run Keyword If            '${param.CA}'=='Off'
+    ...                     Copy List            ${Pci_1CC}
+    ...            ELSE IF                       '${param.CA}'=='On'
+    ...                     Copy List            ${Pci_2CC}
+
+    FOR    ${Pci}        IN       @{Pci_list}
+        Check SLIV with PCI and Frame structure         ${Pci}       ${Frame_List}
+    END
+
+
+# KW that check if Pdsch is well scheduled with correct SLIV
+Check SLIV with PCI and Frame structure
+
+    [Arguments]      ${Pci}       ${Frame_List}
+
+    ${Sum_SLIV_57}       Set Variable      0
+    ${Sum_SLIV_30}       Set Variable      0
+    ${Sum_SLIV_44}       Set Variable      0
+    ${Total_Pdsch}       Set Variable      0
+
+# Check PDSCH is scheduled on Special Slots. Hawk returns number of PDSCH message scheduled on Special SLOTS. Must be > 0
+    FOR        ${Slot}         IN          @{Frame_List}
+            ${Pdsch_Slot}      Run
+            ...                awk -F";" '{print $4" "$6}' ${Pdsch_file[0]} |grep "^.*\\.0*${Slot}"|awk '{print $2}'|grep -i ${Pci}|wc -l
+            ${Total_Pdsch}     Evaluate    ${Total_Pdsch} + ${Pdsch_Slot}
+    END
+
+    Run Keyword if         ${Total_Pdsch} > 0
+    ...                    Dated Log       PdschSendReq is Scheduled on Special Slots >> ${Total_Pdsch} PdschSendReq messages on PCI ${Pci}
+    ...          ELSE
+    ...                    FAIL            PdschSendReq is not Scheduled on Special Slots >> ${Total_Pdsch} PdschSendReq messages on PCI ${Pci}
+
+
+# Check start PDSCH symbol for Special Slots. Hawk returns number of PDSCH message which does not meet this requirement.
+    FOR    ${slot}     IN       @{frame_list}
+        ${Number_SLIV_57_Slot}             Run
+        ...    awk -F";" '{print $4" "$6" "$14" "$15}' ${Pdsch_file[0]} |grep "^.*\\.0*${Slot}"|awk '{print $2" "$3" "$4}'|grep -i ${Pci}.1.5|wc -l
+        Dated Log                          Number of SLIV 57 on slot ${slot}=${Number_SLIV_57_Slot}
+        ${Sum_SLIV_57}                     Evaluate                  ${Sum_SLIV_57} + ${Number_SLIV_57_Slot}
+
+        ${Number_SLIV_30_Slot}             Run
+        ...    awk -F";" '{print $4" "$6" "$14" "$15}' ${Pdsch_file[0]} |grep "^.*\\.0*${Slot}"|awk '{print $2" "$3" "$4}'|grep -i ${Pci}.2.3|wc -l
+        Dated Log                          Number of SLIV 30 on slot ${slot}=${Number_SLIV_30_Slot}
+        ${Sum_SLIV_30}                     Evaluate                  ${Sum_SLIV_30} + ${Number_SLIV_30_Slot}
+
+        ${Number_SLIV_44_Slot}             Run
+        ...    awk -F";" '{print $4" "$6" "$14" "$15}' ${Pdsch_file[0]} |grep "^.*\\.0*${Slot}"|awk '{print $2" "$3" "$4}'|grep -i ${Pci}.2.4|wc -l
+        Dated Log                          Number of SLIV 44 on slot ${slot}=${Number_SLIV_44_Slot}
+        ${Sum_SLIV_44}                     Evaluate                  ${Sum_SLIV_44} + ${Number_SLIV_44_Slot}
+    END
+
+    ${Sum_SLIV_With_CsiRs}                 Evaluate         ${Sum_SLIV_57} + ${Sum_SLIV_30}
+
+    Run Keyword If                         ${Sum_SLIV_57} == ${Total_Pdsch} and ${param.sliv} == 57
+    ...                  Dated Log         Pdsch is scheduled on all Special Slots with SLIV 57
+    ...      ELSE IF                       ${Sum_SLIV_44} == ${Total_Pdsch} and ${param.sliv} == 44
+    ...                  Dated Log         Pdsch is scheduled on all Special Slots with SLIV 44
+    ...      ELSE IF                       ${Sum_SLIV_With_CsiRs} == ${Total_Pdsch} and ${param.sliv} == 30
+    ...                  Dated Log         Pdsch is scheduled on all Special Slots with SLIV 30 and SLIV 57
+    ...      ELSE
+    ...                  FAIL              Pdsch is not scheduled on all Special Slots
+
+
+
+#=======================================================================================================================
+# KW to check if CsiRs is well set in Special Slot
+#=======================================================================================================================
+
+Check CsiRs in Special Slots
+
+    ${Total_CsiRs}       Set Variable      0
+    ${Sum_CsiRs}         Set Variable      0
+
+    ${Pci_list}        Run Keyword If            '${param.CA}'=='Off'
+    ...                     Copy List            ${Pci_1CC}
+    ...            ELSE IF                       '${param.CA}'=='On'
+    ...                     Copy List            ${Pci_2CC}
+
+# Check CsiRs is scheduled on Special Slots. Hawk returns number of CsiRs message scheduled on Special SLOTS 3. Must be > 0
+    FOR    ${Pci}        IN       @{Pci_list}
+        ${CsiRs_Slot}    Run
+        ...    awk -F";" '{print $4" "$6}' ${CsiRs_file[0]} |grep "^.*\\.0*${param.CsiRsSlot}"|awk '{print $2}'|grep -i ${Pci}|wc -l
+        ${Total_CsiRs}     Evaluate    ${Total_CsiRs} + ${CsiRs_Slot}
+    END
+
+    Run Keyword if    ${Total_CsiRs} > 0
+    ...               Dated Log       CsiRs is Scheduled on Special Slot ${param.CsiRsSlot} >> ${CsiRs_Slot} CsiRsSendReq messages
+    ...     ELSE
+    ...               FAIL            CsiRs is not Scheduled on Special Slot ${param.CsiRsSlot} >> ${CsiRs_Slot} CsiRsSendReq message
+
+
+
+# Check CsiRs symbol position for Special Slots. Hawk returns number of CsiRs message which does not meet this requirement. Must be==0
+    FOR    ${pci}        IN       @{Pci_list}
+        ${Start_CsiRs}               Run
+        ...   awk -F";" '{print $4" "$6" "$8}' ${CsiRs_file[0]} |grep "^.*\\.0*${param.CsiRsSlot}"|awk '{print $2" "$3}'|grep -i ${Pci}.5|wc -l
+        ${Sum_CsiRs}     Evaluate    ${Sum_CsiRs} + ${Start_CsiRs}
+    END
+
+    Run Keyword if        ${Sum_CsiRs} == ${Total_CsiRs}
+    ...                   Dated Log       All CsiRs Scheduled on Special Slot ${param.CsiRsSlot} are set on symbol 5
+    ...     ELSE
+    ...                   FAIL            Some CsiRs Scheduled oon Special Slot are set on symbol 5
+
+
+
+#=======================================================================================================================
+# KW to check PDSCH counters with and  without CB009007
+#=======================================================================================================================
+
+Check Counters Data Slot and DL Data Slot With PDSCH
+
+    [Documentation]              Dedicated KW for checking DL data slot with PDSCH (M55308C00001) and Data slot with PDSCH (M55308C00005)
+    [Arguments]                  ${CB009007_State}
+
+    #${reportingIntervalPm}      SCF Get Single Value    dist_name=MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/PMCADM-1    p_name=reportingIntervalPm
+    #Traced Sleep                ${reportingIntervalPm}[0]           msg="Waiting for GP expirency to check counters"
+
+    ${date}                      Get Current Date
+    ${date_in_dir_name}          Convert Date                 ${date}     result_format=%d%m%Y_%H%M
+    ${pm_path}                   Set Variable                 ${LOG_PATH}/PM/${date_in_dir_name}/
+    ${pm_latest}                 Collect PM files from BTS    ${pm_path}
+
+
+    @{NRCELL_ID_LIST}     Run Keyword If         '${param.CA}'=='Off'
+    ...                      Copy List           ${Cell_Id_1CC}
+    ...            ELSE IF                       '${param.CA}'=='On'
+    ...                      Copy List           ${Cell_Id_2CC}
+
+    FOR    ${i}     IN       @{NRCELL_ID_LIST}
+
+        ${M55308C00001}          Retrieve Latest Single Counter Value From Pm File with CellID     ${pm_latest}        M55308C00001      ${i}
+        ${M55308C00005}          Retrieve Latest Single Counter Value From Pm File with CellID     ${pm_latest}        M55308C00005      ${i}
+        ${M55308C10001}          Retrieve Latest Single Counter Value From Pm File with CellID     ${pm_latest}        M55308C10001      ${i}
+        ${M55308C03001}          Retrieve Latest Single Counter Value From Pm File with CellID     ${pm_latest}        M55308C03001      ${i}
+
+        Dated Log                CB009007 ${CB009007_State} with Cell ${i}
+        Dated Log                Counter M55308C00001 > DL Data Slot counter value is : ${M55308C00001}
+        Dated Log                Counter M55308C00005 > Data Slot PDSCH counter value is : ${M55308C00005}
+        Dated Log                Counter M55308C10001 > PRBs Used For PDSCH counter value is : ${M55308C10001}
+        Dated Log                Counter M55308C03001 > PDSCH OFDM Symbols counter value is : ${M55308C03001}
+
+        Run    echo "CB009007 ${CB009007_State} with Cell ${i}"
+        Run    echo "M55308C00001 DL Data Slot : ${M55308C00001}" >> ${LOG_PATH}/compteur.txt
+        Run    echo "M55308C00005 Data Slot PDSCH : ${M55308C00005}" >> ${LOG_PATH}/compteur.txt
+        Run    echo "M55308C10001 PRBs Used For PDSCH : ${M55308C10001}" >> ${LOG_PATH}/compteur.txt
+        Run    echo "M55308C03001 PDSCH OFDM Symbols : ${M55308C03001}\n" >> ${LOG_PATH}/compteur.txt
+
+        Run Keyword If         '${CB009007_State}'=='ON'      Run Keywords
+        ...          Compare Counters to Reference    value=${M55308C00001}    reference=${M55308C00001_Ref_ON}        name=M55308C00001    delta=1
+        ...    AND   Compare Counters to Reference    value=${M55308C00005}    reference=${M55308C00005_Ref_ON}        name=M55308C00005    delta=1
+        ...    ELSE IF         '${CB009007_State}'=='OFF'     Run Keywords
+        ...          Compare Counters to Reference    value=${M55308C00001}    reference=${M55308C00001_Ref_OFF}       name=M55308C00001    delta=1
+        ...    AND   Compare Counters to Reference    value=${M55308C00005}    reference=${M55308C00005_Ref_OFF}       name=M55308C00005    delta=1
+
+        Run Keyword If         '${CB009007_State}'=='ON' and '${param.CA}'=='On'       Run Keywords
+        ...          Compare Counters to Reference    value=${M55308C10001}    reference=${M55308C10001_Ref_CA_ON}     name=M55308C10001    delta=1
+        ...    AND   Compare Counters to Reference    value=${M55308C03001}    reference=${M55308C03001_Ref_CA_ON}     name=M55308C03001    delta=1
+        ...    ELSE IF         '${CB009007_State}'=='OFF' and '${param.CA}'=='On'      Run Keywords
+        ...          Compare Counters to Reference    value=${M55308C10001}    reference=${M55308C10001_Ref_CA_OFF}    name=M55308C10001    delta=1
+        ...    AND   Compare Counters to Reference    value=${M55308C03001}    reference=${M55308C03001_Ref_CA_OFF}    name=M55308C03001    delta=1
+        ...    ELSE IF         '${CB009007_State}'=='ON' and '${param.CA}'=='Off'      Run Keywords
+        ...          Compare Counters to Reference    value=${M55308C10001}    reference=${M55308C10001_Ref_ON}        name=M55308C10001    delta=1
+        ...    AND   Compare Counters to Reference    value=${M55308C03001}    reference=${M55308C03001_Ref_ON}        name=M55308C03001    delta=1
+        ...    ELSE IF         '${CB009007_State}'=='OFF' and '${param.CA}'=='Off'     Run Keywords
+        ...          Compare Counters to Reference    value=${M55308C10001}    reference=${M55308C10001_Ref_OFF}       name=M55308C10001    delta=1
+        ...    AND   Compare Counters to Reference    value=${M55308C03001}    reference=${M55308C03001_Ref_OFF}       name=M55308C03001    delta=1
+
+    END
+
+
+Compare Counters to Reference
+
+    [Arguments]          ${value}      ${reference}      ${name}      ${delta}=1
+
+    ${ref_min}           Evaluate       ((100 - ${delta})/100) * ${reference}
+    ${ref_max}           Evaluate       ((100 + ${delta})/100) * ${reference}
+
+    Run Keyword If       ${value} > ${ref_min} and ${value} < ${ref_max}
+    ...                  Dated Log    Value for keyword ${name} is correct ref min ${ref_min} < value ${value} < ref max ${ref_max}
+    ...   ELSE IF        ${value} < ${ref_min}
+    ...                  FAIL    Value for counter ${name} is not correct value ${value} < ref min ${ref_min}
+    ...   ELSE IF        ${value} > ${ref_max}
+    ...                  FAIL    Value for counter ${name} is not correct value ${value} > ref max ${ref_max}
+
+
+
+#=======================================================================================================================
+# KW to check SLIV in RRC Setup
+#=======================================================================================================================
+
+Check Sliv in RRC Setup
+    Check RRC Setup for Sliv        pcapFile=${CaptureCPRT.path}
+    ...                             value=${param.sliv}[0]
+
+
+
+Check RRC Setup for Sliv
+    [Arguments]                     ${pcapFile}
+    ...                             ${prefix}=nr-rrc.pdsch_Config
+    ...                             ${field}=nr-rrc.startSymbolAndLength
+    ...                             ${value}=value
+    ${pcapFiltered}                 analyzer.filter_pcap
+    ...                             pcapInFile=${pcapFile}
+    ...                             filterName=F1AP
+    ...                             filterExp=f1ap
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+
+    Dated Log                       In RRC Setup, check ${prefix}/.../${field} > SLIV ${value} is present
+
+    ${msg}                          Set Variable                    rrcSetup_element
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${prefix}/.*/${field}$
+    ...                             value=${value}
+
+    Dated Log                       In RRC Setup, check ${prefix}/.../${field} > SLIV 43 is not present
+
+    Run Keyword And Expect Error    *                               analyzer.check_exists_once
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${prefix}/.*/${field}$
+    ...                             value=43
+
+
+
+#=======================================================================================================================
+# KW to set some parameters in SCF
+#=======================================================================================================================
+
+Get New Cell Id List without None Value          # Create a new NRCELL_ID_LIST which does not contains "NONE" value
+    [Documentation]                 Returns the number of not 'None' element in the list
+    [Arguments]                     ${my_list}
+    ${cell_id_list}=                Create List
+
+    FOR     ${elem}     IN          @{my_list}
+            Run Keyword If          '${elem}'!='None'
+            ...                     Append To List     ${cell_id_list}     ${elem}
+    END
+    [Return]                        ${cell_id_list}
+
+
+
+Set Parameters on SCF_COAM_TDD_SA
+    @{NRCELL_ID_LIST}     Run Keyword If         '${param.CA}'=='Off'
+    ...                      Copy List           ${Cell_Id_1CC}
+    ...            ELSE IF                       '${param.CA}'=='On'
+    ...                      Copy List           ${Cell_Id_2CC}
+
+    Run Keyword If        '${param.CA}'=='On'        Modify CA configuration
+
+    FOR    ${i}     IN    @{NRCELL_ID_LIST}
+           ${dn}          set variable        MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${i}
+
+           SCF Remove list                    dist_name=${dn}
+           ...                                list_name=tddFrameStructure
+           ...                                aicListEntity=vdu    scope=both
+
+           SCF Add list                       dist_name=${dn}
+           ...                                list_name=tddFrameStructure
+           ...                                aicListEntity=vdu    scope=both
+
+           ${list_tddFrameStructure}          Create Dictionary    frameStructureType=${param.frameStructureType}
+           ...                                                     guardPeriodLength=${param.guardPeriodLength}
+           ...                                                     ulDlDataSlotRatio=${param.ulDlDataSlotRatio}
+           Run Keyword if                     '${param.frameStructureType}'=='tdLte'       Run Keywords
+           ...                                Set To Dictionary    ${list_tddFrameStructure}    lteToNrFrameShift    ${param.lteToNrFrameShift}
+           ...        AND                     Set To Dictionary    ${list_tddFrameStructure}    tdLteUlDlConfig      ${param.tdLteUlDlConfig}
+
+           SCF Add items to list              dist_name=${dn}
+           ...                                list_name=tddFrameStructure
+           ...                                elements=${list_tddFrameStructure}
+           ...                                aicListEntity=vdu       scope=both
+
+           SCF Set element                    dist_name=${dn}      element_name=actEnhancedPDSCHSchSplSlot
+           ...                                element_value=${param.actEnhancedPDSCHSchSplSlot}
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           SCF Set element                    dist_name=${dn}      element_name=actCceSplit
+           ...                                element_value=${param.actCceSplit}
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           SCF Set element                    dist_name=${dn}      element_name=prachConfigurationIndex
+           ...                                element_value=${param.prachConfigurationIndex}
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           # deactivation of Dl PTRS due to new PDL rule linked to actAdaptiveReTxResMcs=true
+           SCF Set element in List            dist_name=${dn}    list_name=dlPtrs
+           ...                                element_name=actDlPtrs
+           ...                                element_value=false
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           SCF Set element                    dist_name=${dn}      element_name=actAdaptiveReTxResMcs
+           ...                                element_value=true
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           SCF Add element                    dist_name=${dn}      element_name=minPctResourceReservedMcsDl
+           ...                                element_value=50
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           SCF Add element                    dist_name=${dn}      element_name=minPctResourceReservedMcsUl
+           ...                                element_value=50
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           SCF Add element                    dist_name=${dn}      element_name=targetPctResourceReservedMcsDl
+           ...                                element_value=100
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           SCF Add element                    dist_name=${dn}      element_name=targetPctResourceReservedMcsUl
+           ...                                element_value=100
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           SCF Set element                    dist_name=${dn}      element_name=dlDMRSAdditionalPosition
+           ...                                element_value=One additional DMRS
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           SCF Set element                    dist_name=${dn}      element_name=actPdschAtSsbSlots
+           ...                                element_value=true
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           SCF Set element                    dist_name=${dn}      element_name=actPdschAllocAroundSsb
+           ...                                element_value=true
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           SCF Set element                    dist_name=${dn}      element_name=actPdschRmCsirsForTracking
+           ...                                element_value=true
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           SCF Set element                    dist_name=${dn}      element_name=dllaDeltaCqiMax
+           ...                                element_value=0
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           SCF Set element                    dist_name=${dn}      element_name=dllaDeltaCqiMin
+           ...                                element_value=0
+           ...                                aicListEntity=vdu
+           ...                                scope=Both
+
+           Dated Log New Line                 ===> Database Modifications completed for NRCELL-${i}
+    END
+
+    Run Keyword if                            ${param.CsiRs}==1        Set CsiRsConf
+    #vbo#useless since capture on eth9#Run Keyword If        ${isAic}            Add route to capture TTI
+
+
+#vbo#Add route to capture TTI
+#vbo#    # add route on VDU to capture TTI for VRAN
+#vbo#
+#vbo#    ${destIpAddr_value}             Set Variable    10.0.1.1
+#vbo#    ${gateway_value}                Set Variable    172.16.2.101
+#vbo#    ${dn}                           Set Variable    MRBTS-${MRBTS_ID}/TNLSVC-1/TNL-3/IPNO-1/IPRT-1
+#vbo#    ${staticRoutes_elements}    Create Dictionary    destIpAddr=${destIpAddr_value}    destinationIpPrefixLength=32    gateway=${gateway_value}
+#vbo#    ${is_dn_for_route}              SCF Is Object Exist    ${dn}    aicListEntity=Vdu    scope=AIC
+#vbo#    Dated Log New Line              ===> is_dn_for_route for object ${dn} exists: ${is_dn_for_route}
+#vbo#
+#vbo#    Run Keyword If                  ${is_dn_for_route} == ${True}    Run Keywords
+#vbo#    ...                             Dated Log New Line    ==> Create route into ${dn} with elements ${staticRoutes_elements} for TTI capture
+#vbo#    ...        AND                  SCF Add list             dist_name=${dn}    list_name=staticRoutes    aicListEntity=Vdu    scope=AIC
+#vbo#    ...        AND                  SCF Add items to list    dist_name=${dn}    list_name=staticRoutes    aicListEntity=Vdu    scope=AIC
+#vbo#    ...                                                      elements=${staticRoutes_elements}
+
+
+Modify CA configuration
+    # Modification configuration CA 2 TDD
+
+    FOR    ${i}     IN    @{Cell_Id_inCA}
+           ${dn}          set variable        MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${i}
+
+           SCF Set element                    dist_name=${dn}      element_name=actK1Opt
+           ...                                element_value=intra-gNB
+           ...                                aicListEntity=vduvcu
+           ...                                scope=Both
+
+           # SCF Set element                    dist_name=${dn}      element_name=actK1OptForDPA        # not used anymore
+           # ...                                element_value=true
+           # ...                                aicListEntity=vduvcu
+           # ...                                scope=Both
+    END
+
+    ${dn}          set variable        MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDU-1
+    SCF Set element                    dist_name=${dn}      element_name=actConnectedModeMobilityCA
+    ...                                element_value=true
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    # same dn as for actConnectedModeMobilityCA
+    SCF Set element                    dist_name=${dn}      element_name=flexibleCAMode
+    ...                                element_value=ConfigurationIndependent
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    # same dn as for actConnectedModeMobilityCA
+    @{list_CA}        Create List    ca_Fr1Tdd_Sa
+    SCF Add elements to list           dist_name=${dn}    list_name=carrierAggregationSupportList
+    ...                                elements=${list_CA}
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    ${version}        Run    grep -m1 '"com.nokia.srbts.nrbts:NRCELL"' ${SCF_SETUP_PATH}|awk '{print $4}'|awk -F'"' '{print $2}'
+    Dated Log         Version pour nrrel: ${version}
+    ${dn}          set variable        MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-3/NRREL-3
+    SCF Add object                     dist_name=${dn}      class_name=com.nokia.srbts.nrbts:NRREL
+    ...                                version=${version}
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    # same dn as for NRREL-3
+    SCF Add element                    dist_name=${dn}      element_name=cellIndividualSsbRsrpOffset
+    ...                                element_value=0dB
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    SCF Add element                    dist_name=${dn}      element_name=cellIndividualSsbRsrqOffset
+    ...                                element_value=0dB
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    SCF Add element                    dist_name=${dn}      element_name=gNbId
+    ...                                element_value=1
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    SCF Add element                    dist_name=${dn}      element_name=gNbIdLength
+    ...                                element_value=22
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    SCF Add element                    dist_name=${dn}      element_name=handoverAllowedSA
+    ...                                element_value=allowed
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    SCF Add element                    dist_name=${dn}      element_name=handoverAllowedSARedCap
+    ...                                element_value=forbidden
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    SCF Add element                    dist_name=${dn}      element_name=lcrId
+    ...                                element_value=6
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    SCF Add element                    dist_name=${dn}      element_name=nrDcAllowed
+    ...                                element_value=false
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    SCF Add element                    dist_name=${dn}      element_name=removeNotAllowed
+    ...                                element_value=false
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    SCF Add element                    dist_name=${dn}      element_name=sCellAdditionMethod
+    ...                                element_value=blind
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    SCF Add element                    dist_name=${dn}      element_name=sCellOperationalMode
+    ...                                element_value=dlOnly
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    SCF Add element                    dist_name=${dn}      element_name=isRplCellForPSCell
+    ...                                element_value=false
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    SCF Add list                       dist_name=${dn}      list_name=gnbPlmn
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    &{dico_Plmn}        Create Dictionary
+    ...                                mcc=311
+    ...                                mnc=489
+    ...                                mncLength=3
+
+    SCF Add items to list              dist_name=${dn}    list_name=gnbPlmn
+    ...                                elements=${dico_Plmn}
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+    # end same dn as for NRREL-3
+
+
+Set CsiRsConf
+
+    @{NRCELL_ID_LIST}     Run Keyword If         '${param.CA}'=='Off'
+    ...                      Copy List           ${Cell_Id_1CC}
+    ...            ELSE IF                       '${param.CA}'=='On'
+    ...                      Copy List           ${Cell_Id_2CC}
+
+    FOR    ${i}     IN       @{NRCELL_ID_LIST}
+           ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${i}
+
+           SCF Set element               dist_name=${dn}         element_name=actCellCsiRsImTddNonBf
+           ...                           element_value=true
+           ...                           aicListEntity=vduvcu
+           ...                           scope=Both
+
+           SCF Set element               dist_name=${dn}         element_name=cellCsiRsImLocationMode
+           ...                           element_value=manual
+           ...                           aicListEntity=vduvcu
+           ...                           scope=Both
+
+           ${list_name}                  Set Variable            periodicCsiAcquisition
+           SCF Set element in List       dist_name=${dn}         list_name=${list_name}
+           ...                           element_name=csirsNumberWithinReportPeriod_Set1
+           ...                           element_value=4
+           ...                           aicListEntity=vduvcu
+           ...                           scope=Both
+
+
+           ${list_name}                  Set Variable            cellCsiRsLocationList
+           SCF Add list                  dist_name=${dn}         list_name=${list_name}
+           ...                           aicListEntity=vduvcu    scope=Both
+           &{cellCsiRsLocationList_e}    Create Dictionary       firstOFDMSymbol=5
+           ...                                                   frequencyDomainAllocation=3072
+           ...                                                   offset=${param.CsiRsSlot}
+           ...                                                   resourceId=0
+           ...                                                   setId=set_1
+           SCF Add items to list         dist_name=${dn}         list_name=${list_name}    elements=${cellCsiRsLocationList_e}
+           ...                           aicListEntity=vduvcu    scope=Both
+
+           ${list_name}                  Set Variable            cellCsiImLocationList
+           SCF Add list                  dist_name=${dn}         list_name=${list_name}
+           ...                           aicListEntity=vduvcu    scope=Both
+           &{cellCsiImLocationList_e}    Create Dictionary       resourceId=0
+           ...                                                   setId=set_1
+           ...                                                   subcarrierLocation=240
+           SCF Add items to list         dist_name=${dn}         list_name=${list_name}    elements=${cellCsiImLocationList_e}
+           ...                           aicListEntity=vduvcu    scope=Both
+
+
+           ${console_msg}                Evaluate     "CSI-RS on special Slot added for NRCELL-${i}"
+           Dated Log                     ${console_msg}
+    END
+
+
+
+Cell Lock
+    Oam.OAM Cell Lock  cell_id=1
+    Dated Log   Current status of cell 1 is blocked
+
+
+
+Cell Unlock
+    Oam.OAM Cell Lock  state=UNLOCK     cell_id=1
+    Dated Log   Current status of cell 1 is unblocked
+
+
+
+Activate CB009007
+
+    @{NRCELL_ID_LIST}     Run Keyword If         '${param.CA}'=='Off'
+    ...                      Copy List           ${Cell_Id_1CC}
+    ...            ELSE IF                       '${param.CA}'=='On'
+    ...                      Copy List           ${Cell_Id_2CC}
+
+    ${modify_param}=         Create List
+
+    FOR    ${i}     IN       @{NRCELL_ID_LIST}
+           ${dn}             set variable        MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${i}
+
+           &{CB009007_OFF}        Create Dictionary
+           ...                    parameter=actEnhancedPDSCHSchSplSlot
+           ...                    dist_name=${dn}
+           ...                    value=true
+
+           Append To List         ${modify_param}      ${CB009007_OFF}
+           Dated Log              Parameters to modify:\n ${modify_param}
+    END
+
+    OAM Set Params AIC      ${modify_param}
+
+
+
+Deactivate CB009007
+
+    @{NRCELL_ID_LIST}     Run Keyword If         '${param.CA}'=='Off'
+    ...                      Copy List           ${Cell_Id_1CC}
+    ...            ELSE IF                       '${param.CA}'=='On'
+    ...                      Copy List           ${Cell_Id_2CC}
+
+    ${modify_param}=         Create List
+
+    FOR    ${i}     IN       @{NRCELL_ID_LIST}
+           ${dn}             set variable        MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${i}
+
+           &{CB009007_OFF}        Create Dictionary
+           ...                    parameter=actEnhancedPDSCHSchSplSlot
+           ...                    dist_name=${dn}
+           ...                    value=false
+
+           Append To List         ${modify_param}      ${CB009007_OFF}
+           Dated Log              Parameters to modify:\n ${modify_param}
+    END
+
+    OAM Set Params AIC      ${modify_param}
+
+
+Set UE_Capa Context_WTS CFG
+    [Arguments]   ${ue_id}=1
+
+    ${prefixToSearch}         set variable        ue_param id=${ue_id}
+    WtsCfgConfig.startSession
+    ${oldValue}          getParam           prefix=${prefixToSearch}          param=ue_nr_capabilities
+#    ${oldValue}          getParam           prefix=ue_param id=${ue_id}          param=ue_nr_capabilities
+    replaceValue         prefix=${prefixToSearch}
+    ...                  param=ue_nr_capabilities
+    ...                  oldValue=${oldValue}
+    ...                  newValue=${param.ue_nr_capa}
+    Dated log            Basic file nr_capabilities value changed from ${oldValue} --> ${param.ue_nr_capa}
+    WtsCfgConfig.stopSession         rename=modified
+
+
+
+Set Context TDD SA
+    [Tags]                            SETUP
+    Copy File                         ${SCF_SETUP_PATH}     ${SCF_SETUP_PATH}.ori
+    ${scf_file_name}                  Fetch from right      ${SCF_SETUP_PATH}      /
+    ${file_name_without_extention}    String.Replace string    ${scf_file_name}    .xml    ${EMPTY}
+    ${scf_name_for_update}            catenate    SEPARATOR=${EMPTY}    ${file_name_without_extention}
+    ...                               9007_TDD_SA.xml
+    ${scf_file_update_path}           set variable    ${LOG_PATH}/${scf_name_for_update}
+    SCF StartSession                  scf_file=${SCF_SETUP_PATH}
+    Set Parameters on SCF_COAM_TDD_SA
+    SCF StopSession                   scf_file=${scf_file_update_path}
+
+    ${TestName}                       getFormattedName
+    Copy File                         ${LOG_PATH}/${scf_name_for_update}     ${LOG_PATH}/${TestName}.xml
+
+    OAM Perform Full Commissioning    scf_file=${scf_file_update_path}
+
+    Run Keyword IF                    not ${isAic}
+    ...                               Airscale Wait for Ready    ${GNB_DU}
+    ...       ELSE                    Wait Vcu And Vdu Available
+
+	# Necessary pause for gNB recovery before WTS Setup when Classical
+    Run Keyword If                  not ${isAic}
+    ...                             Traced Sleep                5 minutes
+
+Restore Original SCF
+
+    OAM Restore Files
+
+
+#=======================================================================================================================
+# KW to activate CB009007 and CsiRs in Sherpa
+#=======================================================================================================================
+
+Set CsiRs in Sherpa ON
+
+    ${rad_param_CSI-RS_Sherpa}=               create dictionary               field=0x580117           value=1
+    ${rad_param_list}=                        Create List                     ${rad_param_CSI-RS_Sherpa}
+    SetConfig.Set Fields in swconfig DU       param_list=${rad_param_list}
+
+
+
+Set CsiRs in Sherpa OFF
+
+    ${rad_param_CSI-RS_Sherpa}=               create dictionary               field=0x580117           value=0
+    ${rad_param_list}=                        Create List                     ${rad_param_CSI-RS_Sherpa}
+    SetConfig.Set Fields in swconfig DU       param_list=${rad_param_list}
+
+
+
+Set HARQ Incremental Redundancy DL ON and set Adaptative ReTxn Nack Count
+
+    ${rad_param_HARQ_IR}=                     create dictionary               field=0x580001           value=0
+    ${rad_param_HARQ_NackCount}=              create dictionary               field=0x580678           value=6
+    ${rad_param_list}=                        Create List                     ${rad_param_HARQ_IR}     ${rad_param_HARQ_NackCount}
+    SetConfig.Set Fields in swconfig DU       param_list=${rad_param_list}
+
+
+#=======================================================================================================================
+# KW to set captures CPRT and L1L2
+#=======================================================================================================================
+
+Captures Init
+    ${CaptureL1L2}                  Capture L1L2 Set Upon Config            airscale=${GNB_DU}
+    ${CaptureCPRT}                  Capture CPRT Set Upon Config            airscale=${GNB_DU}
+    Capture Init                    ${CaptureL1L2}                          withTN=True
+    Capture Init                    ${CaptureCPRT}                          withTN=True
+    Set Suite Variable              ${CaptureL1L2}
+    Set Suite Variable              ${CaptureCPRT}
+
+
+
+Captures Start
+    Capture Start           capture=${CaptureCPRT}
+
+
+
+Captures Stop
+    Capture Stop            capture=${CaptureCPRT}
+
+
+
+#=======================================================================================================================
+# KW to manage traffic
+#=======================================================================================================================
+
+
+
+DL Traffic SA
+    Traffic UE DL           ueSetting=${BASIC_UE_SA}
+    ...                     throughput=${param.throughput}
+    ...                     captureCallback=Callback Capture L1L2
+    ...                     capture=${CaptureL1L2}
+    ...                     deviation=20
+
+
+
+DL_Max Traffic SA_NO_BIP
+    [Arguments]   ${ue_id}=1
+
+    &{basic_UEid}           copy dictionary    ${BASIC_UE_SA}
+    ${basic_UEid.ue}        Set Variable    ${ue_id}
+    ${basic_UEid.pdu}       Set Variable    ${ue_id}
+
+    Traffic UE DL           ueSetting=${basic_UEid}
+    ...                     throughput=${param.throughput}
+    ...                     deviation=${tputDeviation}
+    ...                     duration=600
+
+
+
+DL ReTxn Traffic SA_NO_BIP
+    Traffic UE DL           ueSetting=${BASIC_UE_SA}
+    ...                     throughput=${param.throughput}
+    ...                     shouldBeStop=False
+    ...                     shouldBeCheck=False
+    ...                     duration=20s
+    ...                     deviation=20
+
+
+
+DL Robustness Traffic SA_NO_BIP
+    Traffic UE DL           ueSetting=${BASIC_UE_SA}
+    ...                     throughput=${param.throughput}
+    ...                     duration=60s
+    ...                     deviation=20
+
+
+
+
+#==========================================
+#Customised rename of sherpa logs
+#==========================================
+
+Rename Of Sherpa Logs
+    ${TestName}                     getFormattedName
+    Copy File                       ${LOG_PATH}/l2stream3/tcpdump/tcpdump.pcap        ${LOG_PATH}/l2stream3/tcpdump/${TestName}.pcap
+    Remove File                     ${LOG_PATH}/l2stream3/tcpdump/tcpdump.pcap

@@ -1,0 +1,149 @@
+*** Settings ***
+Force Tags    PY36
+Documentation     [SUITE PURPOSE]  Verification for CNI68561/5GC001305
+...               Scope : Test new PRACH format C0 with PRACH configuration indexes 146 and 158
+...                       TL: mmW, Classical, TDD
+...               Automation author           : yann.ah.herve@nokia.com
+...               Automation contact          : davide.bacchiega@nokia.com
+...               Creation Date               : 19-Jan-2022
+...               Modified Date               : 
+...               Last Modified by            : 
+
+Resource          ../../../../Paris/resources/SWENG/robot/Restart.robot
+Resource          ../../../../Paris/resources/SWENG/robot/Setup.robot
+Resource          ../../../../Paris/resources/SWENG/robot/Oam.robot
+Resource          ../../../../Paris/resources/SWENG/robot/Scf.robot
+Resource          ../../../../Paris/resources/SWENG/robot/Counters.robot
+Resource          ../../../../Paris/resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../Paris/resources/SWENG/robot/Backup.robot
+Resource          ./resources/robot/CNI-68516_1305_Resources.robot
+
+#Force Tags                          CA_5G_SW_FR-Villarceaux    RRM 
+#...                                 CONFIGURED    5G_RAN    RAN_5G    CRT
+#...                                 CLOUD_5G_I_LO_AP_LO_NSA_FS_ECPRI_MMWV_TDD    master_classicalbts_all
+#...                                 SBTS00    SBTS23R1    SBTS22R4
+
+Suite Setup                         Suite Setup From Scratch
+Suite Teardown                      Suite Teardown
+
+*** Variables ***
+
+${prach_ci_A2_default_value}            38
+# FDD PRACH CI used for test purpose on tl BO_KL TL
+#${prach_ci_A2_default_value}            12
+${perform_gnb_reset}                    ${False}
+
+
+*** Keywords ***
+
+TC_1305_PRACH_CI
+    [Documentation]                 Generic test for PRACH CI introduced by format C0
+    [Arguments]                     ${prach_ci_value}
+    ...                             ${tl_topology}=classical
+
+    Run Keyword If                  ${perform_gnb_reset}==${True}         Restart TL
+    
+    # Modify WTS configuration file in order to remove heart timeout regarding ethernet connections
+    CNI-68516_1305_Resources.Modify WTS Heart Beat
+
+	WTS Setup
+
+    ##############################################################
+    # Without this additional attach, it seems that further attach after cell block / unblock
+    # don't work.
+    # => To be check with AP
+    # A temporary W.A. is to add an attach before locking/unlocking...
+    # Issue not seen with a BO_KL TL in FDD
+    ##############################################################
+    #SgNB Addition to ENB            ueSetting=${UE_SIMPLE}
+    #Traced Sleep                    10 seconds
+    # Detach UE
+    #UE Detach Enb
+
+    Set PRACH CI inside SCF         prach_ci_value=${prach_ci_value}
+
+    # Cellsetup is now done, Sherpa can be enabled if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}           Activate Sherpa
+
+    # UE attach to 4G+5G (NSA)
+    # If attach was successful, it's enough in full stack as PRACH CI configured inside SCF was used.
+    ${CaptureCPRT_X2} =             SgNB Addition to ENB            ueSetting=${UE_SIMPLE}
+    Traced Sleep                    10 seconds
+    # Detach UE
+    UE Detach Enb
+
+    # Check PRACH CI UE configuration
+    Check PrachConfigIndex in RRC Reconfiguration                   ${CaptureCPRT_X2}
+    ...                                                             ${prach_ci_value}
+
+    # Sleep till GP expired in order ro record existing counter
+    # It seems that if a cell deletion is done just after (inside Set PRACH CI inside SCF), existing counter are resetted
+    Traced Sleep                    5 minutes              msg="Waiting for GP expirency for counter update"
+
+    # Go back to PRACH default format (A2) => 38
+    Set PRACH CI inside SCF         prach_ci_value=${prach_ci_A2_default_value}
+
+    # UE attach to 4G+5G (NSA)
+    # If attach was successful, it's enough in full stack as PRACH CI configured inside SCF was used.
+    ${CaptureCPRT_X2} =             SgNB Addition to ENB
+    Traced Sleep                    10 seconds
+    # Detach UE
+    UE Detach Enb
+
+    # Check PRACH CI UE configuration
+    Check PrachConfigIndex in RRC Reconfiguration                   ${CaptureCPRT_X2}
+    ...                                                             ${prach_ci_A2_default_value}
+
+    # Counter values must be checked after each update step as a cell deletion occured
+    # when updating the PRACH CI, so cells counters are resetted when PRACH CI is udpated
+    CNI-68516_1305_Resources.Verify PRACH Counter Cumulative Values
+
+*** Test Cases ***
+
+[1]CNI-68516_1_5GC001305_Attach_PRACH_CI_146
+    [Documentation]     Test case for checking PRACH CI 146. The PRACH CI is mapped to one of the available
+    ...                 new PRACH format C0 dedicated to mmW (FR2) band.
+    ...                 The gNB is supposed to be configured with a mmW configuration.
+    ...                 Test updates the PRACH CI by using webEM, wait for end of commissioning and
+    ...                 perform attach.
+    ...                 Then, PRACH CI is moved to default value and attach is done again (kind of non-regression test)
+    ...                 At the end, PRACH related counters are checked: M55306C00001, M55306C03001, M55306C06001
+    ...                 gNB is supposed to be configured with frameStructureType = semiStatic
+    ...                 and ulDlDataSlotRatio = 1/4
+    ...                 PRACH CI 146:
+    ...                     Every 8 SFN (80 ms) % 1 on slots 4,9,14,19,24,29,34,39
+    ...                     Start symbol: 0, num of PRACH slots per 60 KHz : 1, num of PRACH occasion per slot: 7
+    ...                     PRACH duration: 2 symbols
+    [Setup]                     Backup FD_WTS_CFG
+
+    TC_1305_PRACH_CI            prach_ci_value=146
+
+    # Restore WTS configuration file and stop Sherpa if needed
+    [Teardown]                  CNI-68516_1305_Resources.Test Teardown For CNI-68516_1305
+
+
+[1]CNI-68516_1_5GC001305_Attach_PRACH_CI_158
+    [Documentation]     Test case for checking PRACH CI 158. The PRACH CI is mapped to one of the available
+    ...                 new PRACH format C0 dedicated to mmW (FR2) band.
+    ...                 The gNB is supposed to be configured with a mmW configuration.
+    ...                 Test updates the PRACH CI by using webEM, wait for end of commissioning and
+    ...                 perform attach.
+    ...                 Then, PRACH CI is moved to default value and attach is done again (kind of non-regression test)
+    ...                 At the end, PRACH related counters are checked: M55306C00001, M55306C03001, M55306C06001
+    ...                 gNB is supposed to be configured with frameStructureType = semiStatic
+    ...                 and ulDlDataSlotRatio = 1/4
+    ...                 PRACH CI 158:
+    ...                     Every 1 SFN (80 ms) % 0 on slots 24,29,34,39
+    ...                     Start symbol: 8, num of PRACH slots per 60 KHz : 1, num of PRACH occasion per slot: 3
+    ...                     PRACH duration: 2 symbols
+    [Setup]                     Backup FD_WTS_CFG
+
+    TC_1305_PRACH_CI            prach_ci_value=158
+
+    # Restore WTS configuration file and stop Sherpa if needed
+    [Teardown]                  CNI-68516_1305_Resources.Test Teardown For CNI-68516_1305
+
+*** Keywords ***
+Backup FD_WTS_CFG
+    ${fd}               getFileDescByName                                               name=WTS_CFG
+    Backup File         fileDesc=${fd}

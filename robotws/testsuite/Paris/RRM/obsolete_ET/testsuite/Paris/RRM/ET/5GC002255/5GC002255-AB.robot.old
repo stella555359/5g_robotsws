@@ -1,0 +1,288 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  verification of 5GC002255-A and 5GC002255-B feature in the case of FDD+TDD Classical L1Bypass SA
+...               Prerequisite : GNB and Airphone should be installed
+...               Scope : Reach a cell setup state, and perfom basic tests :
+...                       Ue Register, CRNTI checks, ...
+...
+...               Test Case Scenario author   : axel.gouilly-frossard@nokia.com
+...               Test Case Scenario contact  : axel.gouilly-frossard@nokia.com
+...               Test Case automation author : axel.gouilly-frossard@nokia.com
+...               Test Case automation contact: axel.gouilly-frossard@nokia.com
+...               Creation Date               : 20-October-2020
+...               Modified Date               : 18-August-2023
+...               Last Modified by            : loic.marzin@nokia.com
+...                    17/11/2022        Refactoring due to new QC management of test (no test dependencies allowed)
+...                    18/08/2023        Refactoring due to BOO_AP_LOO Migration
+...               Last Modified by            : richard.duthu@nokia.com
+...               Last Modification           : Scout data + some fixes for RF50
+
+Resource          ../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../resources/SWENG/robot/Tools.robot
+Variables         ../../../resources/SWENG/python/ReadConfig.py
+Resource          robot/5GC002255_Keywords.robot
+
+
+Force Tags        CA_5G_SW_FR-Villarceaux   RRM
+...               PY36
+...               master_classicalbts_all
+...               CONFIGURED    5G_RAN    RAN_5G
+
+Suite Setup       5GC002255_Keywords.setup 2255
+Suite Teardown    5GC002255_Keywords.teardown 2255
+
+*** Variables ***
+${TestSharkTool}      MC_SHARK
+
+# variable set to ${True} to automatically save SOS report and OAM snapshot
+# (by default, these information are saved only if a test is failed)
+${ForceDebugDataCollection}    ${False}
+#${ForceDebugDataCollection}    ${True}
+
+@{CAslNone}          none
+@{CAslFddFr1Tdd}     ca_Fdd_Fr1Tdd_Sa   #branch 0.800.xxx  (trunk)
+#@{CAslFddFr1Tdd}     ca_Fdd_Fr1Tdd     #branch 11.800.xxx
+&{B_18}          carrierAggregationSupportList=${CAslNone}
+&{B_17}          carrierAggregationSupportList=${CAslFddFr1Tdd}
+
+
+&{AB}
+...                                 flexibleCAMode=MixedCAMode
+...                                 sCellActivationMethod=blind
+...                                 actInterNumerologyCa=true
+...                                 sCellAdditionMethod=blind
+...                                 carrierAggregationSupportList=ca_Fdd_Fr1Tdd_Sa
+...                                 pucchModeSelectTDD=longPucch
+...                                 pucchModeSelectFDD=longPucch
+...                                 maxNumScellsDl=1
+...                                 primaryPathMaxQueueingDelay_NRCELL1=10
+...                                 primaryPathMaxQueueingDelay_NRCELL2=10
+...                                 secondaryPathMaxQueueingDelay_NRCELL1=10
+...                                 secondaryPathMaxQueueingDelay_NRCELL2=10
+...                                 cellDepType_NRCELL1=SA+NSA       #if config SANSA this setting is not mandatory please erase this
+...                                 cellDepType_NRCELL2=SA+NSA       #if config SANSA this setting is not mandatory please erase this
+...                                 actBeamforming_NRCELL1=false
+...                                 actBeamforming_NRCELL2=false
+...                                 actFdmScheduling=true
+
+*** Test Cases ***
+
+[1][1.0] 5GC002255_A_B_CA_Related_NIDD_Parameters_And_Basic_UE_Context_Setup_SA_Option2
+    [Tags]                          CRT        CLOUD_5G_I_BOO_AP_LOO
+    ...                             VARIANT    VARIANT_SANSA_FS_ECPRI_CMWV_FDD+TDD
+    ...                             SBTS00
+    [Documentation]                 Carrier Aggregation 2255-1390 Sub-feature A/B
+
+    Init Sequence                   ${AB}
+
+    Critical Step                   5GC002255_Keywords.Set MRBTSID and NRBTSID_RWorked
+    Step                            Set SCF Context    argument=AB
+    Critical Step                   5GC002255_A_B1_2_gNB_Startup_Ok_with_Flags
+    Critical Step                   5GC002255_A_B1_4_gNB_CellSetup_Ok_with_Flags
+    Step                            5GC002255_A_B1_7_gNB_MultiUE_Attach_FDD_CRNTI_Ok
+    Step                            5GC002255_A_B7_18_Only_1390_Deactivation
+    Step                            5GC002255_A_B1_10_gNB_MultiUE_Attach_TDD_CRNTI_Ok
+    Step                            5GC002255_A_B6_17_Only_1390_activation
+    Step                            5GC002255_A_B1_11_UE_FDD_Traffic
+    Step                            5GC002255_B_B5b_10_RRC_Reconf_After_Scell_Selection
+    Step                            5GC002255_A_B3_14_TDD_Cell_Lock
+    Step                            5GC002255_B_B5b_21_RRC_Reconf_After_Scell_Selection_PM_Counters
+    Step                            5GC002255_B_B5c_22_UE_Connected_PM_Counters
+    [Teardown]                      Teardown 5GC002255_A_B
+
+*** Keywords ***
+Set SCF Context
+    [Arguments]                     ${subfeature}=none
+    Dated log       ===================
+    Dated log       SCF settings for ${subfeature}
+    Dated log       ===================
+
+    &{modify_param0}   Create Dictionary
+    ...                               dist_name=MRBTS-1
+    ...                               parameter=btsName
+    ...                               value=${subfeature}
+    &{modify_param1}   Create Dictionary
+    ...                               parameter=flexibleCAMode
+    ...                               dist_name=${dist_nameDU}
+    ...                               value=${param.flexibleCAMode}
+
+    &{modify_param2}   Create Dictionary
+    ...                               parameter=sCellActivationMethod
+    ...                               dist_name=${DU}
+    ...                               value=${param.sCellActivationMethod}
+
+    &{modify_param3}    Create Dictionary
+    ...                               parameter=actInterNumerologyCa
+    ...                               dist_name=${dist_nameDU}
+    ...                               value=${param.actInterNumerologyCa}
+
+    &{modify_param4}   Create Dictionary
+    ...                               parameter=sCellAdditionMethod
+    ...                               dist_name=${Meth_name}
+    ...                               value=${param.sCellAdditionMethod}
+
+    &{modify_param5}      Evaluate
+    ...  {'parameter':'carrierAggregationSupportList','value':['${param.carrierAggregationSupportList}']}   #ATTENTION TABLEAU
+    Set To Dictionary   ${modify_param5}   dist_name  ${dist_nameDU}
+
+    &{modify_param6}   Create Dictionary
+    ...                               parameter=pucchModeSelect
+    ...                               dist_name=${dist_name1}
+    ...                               value=${param.pucchModeSelectTDD}
+
+    &{modify_param7}   Create Dictionary
+    ...                               parameter=pucchModeSelect
+    ...                               dist_name=${dist_name2}
+    ...                               value=${param.pucchModeSelectFDD}
+
+    &{modify_param8}   Create Dictionary
+    ...                               parameter=maxNumScellsDl
+    ...                               dist_name=${DU}
+    ...                               value=${param.maxNumScellsDl}
+
+    &{modify_param15}   Create Dictionary
+    ...                               parameter=primaryPathMaxQueueingDelay
+    ...                               dist_name=${dist_name1}
+    ...                               value=${param.primaryPathMaxQueueingDelay_NRCELL1}
+
+    &{modify_param16}   Create Dictionary
+    ...                               parameter=primaryPathMaxQueueingDelay
+    ...                               dist_name=${dist_name2}
+    ...                               value=${param.primaryPathMaxQueueingDelay_NRCELL2}
+
+    &{modify_param17}   Create Dictionary
+    ...                               parameter=secondaryPathMaxQueueingDelay
+    ...                               dist_name=${dist_name1}
+    ...                               value=${param.secondaryPathMaxQueueingDelay_NRCELL1}
+
+    &{modify_param18}   Create Dictionary
+    ...                               parameter=secondaryPathMaxQueueingDelay
+    ...                               dist_name=${dist_name2}
+    ...                               value=${param.secondaryPathMaxQueueingDelay_NRCELL2}
+
+    &{modify_param25}   Create Dictionary
+    ...                               parameter=cellDepType
+    ...                               dist_name=${dist_name1}
+    ...                               value=${param.cellDepType_NRCELL1}
+
+    &{modify_param26}   Create Dictionary
+    ...                               parameter=cellDepType
+    ...                               dist_name=${dist_name2}
+    ...                               value=${param.cellDepType_NRCELL2}
+
+    &{modify_param27}   Create Dictionary
+    ...                               parameter=actBeamforming
+    ...                               dist_name=${dist_name1}
+    ...                               value=${param.actBeamforming_NRCELL1}
+
+    &{modify_param28}   Create Dictionary
+    ...                               parameter=actBeamforming
+    ...                               dist_name=${dist_name2}
+    ...                               value=${param.actBeamforming_NRCELL2}
+
+    &{modify_param29}   Create Dictionary
+    ...                               parameter=actFdmScheduling
+    ...                               dist_name=${DU}
+    ...                               value=${param.actFdmScheduling}
+
+    @{modify_param}    Create List    ${modify_param1}    ${modify_param2}    ${modify_param3}    ${modify_param4}
+    ...                               ${modify_param5}    ${modify_param6}    ${modify_param7}    ${modify_param8}
+    ...                               ${modify_param15}   ${modify_param16}   ${modify_param17}   ${modify_param18}
+    ...                               ${modify_param25}   ${modify_param26}   ${modify_param27}   ${modify_param28}
+    ...                               ${modify_param29}   ${modify_param0}
+
+    Dated log                         Parameters to modify:\n  #${modify_param}
+    Dated log                         ${modify_param0}
+    Dated log                         ${modify_param1}
+    Dated log                         ${modify_param2}
+    Dated log                         ${modify_param3}
+    Dated log                         ${modify_param4}
+    Dated log                         ${modify_param5}
+    Dated log                         ${modify_param6}
+    Dated log                         ${modify_param7}
+    Dated log                         ${modify_param8}
+
+    Dated log                         ${modify_param15}
+    Dated log                         ${modify_param16}
+    Dated log                         ${modify_param17}
+    Dated log                         ${modify_param18}
+
+    Dated log                         ${modify_param25}
+    Dated log                         ${modify_param26}
+    Dated log                         ${modify_param27}
+    Dated log                         ${modify_param28}
+    Dated log                         ${modify_param29}
+    OAM Set Params      ${modify_param}
+
+5GC002255_A_B1_2_gNB_Startup_Ok_with_Flags
+    [Tags]  RESTART_STARTUP
+    Restart.Restart TL
+
+5GC002255_A_B1_4_gNB_CellSetup_Ok_with_Flags
+    [Tags]  Cell_Setup
+    CallSetup.Setup Wtsemu SA
+
+5GC002255_A_B1_7_gNB_MultiUE_Attach_FDD_CRNTI_Ok
+    [Tags]  Multi_Attach_FDD
+    sleep    5s
+    5GC002255_Keywords.Start Capture CPRT
+    CallSetup.UE Register           ue=3
+    CallSetup.Launch PDU Session  ue=3  pdu=3  gw=3
+    5GC002255_Keywords.Stop Capture CPRT
+
+5GC002255_A_B7_18_Only_1390_Deactivation
+    [Tags]  1390_Deactivation
+    5GC002255_Keywords.Change in commissioning  ${B_18}
+    5GC002255_Keywords.Check Cell on Air
+
+5GC002255_A_B1_10_gNB_MultiUE_Attach_TDD_CRNTI_Ok
+    [Tags]  Multi_Attach_TDD
+    CallSetup.UE Register           ue=1
+    CallSetup.UE Register           ue=2
+
+5GC002255_A_B6_17_Only_1390_activation
+    [Tags]  1390_Activation
+    5GC002255_Keywords.Change in commissioning    ${B_17}
+    5GC002255_Keywords.Check Cell on Air
+
+5GC002255_A_B1_11_UE_FDD_Traffic
+    #SA_keywords_2.Traffic DL SA  ue=3  pdu=3  qfi=1  rate=5  time=5
+    ${ueSetting}        set variable    ${BASIC_UE_SA}
+    ${ueSetting.pdu}    set variable    3
+    ${ueSetting.ue}     set variable    3
+    Traffic.Traffic UE DL    throughput=5     duration=5    ueSetting=${ueSetting}
+
+5GC002255_B_B5b_10_RRC_Reconf_After_Scell_Selection
+    5GC002255_Keywords.Check_PsCell_NrRell_SCellSetupResponse    ${CaptureCPRT.path}
+
+5GC002255_A_B3_14_TDD_Cell_Lock
+    #Classical_connections.Connect to gNB Asik Master
+    CallSetup.UE Register           ue=5
+    CallSetup.Launch PDU Session  ue=5  pdu=5  gw=5
+    Dated Log   Pause 10 mn to get the next PM period
+    sleep   600s
+    Dated Log   Pause ended
+    Oam.OAM Cell Lock  cell_id=1
+    sleep    5s
+    CallSetup.UE Register           ue=6
+    CallSetup.Launch PDU Session  ue=6  pdu=6  gw=6
+
+5GC002255_B_B5b_21_RRC_Reconf_After_Scell_Selection_PM_Counters
+    5GC002255_Keywords.Collect PM Counters File
+    5GC002255_Keywords.Check ScellAdditionCounters    expectedValue=2    expectedValue2=300
+
+5GC002255_B_B5c_22_UE_Connected_PM_Counters
+    5GC002255_Keywords.Check ScellAdditionCounterinScell    expectedValue=300
+
+
+Teardown 5GC002255_A_B
+    [Documentation]    collect Sos Report if a TC is failed or if the user need traces ForceDebugDataCollection
+    Dated log                       Teardown for 5GC002255_A_B
+    Produce Scout Data
+    Run Keyword If                  ${ForceDebugDataCollection}   Get Sos Report
+    [Teardown]                      GenericTest.Display diagnosis

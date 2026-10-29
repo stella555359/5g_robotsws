@@ -1,0 +1,2643 @@
+"""
+:copyright: Nokia Networks
+:author: Mateusz Plinta
+:maintainer: Mateusz Plinta
+:contact: mateusz.plinta@nokia.com
+"""
+
+from robot.libraries.BuiltIn import BuiltIn
+import os
+
+
+def get_builtin_value(param_name, default=None):
+    return BuiltIn().get_variable_value('${{{}}}'.format(param_name), default)
+
+
+tl = get_builtin_value(param_name="tl")
+
+# AP Hardware
+AP_HARDWARE = tl.ues[0].l1.common_units[0].hardware_type
+
+# PDU
+PDU_MODEL = tl.gnbs[0].dus[0].airscale.common_units[0].pdu_port.pdu.__class__.__name__
+GNB_PORT = tl.gnbs[0].dus[0].airscale.common_units[0].pdu_port
+AP_PORT = tl.ues[0].l1.common_units[0].pdu_port
+SWITCH_IP = tl.gnbs[0].dus[0].airscale.common_units[0].pdu_port.pdu.addr
+
+# General vars
+WEBEM_USERNAME = tl.gnbs[0].cu.oam_http_connection_details.username
+WEBEM_PASSWORD = tl.gnbs[0].cu.oam_http_connection_details.password
+NOKIA_USERNAME = tl.gnbs[0].cu.oam_ssh_connection_details.username
+NOKIA_PASS = tl.gnbs[0].cu.oam_ssh_connection_details.password
+GNB_IP = tl.gnbs[0].cu.oam_ssh_connection_details.addr
+AP_IP = tl.ues[0].l1.common_units[0].lmp_connection.addr
+AP_PASSWD = tl.ues[0].l1.common_units[0].lmp_connection.password
+IPHY_DIR_PATH = '/opt/iphy'
+EPCSIM_DIR_PATH = '{}/latest'.format(IPHY_DIR_PATH)
+RESOURCES_WTS_CFGS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'wts')
+
+RESOURCES_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)))
+BIP_SCRIPT = 'bip_script.sh'
+BIP_COLLECTION_RUNNING = False
+COLLECT_SNAPSHOT = 'False'
+SUITE_SETUP_PASSED = False
+
+DL_MBPS = 500
+DL_MBPS_B = 100
+UL_MBPS = 100
+
+CELLS_6xREAL = {2: [1, 2, 3, 4, 5, 6]}
+SYSLOG_ALIAS = "default"
+ALIAS_TSHARK_WTS = "ALIAS_TSHARK_WTS"
+PM_PERIOD = 5
+SCELLS_FTT = ("16387", "16390")
+PCELL_ID_8533 = "16385"
+SCELLS_8533 = ("16387", "16388", "16390")
+TDD_SCELLS = ("52", "55")
+NRCELLIDENTIFICATION_MAP = {"16385": 1, "16386": 2, "16387": 3, "16388": 4, "16389": 5, "16390": 6}
+PHYCELLID_MAP = {"16385": "50", "16386": "51", "16387": "52", "16388": "53", "16389": "54", "16390": "55"}
+PHYSCELLID_UE_MAP = {"50": 6, "52": 4, "53": 5, "55": 3}
+
+CELLID_MAP_KL = {"NRCELL-4": "4", "NRCELL-2": "2"}
+CELLID_MAP_LO = {"NRCELL-4": "1", "NRCELL-2": "4"}
+
+DEBUG_MCTRL_ENABLED = False
+
+
+def get_real_cell_value(key):  # Helper function to modify deltas
+    if AP_HARDWARE == "ASIL":
+        return CELLID_MAP_LO[key]
+    else:
+        return CELLID_MAP_KL[key]
+
+
+def get_weight_for_scell_selection_parameter_delta(value):
+    return {"parameterName": "weightForSCellSelection", "value": str(value), "operation": "update"}
+
+
+def get_drxprofile_parameter_delta(profile_id, drx_inactivity_timer, drx_long_cycle,
+                                   drx_on_duration_timer, drx_retrans_timer_dl, drx_retrans_timer_ul,
+                                   drx_harq_rtt_timer_dl, drx_harq_rtt_timer_ul):
+    return {
+        "parameterName": "drxProfile{}".format(profile_id),
+        "operation": "update",
+        "value": [{
+            "drxInactivityTimer": "{}ms".format(drx_inactivity_timer),
+            "drxLongCycle": "{}ms".format(drx_long_cycle),
+            "drxOnDurationTimer": "{}ms".format(drx_on_duration_timer),
+            "drxRetransTimerDl": "{}slot".format(drx_retrans_timer_dl),
+            "drxRetransTimerUl": "{}slot".format(drx_retrans_timer_ul),
+            "drxHarqRttTimerDl": "{}symbols".format(drx_harq_rtt_timer_dl),
+            "drxHarqRttTimerUl": "{}symbols".format(drx_harq_rtt_timer_ul)
+        }]
+    }
+
+
+DELTA_B1_TC1 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "20ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-2")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B1_TC3 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "80ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+DELTA_B1_TC4 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            },  {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B1_TC5 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            },  {
+                "parameterName": "actBeamforming",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_1",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-2",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "1 beam",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "80ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_1",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-5",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "1 beam",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B1_TC6 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            },  {
+                "parameterName": "actBeamforming",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_1",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-2",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "1 beam",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "320ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_1",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-5",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "1 beam",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B1_TC7 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "20ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "2",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-2")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B1_TC9 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "80ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "2",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B1_TC10 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "2",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+CLEANUP_DELTA_B1_FTT = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_2",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-2",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "2 beams",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "10ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "operation": "delete"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_2",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-5",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "2 beams",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+CLEANUP_DELTA_B1_FTF = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "10ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "operation": "delete"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-2",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B2_TC14 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            },  {
+                "parameterName": "actBeamforming",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_1",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-2",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "1 beam",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "320ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrxVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "4ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "0slot",
+                        "drxRetransTimerUl": "0slot"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_1",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-5",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "1 beam",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B2_TC17 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "80ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrxVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "20ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "20ms",
+                        "drxRetransTimerDl": "0slot",
+                        "drxRetransTimerUl": "0slot"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B2_TC18 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            },  {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrxVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "4ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "0slot",
+                        "drxRetransTimerUl": "0slot"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B2_TC21 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            },  {
+                "parameterName": "actBeamforming",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_1",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-2",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "1 beam",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "320ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrxVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "4ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "0slot",
+                        "drxRetransTimerUl": "0slot"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_1",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-5",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "1 beam",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B2_TC23 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_2",
+                        "beamSetInUse": "beamSet_2",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "true",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "csirsBeamMgmt",
+                "value": [{
+                        "csirsBmMgmtDensity": "density3",
+                        "csirsBmMgmtReIndex": "0",
+                        "csirsBmMgmtSubband": "aboveSSPBCHBlock"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "80ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrxVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "20ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "20ms",
+                        "drxRetransTimerDl": "0slot",
+                        "drxRetransTimerUl": "0slot"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-2")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B2_TC25 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_2",
+                        "beamSetInUse": "beamSet_2",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "true",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "csirsBeamMgmt",
+                "value": [{
+                        "csirsBmMgmtDensity": "density3",
+                        "csirsBmMgmtReIndex": "0",
+                        "csirsBmMgmtSubband": "aboveSSPBCHBlock"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "80ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrxVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "20ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "20ms",
+                        "drxRetransTimerDl": "0slot",
+                        "drxRetransTimerUl": "0slot"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_2",
+                        "beamSetInUse": "beamSet_2",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "true",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "csirsBeamMgmt",
+                "value": [{
+                        "csirsBmMgmtDensity": "density3",
+                        "csirsBmMgmtReIndex": "0",
+                        "csirsBmMgmtSubband": "aboveSSPBCHBlock"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B2_TC28 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "20ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrxVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "value": [{
+                    "drxHarqRttTimerDl": "0symbols",
+                    "drxHarqRttTimerUl": "0symbols",
+                    "drxInactivityTimer": "20ms",
+                    "drxLongCycle": "40ms",
+                    "drxOnDurationTimer": "1ms",
+                    "drxRetransTimerDl": "0slot",
+                    "drxRetransTimerUl": "0slot"
+                }],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-2")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B2_TC26 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            },  {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrxVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "4ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "0slot",
+                        "drxRetransTimerUl": "0slot"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B2_TC29 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [
+            {
+                "parameterName": "actCDrxVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+               "parameterName": "actEnhancedVoNR",
+               "value": "true",
+               "operation": "update"
+            }, {
+               "parameterName": "actVoNR",
+               "value": "true",
+               "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }, {
+               "parameterName": "drxProfile1",
+               "operation": "update",
+               "value": [{
+                    "drxHarqRttTimerDl": "0symbols",
+                    "drxHarqRttTimerUl": "0symbols",
+                    "drxInactivityTimer": "40ms",
+                    "drxLongCycle": "160ms",
+                    "drxOnDurationTimer": "80ms",
+                    "drxRetransTimerDl": "16slot",
+                    "drxRetransTimerUl": "16slot"
+               }]
+            },  {
+                "parameterName": "drxProfile2",
+                "value": [{
+                    "drxHarqRttTimerDl": "0symbols",
+                    "drxHarqRttTimerUl": "0symbols",
+                    "drxInactivityTimer": "20ms",
+                    "drxLongCycle": "40ms",
+                    "drxOnDurationTimer": "1ms",
+                    "drxRetransTimerDl": "0slot",
+                    "drxRetransTimerUl": "0slot"
+                }],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+            "parameterName": "weightForSCellSelection",
+            "value": "70",
+            "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+            "parameterName": "weightForSCellSelection",
+            "value": "60",
+            "operation": "update"
+            }
+        ]
+    }
+]
+
+DELTA_VONR = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [
+            {
+                "parameterName": "actCDrxVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "operation": "update",
+                "value": [{
+                    "drxHarqRttTimerDl": "0symbols",
+                    "drxHarqRttTimerUl": "0symbols",
+                    "drxInactivityTimer": "20ms",
+                    "drxLongCycle": "40ms",
+                    "drxOnDurationTimer": "20ms",
+                    "drxRetransTimerDl": "0slot",
+                    "drxRetransTimerUl": "0slot"
+                }]
+            }
+        ]
+    }
+]
+
+DELTA_B2_TC31 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [
+            {
+                "parameterName": "actCDrxVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+               "parameterName": "actEnhancedVoNR",
+               "value": "true",
+               "operation": "update"
+            }, {
+               "parameterName": "actVoNR",
+               "value": "true",
+               "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }, {
+               "parameterName": "drxProfile1",
+               "operation": "update",
+               "value": [{
+                    "drxHarqRttTimerDl": "0symbols",
+                    "drxHarqRttTimerUl": "0symbols",
+                    "drxInactivityTimer": "40ms",
+                    "drxLongCycle": "160ms",
+                    "drxOnDurationTimer": "20ms",
+                    "drxRetransTimerDl": "16slot",
+                    "drxRetransTimerUl": "16slot"
+               }]
+            },  {
+                "parameterName": "drxProfile2",
+                "value": [{
+                    "drxHarqRttTimerDl": "0symbols",
+                    "drxHarqRttTimerUl": "0symbols",
+                    "drxInactivityTimer": "20ms",
+                    "drxLongCycle": "40ms",
+                    "drxOnDurationTimer": "1ms",
+                    "drxRetransTimerDl": "0slot",
+                    "drxRetransTimerUl": "0slot"
+                }],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+            "parameterName": "weightForSCellSelection",
+            "value": "70",
+            "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+            "parameterName": "weightForSCellSelection",
+            "value": "60",
+            "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B2_TC34 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [
+            get_weight_for_scell_selection_parameter_delta(value=80),
+            get_drxprofile_parameter_delta(profile_id=1, drx_inactivity_timer=40, drx_long_cycle=160,
+                                           drx_on_duration_timer=80, drx_retrans_timer_dl=16, drx_retrans_timer_ul=16,
+                                           drx_harq_rtt_timer_dl=0, drx_harq_rtt_timer_ul=0),
+            get_drxprofile_parameter_delta(profile_id=2, drx_inactivity_timer=20, drx_long_cycle=40,
+                                           drx_on_duration_timer=1, drx_retrans_timer_dl=0, drx_retrans_timer_ul=0,
+                                           drx_harq_rtt_timer_dl=0, drx_harq_rtt_timer_ul=0)
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [get_weight_for_scell_selection_parameter_delta(value=70)]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-2")),
+        "operation": "update",
+        "parameters": [get_weight_for_scell_selection_parameter_delta(value=60)]
+    }
+]
+
+
+DELTA_B2_TC35 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            },  {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "300ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrxVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "4ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "0slot",
+                        "drxRetransTimerUl": "0slot"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B2_TC38 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "320ms",
+                        "drxOnDurationTimer": "300ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            },  {
+                "parameterName": "actCDrxVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "4ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "0slot",
+                        "drxRetransTimerUl": "0slot"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-2")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+CLEANUP_DELTA_B2_FTT = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_2",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-2",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "2 beams",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "10ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "operation": "delete"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrxVoNR",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "4ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "0slot",
+                        "drxRetransTimerUl": "0slot"
+                    }
+                ],
+                "operation": "delete"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_2",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-5",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "2 beams",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+CLEANUP_DELTA_B2_FTT_BR_on = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_2",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "csirsBeamMgmt",
+                "value": [{
+                        "csirsBmMgmtDensity": "density3",
+                        "csirsBmMgmtReIndex": "0",
+                        "csirsBmMgmtSubband": "aboveSSPBCHBlock"
+                    }
+                ],
+                "operation": "delete"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-2",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "2 beams",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "10ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "operation": "delete"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrxVoNR",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "4ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "0slot",
+                        "drxRetransTimerUl": "0slot"
+                    }
+                ],
+                "operation": "delete"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_2",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "csirsBeamMgmt",
+                "value": [{
+                        "csirsBmMgmtDensity": "density3",
+                        "csirsBmMgmtReIndex": "0",
+                        "csirsBmMgmtSubband": "aboveSSPBCHBlock"
+                    }
+                ],
+                "operation": "delete"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-5",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "2 beams",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+CLEANUP_DELTA_B2_FTF_BR_on = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_2",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "csirsBeamMgmt",
+                "value": [{
+                        "csirsBmMgmtDensity": "density3",
+                        "csirsBmMgmtReIndex": "0",
+                        "csirsBmMgmtSubband": "aboveSSPBCHBlock"
+                    }
+                ],
+                "operation": "delete"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "10ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "operation": "delete"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrxVoNR",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "4ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "0slot",
+                        "drxRetransTimerUl": "0slot"
+                    }
+                ],
+                "operation": "delete"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-2")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+CLEANUP_DELTA_B2_FTF = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "10ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "operation": "delete"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrxVoNR",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "actEnhancedVoNR",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "actVoNR",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "drxProfile2",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "4ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "0slot",
+                        "drxRetransTimerUl": "0slot"
+                    }
+                ],
+                "operation": "delete"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-2")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B_B1_TC1 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            },  {
+                "parameterName": "actBeamforming",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_1",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-2",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "1 beam",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "80ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "delete"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "1",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrx",
+                "value": "false",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_1",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-5",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "1 beam",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+DELTA_B_B1_TC2 = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "70",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "false",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_1",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "160ms",
+                        "drxOnDurationTimer": "1ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "delete"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "value": "2",
+                "operation": "update"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "80",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrx",
+                "value": "false",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-2")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "60",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-2",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "1 beam",
+                "operation": "update"
+            }
+        ]
+    }
+]
+
+
+CLEANUP_DELTA_B_B1_FTT = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_2",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-2",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "2 beams",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "10ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "operation": "delete"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrx",
+                "value": "true",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-6",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_2",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-5",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "2 beams",
+                "operation": "update"
+            }
+        ]
+    },  {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-5",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "2 beams",
+                "operation": "update"
+            }
+        ]
+    },
+]
+
+
+CLEANUP_DELTA_B_B1_FTF = [
+    {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-3",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actBeamforming",
+                "value": "true",
+                "operation": "update"
+            }, {
+                "parameterName": "beamSet",
+                "value": [{
+                        "basicBeamSet": "beamSet_2",
+                        "leftEdgeAngle": "60",
+                        "nrBtsBeamRefinementP2": "false",
+                        "rightEdgeAngle": "60"
+                    }
+                ],
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-4")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "drxProfile1",
+                "value": [{
+                        "drxHarqRttTimerDl": "0symbols",
+                        "drxHarqRttTimerUl": "0symbols",
+                        "drxInactivityTimer": "40ms",
+                        "drxLongCycle": "40ms",
+                        "drxOnDurationTimer": "10ms",
+                        "drxRetransTimerDl": "16slot",
+                        "drxRetransTimerUl": "16slot"
+                    }
+                ],
+                "operation": "update"
+            }, {
+                "parameterName": "iniNumSCellsToActivate",
+                "operation": "delete"
+            }, {
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }, {
+                "parameterName": "actCDrx",
+                "value": "true",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELL-{}".format(get_real_cell_value("NRCELL-2")),
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "weightForSCellSelection",
+                "value": "50",
+                "operation": "update"
+            }
+        ]
+    }, {
+        "distName": "MRBTS-1/NRBTS-1/NRCELLGRP-2",
+        "operation": "update",
+        "parameters": [{
+                "parameterName": "numberOfTransmittedSsBlocks",
+                "value": "2 beams",
+                "operation": "update"
+            }
+        ]
+    }
+]

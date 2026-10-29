@@ -1,0 +1,333 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  verification of 5GC002255-EC feature in the case of FDD+TDD Classical Fullstack SA
+...                                Test EC2 : trafic BE+VONR with DRX and bufferBase activation 
+...               Prerequisite : GNB and Airphone should be installed with GOLDEN SCF
+...                              in the GOLDEN SCF the parameter MRBTS-1/NRBTS-1/NRPMRNL-1/miNrHighRlcReport must be set to 5min
+...               Step : 
+...                     1) modify commissioning with : sCellActivationMethod=bufferBase, actCDrx=true and actCDrxVoNR=true
+...                     2) setup GNB with new commissioning
+...                     3) Cell Steup 2 cells 1 FDD and 1 TDD 
+...                     4) UE register in SA 
+...                     5.1) Setup PDU session for UE : defaut bearer 5QI-6
+...                     5.2) check that DRX configuration Profile-1 is sent to UE
+...                     5.3) modify PDU session for UE : adding signaling VONR bearer 5QI-1
+...                     5.4) modify PDU session for UE : adding data VONR bearer 5QI-5
+...                     5.5) check that DRX configuration Profile-2 is sent to UE
+...                     5.6) start trafic for the 3 bearers 
+...                        60Mbs DL 10Mbs UL for BE=5QI-6
+...                        tcp default for signaling VONR=5QI-1
+...                        codec amr_wb_18_25 for data VONR=5QI-5
+...                     6) wait 10 minute to have the counters and check it :
+...                        Check Legacy Counters DL for QOS1, 5 and 6
+...                          QOS1 must be egal to 721+/-1 for the codec amr_wb_18_25 in 5 minute
+...                          QOS5 must be egal to 618+/-1 for the tcp without data rate in 5 minute
+...                          QOS6 must be in range 2265000 and 2288000 in 5min : 60.7 Mbs +/- 0.5%
+...                        Check Primary+Secondary Path Counters for QOS1, 5 and 6
+...                          QOS1 for primary path must be null : GBR bearer are not CA eligible
+...                          QOS1 for Secondary path must be null : GBR bearer are not CA eligible
+...                         for NO-GBR bearer due to bufferBased activation the DL data are sent to the 2 path P-CELL and S-CELL
+...                          QOS5 for Primary + Secondary path must be eagal to Legacy QOS5
+...                          QOS6 for Primary + Secondary path must be eagal to Legacy QOS6
+...                     7) stop all trafic and detach UE 
+...                     8) Teardown 
+...
+...               Manual Run : load the PM filter counter file /utils/PM_Counters_filters_for_EC-1_EC-2.xml in WEBUI to see the counters values
+...
+...               Test Case Scenario author   : luc.stenghel@nokia.com
+...               Test Case Scenario contact  : luc.stenghel@nokia.com
+...               Test Case automation author : luc.stenghel@nokia.com
+...               Test Case automation contact: luc.stenghel@nokia.com
+...               Creation Date               : 23-July-2021
+...               Modified Date               : 18-August-2023
+...               Last Modified by            : loic.marzin@nokia.com
+...                    18/08/2023        Refactoring due to BOO_AP_LOO Migration
+
+Resource          ../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../resources/SWENG/robot/CallSetup.robot
+Variables         ../../../resources/SWENG/python/ReadConfig.py
+Resource          robot/5GC002255_Keywords.robot
+
+#Library           resources/python/BrkPoint_KW.py
+Resource          ../../../resources/SWENG/robot/Sherpa.robot
+
+Force Tags        CA_5G_SW_FR-Villarceaux   RRM
+...               PY36
+...               master_classicalbts_all
+...               CONFIGURED    5G_RAN    RAN_5G
+
+Suite Setup       5GC002255_Keywords.setup 2255
+Suite Teardown    5GC002255_Keywords.teardown 2255 
+
+*** Variables ***
+${TestSharkTool}      MC_SHARK
+
+# variable set to ${True} to automatically save SOS report and OAM snapshot
+# (by default, these information are saved only if a test is failed)
+${ForceDebugDataCollection}    ${False}
+#${ForceDebugDataCollection}    ${True}
+
+&{EC-2}
+...                                 sCellActivationMethod=bufferBased
+...                                 actInterNumerologyCa=true
+...                                 sCellAdditionMethod=blind
+...                                 pucchModeSelectTDD=shortPucch
+...                                 pucchModeSelectFDD=longPucch
+...                                 maxNumScellsDl=1
+...                                 sCellActivationLevel_NRCELL1=1TTI
+...                                 sCellActivationLevel_NRCELL2=1TTI
+...                                 sCellActivationMinDataThreshold_NRCELL1=6000
+...                                 sCellActivationMinDataThreshold_NRCELL2=6000
+...                                 sCellDeactivationTimerGNB_NRCELL1=ms1280
+...                                 sCellDeactivationTimerGNB_NRCELL2=ms1280
+...                                 primaryPathMaxQueueingDelay_NRCELL1=10
+...                                 primaryPathMaxQueueingDelay_NRCELL2=10
+...                                 secondaryPathMaxQueueingDelay_NRCELL1=10
+...                                 secondaryPathMaxQueueingDelay_NRCELL2=10
+...                                 actFdmScheduling=true
+...                                 actCDrx_NRCELL1=true
+...                                 actCDrx_NRCELL2=true
+...                                 actCDrxVoNR_NRCELL1=true
+...                                 actCDrxVoNR_NRCELL2=true
+*** Test Cases ***
+
+[1][1.0] 5GC002255_EC_B12_7_Traffic_bufferBased_VoNR_DRX
+    [Tags]                          CRT        CLOUD_5G_I_BOO_AP_LOO
+	...                             VARIANT    VARIANT_SANSA_FS_ECPRI_CMWV_FDD+TDD
+    ...                             SBTS00
+    [Documentation]                 Carrier Aggregation 2255-1390 Test EC-2
+
+    Init Sequence                   ${EC-2}
+    Critical Step                   Set MRBTSID and NRBTSID_RWorked
+    Step                            Set SCF Context    argument=EC-2
+    Critical Step                   gNB_Startup_Ok_with_Flags
+    Critical Step                   Cell_Setup
+    Step                            Attach_UE_FDD_CA_Capable
+    Step                            Setup UEs Profiles
+    Step                            PDU_Session_UE_FDD_CA_Capable_VONR
+    Step                            5GC002255_EC_Check_DL_Trafic_VONR
+    Step                            Stop_UE_FDD_CA_Capable_VONR
+    [Teardown]                      Teardown 5GC002255_EC-2
+
+*** Keywords ***
+
+Set SCF Context
+    [Arguments]                     ${subfeature}=none
+    Dated log       ===================
+    Dated log       SCF settings for ${subfeature}
+    Dated log       ===================
+
+    Copy File                      ${SCF_SETUP_PATH}     ${SCF_SETUP_PATH}.NewVONR
+    ${newSCF}            Set Variable     ${SCF_SETUP_PATH}.NewVONR
+    Dated log                         ${newSCF}
+
+    SCF StartSession                  scf_file=${newSCF}
+
+    SCF Set element      dist_name=${MRBTS}   
+    ...                  element_name=btsName   
+    ...                  element_value=SCFforEC-2  
+    
+    #Param1
+    SCF Set element      dist_name=${DU}   
+    ...                  element_name=sCellActivationMethod   
+    ...                  element_value=${param.sCellActivationMethod}
+
+    #Param2
+    SCF Set element      dist_name=${dist_nameDU}   
+    ...                  element_name=actInterNumerologyCa   
+    ...                  element_value=${param.actInterNumerologyCa}
+
+    #Param3
+    SCF Set element      dist_name=${Meth_name}   
+    ...                  element_name=sCellAdditionMethod   
+    ...                  element_value=${param.sCellAdditionMethod}
+
+
+    #Param4
+    SCF Set element      dist_name=${dist_name1}  
+    ...                  element_name=pucchModeSelect   
+    ...                  element_value=${param.pucchModeSelectTDD}    
+
+    #Param5
+    SCF Set element      dist_name=${dist_name2}  
+    ...                  element_name=pucchModeSelect   
+    ...                  element_value=${param.pucchModeSelectFDD}  
+
+    #Param6
+    SCF Set element      dist_name=${DU}  
+    ...                  element_name=maxNumScellsDl   
+    ...                  element_value=${param.maxNumScellsDl}  
+
+    #Param7
+    SCF Set element      dist_name=${dist_name1}  
+    ...                  element_name=sCellActivationLevel   
+    ...                  element_value=${param.sCellActivationLevel_NRCELL1}   
+
+    #Param8
+    SCF Set element      dist_name=${dist_name2}  
+    ...                  element_name=sCellActivationLevel   
+    ...                  element_value=${param.sCellActivationLevel_NRCELL2}  
+
+    #Param9
+    SCF Set element      dist_name=${dist_name1}  
+    ...                  element_name=sCellActivationMinDataThreshold   
+    ...                  element_value=${param.sCellActivationMinDataThreshold_NRCELL1}   
+
+    #Param10
+    SCF Set element      dist_name=${dist_name2}  
+    ...                  element_name=sCellActivationMinDataThreshold   
+    ...                  element_value=${param.sCellActivationMinDataThreshold_NRCELL2}     
+
+    #Param11
+    SCF Set element      dist_name=${dist_name1}  
+    ...                  element_name=sCellDeactivationTimerGNB   
+    ...                  element_value=${param.sCellDeactivationTimerGNB_NRCELL1} 
+
+    #Param12
+    SCF Set element      dist_name=${dist_name2}  
+    ...                  element_name=sCellDeactivationTimerGNB   
+    ...                  element_value=${param.sCellDeactivationTimerGNB_NRCELL2}
+
+    #Param13
+    SCF Set element      dist_name=${dist_name1}  
+    ...                  element_name=primaryPathMaxQueueingDelay   
+    ...                  element_value=${param.primaryPathMaxQueueingDelay_NRCELL1} 
+
+    #Param14
+    SCF Set element      dist_name=${dist_name2}  
+    ...                  element_name=primaryPathMaxQueueingDelay   
+    ...                  element_value=${param.primaryPathMaxQueueingDelay_NRCELL2} 
+
+    #Param15
+    SCF Set element      dist_name=${dist_name1}  
+    ...                  element_name=secondaryPathMaxQueueingDelay   
+    ...                  element_value=${param.secondaryPathMaxQueueingDelay_NRCELL1} 
+
+    #Param16
+    SCF Set element      dist_name=${dist_name2}  
+    ...                  element_name=secondaryPathMaxQueueingDelay   
+    ...                  element_value=${param.secondaryPathMaxQueueingDelay_NRCELL2} 
+    
+    #Param17
+    SCF Set element      dist_name=${DU}  
+    ...                  element_name=actFdmScheduling   
+    ...                  element_value=${param.actFdmScheduling} 
+
+    #Param18
+    SCF Set element      dist_name=${dist_name1}  
+    ...                  element_name=actCDrx   
+    ...                  element_value=${param.actCDrx_NRCELL1} 
+
+    #Param19
+    SCF Set element      dist_name=${dist_name2}  
+    ...                  element_name=actCDrx   
+    ...                  element_value=${param.actCDrx_NRCELL2} 
+
+    #Param20
+    SCF Set element      dist_name=${dist_name1}  
+    ...                  element_name=actCDrxVoNR   
+    ...                  element_value=${param.actCDrxVoNR_NRCELL1} 
+
+    #Param21
+    SCF Set element      dist_name=${dist_name2}  
+    ...                  element_name=actCDrxVoNR   
+    ...                  element_value=${param.actCDrxVoNR_NRCELL2} 
+
+    SCF StopSession                   scf_file=${newSCF}
+    Dated Log    ----> Modifications completed. in ${newSCF} \n
+    Oam.OAM Perform Full Commissioning          scf_file=${newSCF}
+
+    Restart.WA Airscale Wait For Ready                  ${GNB_DU}
+
+gNB_Startup_Ok_with_Flags
+    [Tags]  RESTART_STARTUP
+    Restart.Restart TL
+
+Cell_Setup
+    [Tags]  Cell_Setup
+    ${nb}                   Set Variable      2
+    CallSetup.Setup Wtsemu SA        nbCell=${nb}
+ 
+
+Attach_UE_FDD_CA_Capable
+    sleep    5s
+    CallSetup.UE Register           ue=3
+
+PDU_Session_UE_FDD_CA_Capable_VONR   
+    CallSetup.Launch PDU Session   ue=3  pdu=3  gw=3
+    sleep   2s
+    CallSetup.Empty Buffer For Egate
+    Dated Log   Pause 5s to wait the flush
+    sleep   5s
+    5GC002255_Keywords.5GC002255_Check_DRX_Mode     ms160    ms80
+    sleep   1s
+    CallSetup.UE PDU Session Modify  ue=3  pdu=3  qfta=2  by=amf
+    sleep   1s
+    CallSetup.UE PDU Session Modify  ue=3  pdu=3  qfta=3  by=amf
+    sleep   1s
+    CallSetup.Empty Buffer For Egate
+    Dated Log   Pause 5s to wait the flush
+    sleep   5s
+    5GC002255_Keywords.5GC002255_Check_DRX_Mode     ms40    ms20
+    Traffic.Traffic UE DL               ueSetting=${UE_profiles_list}[0]     duration=1
+    ...                                 throughput=60                 protocol=udp            size=500
+    ...                                 shouldBeCheck=${False}   shouldBeStop=False 
+    Traffic.Traffic UE UL               ueSetting=${UE_profiles_list}[1]     duration=1
+    ...                                 throughput=10                 protocol=udp            size=500
+    ...                                 shouldBeCheck=${False}   shouldBeStop=False 
+    ${UE_profiles_list[2].throughput}   Set Variable     ${None}
+    ${UE_profiles_list[3].throughput}   Set Variable     ${None}
+    Traffic.Traffic UE DL               ueSetting=${UE_profiles_list}[2]                protocol=tcp
+    ...                                 shouldBeCheck=${False}   shouldBeStop=False     duration=1 
+    Traffic.Traffic UE UL               ueSetting=${UE_profiles_list}[3]                protocol=tcp
+    ...                                 shouldBeCheck=${False}   shouldBeStop=False     duration=1
+    # Set throuput to None to use rtp_codec already including it
+    ${UE_profiles_list[4].throughput}   Set Variable                                    ${None}
+    ${UE_profiles_list[5].throughput}   Set Variable                                    ${None}
+    Traffic.Traffic UE DL               ueSetting=${UE_profiles_list}[4]                rtp_codec=amr_wb_18_25
+    ...                                 shouldBeCheck=${False}   shouldBeStop=False     duration=1
+    Traffic.Traffic UE UL               ueSetting=${UE_profiles_list}[5]                rtp_codec=amr_wb_18_25
+    ...                                 shouldBeCheck=${False}   shouldBeStop=False     duration=1
+
+Stop_UE_FDD_CA_Capable_VONR
+    @{DL_UE_profiles_list}    Create List    ${UE_profiles_list}[0]  ${UE_profiles_list}[2]   ${UE_profiles_list}[4] 
+    Traffic.Traffic Stop UEs    ${DL_UE_profiles_list}    dir=dl
+    @{UL_UE_profiles_list}    Create List    ${UE_profiles_list}[1]  ${UE_profiles_list}[3]   ${UE_profiles_list}[5] 
+    Traffic.Traffic Stop UEs    ${UL_UE_profiles_list}    dir=ul
+    #sleep   300s
+    CallSetup.UE Deregister     id=3
+
+5GC002255_EC_Check_DL_Trafic_VONR
+    Dated Log   Pause 10 mn to get the next PM period
+    sleep   600s
+    Dated Log   Pause ended
+    5GC002255_Keywords.Collect PM Counters File
+    # Check LEAGACY RLC Counters
+    Dated Log   Check Lagacy Counters for QOS1, 5 and 6
+    5GC002255_Keywords.5GC002255_PMCounterCheck_In_A_Range    ${PM_Counter_DL_RLC_PDU_volume_QOS1}    720    722
+    5GC002255_Keywords.5GC002255_PMCounterCheck_In_A_Range    ${PM_Counter_DL_RLC_PDU_volume_QOS5}    617    619
+    5GC002255_Keywords.5GC002255_PMCounterCheck_In_A_Range    ${PM_Counter_DL_RLC_PDU_volume_QOS6}    2265000    2288000
+    # Check RLC Counters for CA primary path and secondary path
+    Dated Log   Check Primary+secondary Path Counters for QOS1
+    5GC002255_Keywords.5GC002255_PMCounterCheck_Expected_Value    ${PM_Counter_DL_RLC_PDU_volume_primary_QOS1}    0
+    5GC002255_Keywords.5GC002255_PMCounterCheck_Expected_Value    ${PM_Counter_DL_RLC_PDU_volume_secondary_QOS1}    0
+    Dated Log   Check Primary+secondary Path Counters for QOS5 
+    5GC002255_Keywords.5GC002255_PMCounterCheck_Sum_eqal    ${PM_Counter_DL_RLC_PDU_volume_primary_QOS5}
+    ...                                                     ${PM_Counter_DL_RLC_PDU_volume_secondary_QOS5}
+    ...                                                     ${PM_Counter_DL_RLC_PDU_volume_QOS5}
+    Dated Log   Check Primary+secondary Path Counters for QOS6 
+    5GC002255_Keywords.5GC002255_PMCounterCheck_Sum_eqal    ${PM_Counter_DL_RLC_PDU_volume_primary_QOS6}
+    ...                                                     ${PM_Counter_DL_RLC_PDU_volume_secondary_QOS6}
+    ...                                                     ${PM_Counter_DL_RLC_PDU_volume_QOS6}
+
+Teardown 5GC002255_EC-2
+    [Documentation]    collect Sos Report if a TC is failed or if the user need traces ForceDebugDataCollection
+    Dated log                       Teardown for 5GC002255_EC-2
+	Run Keyword If                  ${ForceDebugDataCollection}   Get Sos Report
+    [Teardown]                      GenericTest.Display diagnosis

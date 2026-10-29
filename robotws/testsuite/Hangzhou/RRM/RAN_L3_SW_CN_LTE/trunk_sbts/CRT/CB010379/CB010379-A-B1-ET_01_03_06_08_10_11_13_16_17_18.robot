@@ -1,0 +1,1335 @@
+*** Settings ***
+Suite Setup       Common Suite Setup And Setup CUS Env
+Suite Teardown    Common Suite Teardown And Restore BTS Configuration Parameters
+Test Setup        Common Test Setup And Start To Capture Logs
+Test Teardown     Common Test Teardown And Stop Capture Logs
+Force Tags        QCD_MN_RAN    QCP_RAN_ET    SBTS00    4G_FDD    RAN_4G    RAN_4G_FDD    CRT    team-SG4
+...               CLOUD_R4LAPO_CUS    release-SBTS23R4    owner-rebecca.zhong
+Resource          ../../../resources/DevHZ5_resource.robot
+*** Variables ***
+@{PARAMS_IN_VENDOR}
+...    LNBTS:reportTimerEndcA5=5000ms
+...    LNBTS:reportTimerIFSBA4=3000ms
+${NRARFCN634000}    633216     #band 77 normal
+${NRARFCN657700}    656736     #band77 extendedband 77
+${NRARFCN713334}    712608     #band79
+@{PARAMS_IN_SCF}
+...    LNBTS-1:actExt2N77Support=true
+...    @{LTE4088}
+...    @{LTE4193}
+...    @{PARAMS_FOR_CELL_CONFIG}
+...    @{NRDCDPR}
+...    @{neibour_releationship}
+...    @{neighbor_relationship_with_gnb}
+...    @{relation_error_fixed}
+...    LNCEL:actFlowCtrlEnh=true
+...    LNBTS-1:actCsfbPsHoToUtra=false
+...    LNBTS-1:act1xCsfb=false
+...    LNBTS-1:actDualRx1xCsfb=false
+...    LNBTS-1/LNCEL:measQuantityNr=RSRP
+...    LNCEL/LNCEL_FDD-0:actAutoPucchAlloc=true
+@{relation_error_fixed}
+...    LNBTS-1:actAmbrModCaTrigger=false
+...    LNBTS-1:actEndcSpidFwd=false
+...    LNBTS-1:tS1eRABModInd=2000
+...    LNBTS-1:endcSchedWeightBoostDl=2
+...    LNBTS-1:endcSchedWeightBoostUl=2
+...    LNBTS-1:nrRestrictionOverride=disabled
+...    LNBTS-1:actTransmittedBelowGap=false
+...    LNCEL:eTputInitMcs=20
+...    LNCEL:eTputFilterConfig=51
+...    LNBTS-1:actMultBearers=true
+...    LNCEL:tac=33
+...    LNBTS-1:mcc=262
+...    LNBTS-1:mnc=3
+...    LNBTS-1:mncLength=2
+@{PARAMS_FOR_CELL_CONFIG}
+...    LNCEL-1/LNCEL_FDD-0:earfcnDL=1400
+...    LNCEL-1/LNCEL_FDD-0:earfcnUL=19400
+...    LNCEL-2/LNCEL_FDD-0:earfcnDL=1600
+...    LNCEL-2/LNCEL_FDD-0:earfcnUL=19600
+...    LNCEL-3/LNCEL_FDD-0:earfcnDL=1800
+...    LNCEL-3/LNCEL_FDD-0:earfcnUL=19800
+@{NRDCDPR}
+...    LNBTS-1/NRDCDPR-0:dlPathlossChg=3 db
+...    LNBTS-1/NRDCDPR-0:tPeriodicPhr=1000sf
+...    LNBTS-1/NRDCDPR-0:tProhibitPhr=1000sf
+...    LNBTS-1/NRDCDPR-0:dynTriggerLteNrDcConfList:method=coverageBased
+...    LNBTS-1/NRDCDPR-0:dynTriggerLteNrDcConfList:lcrId=-1
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-0:b1ThresholdNrRsrp=90
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-0:b1TimeToTriggerRsrp=256ms
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-0:b1TimeToTriggerRsrq=256ms
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-0:b1TriggerQuantity=RSRP
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-0:carrierFreqNrCell=${NRARFCN657700}
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-0:freqBandIndicatorNrL:freqBandIndicatorNr=77
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-0:hysB1ThresholdRsrp=4
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-0:hysB1ThresholdRsrq=4
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-0:ssbDuration=sf1
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-0:ssbOffset=0
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-0:ssbPeriodicity=sf5-r15
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-0:ssbSubcarrierSpacing=15kHz
+...    LNBTS-1/NRMEASDPR-0:nrQuantityConfig:filterCoefficientRsrp=fc4|quantityConfigId=0
+...    LNBTS-1/NRMEASDPR-0:nrQuantityConfig:filterCoefficientRsrq=fc4|quantityConfigId=0
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-0:quantityConfigId=0
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-1:b1ThresholdNrRsrp=90
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-1:b1TimeToTriggerRsrp=256ms
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-1:b1TimeToTriggerRsrq=256ms
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-1:b1TriggerQuantity=RSRP
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-1:carrierFreqNrCell=${NRARFCN634000}
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-1:freqBandIndicatorNrL:freqBandIndicatorNr=77
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-1:hysB1ThresholdRsrp=4
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-1:hysB1ThresholdRsrq=4
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-1:ssbDuration=sf1
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-1:ssbOffset=0
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-1:ssbPeriodicity=sf5-r15
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-1:ssbSubcarrierSpacing=15kHz
+...    LNBTS-1/NRMEASDPR-0:nrQuantityConfig:filterCoefficientRsrp=fc4|quantityConfigId=1
+...    LNBTS-1/NRMEASDPR-0:nrQuantityConfig:filterCoefficientRsrq=fc4|quantityConfigId=1
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-1:quantityConfigId=1
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-2:b1ThresholdNrRsrp=90
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-2:b1TimeToTriggerRsrp=256ms
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-2:b1TimeToTriggerRsrq=256ms
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-2:b1TriggerQuantity=RSRP
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-2:carrierFreqNrCell=${NRARFCN713334}
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-2:freqBandIndicatorNrL:freqBandIndicatorNr=79
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-2:hysB1ThresholdRsrp=4
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-2:hysB1ThresholdRsrq=4
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-2:ssbDuration=sf1
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-2:ssbOffset=0
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-2:ssbPeriodicity=sf5-r15
+...    LNBTS-1/NRDCDPR-0/ENDCDMEASCONF-2:ssbSubcarrierSpacing=15kHz
+...    LNBTS/NRDCDPR-0/ENDCDMEASCONF-2:quantityConfigId=1
+@{LTE4088}
+...    LNBTS-1:actLteNrDualConnectivity=true
+...    LNBTS-1:tLteNrDualConnectPrep=5000
+...    LNBTS-1:qciTab6:nrPdcpProfIdx=1001
+...    LNBTS-1:qciTab6:lteNrDualConnectSupport=EN-DC
+...    LNBTS-1:pdcpProf1001:pdcpProfileId=1001
+...    LNBTS-1:pdcpProf1001:snSizeDl=18bit
+...    LNBTS-1:pdcpProf1001:snSizeUl=18bit
+...    LNBTS-1:pdcpProf1001:statusRepReq=0
+...    LNBTS-1:pdcpProf1001:tDiscard=300ms
+@{LTE4193}
+...    LNBTS-1:actDynTrigLteNrDualConnectivity=true
+...    LNCEL/LNCEL_FDD-0:actAutoPucchAlloc=true
+...    LNCEL-1:defaultLnRelGnbCellId=1
+...    LNCEL-2:defaultLnRelGnbCellId=1
+...    LNCEL-3:defaultLnRelGnbCellId=1
+@{LTE4193_false}
+...    LNBTS-1:actDynTrigLteNrDualConnectivity=false
+@{neibour_releationship}
+...    LNCEL-2/LNHOIF-1:eutraCarrierInfo=1400
+...    LNCEL-2/LNHOIF-1:measurementBandwidth=mbw15
+...    LNCEL-2/LNREL-2:ecgiAdjEnbId=1
+...    LNCEL-2/LNREL-2:ecgiLcrId=1
+...    LNCEL-2/LNREL-2:ecgiPlmnId:mcc=262
+...    LNCEL-2/LNREL-2:ecgiPlmnId:mnc=03
+...    LNCEL-2/LNREL-2:ecgiPlmnId:mncLength=02
+...    LNCEL-1/LNHOIF-1:eutraCarrierInfo=1600
+...    LNCEL-1/LNHOIF-1:measurementBandwidth=mbw15
+...    LNCEL-1/LNREL-1:ecgiAdjEnbId=1
+...    LNCEL-1/LNREL-1:ecgiLcrId=2
+...    LNCEL-1/LNREL-1:ecgiPlmnId:mcc=262
+...    LNCEL-1/LNREL-1:ecgiPlmnId:mnc=03
+...    LNCEL-1/LNREL-1:ecgiPlmnId:mncLength=02
+...    LNCEL-3/LNHOIF-1:eutraCarrierInfo=1400
+...    LNCEL-3/LNHOIF-1:measurementBandwidth=mbw15
+...    LNCEL-3/LNREL-1:ecgiAdjEnbId=1
+...    LNCEL-3/LNREL-1:ecgiLcrId=1
+...    LNCEL-3/LNREL-1:ecgiPlmnId:mcc=262
+...    LNCEL-3/LNREL-1:ecgiPlmnId:mnc=03
+...    LNCEL-3/LNREL-1:ecgiPlmnId:mncLength=02
+@{neighbor_relationship_with_gnb}
+...    LNBTS-1/LNADJGNB-1:administrativeState=unlocked
+...    LNBTS-1/LNADJGNB-1:cPlaneIpAddr=10.0.1.11
+...    LNCEL-1/LNRELGNBCELL-1:gnbIdLength=22
+...    LNCEL-1/LNRELGNBCELL-1:lteNrDualConnectAllowed=allowed
+...    LNCEL-1/LNRELGNBCELL-1:nrCellId=33301
+...    LNCEL-1/LNRELGNBCELL-1:nrCgiPlmnId:mcc=262
+...    LNCEL-1/LNRELGNBCELL-1:nrCgiPlmnId:mnc=3
+...    LNCEL-1/LNRELGNBCELL-1:nrCgiPlmnId:mncLength=2
+...    LNBTS-1/LNADJGNB-2:administrativeState=unlocked
+...    LNBTS-1/LNADJGNB-2:cPlaneIpAddr=10.0.1.12
+...    LNCEL-1/LNRELGNBCELL-2:gnbIdLength=22
+...    LNCEL-1/LNRELGNBCELL-2:lteNrDualConnectAllowed=allowed
+...    LNCEL-1/LNRELGNBCELL-2:nrCellId=49951
+...    LNCEL-1/LNRELGNBCELL-2:nrCgiPlmnId:mcc=262
+...    LNCEL-1/LNRELGNBCELL-2:nrCgiPlmnId:mnc=3
+...    LNCEL-1/LNRELGNBCELL-2:nrCgiPlmnId:mncLength=2
+...    LNCEL-2/LNRELGNBCELL-2:gnbIdLength=22
+...    LNCEL-2/LNRELGNBCELL-2:lteNrDualConnectAllowed=allowed
+...    LNCEL-2/LNRELGNBCELL-2:nrCellId=49951
+...    LNCEL-2/LNRELGNBCELL-2:nrCgiPlmnId:mcc=262
+...    LNCEL-2/LNRELGNBCELL-2:nrCgiPlmnId:mnc=3
+...    LNCEL-2/LNRELGNBCELL-2:nrCgiPlmnId:mncLength=2
+...    LNBTS-1/LNADJGNB-3:administrativeState=unlocked
+...    LNBTS-1/LNADJGNB-3:cPlaneIpAddr=10.0.1.13
+...    LNCEL-1/LNRELGNBCELL-3:gnbIdLength=22
+...    LNCEL-1/LNRELGNBCELL-3:lteNrDualConnectAllowed=allowed
+...    LNCEL-1/LNRELGNBCELL-3:nrCellId=66601
+...    LNCEL-1/LNRELGNBCELL-3:nrCgiPlmnId:mcc=262
+...    LNCEL-1/LNRELGNBCELL-3:nrCgiPlmnId:mnc=3
+...    LNCEL-1/LNRELGNBCELL-3:nrCgiPlmnId:mncLength=2
+...    LNCEL-2/LNRELGNBCELL-1:gnbIdLength=22
+...    LNCEL-2/LNRELGNBCELL-1:lteNrDualConnectAllowed=allowed
+...    LNCEL-2/LNRELGNBCELL-1:nrCellId=33301
+...    LNCEL-2/LNRELGNBCELL-1:nrCgiPlmnId:mcc=262
+...    LNCEL-2/LNRELGNBCELL-1:nrCgiPlmnId:mnc=3
+...    LNCEL-2/LNRELGNBCELL-1:nrCgiPlmnId:mncLength=2
+...    LNCEL-3/LNRELGNBCELL-1:gnbIdLength=22
+...    LNCEL-3/LNRELGNBCELL-1:lteNrDualConnectAllowed=allowed
+...    LNCEL-3/LNRELGNBCELL-1:nrCellId=33301
+...    LNCEL-3/LNRELGNBCELL-1:nrCgiPlmnId:mcc=262
+...    LNCEL-3/LNRELGNBCELL-1:nrCgiPlmnId:mnc=3
+...    LNCEL-3/LNRELGNBCELL-1:nrCgiPlmnId:mncLength=2
+...    LNBTS-1/LNADJGNB-4:administrativeState=unlocked
+...    LNBTS-1/LNADJGNB-4:cPlaneIpAddr=10.0.1.14
+...    LNCEL-1/LNRELGNBCELL-4:gnbIdLength=22
+...    LNCEL-1/LNRELGNBCELL-4:lteNrDualConnectAllowed=allowed
+...    LNCEL-1/LNRELGNBCELL-4:nrCellId=75059
+...    LNCEL-1/LNRELGNBCELL-4:nrCgiPlmnId:mcc=262
+...    LNCEL-1/LNRELGNBCELL-4:nrCgiPlmnId:mnc=3
+...    LNCEL-1/LNRELGNBCELL-4:nrCgiPlmnId:mncLength=2
+...    LNCEL-2/LNRELGNBCELL-4:gnbIdLength=22
+@{CB007172}
+...    LNCEL-1:actReturnTo5GSA=at end of non-emerg RRC connection
+...    LNBTS-1:actIdleLBNrAware=false
+...    LNBTS-1/LNCEL-1/SIB-0:sibSchedulingList:siMessagePeriodicity=640ms|siMessageSibType=SIB24
+...    LNBTS-1/LNCEL-1/SIB-0:sibSchedulingList:siMessageRepetition=1|siMessageSibType=SIB24
+...    LNBTS-1:actDynTrigLteNrDualConnectivity=true
+...    MODPR-0:autoAdapt=false
+...    LNBTS-1:actSelMobPrf=true
+...    LNBTS-1:imsEmerPlmnConfig:emerSessLimServ=false|emerSessArpPrioLev=1
+...    LNBTS-1/LNBTS_FDD-0:actIMSEmerSessR9=true
+...    LNBTS-1/MODPR-0/MODRED-0:redirRAT=nr
+...    delete:LNBTS-1/MODPR-0/MODRED-0:csFallBPrio
+...    delete:LNBTS-1/MODPR-0/MODRED-0:emerCallPrio
+...    LNBTS-1/MODPR-0/MODRED-0:redirNrCarFrq:ssbSubcarrierSpacing=30kHz
+...    LNBTS-1/MODPR-0/MODRED-0:redirNrCarFrq:carrierFreqNrCell=${NRARFCN657700}
+...    LNBTS-1/MODPR-0/MODRED-1:redirRAT=nr
+...    delete:LNBTS-1/MODPR-0/MODRED-1:csFallBPrio
+...    delete:LNBTS-1/MODPR-0/MODRED-1:emerCallPrio
+...    LNBTS-1/MODPR-0/MODRED-1:redirNrCarFrq:ssbSubcarrierSpacing=30kHz
+...    LNBTS-1/MODPR-0/MODRED-1:redirNrCarFrq:carrierFreqNrCell=${NRARFCN634000}
+...    LNBTS-1/MODPR-0/MODRED-2:redirRAT=nr
+...    delete:LNBTS-1/MODPR-0/MODRED-2:csFallBPrio
+...    delete:LNBTS-1/MODPR-0/MODRED-2:emerCallPrio
+...    LNBTS-1/MODPR-0/MODRED-2:redirNrCarFrq:ssbSubcarrierSpacing=30kHz
+...    LNBTS-1/MODPR-0/MODRED-2:redirNrCarFrq:carrierFreqNrCell=${NRARFCN713334}
+...    LNCEL-1/REDRT-1:redirRat=nr
+...    LNCEL-1/REDRT-1:redirNrCarFrq:ssbSubcarrierSpacing=30kHz
+...    LNCEL-1/REDRT-1:redirNrCarFrq:carrierFreqNrCell=${NRARFCN657700}
+...    delete:LNCEL-1/REDRT-1:csFallBPrio
+...    LNCEL-1/NRFIM-1:nrCarFrqL:deriveSsbIndexNr=false|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqQThrHigh=0|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqQThrLow=0|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqThrH=10|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqThrL=6|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:qRxLevMinNr=-130|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:qRxLevMinSulNr=-50|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcDurationNr=1sf|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcOffsetNr=0|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcPeriodicityNr=10sf|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbScsNr=15KHz|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrMultiBandInfo1=77|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:tResNrSF:nrResTiFHM=0.5
+...    LNCEL-1/NRFIM-1:tResNrSF:nrResTiFMM=0.75
+@{CB007266}
+...    LNCEL-1:actB1ReturnTo5GSA=true
+@{LTE5104}
+...    LNBTS-1:actSIB24=true
+...    delete:MODRED
+...    LNCEL-1:actReturnTo5GSA=disabled
+...    LNBTS-1:actIdleLBNrAware=true
+...    LNBTS-1:actIdleLBEnDcAware=false
+...    LNBTS-1:actIdleLB=true
+...    LNBTS-1:actSelMobPrf=true
+...    MODPR-0:autoAdaptIMLB=false
+...    MODPR-0:autoAdapt=false
+...    MODPR-0:targetSelMethod=SIB_based
+...    LNCEL-1/SIB-0:threshServingLowQR9=1
+...    LNCEL-1/SIB-0:cellSelectionInfoV920:qQualMinOffsetR9=1
+...    LNCEL-1/SIB-0:cellSelectionInfoV920:qQualMinR9=-3
+...    LNBTS-1/LNCEL-1/SIB-0:sibSchedulingList:siMessagePeriodicity=640ms|siMessageSibType=SIB24
+...    LNBTS-1/LNCEL-1/SIB-0:sibSchedulingList:siMessageRepetition=1|siMessageSibType=SIB24
+...    LNCEL-1/SIB-0:sibSchedulingList:siMessageRepetition=1|siMessageSibType=SIB5
+...    LNCEL-1/SIB-0:sibSchedulingList:siMessageRepetition=1|siMessageSibType=SIB6
+...    LNCEL-1/SIB-0:sibSchedulingList:siMessageRepetition=1|siMessageSibType=SIB7
+...    LNCEL-1/SIB-0:sibSchedulingList:siMessageRepetition=1|siMessageSibType=SIB8
+...    LNCEL-1:idleLBPercentageOfUes=100
+...    LNCEL:idleLBCapThresh=100
+...    LNCEL-1:t320=180min
+...    LNCEL-1:idleLBCelResWeight=20
+...    LNCEL-1/SIB-0:cellReSelPrio=5
+...    LNCEL-1/NRFIM-1:nrCarFrqL:deriveSsbIndexNr=false|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:idleLBNrCelResPref=higher than EnDc FR2|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:idleLBNrCelResPrio=6|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:idleLBNrCelResWeight=100|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqQThrHigh=0|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrMultiBandInfo1=77|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqQThrLow=0|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqThrH=10|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqThrL=6|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:qRxLevMinNr=-130|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:qRxLevMinSulNr=-50|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcDurationNr=1sf|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcOffsetNr=0|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcPeriodicityNr=10sf|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbScsNr=30KHz|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:deriveSsbIndexNr=false|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:idleLBNrCelResPref=higher than EnDc FR2|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:idleLBNrCelResPrio=6|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:idleLBNrCelResWeight=100|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqQThrHigh=0|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrMultiBandInfo1=77|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqQThrLow=0|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqThrH=10|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqThrL=6|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:qRxLevMinNr=-130|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:qRxLevMinSulNr=-50|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcDurationNr=1sf|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcOffsetNr=0|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcPeriodicityNr=10sf|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbScsNr=30KHz|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:deriveSsbIndexNr=false|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:idleLBNrCelResPref=higher than EnDc FR2|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:idleLBNrCelResPrio=6|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:idleLBNrCelResWeight=100|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqQThrHigh=0|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrMultiBandInfo1=79|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqQThrLow=0|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqThrH=10|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqThrL=6|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:qRxLevMinNr=-130|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:qRxLevMinSulNr=-50|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcDurationNr=1sf|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcOffsetNr=0|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcPeriodicityNr=10sf|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbScsNr=30KHz|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL-1/NRFIM-1:tResNrSF:nrResTiFHM=0.5
+...    LNCEL-1/NRFIM-1:tResNrSF:nrResTiFMM=0.75
+...    LNCEL-1/IRFIM-1:dlCarFrqEut=1700
+...    LNCEL-1/IRFIM-1:eutCelResPrio=5
+...    LNCEL-1/GFIM-1/GNFL-1:bandInd=gsm1800
+...    LNCEL-1/GFIM-1/GNFL-1:gCelResPrio=3
+...    LNCEL-1/GFIM-1/GNFL-1:gerArfcnVal=532
+...    LNCEL-1/GFIM-1/GNFL-1:gerFrqThrH=2
+...    LNCEL-1/GFIM-1/GNFL-1:gerFrqThrL=4
+...    LNCEL-1/GFIM-1/GNFL-1:idleLBGeranCelResWeight=20
+...    LNCEL-1/GFIM-1:tResGer=5
+...    LNCEL-1/GFIM-1/GNFL-1:nccperm=0
+...    LNCEL-1/GFIM-1/GNFL-1:qRxLevMinGer=-115
+...    LNCEL-1/UFFIM-1:utrFddCarFrqL:dlCarFrqUtra=10600
+...    LNCEL-1/UFFIM-1:utrFddCarFrqL:uCelResPrio=4
+...    MODPR-0:idleLBPercentageOfUes=100
+...    MODPR-0/MODIMP-1:dlCarFrqEutL:dlCarFrqEut=1700
+...    MODPR-0/MODIMP-1:dlCarFrqEutL:idleLBEutCelResWeight=20
+...    MODPR-0/MODIMP-1:geranCarFrqBd:geranBandInd=gsm1800
+...    MODPR-0/MODIMP-1:geranCarFrqIdleModeL=532
+...    MODPR-0/MODIMP-1:geranCarFrqBd:idleLBGeranCelResWeight=5
+...    MODPR-0/MODIMP-1:utrFddCarFrqL:utrFddCarFrq=10600
+...    MODPR-0/MODIMP-1:utrFddCarFrqL:idleLBUtraFddCelResWeight=5
+...    MODPR-0/MODIMP-1:nrCarFrqL:idleLBNrCelResPref=higher than EnDc FR2|dlCarFrqNr=${NRARFCN634000}
+...    MODPR-0/MODIMP-1:nrCarFrqL:idleLBNrCelResPrio=6|dlCarFrqNr=${NRARFCN634000}
+...    MODPR-0/MODIMP-1:nrCarFrqL:idleLBNrCelResWeight=100|dlCarFrqNr=${NRARFCN634000}
+...    MODPR-0/MODIMP-1:nrCarFrqL:idleLBNrCelResPref=higher than EnDc FR2|dlCarFrqNr=${NRARFCN657700}
+...    MODPR-0/MODIMP-1:nrCarFrqL:idleLBNrCelResPrio=6|dlCarFrqNr=${NRARFCN657700}
+...    MODPR-0/MODIMP-1:nrCarFrqL:idleLBNrCelResWeight=100|dlCarFrqNr=${NRARFCN657700}
+...    MODPR-0/MODIMP-1:nrCarFrqL:idleLBNrCelResPref=higher than EnDc FR2|dlCarFrqNr=${NRARFCN713334}
+...    MODPR-0/MODIMP-1:nrCarFrqL:idleLBNrCelResPrio=6|dlCarFrqNr=${NRARFCN713334}
+...    MODPR-0/MODIMP-1:nrCarFrqL:idleLBNrCelResWeight=100|dlCarFrqNr=${NRARFCN713334}
+...    LNCEL:loadSettings:cellCapClass=100
+...    LNCEL:loadSettings:mlbEicicOperMode=allUes
+...    LNCEL:loadSettings:nomNumPrbNonGbr=0.01
+...    LNCEL:loadSettings:targetLoadGbrDl=50
+...    LNCEL:loadSettings:targetLoadNonGbrDl=75
+...    LNCEL:loadSettings:targetLoadPdcch=90
+...    LNCEL:loadSettings:ulCacIgnore=false
+...    LNCEL:loadSettings:ulCacSelection=ulReflectDlCac
+...    LNCEL:loadSettings:ulStaticCac=100
+@{actsib24}
+...    LNBTS-1:actSIB24=true
+...    LNBTS-1/LNCEL-1/SIB-0:sibSchedulingList:siMessagePeriodicity=640ms|siMessageSibType=SIB24
+...    LNBTS-1/LNCEL-1/SIB-0:sibSchedulingList:siMessageRepetition=1|siMessageSibType=SIB24
+...    LNCEL-1/NRFIM-1:nrCarFrqL:deriveSsbIndexNr=false|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqQThrHigh=0|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqQThrLow=0|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqThrH=10|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrFrqThrL=6|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:qRxLevMinNr=-130|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:qRxLevMinSulNr=-50|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcDurationNr=1sf|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcOffsetNr=0|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbMtcPeriodicityNr=10sf|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:ssbScsNr=15KHz|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:nrCarFrqL:nrMultiBandInfo1=77|dlCarFrqNr=${NRARFCN657700}
+...    LNCEL-1/NRFIM-1:tResNrSF:nrResTiFHM=0.5
+...    LNCEL-1/NRFIM-1:tResNrSF:nrResTiFMM=0.75
+...    LNCEL-1/SIB-0:threshServingLowQR9=1
+...    LNCEL-1/SIB-0:cellSelectionInfoV920:qQualMinOffsetR9=1
+...    LNCEL-1/SIB-0:cellSelectionInfoV920:qQualMinR9=-3
+...    LNBTS-1/LNCEL-2/SIB-0:sibSchedulingList:siMessagePeriodicity=640ms|siMessageSibType=SIB24
+...    LNBTS-1/LNCEL-2/SIB-0:sibSchedulingList:siMessageRepetition=1|siMessageSibType=SIB24
+...    LNCEL-2/NRFIM-1:nrCarFrqL:deriveSsbIndexNr=false|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-2/NRFIM-1:nrCarFrqL:nrFrqQThrHigh=0|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-2/NRFIM-1:nrCarFrqL:nrFrqQThrLow=0|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-2/NRFIM-1:nrCarFrqL:nrFrqThrH=10|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-2/NRFIM-1:nrCarFrqL:nrFrqThrL=6|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-2/NRFIM-1:nrCarFrqL:qRxLevMinNr=-130|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-2/NRFIM-1:nrCarFrqL:qRxLevMinSulNr=-50|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-2/NRFIM-1:nrCarFrqL:ssbMtcDurationNr=1sf|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-2/NRFIM-1:nrCarFrqL:ssbMtcOffsetNr=0|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-2/NRFIM-1:nrCarFrqL:ssbMtcPeriodicityNr=10sf|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-2/NRFIM-1:nrCarFrqL:ssbScsNr=15KHz|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-2/NRFIM-1:nrCarFrqL:nrMultiBandInfo1=77|dlCarFrqNr=${NRARFCN634000}
+...    LNCEL-2/NRFIM-1:tResNrSF:nrResTiFHM=0.5
+...    LNCEL-2/NRFIM-1:tResNrSF:nrResTiFMM=0.75
+...    LNCEL-2/SIB-0:threshServingLowQR9=1
+...    LNCEL-2/SIB-0:cellSelectionInfoV920:qQualMinOffsetR9=1
+...    LNCEL-2/SIB-0:cellSelectionInfoV920:qQualMinR9=-3
+@{CB007910_false}
+...    LNCEL:actPeriodical5GRedirect=false
+@{LTE5348_false}
+...    LNBTS-1:actHoWoSnChg=disabled
+@{PARAM_FOR_01_01}
+...    MODPR-0:autoAdapt=true
+...    LNBTS-1:actDynTrigLteNrDualConnectivity=false
+@{PARAM_FOR_01_03}
+...    LNBTS-1:actDynTrigLteNrDualConnectivity=true
+...    LNBTS-1/NRDCDPR-0:dynTriggerLteNrDcConfList:method=coverageBased
+@{PARAM_FOR_01_06}
+...    @{CB007172}
+...    LNBTS-1:actRedirect=disabled
+...    LNBTS-1/MODPR-0/MODRED-0:redirectPrio=1
+...    LNBTS-1/MODPR-0/MODRED-1:redirectPrio=5
+...    LNBTS-1/MODPR-0/MODRED-2:redirectPrio=3
+@{PARAM_FOR_01_06_recovery}
+...    LNCEL-1:actReturnTo5GSA=disabled
+@{PARAM_FOR_01_08}
+...    LNBTS/NRDCDPR-0:dynTriggerLteNrDcConfList:method=coverageAndBufferBased
+...    @{CB007172}
+...    @{CB007266}
+...    LNBTS:pdcpProf1001:tDiscard=infinity
+...    LNBTS-1/LNCEL-1/SIB-0:sibSchedulingList:siMessagePeriodicity=640ms|siMessageSibType=SIB8
+...    LNCEL-1/SIB-0:sibSchedulingList:siMessageRepetition=1|siMessageSibType=SIB8
+...    LNCEL-1:actReturnTo5GSA=at end of RRC or voice calls
+...    LNBTS-1:actRedirect=enabled
+...    LNBTS/MODPR-0:autoAdapt=false
+...    LNBTS:moProfileSelect=combined
+...    LNBTS-1:qciTab8:nrPdcpProfIdx=1001
+...    LNBTS-1:qciTab8:lteNrDualConnectSupport=EN-DC
+...    LNCEL-1:inactivityTimer=5
+...    LNBTS:b1NrRedirectTimer=2000
+...    LNBTS-1/MODPR-0/MODRED-0:redirectPrio=1
+...    LNBTS-1/MODPR-0/MODRED-1:redirectPrio=3
+...    LNBTS-1/MODPR-0/MODRED-2:redirectPrio=5
+@{PARAM_FOR_01_08_02}
+...    LNBTS-1/MODPR-0/MODRED-0:redirectPrio=5
+...    LNBTS-1/MODPR-0/MODRED-1:redirectPrio=3
+...    LNBTS-1/MODPR-0/MODRED-2:redirectPrio=1
+@{PARAM_FOR_01_08_recovery}
+...    LNCEL-1:actReturnTo5GSA=disabled
+...    LNCEL-1:actB1ReturnTo5GSA=false
+...    LNCEL-1:inactivityTimer=600
+...    LNBTS/NRDCDPR-0:dynTriggerLteNrDcConfList:method=coverageBased
+@{PARAM_FOR_01_10}
+...    LNBTS-1:imsEmerPlmnConfig:emerSessLimServ=true|emerSessArpPrioLev=1
+...    LNBTS-1/LNBTS_FDD-0:actIMSEmerSessR9=false
+...    LNCEL-1:actReturnTo5GSA=at end of voice calls
+...    LNBTS-1:actSelMobPrf=true
+...    LNBTS-1/MODPR-0:autoAdapt=false
+...    LNBTS-1:moProfileSelect=combined
+...    LNBTS-1/MODPR-0/MODRED-0:redirRAT=nr
+...    delete:LNBTS-1/MODPR-0/MODRED-0:csFallBPrio
+...    delete:LNBTS-1/MODPR-0/MODRED-0:emerCallPrio
+...    LNBTS-1/MODPR-0/MODRED-0:redirNrCarFrq:ssbSubcarrierSpacing=30kHz
+...    LNBTS-1/MODPR-0/MODRED-0:redirNrCarFrq:carrierFreqNrCell=${NRARFCN657700}
+...    LNBTS-1/MODPR-0/MODRED-1:redirRAT=nr
+...    delete:LNBTS-1/MODPR-0/MODRED-1:csFallBPrio
+...    delete:LNBTS-1/MODPR-0/MODRED-1:emerCallPrio
+...    LNBTS-1/MODPR-0/MODRED-1:redirNrCarFrq:ssbSubcarrierSpacing=30kHz
+...    LNBTS-1/MODPR-0/MODRED-1:redirNrCarFrq:carrierFreqNrCell=${NRARFCN634000}
+...    LNBTS-1/MODPR-0/MODRED-2:redirRAT=nr
+...    delete:LNBTS-1/MODPR-0/MODRED-2:csFallBPrio
+...    delete:LNBTS-1/MODPR-0/MODRED-2:emerCallPrio
+...    LNBTS-1/MODPR-0/MODRED-2:redirNrCarFrq:ssbSubcarrierSpacing=30kHz
+...    LNBTS-1/MODPR-0/MODRED-2:redirNrCarFrq:carrierFreqNrCell=${NRARFCN713334}
+...    LNCEL-1/REDRT-1:redirRat=nr
+...    LNCEL-1/REDRT-1:redirNrCarFrq:ssbSubcarrierSpacing=30kHz
+...    LNCEL-1/REDRT-1:redirNrCarFrq:carrierFreqNrCell=${NRARFCN657700}
+...    delete:LNCEL-1/REDRT-1:csFallBPrio
+...    LNBTS-1/MODPR-0/MODRED-0:redirectPrio=1
+...    LNBTS-1/MODPR-0/MODRED-1:redirectPrio=5
+...    LNBTS-1/MODPR-0/MODRED-2:redirectPrio=3
+@{PARAM_FOR_01_10_recovery}
+...    LNBTS-1:imsEmerPlmnConfig:emerSessLimServ=true|emerSessArpPrioLev=1
+...    LNBTS-1/LNBTS_FDD-0:actIMSEmerSessR9=true
+...    LNCEL-1:actReturnTo5GSA=disabled
+@{PARAM_FOR_01_11}
+...    @{LTE5104}
+@{PARAM_FOR_01_11_recovery}
+...    LNBTS-1:actIdleLBNrAware=false
+...    LNBTS-1:actIdleLB=false
+@{PARAM_FOR_01_13}
+...    LNCEL-1:actB1ReturnTo5GSA=false
+...    LNBTS-1:actHoWoSnChg=intraEnbAndX2HoEnabled
+...    LNCEL-1:actPeriodical5GRedirect=false
+...    LNBTS-1:actEndcHo=disabled
+...    LNBTS-1:actUeCapEndcHo=false
+...    LNCEL-1:defaultLnRelGnbCellId=1
+...    LNCEL-2:defaultLnRelGnbCellId=2
+...    LNBTS-1:qciTab8:lteNrDualConnectSupport=EN-DC
+...    LNBTS-1:qciTab8:nrPdcpProfIdx=1001
+...    LNBTS-1:actDynTrigLteNrDualConnectivity=false
+@{DELETE_LNRELGNBCELL}
+...    delete:LNCEL/LNRELGNBCELL.*
+...    delete:LNCEL:defaultLnRelGnbCellId
+@{LNRELGNBCELL_FOR_ENDC_HO}
+...    LNCEL-1/LNRELGNBCELL-1:gnbIdLength=22
+...    LNCEL-1/LNRELGNBCELL-1:lteNrDualConnectAllowed=allowed
+...    LNCEL-1/LNRELGNBCELL-1:nrCellId=33301
+...    LNCEL-1/LNRELGNBCELL-1:nrCgiPlmnId:mcc=262
+...    LNCEL-1/LNRELGNBCELL-1:nrCgiPlmnId:mnc=3
+...    LNCEL-1/LNRELGNBCELL-1:nrCgiPlmnId:mncLength=2
+...    LNCEL-2/LNRELGNBCELL-1:gnbIdLength=22
+...    LNCEL-2/LNRELGNBCELL-1:lteNrDualConnectAllowed=allowed
+...    LNCEL-2/LNRELGNBCELL-1:nrCellId=49951
+...    LNCEL-2/LNRELGNBCELL-1:nrCgiPlmnId:mcc=262
+...    LNCEL-2/LNRELGNBCELL-1:nrCgiPlmnId:mnc=3
+...    LNCEL-2/LNRELGNBCELL-1:nrCgiPlmnId:mncLength=2
+...    LNCEL-2/LNRELGNBCELL-2:gnbIdLength=22
+...    LNCEL-2/LNRELGNBCELL-2:lteNrDualConnectAllowed=allowed
+...    LNCEL-2/LNRELGNBCELL-2:nrCellId=66601
+...    LNCEL-2/LNRELGNBCELL-2:nrCgiPlmnId:mcc=262
+...    LNCEL-2/LNRELGNBCELL-2:nrCgiPlmnId:mnc=3
+...    LNCEL-2/LNRELGNBCELL-2:nrCgiPlmnId:mncLength=2
+@{PARAM_FOR_01_16}
+...    @{actsib24}
+@{PARAM_FOR_01_16_recovery}
+...    LNBTS-1:actSIB24=false
+@{PARAM_FOR_01_17}
+...    LNBTS:blockEndcHoRetryAtHoFromTrg=no blocking
+...    LNCEL/LNHOIF-1:thresholdRsrpEndcFilt=-100
+...    LNCEL/LNHOIF-1:thresholdRsrqEndcFilt=-150
+...    LNBTS:actEndcHo=enabled
+...    LNBTS:actUeCapEndcHo=true
+...    LNBTS/MODPR-0:configUeCapEndcHoRetry=priorityBelowLoadBasedHo
+...    LNCEL:iFEndcHoRetryTimer=10
+...    LNBTS/MODPR-0:freqLayEndcHoList:freqLayer=1600
+...    LNBTS/CAGENB-0/CAIMLBP-1:pcellConfig:earfcnDL=1600
+...    LNBTS/CAGENB-0/CAIMLBP-1/IMLBNR-0:nrcellConfigL:b1NrRequired=true
+...    LNBTS/CAGENB-0/CAIMLBP-1/IMLBNR-0:nrcellConfigL:band=77
+...    @{LTE4088}
+...    @{LTE4193_false}
+...    @{CB007910_false}
+...    @{LTE5348_false}
+...    @{LNRELGNBCELL_FOR_ENDC_HO}
+...    LNCEL-1:defaultLnRelGnbCellId=1
+...    LNCEL-2:defaultLnRelGnbCellId=2
+...    LNBTS:qciTab8:lteNrDualConnectSupport=EN-DC
+...    LNBTS:qciTab8:nrPdcpProfIdx=1001
+...    LNBTS-1/MODPR-0:autoAdapt=false
+@{PARAM_FOR_01_17_recovery}
+...    LNBTS:actEndcHo=disabled
+...    LNBTS:actUeCapEndcHo=false
+@{PARAM_FOR_01_18}
+...    LNBTS-1:actHOtoNR=true
+...    LNBTS-1:tS1RelOvDeltN=5000
+...    LNBTS-1:tS1RelPrepN=5000
+...    LNCEL:actFlowCtrlEnh=true
+...    LNBTS-1:actRedirect=disabled
+...    LNBTS-1:actCsfbPsHoToUtra=false
+...    LNBTS-1:act1xCsfb=false
+...    LNBTS-1:actDualRx1xCsfb=false
+...    LNBTS-1/LNCEL:threshold2NR=25
+...    LNBTS-1/LNCEL:t304InterRATN=500ms
+...    LNBTS-1/LNCEL:a2TimeToTriggerActNRMeas=320ms
+...    LNBTS-1/LNCEL:hysThreshold2NR=0
+...    LNBTS-1/LNCEL:measQuantityNr=RSRP
+...    LNCEL/LNCEL_FDD-0:actAutoPucchAlloc=true
+...    @{HANDOVER_TO_5GSA}
+@{PARAM_FOR_01_18_recovery}
+...    LNBTS-1:actHOtoNR=false
+@{HANDOVER_TO_5GSA}
+...    LNBTS-1/MODPR-0:freqLayListPsHoNR=${NRARFCN657700},${NRARFCN634000}
+...    LNBTS-1/MODPR-0:freqLayListPsHoNRVoLte=${NRARFCN657700},${NRARFCN634000}
+...    LNBTS/LNADJN-1/LNADJNL-1:cellIdentity=33301
+...    LNBTS/LNADJN-1/LNADJNL-1:trackingAreaCodeNR=33
+...    LNBTS/LNADJN-1/LNADJNL-1:gnbIdLength=22
+...    LNBTS/LNADJN-1/LNADJNL-1:gNBplmnId:mcc=262
+...    LNBTS/LNADJN-1/LNADJNL-1:gNBplmnId:mnc=3
+...    LNBTS/LNADJN-1/LNADJNL-1:gNBplmnId:mncLength=2
+...    LNBTS/LNADJN-1:arfcnValueNR=${NRARFCN657700}
+...    LNBTS/LNADJN-1:physCellIdNr=1
+...    LNBTS/LNADJN-1:multiFrequencyBandList=77
+...    LNBTS/LNADJN-2/LNADJNL-2:cellIdentity=49951
+...    LNBTS/LNADJN-2/LNADJNL-2:trackingAreaCodeNR=33
+...    LNBTS/LNADJN-2/LNADJNL-2:gnbIdLength=22
+...    LNBTS/LNADJN-2/LNADJNL-2:gNBplmnId:mcc=262
+...    LNBTS/LNADJN-2/LNADJNL-2:gNBplmnId:mnc=3
+...    LNBTS/LNADJN-2/LNADJNL-2:gNBplmnId:mncLength=2
+...    LNBTS/LNADJN-2:arfcnValueNR=${NRARFCN634000}
+...    LNBTS/LNADJN-2:physCellIdNr=2
+...    LNBTS/LNADJN-2:multiFrequencyBandList=77
+...    LNBTS/LNCEL/LNHON-1:b2NrCellReportQuantity=RSRP
+...    LNBTS/LNCEL/LNHON-1:carrierFreqNr=${NRARFCN657700}
+...    LNBTS/LNCEL/LNHON-1:freqBandIndicatorListNr=77
+...    LNBTS/LNCEL/LNHON-1:ssbPeriodicity=sf10-r15
+...    LNBTS/LNCEL/LNHON-1:ssbSubcarrierSpacing=30kHz
+...    LNBTS/LNCEL/LNHON-1:ssbDuration=sf1
+...    LNBTS/LNCEL/LNHON-1:b2Threshold1RsrpNr=40
+...    LNBTS/LNCEL/LNHON-1:b2Threshold2RsrpNr=56
+...    LNBTS/LNCEL/LNHON-2:b2NrCellReportQuantity=RSRP
+...    LNBTS/LNCEL/LNHON-2:carrierFreqNr=${NRARFCN634000}
+...    LNBTS/LNCEL/LNHON-2:freqBandIndicatorListNr=77
+...    LNBTS/LNCEL/LNHON-2:ssbPeriodicity=sf10-r15
+...    LNBTS/LNCEL/LNHON-2:ssbSubcarrierSpacing=30kHz
+...    LNBTS/LNCEL/LNHON-2:ssbDuration=sf1
+...    LNBTS/LNCEL/LNHON-2:b2Threshold1RsrpNr=40
+...    LNBTS/LNCEL/LNHON-2:b2Threshold2RsrpNr=56
+...    LNBTS-1/LNCEL/LNRELN-1:cellIdentity=33301
+...    LNBTS-1/LNCEL/LNRELN-1:psHoAllowed=allowed
+...    LNBTS-1/LNCEL/LNRELN-1:plmnId:mcc=262
+...    LNBTS-1/LNCEL/LNRELN-1:plmnId:mnc=3
+...    LNBTS-1/LNCEL/LNRELN-1:plmnId:mncLength=2
+...    LNBTS-1/LNCEL/LNRELN-2:cellIdentity=49951
+...    LNBTS-1/LNCEL/LNRELN-2:psHoAllowed=allowed
+...    LNBTS-1/LNCEL/LNRELN-2:plmnId:mcc=262
+...    LNBTS-1/LNCEL/LNRELN-2:plmnId:mnc=3
+...    LNBTS-1/LNCEL/LNRELN-2:plmnId:mncLength=2
+${ue_eutra_capabilities}
+...    SEPARATOR=
+...    DE1809D0008206102860E2048A163069022489942A58B983268D9D3CB5F9D3A00000001D00000000E800000007400000003A00000001D00000000E80000
+...    0007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E80000000740000000
+...    3A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000001BFBFFEC800801C364000000017BA00
+...    0000080952A0E2740400000820001080002180004400008A000118000238000480000920001280002580004C00009A000140000288000520000A6000150
+...    0002A8000560000AE0001600002C80005A0000B60001740002F00006D0000FE003A7400000003A00000001D00000000E800000007400000003A00000001
+...    D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E80
+...    0000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A0000000141000000F3A0000000000000
+...    0000000000000000000000000000000000000000000000202388425300C39FFFFFFFFFFFFFFF42A0006008A5C000080000412C680203098F00000060000
+...    0024000082410220000408068204
+${ue_eutra_capabilities_without_extendn77}
+...    SEPARATOR=
+...    DE1809D0008206102860E2048A163069022489942A58B983268D9D3CB5F9D3A00000001D00000000E800000007400000003A00
+...    000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000
+...    000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000001BFBFFEC80
+...    0801C364000000017BA000000080952A0E2740400003840000210002C20000108008400010C0002200004500008C00011C0002400004900009400012C00
+...    02600004D0000A0000144000290000530000A80001540002B0000570000B00001640002D00005B0000BA0001780003680007F001D3A00000001D0000000
+...    0E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E8000000074
+...    00000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A000
+...    00001D00000000A080000079D000000000000000000000000000000000000000000000000000000000001011C421298061CFFFFFFFFFFFFFFFA15000300
+...    452E000040000209634020184C135E000000C000000480001048204400008100A
+${ue_eutra_nr_capabilities}
+...    SEPARATOR=
+...    0108080160401C0600000000B0200E26000000000200010080801002
+${ue_nr_capabilities}
+...    SEPARATOR=
+...    0000000001030040000060000260000138040360401C4E00000504C0003400401020
+${ue_eutra_capabilities_redir_extendn77}
+...    SEPARATOR=
+...    C59FF030030804081705C177E0D98808C0000480012001008A200424000AA0004008A480001000008240C0000860030084C13800410220000408068204
+${ue_eutra_capabilities_redir_extendn77_7266}
+...    SEPARATOR=
+...    C59FF030030804081705C177E0D98808C0000480012001008A200424000AA0004008A480001000008250D0084C0184E800010C00601098270008204400008100D04080
+${ue_eutra_nr_capabilities_redir_extendn77_7266}
+...    SEPARATOR=
+...    01080803604008081010713000000006C08010102020E270000000006000100800040200010080801002
+${ue_eutra_capabilities_redir_without_extendn77}
+...    SEPARATOR=
+...    C59FF030030804081705C177E0D98808C0000480012001008A200424000AA0004008A480001000008240C0000860030084C1380041022000040804
+${ue_eutra_capabilities_redir_without_extendn77_7266}
+...    SEPARATOR=
+...    C59FF030030804081705C177E0D98808C0000480012001008A200424000AA0004008A480001000008250D0084C0184E800010C0060109827000820440000810080
+${TM9_ue_eutra_capabilities_redir_extendn77}
+...    SEPARATOR=
+...    D5BFF004094182200102008021FF9A313D1000029504303F1100307080000680003CA0000210000E8000080E80100C18200802003EBE400002C81006094C
+...    030032AA820102004524000080000458020081800010C006010982709A8204400008100D0408
+${ue_eutra_cap_ENDC_HO_extendedN77}
+...    SEPARATOR=
+...    DE1809D0008206102860E2048A163069022489942A58B983268D9D3CB5F9D3A00000001D00000000E800000007400000003A00000001D00000000E8000
+...    00007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000
+...    003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000001BFBFFEC800801C364000000017B
+...    A000000080952A0E2740400000820001080002180004400008A000118000238000480000920001280002580004C00009A000140000288000520000A600
+...    01500002A8000560000AE0001600002C80005A0000B60001740002F00006D0000FE003A7400000003A00000001D00000000E800000007400000003A000
+...    00001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000
+...    000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A0000000141000000F3A000000
+...    00000000000000000000000000000000000000000000000000000202388425300C39FFFFFFFFFFFFFFF42A0006008A5C000080000412C680203098F000
+...    000600000024000082410220000408068204
+${ue_eutra_cap_ENDC_HO_wo_extendedN77}
+...    SEPARATOR=
+...    DE1809D0008206102860E2048A163069022489942A58B983268D9D3CB5F9D3A00000001D00000000E800000007400000003A00000001D00000000E80000
+...    0007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E80000000740000000
+...    3A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000001BFBFFEC800801C364000000017BA00
+...    0000080952A0E2740400000820001080002180004400008A000118000238000480000920001280002580004C00009A000140000288000520000A6000150
+...    0002A8000560000AE0001600002C80005A0000B60001740002F00006D0000FE003A7400000003A00000001D00000000E800000007400000003A00000001
+...    D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E80
+...    0000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A0000000141000000F3A0000000000000
+...    0000000000000000000000000000000000000000000000202388425300C39FFFFFFFFFFFFFFF42A0006008A5C000080000412C680203098F00000060000
+...    002400008241022000040805
+${ue_eutra_nr_capabilities_ENDC_HO}    0108100160401C4C00000000B0200E140000000058200413000002C1003850000000000800040202004008
+${ue_nr_capabilities_incapable}    00000000010300200000600002600806C080380C00000A09800038080C00
+${ue_eutra_capabilities_HOSA}
+...    SEPARATOR=
+...    DE1809D0008206102860E2048A163069022489942A58B983268D9D3CB5F9D3A00000001D00000000E800000007400000003A00000001D00000000E80000
+...    0007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E80000000740000000
+...    3A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000001BFBFFED800801C364000000017BA00
+...    0000080952A0E2740400000820001080002180004400008A000118000238000480000920001280002580004C00009A000140000288000520000A6000150
+...    0002A8000560000AE0001600002C80005A0000B60001740002F00006D0000FE003A7400000003A00000001D00000000E800000007400000003A00000001
+...    D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E80
+...    0000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A0000000141000000F3A0000000000000
+...    0000000000000000000000000000000000000000000000202388425300C39FFFFFFFFFFFFFFF42A0006008A5C000080000412C780203098F00000060000
+...    00240000860FF0004C410788004100100D0408
+${ue_eutra_capabilities_HOSA_without_N77}
+...    SEPARATOR=
+...    DE1809D0008206102860E2048A163069022489942A58B983268D9D3CB5F9D3A00000001D00000000E800000007400000003A00000001D00000000E80000
+...    0007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E80000000740000000
+...    3A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000001BFBFFED800801C364000000017BA00
+...    0000080952A0E2740400000820001080002180004400008A000118000238000480000920001280002580004C00009A000140000288000520000A6000150
+...    0002A8000560000AE0001600002C80005A0000B60001740002F00006D0000FE003A7400000003A00000001D00000000E800000007400000003A00000001
+...    D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A00000001D00000000E80
+...    0000007400000003A00000001D00000000E800000007400000003A00000001D00000000E800000007400000003A0000000141000000F3A0000000000000
+...    0000000000000000000000000000000000000000000000202388425300C39FFFFFFFFFFFFFFF42A0006008A5C000080000412C780203098F00000060000
+...    00240000860FF0004C410788004100100F00
+${ue_nr_capabilities_HOSA}
+...    SEPARATOR=
+...    E1A00000074E5A031E00038520001E09306400043C2C006201A0130180603804546C28D6080A1A0259651311000F5B0404041C3BC70E418700040C9E3EAE
+...    0009E00380027800546C4CD6080A1A0259651311000F5B0404041C3BC70E418700040C9E3EAE0009E00380027800546C4ED6080A1A0259651311000F5B04
+...    04041C3BC70E418700040C9E3EAA00000A000000210713000000000809836004038040440102F61F00060005038280381804C00E000D07C0000000000001
+...    CA9A0002000012CB2A00695550F0007000B000000040080118B130001020304050607080B101112131921252627284A0
+${iFEndcHoRetryTimer}    10s
+${wait_UE_active}    5s
+${wait_sib_again}    10s
+${wait_x2_setup}    240s
+
+*** Test Cases ***
+CB010379-A-B1-ET-01-01 EN-DC setup with Blind mode when CB010379 enabled
+    [Documentation]    This case verifies when ue capability support Extended n77 (3650-3980MHz) and CB010379 enabled,
+    ...    ENDC setup successfully with blind mode; if ue capabilty don't support Extended n77 (3650-3980MHz), ENDC setup
+    ...    toward n77 shall not trigger
+    [Tags]
+    Online parameter change    ${PARAM_FOR_01_01}
+    UE Attach to eNB Cell with blind ENDC setup    ${ue_eutra_capabilities}    ${ue_eutra_nr_capabilities}    ${ue_nr_capabilities}
+    ...    ue_id=1    cell_id=2
+    intra_eNB HO setup ENDC    ue_id=1    cell_id=1    pci=1
+    UE Attach to eNB Cell and no blind ENDC setup     ${ue_eutra_capabilities_without_extendn77}    ${ue_eutra_nr_capabilities}
+    ...    ${ue_nr_capabilities}    ue_id=2    cell_id=1
+
+CB010379-A-B1-ET-01-03_dynamic trigger ENDC setup with coverage method when NR frequency 3650 to 3980Mhz excluded
+    [Documentation]    This case verifies when ue capability support Extended n77 (3650-3980MHz) and CB010379 enabled,
+    ...    ENDC setup successfully with dynamic mode; if ue capabilty don't support Extended n77 (3650-3980MHz), ENDC setup
+    ...    toward n77 shall not trigger
+    [Tags]
+    Online parameter change    ${PARAM_FOR_01_03}
+    UE Attach to eNB Cell without ENDC setup    ${ue_eutra_capabilities}    ${ue_eutra_nr_capabilities}    ${ue_nr_capabilities}
+    ...    ue_id=3    cell_id=1
+    Add one NR_PDCP bearer measObjectNR with both extended N77 and non-extended N77    ue_id=3    qci=6
+    UE send B1 event trigger ENDC with extended N77    ue_id=3    pci=1    nrarfcn=656736
+    UE Attach to eNB Cell without ENDC setup    ${ue_eutra_capabilities_without_extendn77}    ${ue_eutra_nr_capabilities}    ${ue_nr_capabilities}
+    ...    ue_id=4    cell_id=1
+    Add one NR_PDCP bearer measObjectNR with only non-extended N77    ue_id=4    qci=6
+    UE send B1 event trigger ENDC without extended N77    ue_id=4    pci=2    nrarfcn=633216
+
+CB010379-A-B1-ET-01-06_Blind Redirection to NR frequency of extended band N77 at end of RRC connection when CB010379 enabled
+    [Documentation]    This case verifies when ue capability support Extended n77 (3650-3980MHz) and CB010379 enabled,
+    ...    UE can redirect to 5G n77(NR frequency is in range of 3650 to 3980MHz) band after rrc connection release.
+    [Tags]
+    Online parameter change    ${PARAM_FOR_01_06}
+    UE Attach to eNB1 with extended N77 support     ${ue_eutra_capabilities_redir_extendn77}    ue_id=7
+    ADD normal QCI1 bearer with pdn2     ue_id=7    apn=nokia_2.net
+    release normal QCI1 bearer without redir info     ue_id=7    apn=nokia_2.net
+    S1 reset to trigger release     ue_id=7
+    UE Attach to eNB1 with extended N77 support     ${ue_eutra_capabilities_redir_without_extendn77}    ue_id=10
+    ADD normal QCI1 bearer with pdn2     ue_id=10    apn=nokia_2.net
+    release normal QCI1 bearer without redir info     ue_id=10    apn=nokia_2.net
+    S1 reset to trigger release without N77     ue_id=10
+    [Teardown]     Restore Env and Capture Logs    ${PARAM_FOR_01_06_recovery}
+
+CB010379-A-B1-ET-01-08_Measurement based redirect to NR extendedband n77 freq at end of rrc connection when CB007266 enabled
+    [Documentation]    This case verifies when ue capability support Extended n77 (3650-3980MHz) and CB010379 enabled,
+    ...    B1 measurement for redirect to 5G is only reconfigured when ue capability support Extended n77 (3650-3980MHz) ;
+    ...    if ue capability doesn't support Extended n77 (3650-3980MHz), B1 measurement won't be reconfigured for UE.
+    [Tags]
+    Online parameter change    ${PARAM_FOR_01_08}
+    UE Attach to eNB1 with extended N77 support     ${ue_eutra_capabilities_redir_extendn77_7266}    ${ue_eutra_nr_capabilities_redir_extendn77_7266}
+    ...    ue_id=3
+    LTE inactivityTimer expired trigger RRC Connection Release and start traffic to reuse UE    ue_id=3
+    UE send B1 event trigger redirect    ue_id=3    nrarfcn=656736
+    UE Attach to eNB1 with extended N77 support     ${ue_eutra_capabilities_redir_without_extendn77_7266}
+    ...    ${ue_eutra_nr_capabilities_redir_extendn77_7266}    ue_id=4
+    LTE inactivityTimer expired trigger RRC Connection Release and start traffic to reuse UE    ue_id=4
+    UE send B1 event trigger redirect    ue_id=4     nrarfcn=633216
+    Online parameter change    ${PARAM_FOR_01_08_02}
+    UE Attach to eNB1 with extended N77 support     ${ue_eutra_capabilities_redir_without_extendn77_7266}
+    ...    ${ue_eutra_nr_capabilities_redir_extendn77_7266}    ue_id=5
+    LTE inactivityTimer expired trigger RRC Connection Release and start traffic to reuse UE    ue_id=5
+    UE send B1 event trigger redirect    ue_id=5    nrarfcn=712608
+    [Teardown]     Restore Env and Capture Logs    ${PARAM_FOR_01_08_recovery}
+
+CB010379-A-B1-ET-01-10_Fast return to 5G n77 band after VoLTE call release
+    [Documentation]    This case verifies when ue capability support Extended n77 (3650-3980MHz) and CB010379 enabled,
+    ...    ue can Fast return to 5G n77(LTE4896)(NR frequency is in range of 3650 to 3980MHz) band after VoLTE call release.
+    [Tags]
+    Online parameter change    ${PARAM_FOR_01_10}
+    UE Attach to eNB1 with extended N77 support     ${ue_eutra_capabilities_redir_extendn77}    ue_id=8
+    ADD normal QCI1 bearer with pdn2     ue_id=8    apn=nokia_2.net
+    release normal QCI1 bearer and with redir info     ue_id=8    apn=nokia_2.net
+    UE Attach to eNB1 without extended N77 support emergency call     ${ue_eutra_capabilities_redir_without_extendn77}    ue_id=9
+    ...    apn=emergency.nsn.com
+    release emergency QCI1 bearer and with redir info    ue_id=9    apn=emergency.nsn.com
+    [Teardown]     Restore Env and Capture Logs    ${PARAM_FOR_01_10_recovery}
+
+CB010379-A-B1-ET-01-11_AwareIdleModeLoadBalancing with extendband n77
+    [Documentation]
+    ...    This case verifies ue support SA aware IMLB to 5G n77 band NR frequency from range 3650 to 3980Mhz when CB010379 enabled
+    ...    and ue support n77 Band and field extendedBand-n77-2-r17 in its UE Capabilities, meanwhile enabled IDLB functionality(LTE1677,LTE5104)
+    [Tags]
+    Online parameter change    ${PARAM_FOR_01_11}
+    UE Attach to eNB1 with extended N77 support     ${ue_eutra_capabilities_redir_extendn77}    ue_id=3
+    UE release with SA NR IMLB redirect info with extended N77    ue_id=3
+    UE Attach to eNB1 without extended N77 support     ${ue_eutra_capabilities_redir_without_extendn77}    ue_id=4
+    UE release with SA NR IMLB redirect inf without extended N77    ue_id=4
+    UE Attach to eNB1 with extended N77 support     ${TM9_ue_eutra_capabilities_redir_extendn77}    ue_id=5
+    UE release with SA NR IMLB redirect info with extended N77    ue_id=5
+    [Teardown]     Restore Env and Capture Logs    ${PARAM_FOR_01_11_recovery}
+
+CB010379-A-B1-ET-01-13 inter eNB HO with ENDC when CB010379 enabled
+    [Documentation]    This case verifies when ue capability support Extended n77 (3650-3980MHz) and CB010379 enabled and ue support n77 Band
+    ...    This case verifies when CB010379 enabled, for Inter-eNB handover for LTE-NR DC option 3X(LTE5348),CB010379 introduce checking rule for
+    ...    extended n77(3650-3980MHz) NR frequency during eNB do configuration of allowedBC-ListMRDC for SgNB Addition Request message during
+    ...    handover prepare phase using all cells of target cell's LNRELGNBCELLs as candidate PSCells as inputs parameters.
+    [Tags]
+    Online parameter change    ${PARAM_FOR_01_13}
+    UE Attach to sim-eNB Cell with ENDC setup     ${ue_eutra_capabilities}    ${ue_eutra_nr_capabilities}    ${ue_nr_capabilities}
+    ...    ue_id=3    cell_id=61    tgt_dc_gnb=2    tgt_dc_cell=21
+    inter eNB HO keep ENDC    ue_id=3    tgt_enb=1    tgt_cell=1
+    UE Attach to sim-eNB Cell with ENDC setup     ${ue_eutra_capabilities_without_extendn77}    ${ue_eutra_nr_capabilities}    ${ue_nr_capabilities}
+    ...    ue_id=4    cell_id=61    tgt_dc_gnb=2    tgt_dc_cell=21
+    inter eNB HO and ENDC take back    ue_id=4    tgt_enb=1    tgt_cell=1
+
+CB010379-A-B1-ET-01-16 verify SIB24 when CB010379 enabled and UE support extendedband n77
+    [Documentation]    This case verifies when ue capability support Extended n77 (3650-3980MHz) and CB010379 enabled and ue support n77 Band
+    ...    This case verifies sib24 have IE: additionspecturmemisson info when CB010379 enabled ,AdditionalSpectrumEmission for extendedband n77
+    ...    frequency in SIB24 should be included regardless UE support extendedband n77 band or not as this is SIB and we just need to verify that
+    ...    the correct value is in SIB24
+    [Tags]
+    Online parameter change    ${PARAM_FOR_01_16}
+    Block Cell1
+    Unblock Cell with extended band77    cell_id=1
+    Block Cell2
+    Unblock Cell without extended band77    cell_id=2
+    [Teardown]     Restore Env and Capture Logs    ${PARAM_FOR_01_16_recovery}
+
+CB010379-A-B1-ET-01-17 Interaction with CB006607 MR-DC based HO
+    [Documentation]    This case verifies when ue capability support Extended n77 (3650-3980MHz) and CB010379 enabled,
+    ...    eNB detects UE is EN-DC capable and eligible for EN-DC A5 measurement, eNB also successfully checks that EN-DC A5
+    ...    target LTE frequency layers are anchor layers for ENDC.
+    [Tags]
+    Online parameter change    ${DELETE_LNRELGNBCELL}
+    Online parameter change    ${PARAM_FOR_01_17}
+    UE Attach to eNB Cell with blind ENDC setup    ${ue_eutra_cap_ENDC_HO_extendedN77}    ${ue_eutra_nr_capabilities_ENDC_HO}
+    ...    ${ue_nr_capabilities}    ue_id=3    cell_id=1
+    UE Attach to eNB Cell and no ENDC setup with ENDC A5     ${ue_eutra_cap_ENDC_HO_wo_extendedN77}    ${ue_eutra_nr_capabilities_ENDC_HO}
+    ...    ${ue_nr_capabilities_incapable}    ue_id=4    cell_id=1
+    [Teardown]     Restore Env and Capture Logs    ${PARAM_FOR_01_17_recovery}
+
+CB010379-A-B1-ET-01-18 Interaction with CB007742 inter-RAT measurement and mobility for handover to 5G SA
+    [Documentation]    This case verifies when ue capability support Extended n77 (3650-3980MHz) and CB010379 enabled,
+    ...    inter-RAT measurement and mobility for handover to 5G SA when ue capability support Extended n77 (3650-3980MHz).
+    [Tags]
+    Online parameter change    ${PARAM_FOR_01_18}
+    UE Attach to eNB1 with extended N77 support     ${ue_eutra_capabilities_HOSA}    ${ue_eutra_nr_capabilities}    ${ue_nr_capabilities_HOSA}
+    ...    ue_id=3
+    trigger UE Handover to SA    ue_id=3    pci=1    nrfcn=656736    SIM-ENB=0X00005
+    UE Attach to eNB1 without extended N77 support     ${ue_eutra_capabilities_HOSA_without_N77}    ${ue_nr_capabilities_HOSA}    ue_id=4
+    trigger UE Handover to SA    ue_id=4    pci=2    nrfcn=633216    SIM-ENB=0X00006
+    [Teardown]     Restore Env and Capture Logs    ${PARAM_FOR_01_18_recovery}
+
+*** Keywords ***
+Common Suite Setup And Setup CUS Env
+    Common Suite Setup
+    Setup CUS Env    tl_type=3CELLs_FDD    ue_count=100
+    Set GNB for ENDC COMBINATION
+    Create UE Group Aliases    UE_GROUP    start_ue_id=1    stop_ue_id=20    id_type=cus
+    Create Enb Alias    ENB_1    enb_id=1    id_type=wts
+    Create MME Alias    MME_1    mme_id=1    id_type=wts
+    Create CELL alias    alias=CELL_1    cell_id=1    cell_type=cus
+    Create CELL alias    alias=CELL_2    cell_id=2    cell_type=cus
+
+Perform Steps After Onair
+    sleep    ${wait_x2_setup}
+    @{LNADJGNB}    Create List    LNADJGNB:cPlaneIpAddr=10.0.1.11    LNADJGNB:x2ToGnbLinkStatus=available
+    Object Should Exist    ${LNADJGNB}
+
+Online parameter change
+    [Arguments]    ${PARAM}
+    Delta Commission Parameters    ${PARAM}
+    Cells Should Be OnAir
+
+Restore Env and Capture Logs
+    [Arguments]    ${PARAM}
+    Online parameter change    ${PARAM}
+    Common Test Teardown And Stop Capture Logs
+
+Set UE parameters for ENDC capability
+    [Arguments]    ${ue_id}=1
+    Execute Uex Command    ue_param id=${ue_id} dual_conn=eutra_nr pdcp_sn_extension=18bit
+    Execute Uex Command    ue_param id=${ue_id} type=nr release=15 supported_bands=7
+    Execute Uex Command    ue_param id=${ue_id} type=nr release=15 supported_bands=77
+    Execute Uex Command    ue_param id=${ue_id} type=nr release=15 supported_bands=78
+    Execute Uex Command    ue_param id=${ue_id} type=nr release=15 supported_bands=79
+    Execute Egate Command    ue_enb_param id=${ue_id} ue_config_release_r9=rel15
+
+Set GNB for ENDC COMBINATION
+    GNB endc param    gnb_id=2
+    GNB endc param    gnb_id=3
+    GNB endc param    gnb_id=4
+	Execute Egate Command    enb_timer T_SN_STATUS_TRANSFER=5000ms
+    Execute Egate Command    enb_timer T_DC_Overall=5000ms
+
+GNB endc param
+    [Arguments]    ${gnb_id}=1
+    Execute Egate Command    gnb_endc_param id=${gnb_id} selected_band_combination_nr=1:1
+    Execute Egate Command    gnb_endc_param id=${gnb_id} use_nr_ran_cont=true
+    Execute Egate Command    gnb_endc_param id=${gnb_id} scg_dl_dist_percent=0
+    Execute Egate Command    gnb_endc_param id=${gnb_id} include_reestablish_pdcp=on
+
+Modify Yaml
+    Add Yaml      EPC/PGW
+    ...    - id: 3
+    ...    type: 'simulated'
+    ...    apn: 'emergency.nsn.com'
+    ...    emergency: 'on'
+    Add Yaml    UEs/bearer_sets
+    ...    bearer_set_2:
+    ...     - {qci: 6, default: on, pdn: 1}
+    ...     - {qci: 8, pdn: 1}
+    Add Yaml    UEs/bearer_sets
+    ...    bearer_set_3:
+    ...     - {qci: 8, default: on, pdn: 1}
+    ...     - {qci: 8, default: on, pdn: 2}
+    ...     - {qci: 1, mbr_ul: 31, gbr_dl: 31, gbr_ul: 31, mbr_dl: 31, pdn: 2}
+    Add Yaml    UEs/bearer_sets
+    ...    bearer_set_4:
+    ...     - {qci: 8, default: on, pdn: 1}
+    ...     - {qci: 8, default: on, pdn: 2}
+    ...     - {qci: 1, mbr_ul: 31, gbr_dl: 31, gbr_ul: 31, mbr_dl: 31, pdn: 2}
+    ...     - {qci: 5, default: on, pdn: 3}
+    ...     - {qci: 1, mbr_ul: 31, gbr_dl: 31, gbr_ul: 31, mbr_dl: 31, preprovisioned: on, filter: 1, precedence: 1, priority: 1, pdn: 3}
+    Update Yaml    UEs/UE_sets/1    bearer: bearer_set_2
+    Update Yaml    UEs/UE_sets/2    bearer: bearer_set_2
+    Update Yaml    UEs/UE_sets/7    bearer: bearer_set_3
+    Update Yaml    UEs/UE_sets/8    bearer: bearer_set_4
+    Update Yaml    UEs/UE_sets/9    bearer: bearer_set_4
+    Update Yaml    UEs/UE_sets/10    bearer: bearer_set_3
+    ${GNB2_CELL1}  catenate  - {id: 21, technology: nr , tac: 33, pci: '0:1', nrci: '0x0000215', nr_arfcn: '657700:657700',
+    ...    tdd_cell: yes, suggested_band: 77, gscn: 8090}
+    ${GNB3_CELL1}  catenate  - {id: 31, technology: nr , tac: 33, pci: '0:2', nrci: '0x000031F', nr_arfcn: '634000:634000',
+    ...    tdd_cell: yes, suggested_band: 77, gscn: 7845}
+    ${GNB4_CELL1}  catenate  - {id: 41, technology: nr, tac: 33, pci: '1:0', nrci: '0x0000429', nr_arfcn: '507000:531000',
+    ...    tdd_cell: yes, suggested_band: 7, gscn: 6637}
+    Add Yaml    BASE_STATIONS
+    ...    - id: 2
+    ...    gnb_id: '0x00002'
+    ...    type: simulated
+    ...    plmn: '262:03'
+    ...    s1u: 10.0.1.11
+    ...    x2_peers: none
+    ...    cells:
+    ...       ${GNB2_CELL1}
+    Add Yaml    BASE_STATIONS
+    ...    - id: 3
+    ...    gnb_id: '0x00003'
+    ...    type: simulated
+    ...    plmn: '262:03'
+    ...    s1u: 10.0.1.12
+    ...    x2_peers: none
+    ...    cells:
+    ...       ${GNB3_CELL1}
+    Add Yaml    BASE_STATIONS
+    ...    - id: 4
+    ...    gnb_id: '0x00004'
+    ...    type: simulated
+    ...    plmn: '262:03'
+    ...    s1u: 10.0.1.13
+    ...    x2_peers: none
+    ...    cells:
+    ...       ${GNB4_CELL1}
+    Add Yaml    BASE_STATIONS
+    ...    - id: 5
+    ...    type: simulated
+    ...    plmn: '262:03'
+    ...    s1: 10.0.1.3
+    ...    cells:
+    ...        - {'id': 51, technology: lte, tdd_cell: yes, duplex_mode: TDD, tac: 33, pci: '10:1', eci: '0x0000533', earfcn: '38000:38000', bw: 20}
+    ...        - {'id': 52, technology: lte, tdd_cell: yes, duplex_mode: TDD, tac: 33, pci: '10:2', eci: '0x0000534', earfcn: '40540:40540', bw: 20}
+    ...        - {'id': 53, technology: lte, tdd_cell: yes, duplex_mode: TDD, tac: 33, pci: '11:0', eci: '0x0000535', earfcn: '40740:40740', bw: 20}
+    Add Yaml    BASE_STATIONS
+    ...    - id: 6
+    ...    type: simulated
+    ...    plmn: '262:03'
+    ...    s1: 10.0.1.4
+    ...    cells:
+    ...        - {'id': 61, technology: lte, duplex_mode: FDD, tac: 33, pci: '11:1', eci: '0x000063D', earfcn: '1400:19400', bw: 20}
+    ...        - {'id': 62, technology: lte, duplex_mode: FDD, tac: 33, pci: '11:2', eci: '0x000063E', earfcn: '1400:19400', bw: 20}
+    ...        - {'id': 63, technology: lte, duplex_mode: FDD, tac: 33, pci: '12:0', eci: '0x000063F', earfcn: '1400:19400', bw: 20}
+
+UE Attach to eNB Cell with blind ENDC setup
+    [Arguments]    ${ue_eutra_capabilities}    ${ue_eutra_nr_capabilities}      ${ue_nr_capabilities}    ${ue_id}=1    ${cell_id}=3
+    Set UE parameters for ENDC capability     ue_id=${ue_id}
+    Expect Message Flow
+    ...    ENB_1:X2AP_SgNBAdditionRequest
+    ...    ENB_1:X2AP_SgNBAdditionRequestAcknowledge
+    ...    ENB_1:X2AP_SgNBReconfigurationComplete
+    ...    ENB_1:X2AP_SNStatusTransfer
+    ...    alias=attach_ENDC_flow    overall_timeout=5
+    ${V_2}  catenate  ue_attach id=${ue_id} cell=${cell_id} ue_eutra_capabilities=${ue_eutra_capabilities}
+    ...    ue_eutra_nr_capabilities=${ue_eutra_nr_capabilities} ue_nr_capabilities=${ue_nr_capabilities}
+    Execute Uex Command    ${V_2}
+    Flow Occurred As Expected    alias=attach_ENDC_flow
+
+UE Attach to eNB Cell without ENDC setup
+    [Arguments]    ${ue_eutra_capabilities}    ${ue_eutra_nr_capabilities}      ${ue_nr_capabilities}    ${ue_id}=1    ${cell_id}=3
+    Set UE parameters for ENDC capability     ue_id=${ue_id}
+    Expect Message Will Not Occur
+    ...    ENB_1:X2AP_SgNBAdditionRequest
+    ...    alias=attach_no_ENDC_flow    overall_timeout=5
+    ${V_2}  catenate  ue_attach id=${ue_id} cell=${cell_id} ue_eutra_capabilities=${ue_eutra_capabilities}
+    ...    ue_eutra_nr_capabilities=${ue_eutra_nr_capabilities} ue_nr_capabilities=${ue_nr_capabilities}
+    Execute Uex Command    ${V_2}
+    Flow Not Occurred For Message    alias=attach_no_ENDC_flow
+
+UE Attach to sim-eNB Cell with ENDC setup
+    [Arguments]    ${ue_eutra_capabilities}    ${ue_eutra_nr_capabilities}      ${ue_nr_capabilities}    ${ue_id}=1    ${cell_id}=61
+    ...    ${tgt_dc_gnb}=2    ${tgt_dc_cell}=21
+    Set UE parameters for ENDC capability     ue_id=${ue_id}
+    Set Sim eNB and gNB for ENDC Kept
+    Execute Egate Command    enb_x2_link_up enb=6 target=1    X2 link
+    Execute Egate Command    enb_param id=6 endc_capable_qci=all
+    ${V_2}  catenate  ue_attach id=${ue_id} enb=6 cell=${cell_id} ue_eutra_capabilities=${ue_eutra_capabilities}
+    ...    ue_eutra_nr_capabilities=${ue_eutra_nr_capabilities} ue_nr_capabilities=${ue_nr_capabilities}
+    Execute Uex Command    ${V_2}
+    sleep    ${wait_UE_active}
+    Execute Egate Command    enb_ue_dc_start target_gnb=${tgt_dc_gnb} target_cells=${tgt_dc_cell} ue=${ue_id} bearer=1 type=split_scg
+    ...    pass_regexp=Bearer-type change from MCG to SCG-split is successful
+
+UE send B1 event trigger ENDC with extended N77
+    [Arguments]    ${ue_id}=1    ${pci}=3    ${nrarfcn}=656736
+    Expect Message Flow
+    ...    ENB_1:X2AP_SgNBAdditionRequest
+    ...    ENB_1:X2AP_SgNBAdditionRequestAcknowledge
+    ...    ENB_1:X2AP_SgNBReconfigurationComplete
+    ...    ENB_1:X2AP_SNStatusTransfer
+    ...    alias=B1_ENDC_flow    overall_timeout=5
+    Execute Uex Command    ue_measurement_send id=${ue_id} event=B1_NR phycell_id=${pci} nrsrp=79 nrsrq=66 narfcn=${nrarfcn}
+    Flow Occurred As Expected    alias=B1_ENDC_flow
+
+UE send B1 event trigger ENDC without extended N77
+    [Arguments]    ${ue_id}=1    ${pci}=3    ${nrarfcn}=633216
+    Expect Message Flow
+    ...    ENB_1:X2AP_SgNBAdditionRequest
+    ...    ENB_1:X2AP_SgNBAdditionRequestAcknowledge
+    ...    ENB_1:X2AP_SgNBReconfigurationComplete
+    ...    ENB_1:X2AP_SNStatusTransfer
+    ...    alias=B1_ENDC_flow    overall_timeout=5
+    Execute Uex Command    ue_measurement_send id=${ue_id} event=B1_NR phycell_id=${pci} nrsrp=79 nrsrq=66 narfcn=${nrarfcn}
+    Flow Occurred As Expected    alias=B1_ENDC_flow
+
+
+UE Attach to eNB Cell and no ENDC setup with ENDC A5
+    [Arguments]    ${ue_eutra_capabilities}    ${ue_eutra_nr_capabilities}    ${ue_nr_capabilities}    ${ue_id}=1
+    ...    ${cell_id}=1    ${earfcn}=1600
+    Set UE parameters for ENDC capability     ue_id=${ue_id}
+    ${ENDC_a5_query1}    catenate
+    ...    (measObjectToAddModList contains (measObjectEUTRA contains (carrierFreq eq 1600))) and
+    ...    (reportConfigToAddModList contains (reportConfigEUTRA contains (eventA5 contains (a5-Threshold1 contains (threshold-RSRP eq 97)))))   and
+    ...    (measIdToAddModList contains ((measId eq 3) and (measObjectId eq 2) and (reportConfigId eq 4)))
+    ${ENDC_a5_query2}    catenate
+    ...    (measObjectToAddModList contains (measObjectEUTRA contains (carrierFreq eq 1600))) and
+    ...    (reportConfigToAddModList contains (reportConfigEUTRA contains (eventA5 contains (a5-Threshold1 contains (threshold-RSRP eq 97)))))   and
+    ...    (measIdToAddModList contains ((measId eq 3) and (measObjectId eq 2) and (reportConfigId eq 5)))
+    Expect Message Flow
+    ...    UE_GROUP_${ue_id}:RRC_RRCConnectionReconfiguration
+    ...    UE_GROUP_${ue_id}:RRC_RRCConnectionReconfiguration (${ENDC_a5_query1})
+    ...    alias=attach_ENDC_a5_flow1    overall_timeout=20
+    Expect Message Flow
+    ...    UE_GROUP_${ue_id}:RRC_RRCConnectionReconfiguration
+    ...    UE_GROUP_${ue_id}:RRC_RRCConnectionReconfiguration (${ENDC_a5_query2})
+    ...    alias=attach_ENDC_a5_flow2    overall_timeout=20
+    Expect Message Will Not Occur
+    ...    ENB_1:X2AP_SgNBAdditionRequest
+    ...    alias=no_ENDC_flow    overall_timeout=5
+    ${V_2}  catenate  ue_attach id=${ue_id} cell=${cell_id} ue_eutra_capabilities=${ue_eutra_capabilities}
+    ...    ue_eutra_nr_capabilities=${ue_eutra_nr_capabilities} ue_nr_capabilities=${ue_nr_capabilities}
+    Execute Uex Command    ${V_2}
+    Flow Not Occurred For Message    alias=no_ENDC_flow
+    sleep    ${iFEndcHoRetryTimer}
+    Verify At Least One Flow Occurs As Expected    attach_ENDC_a5_flow1    attach_ENDC_a5_flow2
+
+LTE inactivityTimer expired trigger RRC Connection Release and start traffic to reuse UE
+    [Arguments]    ${ue_id}=1
+    sleep    15s
+    Execute Uex Command    trf_data_start ue=${ue_id} dir=dl protocol=udp bearer=5 kbps=10 duration=1 duration_unit=seconds
+
+
+UE send B1 event trigger redirect
+    [Arguments]    ${ue_id}=1     ${nrarfcn}=656736
+   Expect Message Flow
+   ...    UE_GROUP_${ue_id}:RRC_RRCConnectionRelease (carrierFreq-r15 eq ${nrarfcn})
+   ...    alias=rrc_release_flow     overall_timeout=15
+    Execute Uex Command    ue_measurement_send id=${ue_id} event=B1_NR phycell_id=1 nrsrp=120 nrsrq=66
+    Execute Uex Command    ue_measurement_send id=${ue_id} event=B1_NR phycell_id=2 nrsrp=120 nrsrq=66
+    Flow Occurred As Expected    alias=rrc_release_flow
+
+UE Attach to eNB Cell and no blind ENDC setup
+    [Arguments]        ${ue_eutra_capabilities}    ${ue_eutra_nr_capabilities}      ${ue_nr_capabilities}    ${ue_id}=1    ${cell_id}=1
+    Set UE parameters for ENDC capability     ue_id=${ue_id}
+    Expect Message Will Not Occur
+    ...    ENB_1:X2AP_SgNBAdditionRequest
+    ...    alias=attach_no_ENDC_flow  overall_timeout=2
+    ${V_2}  catenate  ue_attach id=${ue_id} cell=${cell_id} ue_eutra_capabilities=${ue_eutra_capabilities}
+    ...  ue_eutra_nr_capabilities=${ue_eutra_nr_capabilities} ue_nr_capabilities=${ue_nr_capabilities}
+    Execute Uex Command    ${V_2}
+    Flow Not Occurred For Message    alias=attach_no_ENDC_flow
+
+intra_eNB HO setup ENDC
+    [Arguments]    ${ue_id}=1    ${cell_id}=1    ${pci}=1
+    Expect Message Flow
+    ...    ENB_1:X2AP_SgNBAdditionRequest
+    ...    ENB_1:X2AP_SgNBAdditionRequestAcknowledge
+    ...    ENB_1:X2AP_SgNBReconfigurationComplete
+    ...    ENB_1:X2AP_SNStatusTransfer
+    ...    UE_GROUP_${ue_id}:RRC_RRCConnectionReconfiguration (mobilityControlInfo contains (targetPhysCellId eq ${pci}))
+    ...    alias=HO_ENDC_flow    overall_timeout=10
+    Execute Uex Command    ue_ho id=${ue_id} enb=1 cell=${cell_id}
+    Flow Occurred As Expected    alias=HO_ENDC_flow
+
+
+Add one NR_PDCP bearer measObjectNR with both extended N77 and non-extended N77
+    [Arguments]    ${ue_id}=1    ${qci}=2    ${reportConfigId}=5
+    ${B1_query}    catenate
+    ...    reportConfigToAddModList contains (reportConfigInterRAT contains
+    ...    (eventB1-NR-r15 contains (b1-ThresholdNR-r15 contains (nr-RSRP-r15 eq 90))))
+    Expect Message Flow
+    ...    UE_GROUP_${ue_id}:RRC_RRCConnectionReconfiguration as B1_active
+    ...    alias=ENDC_B1_flow    overall_timeout=2
+    Execute Uex Command    bearer_add ue=${ue_id} qci=${qci}
+    Flow Occurred As Expected    alias=ENDC_B1_flow
+    verify that message fulfills query
+    ...  (
+    ...    rrcConnectionReconfiguration  contains (
+    ...        ((measObjectToAddModList contains (((measObjectId eq 2) and
+    ...        measObjectNR-r15 contains (carrierFreq-r15 eq ${NRARFCN657700}))))    and
+    ...        (measObjectToAddModList contains (((measObjectId eq 3) and
+    ...        measObjectNR-r15 contains (carrierFreq-r15 eq ${NRARFCN634000})))))    and
+    ...        ${B1_query}  and
+    ...        measIdToAddModList contains ((measId eq 17) and (measObjectId eq 2) and (reportConfigId eq ${reportConfigId}))    and
+    ...        measIdToAddModList contains ((measId eq 18) and (measObjectId eq 3) and (reportConfigId eq ${reportConfigId}))
+    ...        )
+    ...  )
+    ...  message_alias=B1_active
+    ...  flow_alias=ENDC_B1_flow
+
+Add one NR_PDCP bearer measObjectNR with only non-extended N77
+    [Arguments]    ${ue_id}=1    ${qci}=2    ${reportConfigId}=5
+    ${B1_query}    catenate
+    ...    reportConfigToAddModList contains (reportConfigInterRAT contains
+    ...    (eventB1-NR-r15 contains (b1-ThresholdNR-r15 contains (nr-RSRP-r15 eq 90))))
+    ${extended_N77}    catenate
+    ...    measObjectNR-r15 contains (carrierFreq-r15 eq ${NRARFCN657700})
+    Expect Message Flow
+    ...    UE_GROUP_${ue_id}:RRC_RRCConnectionReconfiguration as B1_active
+    ...    alias=ENDC_B1_flow    overall_timeout=2
+    Expect Message Will Not Occur
+    ...    UE_GROUP_${ue_id}:RRC_RRCConnectionReconfiguration (${extended_N77})
+    ...    alias=attach_no_exN77_flow  overall_timeout=6
+    Execute Uex Command    bearer_add ue=${ue_id} qci=${qci}
+    Flow Occurred As Expected    alias=ENDC_B1_flow
+    verify that message fulfills query
+    ...  (
+    ...    rrcConnectionReconfiguration  contains (
+    ...        measObjectToAddModList  contains (measObjectNR-r15 contains (carrierFreq-r15 eq ${NRARFCN634000}))    and
+    ...        ${B1_query} and
+    ...        measIdToAddModList contains (((measId eq 17) and (measObjectId eq 2) and (reportConfigId eq ${reportConfigId})))
+    ...        )
+    ...  )
+    ...  message_alias=B1_active
+    ...  flow_alias=ENDC_B1_flow
+    Flow Not Occurred For Message    alias=attach_no_exN77_flow
+
+UE Attach to eNB1 with extended N77 support
+    [Arguments]    ${ue_eutra_capabilities}    ${ue_eutra_nr_capabilities}=${ue_eutra_nr_capabilities}    ${ue_nr_capabilities}=${ue_nr_capabilities}
+    ...    ${ue_id}=1    ${cell_id}=1
+    Set UE parameters for ENDC capability     ue_id=${ue_id}
+    ${cmd}  catenate  ue_attach id=${ue_id} cell=${cell_id} ue_eutra_capabilities=${ue_eutra_capabilities}
+    ...    ue_eutra_nr_capabilities=${ue_eutra_nr_capabilities} ue_nr_capabilities=${ue_nr_capabilities}
+    Execute Uex Command    ${cmd}
+
+UE Attach to eNB1 without extended N77 support
+    [Arguments]    ${ue_eutra_capabilities}    ${ue_nr_capabilities}=${ue_nr_capabilities}    ${ue_id}=1    ${cell_id}=1
+    Set UE parameters for ENDC capability     ue_id=${ue_id}
+    ${cmd}  catenate  ue_attach id=${ue_id} cell=${cell_id} ue_eutra_capabilities=${ue_eutra_capabilities}
+    ...    ue_eutra_nr_capabilities=${ue_eutra_nr_capabilities} ue_nr_capabilities=${ue_nr_capabilities}
+    Execute Uex Command    ${cmd}
+
+UE Attach to eNB1 without extended N77 support emergency call
+    [Arguments]    ${ue_eutra_capabilities}    ${ue_id}=1    ${cell_id}=1    ${apn}=nokia_3.net
+    Set UE parameters for ENDC capability     ue_id=${ue_id}
+    Execute Uex Command     ue_param id=${ue_id} establishment_cause=emergency
+    ${cmd}  catenate  ue_attach id=${ue_id} cell=${cell_id} ue_eutra_capabilities=${ue_eutra_capabilities} ue_nr_capabilities=${ue_nr_capabilities}
+    Execute Uex Command    ${cmd}
+    Execute Uex Command     ue_pdn_connect id=${ue_id} apn=${apn} request_type=emergency
+
+UE release with SA NR IMLB redirect info with extended N77
+   [Arguments]    ${ue_id}=1
+   ${extendedN77}    catenate
+   ...    freqPriorityListEUTRA  contains  (carrierFreq eq 1700)       and
+   ...    freqPriorityListGERAN  contains  (carrierFreqs contains (startingARFCN eq 532))     and
+   ...    freqPriorityListUTRA-FDD contains  (carrierFreq eq 10600)    and
+   ...    freqPriorityListNR-r15  contains  (carrierFreq-r15 eq 712608) and
+   ...    freqPriorityListNR-r15  contains  (carrierFreq-r15 eq 633216) and
+   ...    freqPriorityListNR-r15  contains  (carrierFreq-r15 eq 656736)
+   Expect Message Flow
+   ...    UE_GROUP_${ue_id}:RRC_RRCConnectionRelease (${extendedN77})
+   ...    alias=rrc_release_flow     overall_timeout=5
+   Execute Uex Command    ue_detach id=${ue_id}
+   Flow Occurred As Expected    alias=rrc_release_flow
+
+UE release with SA NR IMLB redirect inf without extended N77
+   [Arguments]    ${ue_id}=1
+   ${extendedN77}    catenate
+   ...    freqPriorityListEUTRA  contains  (carrierFreq eq 1700)    and
+   ...    freqPriorityListGERAN  contains  (carrierFreqs contains (startingARFCN eq 532))    and
+   ...    freqPriorityListUTRA-FDD contains  (carrierFreq eq 10600)    and
+   ...    freqPriorityListNR-r15  contains  (carrierFreq-r15 eq 712608) and
+   ...    freqPriorityListNR-r15  contains  (carrierFreq-r15 eq 633216)
+   Expect Message Flow
+   ...    UE_GROUP_${ue_id}:RRC_RRCConnectionRelease (${extendedN77})
+   ...    alias=rrc_release_flow    overall_timeout=5
+   Execute Uex Command    ue_detach id=${ue_id}
+   Flow Occurred As Expected    alias=rrc_release_flow
+
+trigger UE Handover to SA
+    [Arguments]    ${ue_id}=1    ${pci}=2    ${nrfcn}=656736    ${SIM-ENB}=0X00002
+    Execute Uex Command    ue_measurement_send id=${ue_id} event=A2 srsrp=0 srsrq=34
+    Execute Egate Command    mme_param id=1 target_enb_id_for_fake_5g_ho=${SIM-ENB}
+    Expect Message Flow
+    ...    MME_1:S1AP_HandoverRequired (Cause contains (radioNetwork eq "time-critical-handover"))
+    ...    alias=HO_SA_flow    overall_timeout=8
+    Execute Uex Command    ue_measurement_send id=${ue_id} event=B2_NR srsrp=60 srsrq=15 phycell_id=${pci} nsinr=20 narfcn=${nrfcn} amount=1
+    Flow Occurred As Expected    alias=HO_SA_flow
+
+ADD normal QCI1 bearer with pdn2
+    [Arguments]    ${ue_id}    ${apn}=nokia_2.net
+    Expect Message Flow
+    ...    UE_GROUP_${ue_id}:RRC_RRCConnectionReconfiguration (drb-ToAddModList contains (eps-BearerIdentity eq 7))
+    ...    alias=QCI1_PDN2_flow    overall_timeout=8
+    Execute Uex Command     ue_pdn_connect id=${ue_id} apn=${apn}
+    Execute Uex Command    bearer_add ue=${ue_id} qci=1 mbr_ul=31 mbr_dl=31 gbr_ul=31 gbr_dl=31 apn=${apn}
+    Flow Occurred As Expected    alias=QCI1_PDN2_flow
+
+release normal QCI1 bearer and with redir info
+    [Arguments]    ${ue_id}    ${apn}=nokia_3.net
+    Expect Message Flow
+   ...    UE_GROUP_${ue_id}:RRC_RRCConnectionRelease (carrierFreq-r15 eq ${NRARFCN657700})
+   ...    alias=rrc_release_flow     overall_timeout=15
+    execute uex command and expect error    bearer_del ue=${ue_id} qci=1 apn=${apn}    sErrReleaseBearerInterruptedByIdle
+    Flow Occurred As Expected    alias=rrc_release_flow
+
+release normal QCI1 bearer without redir info
+    [Arguments]    ${ue_id}    ${apn}=nokia_3.net
+    Expect Message Will Not Occur
+    ...    UE_GROUP_${ue_id}:RRC_RRCConnectionRelease (carrierFreq-r15 eq ${NRARFCN657700})
+    ...    alias=rrc_release_without_redir_flow    overall_timeout=10
+    Execute Uex Command    bearer_del ue=${ue_id} qci=1 apn=${apn}
+    Flow Not Occurred For Message    alias=rrc_release_without_redir_flow
+
+release emergency QCI1 bearer and with redir info
+    [Arguments]    ${ue_id}    ${apn}=nokia_3.net
+    Expect Message Flow
+    ...    UE_GROUP_${ue_id}:RRC_RRCConnectionRelease (carrierFreq-r15 eq ${NRARFCN634000})
+    ...    alias=rrc_release_without_redir_flow    overall_timeout=10
+    execute uex command and expect error    bearer_del ue=${ue_id} qci=1 apn=${apn}    sErrReleaseBearerInterruptedByIdle
+    Flow Occurred As Expected    alias=rrc_release_flow
+
+S1 reset to trigger release
+    [Arguments]    ${ue_id}
+   Expect Message Flow
+   ...    UE_GROUP_${ue_id}:RRC_RRCConnectionRelease (carrierFreq-r15 eq ${NRARFCN657700})
+   ...    alias=rrc_release_flow    overall_timeout=10
+   Execute Egate Command        ue_s1_reset id=${ue_id} by=mme enb=1 mme=1    pass_regexp=ResetAck
+   Flow Occurred As Expected    alias=rrc_release_flow
+
+S1 reset to trigger release without N77
+    [Arguments]    ${ue_id}
+   Expect Message Will Not Occur
+   ...    UE_GROUP_${ue_id}:RRC_RRCConnectionRelease (carrierFreq-r15 eq ${NRARFCN657700})
+   ...    alias=rrc_release_without_redir_flow_1    overall_timeout=10
+   Execute Egate Command        ue_s1_reset id=${ue_id} by=mme enb=1 mme=1    pass_regexp=ResetAck
+   Flow Not Occurred For Message    alias=rrc_release_without_redir_flow_1
+
+inter eNB HO keep ENDC
+    [Arguments]    ${ue_id}    ${tgt_enb}=6    ${tgt_cell}=61
+    Expect Message Flow
+    ...    ENB_1:X2AP_HandoverRequest
+    ...    ENB_1:X2AP_SgNBAdditionRequest
+    ...    ENB_1:X2AP_SgNBAdditionRequestAcknowledge
+    ...    ENB_1:X2AP_HandoverRequestAcknowledge
+    ...    ENB_1:X2AP_SgNBReconfigurationComplete
+    ...    alias=inter_eNB_HO_flow    overall_timeout=10
+    Execute Uex Command    ue_ho id=${ue_id} enb=${tgt_enb} cell=${tgt_cell}
+    Flow Occurred As Expected    alias=inter_eNB_HO_flow
+
+inter eNB HO and ENDC take back
+    [Arguments]    ${ue_id}    ${tgt_enb}=6    ${tgt_cell}=61
+    Expect Message Will Not Occur
+    ...    ENB_1:X2AP_SgNBAdditionRequest
+    ...    alias=ENDC_takeback_flow    overall_timeout=15
+    Expect Message Flow
+    ...    ENB_1:X2AP_HandoverRequest
+    ...    ENB_1:X2AP_HandoverRequestAcknowledge
+    ...    ENB_1:X2AP_UEContextRelease
+    ...    alias=inter_eNB_HO_flow    overall_timeout=10
+    Execute Uex Command    ue_ho id=${ue_id} enb=${tgt_enb} cell=${tgt_cell}
+    Flow Occurred As Expected    alias=inter_eNB_HO_flow
+    Flow Not Occurred For Message    alias=ENDC_takeback_flow
+
+Set Sim eNB and gNB for ENDC Kept
+    Execute Egate Command    enb_x2_link_up enb=6 target=2    is up
+    Execute Egate Command    enb_x2_link_up enb=6 target=3    is up
+    Execute Egate Command    enb_endc_param keep_endc_on_ho=on id=5
+    Execute Egate Command    enb_endc_param keep_endc_on_ho=on id=6
+    Execute Egate Command    enb_param id=6 include_user_location_info=on
+    Execute Egate Command    enb_endc_param id=6 include_location_information_sgnb=on
+	Execute Egate Command    enb_param id=6 endc_capable_qci=all
+	Execute Egate Command    enb_param id=6 ho_source=x2
+	Execute Egate Command    enb_endc_param keep_endc_on_ho=on id=6 allowed_bc_list_mrdc=1:1|2:2,3
+	Execute Egate Command    ue_enb_param id=6 ue_config_release_r9=rel15
+
+Block Cell${number}
+    ${lncel_id}    Get cell id by configuration id    LTE    ${number}
+    Block_cell    ${lncel_id}
+    Assert    LNCEL    ${lncel_id}    blockingState=Blocked
+    Sleep    ${wait_sib_again}    #wait sib broadcast again
+
+Unblock Cell with extended band77
+    [Arguments]    ${cell_id}=1
+    ${lncel_id}    Get cell id by configuration id    LTE    ${cell_id}
+    Expect Message Flow
+    ...    CELL_1:RRC_SystemInformationBlockType24-r15 (additionalSpectrumEmissionNR-r15 eq 2)
+    ...    alias=SIB24_extendedN77_flow    overall_timeout=20
+    Unblock_cell    ${lncel_id}
+    Assert    LNCEL    ${lncel_id}    blockingState=Unblocked
+    Cells Should Be OnAir    cell_id=${cell_id}
+    Flow Occurred As Expected     alias=SIB24_extendedN77_flow
+
+Unblock Cell without extended band77
+    [Arguments]    ${cell_id}=1
+    ${lncel_id}    Get cell id by configuration id    LTE    ${cell_id}
+    Expect Message Will Not Occur
+    ...    CELL_2:RRC_SystemInformationBlockType24-r15 (additionalSpectrumEmissionNR-r15 eq 2)
+    ...    alias=SIB24_no_extendedN77_flow    overall_timeout=20
+    Unblock_cell    ${lncel_id}
+    Assert    LNCEL    ${lncel_id}    blockingState=Unblocked
+    Cells Should Be OnAir    cell_id=${cell_id}
+    Flow Not Occurred For Message    alias=SIB24_no_extendedN77_flow
+

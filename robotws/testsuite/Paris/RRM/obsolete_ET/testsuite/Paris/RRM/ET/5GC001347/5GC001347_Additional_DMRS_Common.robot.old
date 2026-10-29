@@ -1,0 +1,76 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Verification of 5GC001347-A - One additional DMRS
+...               Scope : Test additional DMRS depending on PTRS and
+...               gNB configuration
+...               Common script used for cmW, mmW, TDD, FDD, UL and DL test cases.
+...                       17-08-2021              |           1347 refactoring
+...                       16-05-2022              |           1347 refactoring for VRAN 2.0 (L1L2 mirroring)
+
+Resource          resources/robot/5GC001347_Keywords.robot
+
+*** Variables ***
+
+*** Keywords ***
+
+TC_1347_ADDITIONAL_DMRS
+    [Documentation]                 Generic test for additional DMRS introduced by 1347 (FR1, FR2, FDD, TDD)
+    ...                             ${dmrs_test_config} is a dictionary with:
+    ...                             Band configuration (cmW / mmW)
+    ...                             PTRS UE capabilities (ON or OFF)
+    ...                             DMRS mode (automatic, forced, disabled)
+    ...                             Kind of traffic (UL or DL).
+    [Arguments]                     ${dmrs_test_config}
+
+    ${band}                         Get From Dictionary     ${dmrs_test_config}     band_domain
+    ${ptrs_capa_on_off}             Get From Dictionary     ${dmrs_test_config}     enable_ptrs_capa
+    ${dmrs_mode}                    Get From Dictionary     ${dmrs_test_config}     dmrs_mode
+    ${traffic_way}                  Get From Dictionary     ${dmrs_test_config}     traffic_way
+    ${enable_256qam}                Get From Dictionary     ${dmrs_test_config}     enable_256qam
+    ${tl_topology}                  Get From Dictionary     ${dmrs_test_config}     tl_topology
+
+    # Set inside SCF: framestructure depending on band (cmW / mmW), DMRS mode,
+    # 256 QAM activation if needed.
+    Set Frame Structure and Additional DMRS Config
+    ...                             band=${band}             dmrs_mode=${dmrs_mode}        enable256qam=${enable_256qam}
+    ...                             tl_type=${tl_topology}
+
+    # Add PTRS capabilities on WTS side.
+    Set UE capa on UeSim            band=${band}             ptrs_capa_on_or_off=${ptrs_capa_on_off}
+
+	#In case of mmW set the ueid to 1, for NSA call
+	Run Keyword If                  "${band}"=="mmW"	Run Keywords
+	...		                 Run    sed -i 's/set_ue simulated id=11 /set_ue simulated id=1 /g' ${tl.core.dir_path}/${tl.core.cfg_filename}
+	...				 AND
+	...				 Run    sed -i 's/ue_param id=11 /ue_param id=1 /g' ${tl.core.dir_path}/${tl.core.cfg_filename}
+
+    WTS Setup
+
+    # Cellsetup is now done, Sherpa can be enabled if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}           Activate Sherpa
+
+    # Capture X2 to check DMRS configuration sent to UE
+    ${CaptureBIP}                   Capture L1L2 Set Upon Config             airscale=${GNB_DU}           isMirror=${True}
+    Capture Init                    ${CaptureBIP}                            withTN=True
+
+    # UE attach to 4G+5G (NSA)
+    ${CaptureCPRT_X2} =              SgNB Addition to ENB
+    ...                              ueSetting=${UE_SIMPLE}
+    ...                              captureCallback=Callback Capture L1L2
+    ...                              capture=${CaptureBIP}
+    ...                              withTN=True
+
+    # If traffic is, it's enough in case a full stack TL is used. However, in case of L1Bypass,
+    # traffic success is not significant because there is no L1 !
+    # So, also check DMRS configuration sent to UE.
+    Check Additional DMRS Config in RRC Reconfiguration         pcapFile=${CaptureCPRT_X2}
+    ...                                                         dl_or_ul=${traffic_way}
+    ...                                                         mode=${dmrs_mode}
+    ...                                                         ptrs=${ptrs_capa_on_off}
+
+    # Check PTRS configuration in DL/UL traffic
+    Check Additional DMRS in Traffic        dl_or_ul=${traffic_way}
+    ...                                     mode=${dmrs_mode}
+    ...                                     ptrs=${ptrs_capa_on_off}
+
+    # Detach UE
+    UE Detach Enb                   ueSetting=${UE_SIMPLE}

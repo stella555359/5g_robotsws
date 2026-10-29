@@ -1,0 +1,33 @@
+{
+    "SBTS22R1_ENB_0000.*":{
+        "qc_domain": "MN_RAN",
+        "qc_project": "RAN_ST",
+        "Root\\Test_Sets\\22R1_MP\\Regression\\RAN_PZ_HAZ_4\\RAN_PZ_VERF_CN_SG03": {
+            "RRM_HZ_CLASSICAL": [
+                ".*"
+            ]
+        },
+        "label": "RAN_PZ_HAZ_4_SG03"
+    },
+    "SBTS00_ENB_9999.*":{
+        "qc_domain": "MN_RAN",
+        "qc_project": "RAN_ST",
+        "Root\\Test_Sets\\Trunk\\RAN_PZ_HAZ_4\\RAN_PZ_VERF_CN_SG03": {
+            "RRM_HZ_CLASSICAL": [
+                ".*"
+            ]
+        },
+        "label": "CLOUD_5G_CLASSICAL_ANDROID_ASIKL_ABILB1_AWHHI_ENB"
+    },
+    "SBTS22R2_ENB_0000.*": {
+               "qc_domain": "MN_RAN",
+        "qc_project": "RAN_ST",
+        "Root\\Test_Sets\\22R2_MP\\Regression\\RAN_PZ_HAZ_4\\RAN_PZ_VERF_CN_SG03": {
+            "RRM_HZ_CLASSICAL": [
+                ".*"
+            ]
+        },
+        "label": "RAN_PZ_HAZ_4_SG03"
+    }
+}
+

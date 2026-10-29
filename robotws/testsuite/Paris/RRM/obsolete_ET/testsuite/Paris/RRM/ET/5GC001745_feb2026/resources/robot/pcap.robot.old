@@ -1,0 +1,348 @@
+*** Settings ***
+Documentation    :copyright: Nokia
+...              :authors: Alok Shastri, Pawel Cebula, modified by C SAMSON for DSS testing purpose (1586-C)
+...              ; Initial KW ...../robotws5g/resources/sites/Wroclaw/common/pcap.robot (Thanks to Alok and Pawel for this Kw)
+...              :contact: alok.shastri@nokia.com, pawel.1.cebula@nokia.com,christophe.samson@nokia.com
+...               Modified Date               : April 29 2024
+...               Written Modified by         : christophe.samson@nokia.com
+...               Last Modified by            : denis.taupin@nokia.com
+
+Library          Collections
+Library          OperatingSystem
+Library          ../../../resources/python/luashark_tools.py
+Library          taf.collectors.tcpdump                 WITH NAME    tcpdump
+Library          taf.collectors.core                    WITH NAME    core
+Library          taf.analyzer.pdml                      WITH NAME    pdml_analyzer
+Library          ../python/luashark_analyzer.py            WITH NAME    nps_luashark_analyzer
+Library          ../python/luashark_version_handler.py     WITH NAME    nps_lua_ver
+Library          ../../../resources/DSS/python/process_data_in_file.py         WITH NAME    text
+
+*** Variables ***
+
+${5G_PRE}      5G
+${SRAN_PRE}    SBTS00
+
+*** Keywords ***
+
+Get Software Version
+    [Documentation]      Return software version
+    ...     alias:   AdminConnection object or if used, string name alias
+    coam.connect to   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+    ${software_info}=    coam.get_software_info     connection=coam_admin
+    ${sw_version}=       set variable    ${software_info['Active SW version']}
+    ${sw_version_package}=       nps_luashark_analyzer.get_sw_package_version   sw_version=${sw_version}
+    Dated Log     Get current sw version package : ${sw_version} => ${sw_version_package}
+    [Return]             ${sw_version_package}
+    [Teardown]    coam.teardown    connection=coam_admin
+
+Get gNB Software Version old
+    [Documentation]      Return software version
+    ...     alias:   AdminConnection object or if used, string name alias
+    coam.connect to   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+    ${software_info}=    coam.get_software_info     connection=coam_admin
+    ${sw_version}=       set variable    ${software_info['Active SW version']}
+    Dated Log     Get current sw version package : ${sw_version}
+    [Return]             ${sw_version}
+    [Teardown]    coam.teardown    connection=coam_admin
+
+Get gNB Software Version
+    [Documentation]      Return software version
+    Dated Log     Get current sw version package : ${TLConfig.release.name}
+    [Return]             ${TLConfig.release.name}
+
+Do install Xp LuaShark into home
+   [Documentation]      Install specific XP luashark into /home/xxxxx/tools/luashark
+   [Arguments]    ${XpLuaSharkZipFile}
+   nps_lua_ver.do_install_Xp_Analyzer   ${XpLuaSharkZipFile}
+
+Point AF_PATH to local luashark package with error message
+   [Arguments]    ${sw_version_n_1}    ${luashark_url}
+    Log to console   "Error while downloading ${sw_version_n_1}:\n${luashark_url}"
+    ${AF_PATH} =    Set Variable
+    ...      https://artifactory-espoo1.ext.net.nokia.com/artifactory/mnp5g-central-public-local/System_Release/9.1800.330/luashark-9.1800.330.zip
+    Set Suite Variable    ${AF_PATH}
+
+Point AF_PATH to local luashark XP package
+    # Return from keyword if   "${AF_PATH}"=="${empty}"
+    # Return From Keyword If    "${AF_PATH is set}"=="False"
+    ${AF_PATH} =    Set Variable
+    ...    https://artifactory-espoo1.ext.net.nokia.com/artifactory/mnp5g-central-public-local/System_Release/9.1800.330/luashark-9.1800.330.zip
+    Set Suite Variable    ${AF_PATH}
+    Do install Xp LuaShark into home    ${CURDIR}/../9.1800.330/generated_luashark-9.1800.330.zip
+
+# return from Kw if -V ENB_BUILD: is not used
+Point ENB_BUILD to local luashark XP package
+    # Return From Keyword If    "${ENB_BUILD}"=="${empty}"
+    Return From Keyword If    "${ENB_BUILD is set}"=="False"
+    ${ENB_BUILD} =    Set Variable    ${empty}
+    Set Suite Variable    ${ENB_BUILD}
+
+Point ENB_BUILD to luashark sw package
+    # Return From Keyword If    "${ENB_BUILD}"=="${empty}"
+    Return From Keyword If    "${ENB_BUILD is set}"=="False"
+    ${ENB_BUILD} =    Set Variable    ${current_sw_version_for_lua_gNB}
+    Set Suite Variable    ${ENB_BUILD}
+
+Point to luashark scripts via AF_PATH variable
+    # Return From Keyword If    "${AF_PATH}"=="${empty}"
+    Return From Keyword If    "${AF_PATH is set}"=="False"
+    Log to console    Setting AF_PATH variable to direct to required luascripts
+    # csamson : need to manage SBTS case !!!!
+    ${sw_gnb_version} =    Get gNB software version
+    ${sw_list}    split string    ${sw_gnb_version}    separator=_
+    ${luashark_url}=     run keyword if     '${sw_list[0]}'=='${SRAN_PRE}'   nps_lua_ver.Create luashark package url sbts    ${sw_gnb_version}
+    run keyword if       '${sw_list[0]}'=='${SRAN_PRE}'                      Set Suite Variable    ${AF_PATH}    ${luashark_url}
+    Return From Keyword If     '${sw_list[0]}'=='${SRAN_PRE}'      ${sw_gnb_version}
+    ${sw_version} =    Get software version
+    # 03/06/2021 : comment this line for the moment , to remove later...
+    # ${sw_version_n_1} =   nps_lua_ver.decrease_sw_version_by   ${sw_version}   1
+    Set Suite Variable     ${current_sw_version_for_lua_gNB}     ${sw_version}
+# get current gNB sw and try to get luashark (for BIP postprocessing) with current_swrelease n
+# to have no conflict with XPSharp.lua (XPShark.lua renamed with generated_luashark-9.1800.330 actually)
+# some improvement => need to put this lua version generated_luashark-9.1800.330 [renaming of XPShark.lua] into a http server !!!!
+    ${luashark_url} =    nps_lua_ver.Create luashark package url    ${sw_version}
+    ${luashark_url_first} =  Set Variable  ${luashark_url}
+    ${luashark_available} =     nps_lua_ver.Check package availability on server    package_url=${luashark_url}
+    ${luashark_url} =     Run keyword if    ${luashark_available} == ${TRUE}    Set Suite Variable    ${AF_PATH}    ${luashark_url}
+    ...    ELSE    nps_lua_ver.Try to find available package on server    sw_version=${sw_version}    version_amount_to_check=20
+    Run keyword if    ${luashark_available} == ${FALSE} and '${luashark_url}' != ""    Set Suite Variable    ${AF_PATH}    ${luashark_url}
+    ...    ELSE IF    ${luashark_available} == ${FALSE} and '${luashark_url}' == ""    Point AF_PATH to local luashark package with error message
+    ...                                                                                         ${sw_version}   ${luashark_url_first}
+    Log to console    \nAF_PATH variable points to: ${AF_PATH}
+    [return]     ${current_sw_version_for_lua_gNB}
+
+Start Tcpdump on Remote machine
+    [Arguments]    ${Remote_machine}    ${name}    ${options}
+    ${host} =     Get From Dictionary    ${Remote_machine}    host
+    Log to console    \nCollecting traffic on ${host} using tcpdump parameters: ${options}
+    tcpdump.create_tcpdump_collector
+    ...     name=${name}
+    ...     options=${options}
+    ...     executor=${Remote_machine}
+    tcpdump.Set Suite Alias             ${name}
+    core.setup_collectors               names=${name}
+    core.start_collectors               names=${name}
+
+Get pcap save dir
+    ${pcap_stored_dir} =    Set Variable   ${LOG_PATH}
+    [return]    ${pcap_stored_dir}
+
+Stop Tcpdump and collect pcap from Remote machine
+    [Arguments]    ${name}
+    ${target_dir} =    Get pcap save dir
+    log to console    Traffic saved to dir:${target_dir}
+    core.stop_collectors    names=${name}
+    core.collect_collectors    names=${name}    target_dir=${target_dir}
+    core.teardown_collectors    names=${name}
+
+Convert pcap to pdml file
+    [Arguments]    ${captured_traffic_name}    ${message}
+    ${analyzer_pcap} =    nps_luashark_analyzer.Initiate luashark analyzer    ${AF_PATH}
+    ${pcap_stored_dir} =    Get pcap save dir
+    ${pcap_file} =   Set Variable   ${captured_traffic_name}
+    ${filterPcap} =    call method    ${analyzer_pcap}    filter_pcap    ${pcap_file}
+    ...                filterName=${${message}.filter_name}
+    ...                filterExp=${${message}.filter_expression}
+    ${pdmlFile} =    call method    ${analyzer_pcap}    pcap_to_pdml    ${filterPcap}
+    [return]    ${pdmlFile}
+
+Convert pcap to pdml file without filtering
+    [Arguments]    ${captured_traffic_name}
+    ${analyzer_pcap} =    nps_luashark_analyzer.Initiate luashark analyzer    ${AF_PATH}
+    ${pcap_stored_dir} =    Get pcap save dir
+    ${pcap_file} =   Set Variable   ${captured_traffic_name}
+    ${pdmlFile} =    call method    ${analyzer_pcap}    pcap_to_pdml    ${pcap_file}
+    [return]    ${pdmlFile}
+
+Get message field pdml entries
+    [Arguments]    ${message_field}    ${captured_traffic_name}
+    ${message} =    Set Variable    ${${message_field}.message_name}
+    ${message_type}=    Set Variable    ${${message}.message_type}
+    Log to console    Gathering value of ${${message_field}.field_name} from ${${message_field}.message_name}
+    ${pdmlFile} =    Convert pcap to pdml file    ${captured_traffic_name}    ${message}
+    ${pdml_entries}=       pdml_analyzer.get_pdml_entries    ${pdmlFile}
+    ...    ${${message_type}.field}    ${${message_type}.name}    ${${message_type}.value}
+    ${attrib_values}=      pdml_analyzer.get_attrib_value_from_pdml_entries     ${pdml_entries}
+    ...     ${${message_field}.field_name}    ${${message_field}.attrib_name}
+    [return]    ${attrib_values}
+
+Get number of occurrences of message with particular value
+    [Arguments]    ${message_field}    ${captured_traffic_name}    ${expected_value}
+    Log to console    Gathering number of occurrences of message: ${${message_field}.field_name}, containing value: ${expected_value}
+    ${attrib_values} =     Get message field pdml entries    ${message_field}    ${captured_traffic_name}
+    ${found_occurernces} =    Get Match Count    ${attrib_values}    ${expected_value}
+    [return]    ${found_occurernces}
+
+Get value of message field from pcap of message
+    [Arguments]    ${message_field}    ${captured_traffic_name}    ${atrribute_value_index}=0
+    ${attrib_values}=     Get message field pdml entries    ${message_field}    ${captured_traffic_name}
+    Should not be empty    ${attrib_values}    msg=Field ${${message_field}.field_name} has not been found in pcap: ${captured_traffic_name}
+    [return]    @{attrib_values}[${atrribute_value_index}]
+
+Check message field not present in pcap of message
+    [Arguments]    ${message_field}    ${captured_traffic_name}
+    ${attrib_values}=     Get message field pdml entries    ${message_field}    ${captured_traffic_name}
+    Should be empty    ${attrib_values}    msg=Field ${${message_field}.field_name} has been found in pcap: ${captured_traffic_name}
+
+Check message field present in pcap of message
+    [Arguments]    ${message_field}    ${captured_traffic_name}
+    ${attrib_values}=     Get message field pdml entries    ${message_field}    ${captured_traffic_name}
+    Should not be empty    ${attrib_values}    msg=Field ${${message_field}.field_name} has been found in pcap: ${captured_traffic_name}
+
+Check value of message field from pcap of message
+    [Arguments]    ${message_field}    ${captured_traffic_name}    ${expected_value}    ${atrribute_value_index}=0
+    ${tested_value} =    Get value of message field from pcap of message    ${message_field}    ${captured_traffic_name}    ${atrribute_value_index}
+    Log to console    Verifying if ${${message_field}.field_name} from ${${message_field}.message_name} has expected value: ${expected_value}
+    ${error_message} =    Catenate    SEPARATOR=
+    ...    Gathered ${${message_field}.field_name} value: ${tested_value}, is different than expected one: ${expected_value}
+    Should Be Equal    ${tested_value}    ${expected_value}    msg=${error_message}    values=${FALSE}
+
+Check message present in pcap
+    [Arguments]    ${captured_traffic_name}    ${message}
+    ${message_count}=    Get number of times a message exists in pcap file    ${message}    ${captured_traffic_name}
+    Run Keyword If    ${message_count} != 0
+    ...    log to console   Message ${message} is present in pcap file ${captured_traffic_name}
+    ...    ELSE    Fail   Message ${message} is not present in pcap file ${captured_traffic_name}
+
+Check message is not present in pcap
+    [Arguments]    ${captured_traffic_name}    ${message}
+    ${message_count}=    Get number of times a message exists in pcap file    ${message}    ${captured_traffic_name}
+    Run Keyword If    ${message_count} == 0
+    ...    log to console   Message ${message} is not present in pcap file ${captured_traffic_name}
+    ...    ELSE    Fail   Message ${message} was not expected to be present in pcap file ${captured_traffic_name}
+
+Check message presence in pcap
+    [Arguments]    ${captured_traffic_name}    ${message}
+    Log to console    Verifying if message ${${message}.filter_expression} is present in captured traffic: ${captured_traffic_name}
+    ${pdmlFile} =    Convert pcap to pdml file    ${captured_traffic_name}    ${message}
+    ${output} =    Grep File    ${pdmlFile}    ${${message}.filter_expression}
+    Should not be empty     ${output}
+    ...    msg=${${message}.filter_expression} message has not been found in captured traffic: ${captured_traffic_name}
+
+Check message absence in pcap
+    [Arguments]    ${captured_traffic_name}    ${message}
+    Log to console    Verifying if message ${${message}.filter_expression} is absent in captured traffic: ${captured_traffic_name}
+    ${pdmlFile} =    Convert pcap to pdml file    ${captured_traffic_name}    ${message}
+    ${output} =    Grep File    ${pdmlFile}    ${${message}.filter_expression}
+    Should be empty     ${output}
+    ...    msg=${${message}.filter_expression} message has been found in captured traffic: ${captured_traffic_name}
+
+Get number of occurences of message in pcap file
+    [Arguments]    ${message}    ${captured_traffic_name}
+    Log to console    Gathering number of occurrences of message: ${${message}.filter_expression} in pcap: ${captured_traffic_name}
+    ${pdmlFile} =    Convert pcap to pdml file    ${captured_traffic_name}    ${message}
+    ${output} =    Grep File    ${pdmlFile}    ${${message}.filter_expression}
+    ${message_count} =    Set Variable    ${output.count('${${message}.filter_expression}')}
+    [Return]    ${message_count}
+
+Get number of times a message exists in pcap file
+    [Arguments]    ${message}    ${captured_traffic_name}
+    ${analyzer} =    nps_luashark_analyzer.Initiate luashark analyzer    ${AF_PATH}
+    ${pdmlFile} =    Convert pcap to pdml file    ${captured_traffic_name}    ${message}
+    ${message_count}=    call method    ${analyzer}    count_path    ${pdmlFile}
+    ...    packetName=${${message}.message_info}    path=${${${message}.message_type}.path}
+    [Return]    ${message_count}
+
+Check number of times a message exists in pcap file
+    [Arguments]    ${message}    ${expected_message_count}    ${captured_traffic_name}
+    Log to console    Checking number of occurrences of message ${${message}.message_info} in ${captured_traffic_name}
+    ${message_count}=    Get number of times a message exists in pcap file    ${message}    ${captured_traffic_name}
+    Should Be Equal As Integers    ${message_count}    ${expected_message_count}
+
+Check time difference between consecutive messages
+    [Arguments]    ${msg}    ${time_difference_in_sec}    ${captured_traffic_name}=AMF    ${index_of_first_message}=0
+    ${index_of_second_message}=   Evaluate     ${index_of_first_message}+1
+    ${expected_time_difference_in_sec}=    Convert To Integer    ${time_difference_in_sec}
+    ${msg_timestamps}=    Get message field pdml entries    ${msg}    ${captured_traffic_name}
+    ${msg1_time}=    Set Variable    @{msg_timestamps}[${index_of_first_message}]
+    ${msg1_time_stamp}=    Convert To Number   ${msg1_time}
+    ${msg2_time}=    Set Variable    @{msg_timestamps}[${index_of_second_message}]
+    ${msg2_time_stamp}=    Convert To Number   ${msg2_time}
+    ${difference}=    Evaluate    ${msg2_time_stamp} - ${msg1_time_stamp}
+    ${difference}=    Convert To Number    ${difference}    precision=0
+    ${difference}=    Convert To Integer    ${difference}
+    Log to console    Checking time difference between record ${index_of_first_message} and record ${index_of_second_message}.
+    Should Be Equal As Integers    ${difference}    ${expected_time_difference_in_sec}
+    ...    difference=${difference}  expected is ${expected_time_difference_in_sec}
+
+Check time difference between messages
+    [Arguments]    ${msg1}    ${msg2}    ${time_difference_in_sec}    ${captured_traffic_name}=AMF    ${atrribute_value_index}=0
+    Log to console    Verifying time difference between messages: ${${msg1}.message_name} and ${${msg2}.message_name}
+    ${expected_time_difference_in_sec}=    Convert To Integer    ${time_difference_in_sec}
+    ${msg1_timestamp}=    Get value of message field from pcap of message    ${msg1}    ${captured_traffic_name}    ${atrribute_value_index}
+    ${msg1_time}=    Convert To Number    ${msg1_timestamp}    0
+    ${msg2_timestamp}=    Get value of message field from pcap of message    ${msg2}    ${captured_traffic_name}    ${atrribute_value_index}
+    ${msg2_time}=    Convert To Number    ${msg2_timestamp}    0
+    ${difference}=    Evaluate    ${msg2_time} - ${msg1_time}
+    ${difference}=    Convert To Number    ${difference}    precision=0
+    ${difference}=    Convert To Integer    ${difference}
+    ${message_bad_time_difference} =    Catenate    SEPARATOR=
+    ...    Gathered time difference between messages ${${msg1}.message_name} and ${${msg2}.message_name}:${difference}
+    ...    , is different than expected: ${expected_time_difference_in_sec}
+    Should Be Equal As Integers    ${difference}    ${expected_time_difference_in_sec}
+    ...    msg=${message_bad_time_difference}
+
+Check all messages have same time difference
+    [Arguments]    ${msg}    ${captured_traffic_name}    ${time_difference_in_sec}    ${no_of_messages}=2
+    ${iterations}=    Evaluate   ${no_of_messages}-1
+    FOR  ${i}  IN RANGE    ${iterations}
+            Check time difference between consecutive messages    ${msg}    ${time_difference_in_sec}    ${captured_traffic_name}
+    ...     index_of_first_message=${i}
+    END
+
+Check MCShark if present
+   [Arguments]    ${w_log}=False
+   # USER_PLUGIN_PATH="$HOME/.local/lib/wireshark/plugins"
+   # USER_PLUGIN_PATH=$(tshark -G folders | grep '^Personal Lua Plugins:' | cut -d: -f2- | sed 's/^\s*//')
+   # WR_ver=$(tshark -v | grep -oE "TShark\s\(Wireshark\)\s[0-9]+\.[0-9]" | grep -oE "[0-9]+\.[0-9]")
+   # plugin_install_path="${USER_PLUGIN_PATH}/${WR_ver}/epan"
+   ${USER_PLUGIN_PATH}=   Run   tshark -G folders | grep '^Personal Lua Plugins:' | cut -d: -f2- | sed 's/^\s*//'
+   ${USER_PLUGIN_PATH}=    Catenate    ${USER_PLUGIN_PATH}
+   ${WR_ver}=    Run    tshark -v | grep -oE 'TShark\\s\\(Wireshark\\)\\s[0-9]+\.[0-9]' | grep -oE '[0-9]+\.[0-9]'
+   ${plugin_install_path}=   set variable   ${USER_PLUGIN_PATH}/${WR_ver}/epan
+   ${MCShark}=    Run    ls ${plugin_install_path}/mcshark-*.so
+   run Keyword if   "${w_log}"=="True"    Dated log      User plugin path : ${USER_PLUGIN_PATH}
+   run Keyword if   "${w_log}"=="True"    Dated log      TShark version : ${WR_ver}
+   run Keyword if   "${w_log}"=="True"    Dated log      Plugin install path : ${plugin_install_path}
+   run Keyword if   "${w_log}"=="True"    Dated log      MCShark : ${MCShark}
+   ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist       ${MCShark}
+   ${contains}=     Run Keyword And Return Status       Should Not Contain     ${MCShark}     No such file or directory
+   # ${contains}==True   => MCShark plugin already installed and present
+   [Return]     ${contains}   ${MCShark}
+
+Convert PCAP To CSV using MCShark
+    [Documentation]    using tshark
+    ...                prerequis : MCShark plugin installed (see Kw Install wslte plugins for MCShark)
+    [Arguments]    ${pcap_file}    ${output_file}    ${filter}    ${csv_title_list}
+    ${csv_title}    Set Variable
+    FOR    ${column}   IN    @{csv_title_list}
+        ${csv_title}    Set Variable    ${csv_title} -e ${column}
+    END
+    ${cmd}    Catenate    tshark -r ${pcap_file} -Y '${filter}' -T fields -e _ws.col.No. -e _ws.col.Info
+    ...    ${csv_title} -E header=y -E separator=';' -E quote=d -E occurrence=a > ${output_file}
+    OperatingSystem.Run    ${cmd}
+
+Convert Xp PCAP To CSV using MCShark to check Dss Cellsetup
+    [Arguments]    ${pcap_file}   ${tc_id}
+    # ${filter}=    Catenate    xp_control_messages_XpControlMessage_t.discriminator||
+    # ...                                  xp_dss_messages_XpDssMessage_t.discriminator
+    ${filter}=    Catenate    xp_dss_xpdssmessage
+    @{csv_title_list}=    Create List    xp_common_GlobalgNBId_t.gNBId
+    ...                                  xp_dss_messages_XpDssMessage_t.discriminator   xp_dss_EnDssDlCrmSfInfoExtension1.dlResourceSharingAlgo_item
+    Convert PCAP To CSV using MCShark   pcap_file=${pcap_file}   output_file=${testCaseDir}/csv_TC${tc_id}.csv
+    ...                                 filter=${filter}    csv_title_list=${csv_title_list}
+
+# wireshark.CreatePersonalConfProfile   pref_items='decode_as_entry: tcp.port,29211,(none),SYSCOM'  profie_path=/home/ute/.config/wireshark/profiles
+# ...                                   profile_name=customized_profile     filename=decode_as_entries
+wireshark.CreatePersonalConfProfile
+    [Documentation]  Create personal configuration profile for special pcap analysing.
+    ...    :param pref_items  a list hoding all preference items to use other than the defaults. Make sure each item is written exactly
+    ...    the same as what dislay in GUI of wireshark.
+    ...    :Param profie_path  the path of profile folders where preference file locates.
+    ...    :Param profile_name  the personal profile name, which is presented as a foler in profie_path.
+    ...    :Param filename   it can be preference or decode_as_entries
+    [Arguments]    ${pref_items}   ${profie_path}=/home/ute/.config/wireshark/profiles
+    ...    ${profile_name}=customized_profile   ${filename}=preference
+    text.write_lines_to_file    file_path=${profie_path}/${profile_name}   file_name=${filename}    lines=${pref_items}
+    [Return]  ${profile_name}
+

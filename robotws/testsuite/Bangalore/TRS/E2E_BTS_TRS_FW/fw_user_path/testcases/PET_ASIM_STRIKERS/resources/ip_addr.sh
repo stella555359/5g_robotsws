@@ -1,0 +1,16 @@
+sudo ip a a 10.0.1.1/24 dev eth3.2110
+sudo ip a a 10.0.1.11/24 dev eth3.2110
+sudo ip a a 10.0.1.12/24 dev eth3.2110
+sudo ip a a 10.0.1.13/24 dev eth3.2110
+sudo ip a a 10.0.1.14/24 dev eth3.2110
+sudo ip a a 10.0.1.15/24 dev eth3.2110
+sudo ip a a 10.0.1.16/24 dev eth3.2110
+sudo ip a a 10.0.1.17/24 dev eth3.2110
+sudo ip a a fc00::1/124 dev eth3.2110
+sudo ip a a fc00::11/124 dev eth3.2110
+sudo ip a a fc00::12/124 dev eth3.2110
+sudo ip a a fc00::13/124 dev eth3.2110
+sudo ip a a fc00::14/124 dev eth3.2110
+sudo ip a a fc00::15/124 dev eth3.2110
+sudo ip a a fc00::16/124 dev eth3.2110
+sudo ip a a fc00::17/124 dev eth3.2110

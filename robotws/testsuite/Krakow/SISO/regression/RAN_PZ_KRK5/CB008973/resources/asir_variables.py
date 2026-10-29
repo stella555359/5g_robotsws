@@ -1,0 +1,71 @@
+ASIR_SNAPSHOT_FILES = {
+    'COMMON': ['_startup.zip',
+               '_runtime.zip',
+               '_UnitOAM_SOAP_Log.zip',
+               '_bbox3.log.gz',
+               '_ant_discovery_log.xz',  # // recently deleted // TRUNK_only
+               '_pm_1_syslog.zip',
+               '_pm_2_syslog.zip',
+               '_pm_1_sysinfo.zip',
+               '_pm_2_sysinfo.zip',
+               '_runtime_sysinfo.zip',
+               '_linux_logs.tar',
+               '_pm_startup_DEFAULT.log.xz',
+               # '_pm_UnitOAM_SOAP_Log.xml.xz',
+               '_pm_ant_discovery_log.xz',
+               '_pm_fault_history_log.txt.xz',
+               '_EID_\\d+.bin.xz',
+               '_RFSW_tx_gain_trace_\\d+.0.txt.xz',
+               '_Squatch_Dump_Ant_\\d+.0.log.xz',
+               '_fault_history_log.txt.xz',
+               '_version.txt.xz',
+               '_clock_service_log.xz',
+               ],
+    'HUB_VER2': ['_rocal_state.tar.gz',  # // APHG_ONLY
+                 '_pm_UnitOAM_SOAP_Log.xml.xz',
+                 ],
+    'eCPRI': ['_ptp_log_\\S+\\.dat.xz',  # // APHG_eCPRI_ONLY
+              ],
+    'PICO_VER1': ['_cal_\\d+.bin.xz',  # // GEN1_ONLY]
+                  ],
+    'PICO_VER2': ['_rfsw_asi5g-tx-cal-cache-\\d+-0.bin.xz',  # // pico RRH GEN2,3_ONLY
+                  '_rfsw_asir-rx-cal-cache-\\d+-0.bin.xz',  # // pico RRH GEN2,3_ONLY
+                  ],
+    'PICO_VER3': ['_rfsw_asi5g-tx-cal-cache-\\d+-0.bin.xz',  # // pico RRH GEN2,3_ONLY
+                  '_rfsw_asir-rx-cal-cache-\\d+-0.bin.xz',  # // pico RRH GEN2,3_ONLY
+                  ],
+}
+
+AASIR_HUB_VERSION = {'APHA': 'HUB_VER1',
+                     'APHG': 'HUB_VER2',
+                     }
+
+ASIR_RRH_VERSION = {'AHGEA': 'PICO_VER1',
+                    'AHGEB': 'PICO_VER1',
+                    'AHENA': 'PICO_VER1',
+                    'AHENB': 'PICO_VER1',
+                    'AHGEHA': 'PICO_VER1',
+                    'AHGEHB': 'PICO_VER1',
+                    'AHFID': 'PICO_VER1',
+                    'AHFIH': 'PICO_VER1',
+                    'AHGEDA': 'PICO_VER1',
+                    'AWHQA': 'PICO_VER2',
+                    'AWHQJ': 'PICO_VER2',
+                    'AWHQB': 'PICO_VER2',
+                    'AWHQK': 'PICO_VER2',
+                    'AWHQC': 'PICO_VER2',
+                    'AWHHA': 'PICO_VER2',
+                    'AWHHC': 'PICO_VER2',
+                    'AWHQQ': 'PICO_VER2',
+                    'AWHQR': 'PICO_VER2',
+                    'AWHHIQA': 'PICO_VER3',
+                    'AWHHIQB': 'PICO_VER3',
+                    'AWHQS': 'PICO_VER3',
+                    'AWHQT': 'PICO_VER3',
+                    'AWHGEQJ': 'PICO_VER3',
+                    'AWHGEQK': 'PICO_VER3',
+                    'AWHGEQG': 'PICO_VER3',
+                    'AWHGEQH': 'PICO_VER3',
+                    'AWHENHC': 'PICO_VER3',
+                    'AWHENHD': 'PICO_VER3',
+                    }

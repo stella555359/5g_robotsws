@@ -1,0 +1,295 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]
+...                      1- Common keyword of CNI-101738_B8 interaction with 16 layers DL MU MIM0 (CB008701)
+...                      2- Common keyword of CNI-101738_B8 interaction with interaction with data aware
+...                         one shot Scell addition CB008311 (2CC TDD FR1+ FDD CA) (SA)
+...               Prerequisite :
+...               Scope : keywords for CNI-101738_B4 and CNI-101738_B8
+...
+...               Test Case Scenario contact  : philippe.daroux@nokia.com
+...               Test Case automation author : philippe.daroux@nokia.com
+...               Test Case automation contact: philippe.daroux@nokia.com
+...               Creation Date               : 20-06-2024
+...               Modified Date               : 20-06-2024
+...               Last Modified by            : philippe.daroux@nokia.com
+...               Version History   Date            Author                      Notes
+...               0.1               FB2414      philippe.daroux@nokia.com      Creation
+
+
+Library           OperatingSystem
+Library           String
+Library           BuiltIn
+
+Library           ../python/CNI-101738_checkTTItrace.py
+
+Resource          ../../../resources/common/TtiTrace/ttitrace.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+
+
+*** Variables ***
+${rdEnableDummyLoadDl}          0x58017A
+${rdDummyLoadDlLcrIdAndRnti}    0x58017B
+${rdDummyLoadDlBsr}             0x58017C
+
+# Average of PRB scheduled (empirical values)
+${maxAvrgNbPrbLowTraffic}       32
+${minAvrgNbPrbDummyB4Prim}      160
+${minAvrgNbPrbDummyB4Second}    50
+${minAvrgNbPrbDummyB8}          270
+
+# Constant value according to customized configs used:
+${physCellId_primCell1_B4}      52
+${physCellId_secondCell1_B4}    54
+
+${LcrId_cell1_TDD_B8}           1
+${physCellId_cell1_TDD_B8}      50
+
+
+*** Keywords ***
+CNI_101738_B4_10_Interaction_with_CB008311_KW
+    [Documentation]
+    ...     Conditions:     GNB is UP, 6 cells are UP and running
+    ...                     Cell3(PCI52)=Primary=TDD, 60Mhz, band 78
+    ...                     Cell5(PCI54)=Secondary=FDD, 10/10Mhz, band 66
+    ...     Actions:        Cell setup & call setup with 1 UE on Cell 3 (UEs 1 = 1kbps)
+    ...     Checks:         In TTI traces: PRB used on Primary cell and Secondary cells
+    ...     Verdict:        Nb of PRB should be very low on primary Cell, and 0 on Secondary cell
+    ...     Actions:        Activation of CNI-10738 feature through Aashell command on GNB
+    ...     Checks:         In eGate console: Secondary cells activated
+    ...                     In TTI traces: PRB used on Primary and Secondary cells
+    ...     Verdict:        nb of PRB average should be next 162 on on Primary Cell and 52 on Secondary cell
+    ...     Checks:         In TTI traces: information regarding Secondary Cell activation/deactivation
+    ...     Verdict:        Activation noticed
+    ...     Actions:        Deactivation of CNI-10738 feature through Aashell command on GNB
+    ...     Checks:         In eGate console: Secondary cells deactivated
+    ...                     In TTI traces: PRB used on Primary and Secondary cells
+    ...     Verdict:        Nb of PRB should be very low on primary Cell, and 0 on Secondary cell
+    ...     Checks:         In TTI traces: information regarding Secondary Cell activation/deactivation
+    ...     Verdict:        Activation noticed
+
+    Restart TL
+    WTS Setup                             shouldUseLua=False
+
+    ${UEs_SA_list}                        CNI101738 Define UEs    UEnb=1
+
+    CNI101738 attach UEs And Start DL     UElist=${UEs_SA_list}
+
+    # TTI capture configuration
+    ${TTIdir}                             Get TTI Trace Path    dir_suffix=CNI101738_B4
+
+    ${TTIpcap_noDummy1}                   CNI101738 Capture TTI    TTIdir=${TTIdir}    suffix=B4_noDummy1
+
+    CNI101738 Activate Dummy Load         RntiMask=${UEs_SA_list[0].c_rnti}
+    Traced Sleep                          duration=2s
+
+    CNI101738 Check SCell activation on Egate
+
+    ${TTIpcap_Dummy}                      CNI101738 Capture TTI    TTIdir=${TTIdir}    suffix=B4_Dummy
+
+    CNI101738 Deactivate Dummy Load
+    Traced Sleep                          duration=2s
+
+    CNI101738 Check SCell deactivation on Egate
+
+    ${TTIpcap_noDummy2}                   CNI101738 Capture TTI    TTIdir=${TTIdir}    suffix=B4_noDummy2
+
+    CNI101738 UE Deregister SA UEs        UElist=${UEs_SA_list}
+
+    Dated Log New Line     ===> convert TTI trace ${TTIpcap_noDummy1}
+    ${TTIjson_noDummy1}    Convert TTI trace from pcap to others    input_file_path=${TTIpcap_noDummy1}
+    ${TTIcsv_noDummy1}     decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson_noDummy1}    num_of_events=100000
+
+    Dated Log New Line     ===> convert TTI trace ${TTIpcap_Dummy}
+    ${TTIjson_Dummy}       Convert TTI trace from pcap to others    input_file_path=${TTIpcap_Dummy}
+    ${TTIcsv_Dummy}        decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson_Dummy}    num_of_events=100000
+
+    Dated Log New Line     ===> convert TTI trace ${TTIpcap_noDummy2}
+    ${TTIjson_noDummy2}    Convert TTI trace from pcap to others    input_file_path=${TTIpcap_noDummy2}
+    ${TTIcsv_noDummy2}     decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson_noDummy2}    num_of_events=100000
+
+    ${avrgPrbNoDummy1Prim}       getCellAverageScheduledPrb      jsonPathName=${TTIjson_noDummy1}    physCellId=${physCellId_primCell1_B4}
+    ${avrgPrbNoDummy1Second}     getCellAverageScheduledPrb      jsonPathName=${TTIjson_noDummy1}    physCellId=${physCellId_secondCell1_B4}
+    ${avrgPrbDummyPrim}          getCellAverageScheduledPrb      jsonPathName=${TTIjson_Dummy}       physCellId=${physCellId_primCell1_B4}
+    ${avrgPrbDummySecond}        getCellAverageScheduledPrb      jsonPathName=${TTIjson_Dummy}       physCellId=${physCellId_secondCell1_B4}
+    ${avrgPrbNoDummy2Prim}       getCellAverageScheduledPrb      jsonPathName=${TTIjson_noDummy2}    physCellId=${physCellId_primCell1_B4}
+    ${avrgPrbNoDummy2Second}     getCellAverageScheduledPrb      jsonPathName=${TTIjson_noDummy2}    physCellId=${physCellId_secondCell1_B4}
+
+    # Checks using empirical values
+    Should Be True         0 < ${avrgPrbNoDummy1Prim} <= ${maxAvrgNbPrbLowTraffic} and ${avrgPrbNoDummy1Second} == 0
+    Should Be True         0 < ${avrgPrbNoDummy2Prim} <= ${maxAvrgNbPrbLowTraffic} and ${avrgPrbNoDummy2Second} == 0
+    Should Be True         ${avrgPrbDummyPrim} >= ${minAvrgNbPrbDummyB4Prim} and ${avrgPrbDummySecond} >= ${minAvrgNbPrbDummyB4Second}
+
+
+CNI_101738_B8_17_interaction_with_CB008701_KW
+    [Documentation]
+    ...     Conditions:     GNB is UP, 4 cells are UP and running
+    ...     Actions:        Cell setup & call setup with 4 UEs (UEs 1-4 1kbps)
+    ...     Checks:         In TTI traces: MUPAIRED status and nb of PRB scheduled
+    ...     Verdict:        All ue should be UNPAIRED and nb of PRB should be very low
+    ...     Actions:        Activation of CNI-10738 feature through Aashell command on GNB
+    ...     Checks:         In TTI traces: MUPAIRED status and nb of PRB scheduled
+    ...     Verdict:        All ue should be PAIRED and nb of PRB average should be next 273
+    ...     Actions:        Deactivation of CNI-10738 feature through Aashell command on GNB
+    ...     Checks:         In TTI traces: MUPAIRED status and nb of PRB scheduled
+    ...     Verdict:        All ue should be UNPAIRED and nb of PRB should be very low
+
+    Restart TL
+    WTS Setup                             shouldUseLua=False
+
+    ${UEs_SA_list}                        CNI101738 Define UEs    UEnb=4
+
+    CNI101738 attach UEs And Start DL     UElist=${UEs_SA_list}
+
+    # TTI capture configuration
+    ${TTIdir}                             Get TTI Trace Path    dir_suffix=CNI101738_B8
+
+    ${TTIpcap_noDummy1}                   CNI101738 Capture TTI    TTIdir=${TTIdir}    suffix=B8_noDummy1
+
+    CNI101738 Activate Dummy Load         LcrIdMask=${LcrId_cell1_TDD_B8}
+    Traced Sleep                          duration=2s
+
+    ${TTIpcap_Dummy}                      CNI101738 Capture TTI    TTIdir=${TTIdir}    suffix=B8_Dummy
+
+    CNI101738 Deactivate Dummy Load
+    Traced Sleep                          duration=2s
+
+    ${TTIpcap_noDummy2}                   CNI101738 Capture TTI    TTIdir=${TTIdir}    suffix=B8_noDummy2
+
+    CNI101738 UE Deregister SA UEs        UElist=${UEs_SA_list}
+
+    Dated Log New Line     ===> convert TTI trace ${TTIpcap_noDummy1}
+    ${TTIjson_noDummy1}    Convert TTI trace from pcap to others    input_file_path=${TTIpcap_noDummy1}
+    ${TTIcsv_noDummy1}     decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson_noDummy1}    num_of_events=100000
+
+    Dated Log New Line     ===> convert TTI trace ${TTIpcap_Dummy}
+    ${TTIjson_Dummy}       Convert TTI trace from pcap to others    input_file_path=${TTIpcap_Dummy}
+    ${TTIcsv_Dummy}        decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson_Dummy}    num_of_events=100000
+
+    Dated Log New Line     ===> convert TTI trace ${TTIpcap_noDummy2}
+    ${TTIjson_noDummy2}    Convert TTI trace from pcap to others    input_file_path=${TTIpcap_noDummy2}
+    ${TTIcsv_noDummy2}     decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson_noDummy2}    num_of_events=100000
+
+    ${nbPairedNoDummy1}    ${nbNoPairedNoDummy1}    getPairedAndNotPairedNumber      jsonPathName=${TTIjson_noDummy1}
+    ${nbPairedDummy}       ${nbNoPairedDummy}       getPairedAndNotPairedNumber      jsonPathName=${TTIjson_Dummy}
+    ${nbPairedNoDummy2}    ${nbNoPairedNoDummy2}    getPairedAndNotPairedNumber      jsonPathName=${TTIjson_noDummy2}
+
+    ${avrgPrbNoDummy1}     getCellAverageScheduledPrb      jsonPathName=${TTIjson_noDummy1}    physCellId=${physCellId_cell1_TDD_B8}
+    ${avrgPrbDummy}        getCellAverageScheduledPrb      jsonPathName=${TTIjson_Dummy}       physCellId=${physCellId_cell1_TDD_B8}
+    ${avrgPrbNoDummy2}     getCellAverageScheduledPrb      jsonPathName=${TTIjson_noDummy2}    physCellId=${physCellId_cell1_TDD_B8}
+
+    # Checks using empirical values
+    Should Be True         ${nbPairedNoDummy1} == 0 and ${nbNoPairedNoDummy1} > 1000
+    Should Be True         ${nbPairedNoDummy2} == 0 and ${nbNoPairedNoDummy2} > 1000
+    Should Be True         ${nbNoPairedDummy} == 0 and ${nbPairedDummy} > 50000
+    Should Be True         0 < ${avrgPrbNoDummy1} <= ${maxAvrgNbPrbLowTraffic} and 0 < ${avrgPrbNoDummy2} <= ${maxAvrgNbPrbLowTraffic}
+    Should Be True         ${avrgPrbDummy} >= ${minAvrgNbPrbDummyB8}
+
+
+###########  CNI101738 KWs  ###########
+CNI101738 Define UEs
+    [Arguments]            ${UEnb}=1
+    ${UE_1}                Copy Dictionary    ${BASIC_UE_SA_TDD}
+    ${UEs_list}            Create List        ${UE_1}
+
+    FOR    ${index}    IN RANGE    1    ${UEnb}
+        ${UE}              Copy Dictionary    ${BASIC_UE_SA_TDD}
+        ${UE.ue}           Evaluate           ${UE_1.ue}+${index}
+
+        Append To List     ${UEs_list}        ${UE}
+    END
+    Dated Log new line     ====> UEs list: ${UEs_list}
+    [Return]               ${UEs_list}
+
+
+CNI101738 attach UEs And Start DL
+    [Arguments]            ${UElist}
+    FOR    ${UEitem}    IN     @{UElist}
+        Dated Log new line      ====> Attach UE ${UEitem.ue} and start traffic
+        ${RNTI}                 UE Register        ue=${UEitem.ue}
+        Launch PDU Session      ue=${UEitem.ue}    pdu=${UEitem.pdu}    gw=${UEitem.ue}
+        Set To Dictionary       ${UEitem}    c_rnti    ${RNTI}
+
+        Traffic UE DL           ueSetting=${UEitem}    throughput=1    deviation=20    duration=2s    shouldBeStop=${False}
+    END
+
+
+CNI101738 UE Deregister SA UEs
+    [Arguments]            ${UElist}
+    FOR    ${UEitem}    IN     @{UElist}
+        Dated Log new line      ====> Detach UE ${UEitem.ue}
+        Traffic Stop            ueSetting=${UEitem}    dir=dl
+        UE Deregister           id=${UEitem.ue}
+    END
+
+
+CNI101738 Activate Dummy Load
+    [Documentation]
+    ...     Activate dummy load via aaShell command
+    ...       LcrIdMask: LCR Id mask of the target cell(s) (0xFFFF: activated on all cells)
+    ...       RntiMask: RNTI mask of the targeted UE(s) (0xFFFF: activated for all UEs)
+    [Arguments]            ${LcrIdMask}=0xFFFF    ${RntiMask}=0xFFFF
+    Dated Log new line                 ====> Activate dummy load on all UEs
+    ${LcrIdAndRnti}                    Evaluate                           ${LcrIdMask}*65536+${RntiMask}
+    Set Rad Parameter Using Aashell    rad_param_value=1000000            rad_param=${rdDummyLoadDlBsr}
+    Set Rad Parameter Using Aashell    rad_param_value=${LcrIdAndRnti}    rad_param=${rdDummyLoadDlLcrIdAndRnti}
+    Set Rad Parameter Using Aashell    rad_param_value=1                  rad_param=${rdEnableDummyLoadDl}
+
+
+CNI101738 Deactivate Dummy Load
+    [Documentation]
+    ...     Deactivate dummy load via aaShell command
+    Dated Log new line                 ====> Deactivate dummy load
+    Set Rad Parameter Using Aashell    rad_param_value=0             rad_param=${rdEnableDummyLoadDl}
+
+
+CNI101738 Check SCell activation on Egate
+    # Flush egate console
+    Flush Egate Console Buffer
+
+    ${cmd}                              Catenate
+    ...                                 cd ${tl.core.dir_path};
+    ...                                 grep "SCellIndex 1 activated successfully at airphone" egate_console.log | tail -1
+    ${output}                           SSH Wait For Connect and Cmd
+    ...                                 command=${cmd}
+    ...                                 host=${HOST_EPCSIM}
+
+    should contain                      ${output}      SCellIndex 1 activated successfully at airphone
+    Dated Log New Line                  ====== SCell activation OK ======
+
+
+CNI101738 Check SCell deactivation on Egate
+    # Flush egate console
+    Flush Egate Console Buffer
+
+    ${cmd}                              Catenate
+    ...                                 cd ${tl.core.dir_path};
+    ...                                 grep "SCellIndex 1 deactivated successfully at airphone" egate_console.log | tail -1
+    ${output}                           SSH Wait For Connect and Cmd
+    ...                                 command=${cmd}
+    ...                                 host=${HOST_EPCSIM}
+
+    should contain                      ${output}      SCellIndex 1 deactivated successfully at airphone
+    Dated Log New Line                  ====== SCell deactivation OK ======
+
+
+CNI101738 Capture TTI
+    [Arguments]            ${TTIdir}    ${suffix}=${EMPTY}    ${Duration}=5s
+    Dated Log New Line                    ===> Capture TTI traces
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+
+    Traced Sleep                          duration=${Duration}    msg=TTI capture
+
+    ${TTIpcap}                            Stop TTI Traces in Streaming mode    tti_trace_path=${TTIdir}    tti_trace_filename=TTI_${suffix}
+    [Return]                              ${TTIpcap}

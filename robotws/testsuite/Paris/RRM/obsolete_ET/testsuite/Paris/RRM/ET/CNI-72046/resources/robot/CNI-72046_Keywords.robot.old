@@ -1,0 +1,102 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for CNI-72046 CNI tests cases
+...
+...               Automation author           : yann.ah.herve@nokia.com / emmanuel.diatta@noaki.com
+...               Automation contact          : davide.bacchiega@nokia.com
+...               Creation Date               : 8-Dec-2021
+...               Modified Date               : 
+...               Last Modified by            : yann.ah.herve@nokia.com
+
+
+Resource          ../../../../../../Paris/resources/SWENG/robot/Container.robot
+
+Library           json      
+
+*** Variables ***
+
+
+*** Keywords ***
+
+Get L2PS Resources Usage
+        [Documentation]                 KW used to send the getResourcesUsage command to CPRT through AaShell
+        ...                             and return values related to L2PS: 
+        ...                             nbOfFreeCRNTI, dlCellResources/nbOfHarqPoolFree, ulCellResources/nbOfHarqPoolFree
+        ...                             Output: Dictonary with key/value corresponding to AsShell output of the wanted cells group.
+        ...                             e.g.: 
+        ...                             This part get through each line of the reported output. Here is an example:
+        ...                              ...
+        ...                               "l2resource": {
+        ...                               "l2psList": {
+        ...                               "l2psInfo": [
+        ...                               {
+        ...                                "l2psPoolId": 1,
+        ...                                "cellGroupResources": [
+        ...                                 {
+        ...                                  "nrCellGrpId": 0,
+        ...                                  "cellResources": [
+        ...                                   {
+        ...                                    "nrCellIdentity": "16385",
+        ...                                    "dlCellResources": {
+        ...                                     "nbOfHarqPoolFree": 400
+        ...                                    },
+        ...                                    "ulCellResources": {
+        ...                                     "nbOfHarqPoolFree": 400
+        ...                                    }
+        ...                                   }
+        ...                                  ],
+        ...                                  "nbOfFreeCRNTI": 1681
+        ...                                 }
+        ...                                ]
+        ...                               }
+        ...                               ]
+        ...                               },
+        [Arguments]                     ${cell_index}=0
+
+        ${nodeCPRT}                     Get Node                CPRT
+        ${nodeId}=                      Get Regexp Matches      '${nodeCPRT}'         NodeId=(......)       1
+
+        # Run commnand through AaShell 
+        ${output}                       SSH Wait For Connect and Exec
+        ...                             command=echo "getResourcesUsage @Cprt #${nodeId}[0]" | nc 0 15007
+        ...                             host=${GNB_DU.sys[0].M}
+
+        # Remove unexpected "AaShell> " strings from output
+        ${clean_output}                 Remove String           ${output}               AaShell>
+
+        # Move to robot dictionary
+        ${source_data}=                 Evaluate                json.loads('''${clean_output}''')    json
+        #Dated Log                       Source data: ${source_data} 
+
+        ${l2ps_data}=                   Set Variable           ${source_data}[l2resource][l2psList][l2psInfo]
+        #Dated Log                       L2PS data: ${l2ps_data} 
+        # Look for wanted cell group index
+        ${num_items}                    Get Length              ${l2ps_data}
+        FOR                             ${i}                    IN RANGE                ${num_items}
+                ${nrCellGrp}            Set Variable            ${l2ps_data}[${i}][cellGroupResources][0][nrCellGrpId]
+                Exit For Loop If        ${nrCellGrp}==${cell_index} 
+        END           
+
+        ${nbFreeRnti}                   Set Variable
+        ...                             ${l2ps_data}[${i}][cellGroupResources][0][nbOfFreeCRNTI]
+        ${nbFreeDlHarq}                 Set Variable
+        ...                             ${l2ps_data}[${i}][cellGroupResources][0][cellResources][0][dlCellResources][nbOfHarqPoolFree]
+        ${nbFreeUlHarq}                 Set Variable
+        ...                             ${l2ps_data}[${i}][cellGroupResources][0][cellResources][0][ulCellResources][nbOfHarqPoolFree]
+        &{l2ps_cell_resource}           Create Dictionary        nbOfFreeCRNTI=${nbFreeRnti}
+        ...                             DlnbOfHarqPoolFree=${nbFreeDlHarq}
+        ...                             UlnbOfHarqPoolFree=${nbFreeUlHarq}
+
+        Dated Log                       L2PS cell resource for nrCellGrp ${cell_index} is: ${l2ps_cell_resource}
+
+        [Return]                        ${l2ps_cell_resource}
+
+
+Test Teardown for CNI72046
+        [Documentation]    Perform needed actions at the end of a test case
+        Dated log                       Test teardown : start
+
+        # Stop Sherpa if needed
+        Run Keyword If                  ${enable_sherpa} == ${True}             Sherpa.Deactivate Sherpa and Stop Collect
+        # "Test Teardown" KW from Setup.robot
+        Test Teardown
+        Dated log                       Test teardown : end

@@ -1,0 +1,36 @@
+*** Settings ***
+Documentation
+...                 author: David Jollivet
+...                 contact: david.jollivet@nokia.com
+...                 CB006627: SyncE Assisted Holdover
+
+
+*** Variables ***
+# Margin for assisted holdver duration (+/-)
+${Margin}=              15 min
+
+# OAM 5GNB IP
+${bts_addr}=            ${tl.gnbs[0].cu.oam_http_connection_details.addr}
+${gnb_mrbts}=           MRBTS-${tl.gnbs[0].dus[0].instance_id}
+
+# OAM LTE IP
+${enb_addr}=            ${tl.gnbs[1].cu.oam_http_connection_details.addr}
+${enb_mrbts}=           MRBTS-${tl.gnbs[1].dus[0].instance_id}
+
+# Result to save logs
+${result_path}=         /home/localuser/robot_temporary
+
+# 5G VM
+${5g_vm_addr}=          ${tl.test_pc.default_ssh_connection_details.addr}
+${5g_vm_username}=      ${tl.test_pc.default_ssh_connection_details.username}
+${5g_vm_password}=      ${tl.test_pc.default_ssh_connection_details.password}
+
+# 4G VM
+${4g_vm_addr}=          ${tl.test_pcs[1].default_ssh_connection_details.addr}
+${4g_vm_username}=      ${tl.test_pcs[1].default_ssh_connection_details.username}
+${4g_vm_password}=      ${tl.test_pcs[1].default_ssh_connection_details.password}
+
+# RRH VM
+# ${rrh_vm_addr}=    ${test_vm_rrh.default_ssh_connection_details.addr}
+# ${rrh_vm_username}=    ${test_vm_rrh.default_ssh_connection_details.username}
+# ${rrh_vm_password}=    ${test_vm_rrh.default_ssh_connection_details.password}

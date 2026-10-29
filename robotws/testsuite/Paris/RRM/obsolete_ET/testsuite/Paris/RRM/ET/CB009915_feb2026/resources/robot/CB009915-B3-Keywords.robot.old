@@ -1,0 +1,365 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   Configuration related keywords for feature CB009915-A
+...               Prerequisite : commissioning is managed automatically and basic_setup.cfg must be properly configured
+...               Scope : keywords for sub-feature
+#
+...               Test Case Scenario author   :
+...               Creation Date               : 2023-08-11
+...               Modified Date               : 2024-03-27
+#
+...               Last Modified by            : loic.marzin@nokia.com
+...                                             StartTTILogs moved after CellSetup or else OAM ErrorCode69
+...               Version    Date      Author                                Notes
+...               0.1        FB2316    vincent.boulet@nokia.com              Creation robot
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+Resource                                        ./CB009915-Common-Keywords.robot
+#Library                                         Dialogs
+
+*** Variables ***
+${config_9915_B3_CA}                   testsuite/Paris/RRM/ET/CB009915/resources/config/Delta_scf_CB009915_B3_CA.json
+${cb009915_B3_CA_constraints}          testsuite/Paris/RRM/ET/CB009915/resources/config/CB009915_B3_CA_constraints.csv
+
+${gnb_alias}                                 gnb_under_test
+
+&{dlData_csiRsSendReq_check_9915_A}             subcellid=0    sfn=0    slot=0    rnti=0    startPrb=0    numOfPrb=0    trsInfo=0
+
+# coresetDomainFreq definition for nrcell 1 - PCell:
+# 9223363240761753600 => 7FFF F800 0000 0000 => 0111 1111 1111 1111 1111 1000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000
+# 20 bits are set to 1 (20* 6 PRBs) then 120 PRBs are used for coreset and, 120 is the size defined for the coresetDedicated of this cell
+${coresetFreqDomain_9915_B3_PCell}                9223363240761753600
+
+# coresetDomainFreq definition for nrcell 1 - PCell:
+# 9223363240761753600 => 7FFF F800 0000 0000 => 0111 1111 1111 1111 1111 1000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000
+# 20 bits are set to 1 (20* 6 PRBs) then 120 PRBs are used for coreset and, 120 is the size defined for the coresetDedicated of this cell
+${coresetFreqDomain_9915_B3_SCell}                18446726481523507200
+
+&{dlData_pdcchSendReq_coresetFreqDomain_check_9915_A_6_C1}    subcellid=0    sfn=0    slot=0    rnti=0    startCce=0    coresetFreqDomain=0
+
+&{dlData_pdschSendReq_check_9915_A}             subcellid=0    sfn=0    slot=0    rnti=0    startPrb=0    numOfPrb=0    rbgSize=0    rbgSizeFirst=0
+...                                             mcs=0    numOfLayers=0
+
+&{ulData_prachReceiveReq_check_9915_A}          subcellid=0    sfn=0    slot=0    rnti=0    prachPrbOffset=0
+
+
+&{ulData_puschReceiveReq_check_9915_A}          subcellid=0    sfn=0    slot=0    rnti=0    startPrb=0    numOfPrb=0    mcs=0    numOfLayers=0
+...                                             pairedUe=0
+
+
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+*** Keywords ***
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Suite Teardown CB009915-B3
+    [Documentation]
+    ...     Conditions:     it needs no conditions
+    ...     Actions:        it restores the files when the test is finished
+    ...     Checks:         it needs no checks
+    ...     Verdict:        suite teardown is passed
+
+    Restore Files
+
+    # Saving Snapshot as debug data
+    ##agf Dated Log                                   ===> get snapshot just if requested and not already generated after failure...
+    # ${snapshot_path}=                           Set Variable    ${LOG_PATH}/SNAPSHOT_GNB*.zip
+    # ${status}   ${ret}   Run Keyword And Ignore Error    OperatingSystem.File Should Exist    ${snapshot_path}
+    # Run Keyword If   '${status}' == 'PASS'      Dated Log    ===> ${snapshot_path} is already present
+    # ...         ELSE IF    ${AUTO_SAVE_DEBUG_DATA}    Setup.Get Snapshot
+
+
+
+    ####agf test avec OAM Restore File
+    OAM Restore File       setupPath=${scf_suite_setup_backup}
+
+    Dated Log                                   ===> restore file is ${scf_suite_setup_backup}
+    ${timestamp_suite_teardown}=                DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    Set Suite Variable                          ${timestamp_suite_teardown}
+    Dated Log New Line                          ===> RUNTIME: ${timestamp_suite_setup} -> ${timestamp_suite_teardown}
+
+Reconfigure SCF via Json-initial
+    sbts_coam.connect_to          name=${gnb_alias}
+    Dated Log New Line          delta_file=${config_9915_B3_CA}
+    # Apply delta scf
+    coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${config_9915_B3_CA}
+    ...                           connection=${gnb_alias}
+    #dialogs.Execute Manual Step       wait keyboard
+    OAM wait available
+    sbts_coam.teardown            connection=${gnb_alias}
+
+    Restart TL
+    OAM Get SCF File                            file=SCF_updated_for_testing-initial.xml
+
+Check ulData puschReceiveReq CA
+    [Documentation]
+    ...     Conditions:
+    ...     Actions:
+    ...     Checks:
+    ...     Verdict:
+    [Arguments]             ${pdml_file}        # input filename for analysing
+    ...                     ${field_values}     # input keys and values to filter before checking
+    ...                     ${subcellid}
+    ...                     ${prb_reserved}     # information from PUCCH configuration tool
+    ...                     ${packet_end}=-1    # -1 is the default value for parsing all packets
+    ...                     ${packet_name}=uldata_puschreceivereq
+    ...                     ${nb_prb_blanking_low}=0
+    ...                     ${nb_prb_blanking_high}=0
+    ...                     ${total_prb}=273
+    ...                     ${is_nb_prb_max_triggered}=${True}
+
+    ${msg_field}=                               Set Variable    @{field_values.keys()}
+    Dated Log New Line                          ===> check ulData puschReceiveReq if numOfPrbMax is reached and prb allocated are in non-blanking
+    Dated Log                                   ===> from ${pdml_file} for keys ${msg_field} and subcellid=${subcellid}
+    @{listPacketMatch}                          Get Packet Match List    pdmlFile=${pdml_file}
+        ...                                                         packetName=${packet_name}
+        ...                                                         pathList=@{msg_field}
+        ...                                                         startPacket=${1}
+        ...                                                         endPacket=${${packet_end}}    #vbo#check done among the first packet_end packets
+        ...                                                         filter='subcellid$'==${subcellid}
+    ${nbOfPacketFound}=                         get length    ${listPacketMatch}
+    Dated Log                                   ===> number of packet ${packet_name} with subcellid=${subcellid} is ${nbOfPacketFound}
+    Should Be True                              ${nbOfPacketFound} != 0
+
+    ${nb_match}                                 Set Variable    0
+    ${first_prb_non_blanking}=                  Set Variable    ${nb_prb_blanking_low}
+    ${last_prb_non_blanking}=                   Evaluate    ${total_prb} - ${nb_prb_blanking_high} - 1
+    ${nb_prb_max}=                              Evaluate    ${total_prb} - ${nb_prb_blanking_low} - ${nb_prb_blanking_high} - ${prb_reserved}
+
+    Dated Log    ===> blanking configuration is low edge=${nb_prb_blanking_low} and high edge=${nb_prb_blanking_high} with subcellid=${subcellid}
+    Dated Log    ===> max. nbOfPrb=${nb_prb_max} and ${first_prb_non_blanking} <= possible non-blanking prb <= ${last_prb_non_blanking}
+
+    FOR    ${current_packet}    IN    @{listPacketMatch}
+        ${packet_str}=                          Packet Match to Str    packetMatch=${current_packet}    fields=${msg_field}
+        ${packet_dict}=                         Create Packet Dictionary    packet_str=${packet_str}
+        ${sfn_found}=                           Get From Dictionary    ${packet_dict}    sfn
+        ${slot_found}=                          Get From Dictionary    ${packet_dict}    slot
+        ${rnti_found}=                          Get From Dictionary    ${packet_dict}    rnti
+        ${start_prb_found}=                     Get From Dictionary    ${packet_dict}    startPrb
+        ${nb_prb_found}=                        Get From Dictionary    ${packet_dict}    numOfPrb
+        ${num_layers_found}=                    Get From Dictionary    ${packet_dict}    numOfLayers
+        ${nb_match}=    Run Keyword If    ${rnti_found} != 65535 and ${nb_prb_found} == ${nb_prb_max}
+        ...                                     Evaluate    ${nb_match} + 1
+        ...                         ELSE        Evaluate    ${nb_match} + 0
+
+        # nb_prb should not be greater than nb_prb_max
+        ${check_result}=    Run Keyword If    ${nb_prb_found} > ${nb_prb_max}    Run Keywords    Set Variable    ${False}
+        ...    AND    Dated Log    ===> failure is detected because numOfPrb=${nb_prb_found} should not be > ${nb_prb_max}
+        ...    AND    Dated Log    ===> for packet: ${packet_str}
+        ...                             ELSE    Set Variable    ${True}
+        Should Be True                          ${check_result}
+
+        # first_prb should not be into blanking low area
+        ${check_result}=    Run Keyword If    ${start_prb_found} < ${first_prb_non_blanking}    Run Keywords    Set Variable    ${False}
+        ...    AND    Dated Log    ===> failure is detected because startPrb=${start_prb_found} should not be < ${first_prb_non_blanking}
+        ...    AND    Dated Log    ===> for packet: ${packet_str}
+        ...                             ELSE    Set Variable    ${True}
+        Should Be True                          ${check_result}
+
+        ${start_prb_found_int}=                 Convert To Integer    ${start_prb_found}
+        ${nb_prb_found_int}=                    Convert To Integer    ${nb_prb_found}
+        ${last_prb_found}=                      Evaluate    ${start_prb_found_int} + ${nb_prb_found_int} - 1
+        # last_prb should not be into blanking high area
+        ${check_result}=    Run Keyword If    ${last_prb_found} > ${last_prb_non_blanking}    Run Keywords    Set Variable    ${False}
+        ...    AND    Dated Log    ===> failure is detected because startPrb+numOfPrb-1 should not be > ${last_prb_non_blanking}
+        ...    AND    Dated Log    ===> for packet: ${packet_str}
+        ...                             ELSE    Set Variable    ${True}
+        Should Be True                          ${check_result}
+    END
+
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+CB009915_B3_7_NSA
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${config_blanking} ${} ${is_capture} ${param} ${test_name}
+    ...     Actions:        it performs the call setup for multi-ues with traffic on different cells
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        calls for multi ues with traffic and PRB blanking are passed
+    [Arguments]             ${config_blanking}
+    ...                     ${list_ues}
+    ...                     ${is_capture}
+    ...                     ${param}
+    ...                     ${test_name}
+
+    Init Sequence                               ${param}
+    Dated Log New Line                          ===> test name is ${test_name}
+    Run Keyword If    ${SUITE_DEBUG_MODE}       Set Debug Mode
+    ###agf  Step                                        Set RAD Parameters for CB009915
+    Run Keyword If    ${param.act_blanking} == ${True}    Dated Log New Line    ===> blanking variable is enabled
+    ...         ELSE                            Dated Log New Line    ===> BLANKING VARIABLE is disabled
+
+    Apply Custom Config
+    ...                                         iphy=${CURDIR}/../../config/custom/CB009915_B_B3/iphy_CA_B3_7.xml
+    ...                                         cfg=${CURDIR}/../../config/custom/CB009915_B_B3/basic_setup_CA_B3_7.cfg
+    ...                                         rad_params=${EMPTY}
+
+
+    Reconfigure SCF via Json-initial
+
+
+    # Configure new ue's dynamically
+    ${initial_nb_ue}=                           get length    ${list_ues}
+    Run Keyword If    ${initial_nb_ue} < ${param.total_nb_ue}    Configure New Ues    ${list_ues}
+    ...                                                             ${initial_nb_ue}
+    ...                                                             ${param.total_nb_ue}
+    ...                                                             ${dict_settings_ue_default}
+    # Configure the current setting for all the ue's
+    ${param.total_nb_ue}=                       get length    ${list_ues}
+    Dated Log New Line                          ===> configure the setting for all the ${param.total_nb_ue} ue's
+
+    Dated Log New Line                          ===> ue's list is ${list_ues}
+    ###agf Check Multi Ues Setting In List             list_multi_ue=${list_ues}
+
+    ###agf  Step  Traced Sleep                                duration=15s    msg=Wtsemu system start-up to give radio modules time to start up
+
+    # Start SYSLOG capture during call setup
+    ${syslog}=                                  SYSLOG Start    host=${GNB_DU.sys[0].M}    name=${test_name}_call_setup
+
+    # Capture TTI traces during call setup
+    ##Start TTI Logs
+
+    # Setup wtsemu NSA for all the ue's
+    Step                                        CallSetup.WTS Setup    shouldUseLua=${False}
+
+    # Capture TTI traces during call setup
+    Start TTI Logs
+
+    # Start X2
+    Traced Sleep                                duration=15s    msg=setting the X2 link as WA to avoid degradation on cells
+    Step                                        CallSetup.WTS Set X2 Link
+
+    # UE register for all the ue's
+    FOR    ${current_elem}    IN    @{list_ues}
+        Step                               UE Register                     ue=${current_elem.ue}
+        Step                               Launch PDU Session              ue=${current_elem.ue}    pdu=${current_elem.pdu}    gw=${current_elem.ue}
+    END
+
+    Step                                   Stop and Get TTI Logs    trace_name=${test_name}_call_setup
+    Step                                   SYSLOG Stop    syslog=${syslog}
+
+
+    # Start SYSLOG capture during traffic establishment
+    ${syslog}=    Run Keyword If    not ${CALL_SETUP_ONLY}    SYSLOG Start    host=${GNB_DU.sys[0].M}    name=${test_name}_traffic
+
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{list_ues}
+        Step                             wtsemu.trf_data_start     ue=${current_elem.ue}   pdu=1 qfi=1  trf_id=1 mbps=150 dir=dl
+        Step                             wtsemu.trf_data_start     ue=${current_elem.ue}   pdu=1 qfi=1  trf_id=2 mbps=150 dir=dl
+        Step                             wtsemu.trf_data_start     ue=${current_elem.ue}   pdu=1 qfi=1  trf_id=3 mbps=150 dir=dl
+        Step                             wtsemu.trf_data_start     ue=${current_elem.ue}   pdu=1 qfi=1  trf_id=4 mbps=150 dir=ul
+        Step                             wtsemu.trf_data_start     ue=${current_elem.ue}   pdu=1 qfi=1  trf_id=6 mbps=150 dir=ul
+    END
+
+    Run Keyword If    not ${CALL_SETUP_ONLY}    Run Keywords    Captures Init
+    ...    AND                                  Captures Start    action_core=${is_capture.is_capture_core}
+    ...                                                             action_cprt=${is_capture.is_capture_cprt}
+    ...                                                             action_l1l2=${is_capture.is_capture_l1l2}
+    ...    AND                                  Traced Sleep    duration=8s    msg=call with traffic for L1L2 trace
+    ...    AND    Step                          Captures Stop    action_core=${is_capture.is_capture_core}
+    ...                                                             action_cprt=${is_capture.is_capture_cprt}
+    ...                                                             action_l1l2=${is_capture.is_capture_l1l2}
+
+    ${list_l1l2_messages_filters}=              CB009915 Create Filter Message List
+    Run Keyword If    not ${CALL_SETUP_ONLY} and ${is_capture.is_capture_l1l2}    Run Keywords    Step    CB009915 Analyze pcap and pdml
+    ...                                                             pcap_file=${capture_l1l2.path}
+    ...                                                             list_message_filter=${list_l1l2_messages_filters}
+    # dlData pdcchSendReq PCell
+    ...    AND    Step                          Check dlData pdcchSendReq coresetFreqDomain
+    ...                                             pdml_file=${list_l1l2_messages_filters[${pos_filter_dldata_pdcchsendreq}].pdml_file_result}
+    ...                                                             field_values=${dlData_pdcchSendReq_coresetFreqDomain_check_9915_A_6_C1}
+    ...                                                             subcellid=0
+    ...                                                             packet_end=512    #-1
+    ...                                                             coresetFreqDomain=${coresetFreqDomain_9915_B3_PCell}
+    ...                                                             coresetFreqDomain_0xFFFF=133693440
+
+    # dlData pdcchSendReq SCell
+    ...    AND    Step                          Check dlData pdcchSendReq coresetFreqDomain
+    ...                                             pdml_file=${list_l1l2_messages_filters[${pos_filter_dldata_pdcchsendreq}].pdml_file_result}
+    ...                                                             field_values=${dlData_pdcchSendReq_coresetFreqDomain_check_9915_A_6_C1}
+    ...                                                             subcellid=1
+    ...                                                             packet_end=512    #-1
+    ...                                                             coresetFreqDomain=${coresetFreqDomain_9915_B3_SCell}
+    ...                                                             coresetFreqDomain_0xFFFF=70093866270720
+
+    # dlData pdschSendReq PCell
+    ...    AND    Step                          Check dlData pdschSendReq
+    ...                                         pdml_file=${list_l1l2_messages_filters[${pos_filter_dldata_pdschsendreq}].pdml_file_result}
+    ...                                                             field_values=${dlData_pdschSendReq_check_9915_A}
+    ...                                                             subcellid=0
+    ...                                                             packet_end=512    #-1
+    ...                                                             nb_prb_blanking_low=5
+    ...                                                             nb_prb_blanking_high=0
+    ...                                                             total_prb=273
+    ...                                                             rbgsize=16
+
+    # dlData pdschSendReq SCell
+    ...    AND    Step                          Check dlData pdschSendReq
+    ...                                         pdml_file=${list_l1l2_messages_filters[${pos_filter_dldata_pdschsendreq}].pdml_file_result}
+    ...                                                             field_values=${dlData_pdschSendReq_check_9915_A}
+    ...                                                             subcellid=1
+    ...                                                             packet_end=512    #-1
+    ...                                                             nb_prb_blanking_low=0
+    ...                                                             nb_prb_blanking_high=12
+    ...                                                             total_prb=273
+    ...                                                             rbgsize=16
+
+
+    # no check on ulData pucchReceiveReq because too much ulData puschReceiveReq on ul slots
+    # ulData puschReceiveReq
+    ...    AND    Step                          Check ulData puschReceiveReq CA
+    ...                                         pdml_file=${list_l1l2_messages_filters[${pos_filter_uldata_puschreceivereq}].pdml_file_result}
+    ...                                                             field_values=${ulData_puschReceiveReq_check_9915_A}
+    ...                                                             subcellid=0
+    ...                                                             packet_end=512    #-1
+    ...                                                             nb_prb_blanking_low=5
+    ...                                                             nb_prb_blanking_high=0
+    ...                                                             total_prb=273
+    ...                                                             prb_reserved=20
+    ...                                                             is_nb_prb_max_triggered=${True}
+    # no checks on ulData srsReceiveReq
+
+    # Capture TTI traces during traffic for verification
+
+
+    ${zoi}                          ZOI Start
+    ${zoi_end_remain}=              ZOI Remaining Sec           ${zoi}
+    ${start_loop_remaining}=        Evaluate                    ${zoi_end_remain} - ${GP_DEF}
+
+
+        # To be sure to have a GP fully filled with the same events inside every loop and avoid changing KPIs/counters:
+        # If ZOI start is T0, ZOI end is T0 + ${GUARD_DELAY_DEF} + ${GP_DEF} + ${PM_AVAIL_DELAY_DEF}
+        # So, test is started at the beginning of the GP before ZOI end, so:
+        # ZOI End - ${GP_DEF}
+        # Ex. 1: ZOI start is 10h02 => ZOI End is 10h02 + 40s (GUARD_DELAY_DEF) + 1 GP + 1 mn (PM_AVAIL_DELAY_DEF)
+        #        => Time for next GP for ZOI End is 10h11, so test is started at 10h06 and KPIs retrieved at 10h11
+        # Ex. 2: ZOI start is 10h14:40s => ZOI End is 10h14:40 + 40s (GUARD_DELAY_DEF) + 1 GP + 1 mn (PM_AVAIL_DELAY_DEF)
+        #        => Time for next GP for ZOI End is 10h26 as gaurd delay excedd thenext GP frontier,
+        #        so test is started at 10h21 and KPIs retrieved at 10h26
+        # And, test duration must not exceed 1 GP - 1 mn per loop
+
+    Traced Sleep                    ${start_loop_remaining} seconds
+    ...                             msg=before starting scenario
+
+    Dated Log New Line              **** Waiting for end of ZOI ****
+    ZOI Wait End                     zoi=${zoi}
+
+    ${pm_path}                      Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+    Step                            KPI Evaluate                    pmFile=${pm_path}
+    ...                             constraintsFile=${cb009915_B3_CA_constraints}
+    ...                             failOnError=${True}
+
+    # Capture TTI traces during traffic for verification
+    Run Keyword If    not ${CALL_SETUP_ONLY}    Run Keywords    Start TTI Logs
+    ...    AND                                  Traced Sleep    duration=8s    msg=call with traffic for TTI trace
+    ...    AND    Step                          Stop and Get TTI Logs    trace_name=${test_name}_traffic
+
+
+
+    Run Keyword If    not ${CALL_SETUP_ONLY}    Step    SYSLOG Stop    syslog=${syslog}
+
+    [Teardown]      Display diagnosis
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------

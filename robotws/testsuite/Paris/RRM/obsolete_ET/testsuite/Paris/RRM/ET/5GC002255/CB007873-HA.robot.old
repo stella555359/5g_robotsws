@@ -1,0 +1,94 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  verification of CB007873-HA feature in the case of FDD+TDD Classical Fullstack SANSA
+...               Prerequisite : GNB and Airphone should be installed
+...               Scope : Reach a cell setup state, and perfom basic tests : 
+...                       x2 setup, Ue_attach, Sgnbaddition ,  ...
+...                       
+...
+...               Test Case Scenario author   : loic.marzin@nokia.com
+...               Test Case Scenario contact  : loic.marzin@nokia.com
+...               Test Case automation author : loic.marzin@nokia.com
+...               Test Case automation contact: loic.marzin@nokia.com
+...               Creation Date               : 20-August-2021
+...               Modified Date               : 18-August-2023
+...               Last Modified by            : loic.marzin@nokia.com
+...                    18/08/2023        Refactoring due to BOO_AP_LOO Migration
+
+
+
+Resource          ../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+Resource          robot/CB007873_Keywords.robot
+Variables         ../../../resources/SWENG/python/ReadConfig.py
+
+
+
+Force Tags        CA_5G_SW_FR-Villarceaux   RRM
+...               PY36
+...               master_classicalbts_all
+...               CONFIGURED    5G_RAN    RAN_5G
+
+Suite Setup       CB007873_Keywords.setup 7873
+Suite Teardown    CB007873_Keywords.teardown 7873
+
+
+*** Variables ***
+${TestSharkTool}      MC_SHARK
+
+# variable set to ${True} to automatically save SOS report and OAM snapshot
+# (by default, these information are saved only if a test is failed)
+${ForceDebugDataCollection}    ${False}
+#${ForceDebugDataCollection}    ${True}
+
+# UE Profile for call Setup
+&{UE_11}                            ue=11                                   profile=1
+...                                 bearer=2                                testMode=False
+...                                 pdu=${None}                             qfi=${None}             type=l3
+...                                 trf_id=1                                burst=${None}
+...                                 target_gnb=2                            target_cells=2
+...                                 throughput=350                          testModeValue=csi_report_override
+...                                 maxThroughputPerTransfer=175            trfDuration=300s
+...                                 deviation=25                            throughputul=15          period_ms=${None}
+
+&{Dico_UE}  UE_11=${UE_11}
+
+
+&{HA}
+...                                 trfDuration=300s
+...                                 deviation=25
+
+*** Test Cases ***
+
+[1][1.0] CB007873_5G_HA_5_ScellActivation_BufferBased_DL_UL_1_UE_CA
+    [Tags]                          CRT        CLOUD_5G_I_BOO_AP_LOO
+	...                             VARIANT    VARIANT_SANSA_FS_ECPRI_CMWV_FDD+TDD
+    ...                             SBTS00
+    [Documentation]                 Carrier Aggregation CB007873 Test HA-5
+    CB007873-HA-5        ${UE_11}
+
+*** Keywords ***
+
+CB007873-HA-5
+    [Documentation]     start a multiUE set up with UE list done in parameter
+    ...                 Cell_setup NSA 2 cells (1 FDD + 1 TDD)
+    ...                 All ue register are done in one step according ${UEList} list order
+    ...                 All PDU Session are set  in one step according ${UEList} list order
+    ...                 All traffic are stated   in one step according ${UEList} list order
+
+    [Arguments]                     ${param}
+	
+    Init Sequence                   ${param}
+    Critical Step    Restart TL
+    Critical Step    Cell_Setup_NSA_2_Cells_1FDD_1TDD
+    Step             4G_Attach_FDD_CA_Capable
+    Step             SG_Attach_FDD_CA_Capable                             depends=4G_Attach_FDD_CA_Capable
+    Step             Check_sCellToAddModList_onegateLogs                  depends=SG_Attach_FDD_CA_Capable 
+    Step             Traffic_DL_UL_NSA_FDD_CA_Capable                     depends=Check_sCellToAddModList_onegateLogs
+	[Teardown]       Teardown CB007873_HA-5
+
+Teardown CB007873_HA-5
+    [Documentation]    collect Sos Report if a TC is failed or if the user need traces ForceDebugDataCollection
+    Dated log                       Teardown for CB007873_HA-5
+    Run Keyword If                  ${ForceDebugDataCollection}   Get Sos Report
+    [Teardown]                      GenericTest.Display diagnosis
+    

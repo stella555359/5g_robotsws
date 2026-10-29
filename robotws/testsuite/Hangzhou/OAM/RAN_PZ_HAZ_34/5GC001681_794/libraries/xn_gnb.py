@@ -1,0 +1,6 @@
+xn_gnb_ip = "10.57.236.226"
+xn_gnb_username = "Nemuadmin"
+xn_gnb_password = "nemuuser"
+xn_gnb_btsid = "91"
+xn_gnb_instanceid = "91"
+xn_gnb_Ncell_id = "1"

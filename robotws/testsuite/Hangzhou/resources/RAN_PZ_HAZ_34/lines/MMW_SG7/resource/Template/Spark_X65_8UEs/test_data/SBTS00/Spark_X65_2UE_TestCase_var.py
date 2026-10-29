@@ -1,0 +1,29 @@
+from robot.libraries.BuiltIn import BuiltIn
+tl = BuiltIn().get_variable_value("${tl}")
+gNbId = tl.gnbs[0].instance_id
+
+
+PARAMS_FOR_OTHERS = [
+  "NRBTS:drbInactivityTimerSA=60",
+  "MRBTS-1/NRBTS-1/NRPMRNL-1:miNrRelReportCu=5min"
+]
+
+PARAMS_IN_SCF = [
+  f"ARAMS_FOR_OTHERS"
+]
+
+NRRCC_MEAS_A2_REC = "NRRCC:M55124C02002"
+NRPPA_MEASINIT_REQ_D = "NRRCC:M55125C00024"
+NRPPA_MEASINIT_RESP_D = "NRRCC:M55125C00025"
+NRPPA_MEASINIT_FAIL_NOTSUP_D = "NRRCC:M55125C00026"
+
+LOOP = [
+  "3"
+]
+
+PM_Counter = [
+  f"NRCELL-1:{NRRCC_MEAS_A2_REC}=LOOP",
+  f"NRCELL-1:{NRPPA_MEASINIT_REQ_D}=8",
+  f"NRCELL-1:{NRPPA_MEASINIT_RESP_D}=6",
+  f"NRCELL-1:{NRPPA_MEASINIT_FAIL_NOTSUP_D}=2"
+]

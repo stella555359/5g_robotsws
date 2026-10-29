@@ -1,0 +1,12 @@
+{
+    "SBTS.*_ENB_9999L?O?.*": {
+        "Root\\Test_Sets\\Trunk\\RAN_L2_SW_KRK_1\\CRT_5G": {
+            "CB008828-SR-C-Number_of_slices_extension": [
+                "CB008828-SR-C-a-B6-2_Not_configured_RG_or_RG_removal_for_NSA_-_Different_SPID_values"
+            ]
+        },
+        "label": ".*LO.*",
+        "qc_domain": "MN_RAN",
+        "qc_project": "RAN_ET"
+    }
+}

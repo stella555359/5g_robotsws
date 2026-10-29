@@ -1,0 +1,185 @@
+version: "3.8"
+services:
+  irfheadsim:
+    container_name: ${COMPOSE_PROJECT_NAME}_irfheadsim
+    image: ${IMAGE_PREFIX}airphone/snowfish/rfheadsim:${TAG_AIRPHONE}
+    volumes:
+      - common:/tmp
+      - ${RUN_COMPOSE_SCRIPT_PATH}/tests/${TEST_NAME}/SCF.xml:/SCFVM/SCF.xml
+      - ${RUN_COMPOSE_SCRIPT_PATH}/tests/${TEST_NAME}/generated/deployment.json:/CONF/deployment.json
+    networks:
+      - airphone_network
+    user: ${CURRENT_UID}
+
+  timekeeper:
+    container_name: ${COMPOSE_PROJECT_NAME}_timekeeper
+    image: ${IMAGE_PREFIX}airphone/snowfish/timekeeper:${TAG_AIRPHONE}
+    volumes:
+      - common:/tmp
+      - ${RUN_COMPOSE_SCRIPT_PATH}/tests/${TEST_NAME}/swconfig_AP.txt:/tmp/swConfig.txt
+    depends_on:
+      - irfheadsim
+      - gnbl2l3
+      - gnb-l1sw
+      - l2rt_01
+    user: ${CURRENT_UID}
+    environment:
+      - TICKLER_EXTRA_OPTS=-K -q 0x523a:0x552a:0x524d:0x112a:0x123e -Q ${QUANTUM:-62.5} # -d = debug mode for application, -Z = debug mode for tickler
+      - NODE_ID=5555
+
+  l2rt_01:
+    container_name: ${COMPOSE_PROJECT_NAME}_l2rt_01
+    image: ${IMAGE_PREFIX}airphone/snowfish/l2rt:${TAG_AIRPHONE}
+    volumes:
+      - common:/tmp
+      - ${RUN_COMPOSE_SCRIPT_PATH}/tests/${TEST_NAME}/swconfig_AP.txt:/tmp/swConfig.txt
+    depends_on:
+      - irfheadsim
+    user: ${CURRENT_UID}
+    environment:
+      - NODE_ID=523A
+
+  l2nrt:
+    container_name: ${COMPOSE_PROJECT_NAME}_l2nrt
+    image: ${IMAGE_PREFIX}airphone/snowfish/l2nrt:${TAG_AIRPHONE}
+    volumes:
+      - common:/tmp
+      - ${RUN_COMPOSE_SCRIPT_PATH}/tests/${TEST_NAME}/swconfig_AP.txt:/tmp/swConfig.txt
+    depends_on:
+      - irfheadsim
+    user: ${CURRENT_UID}
+    environment:
+      - NODE_ID=552A
+
+  l3:
+    container_name: ${COMPOSE_PROJECT_NAME}_l3
+    image: ${IMAGE_PREFIX}airphone/snowfish/l3:${TAG_AIRPHONE}
+    volumes:
+      - common:/tmp
+      - ${RUN_COMPOSE_SCRIPT_PATH}/tests/${TEST_NAME}/swconfig_AP.txt:/tmp/swConfig.txt
+    depends_on:
+      - irfheadsim
+    user: ${CURRENT_UID}
+
+  trswrapper:
+    container_name: ${COMPOSE_PROJECT_NAME}_trswrapper
+    image: ${IMAGE_PREFIX}airphone/snowfish/trs_wrapper:${TAG_AIRPHONE}
+    user: ${CURRENT_UID}
+    volumes:
+      - common:/tmp
+    depends_on:
+      - irfheadsim
+    networks:
+      - airphone_network
+
+  trswrapperGnb:
+    container_name: ${COMPOSE_PROJECT_NAME}_trswrapperGnb
+    image: ${IMAGE_PREFIX}airphone/snowfish/trs_wrapper:${TAG_AIRPHONE}
+    user: ${CURRENT_UID}
+    volumes:
+      - common:/tmp
+    depends_on:
+      - irfheadsim
+    networks:
+      - ran_network
+    environment:
+      - ENV_MODE=gnb
+
+  ue_app-l1_01:
+    container_name: ${COMPOSE_PROJECT_NAME}_ue_app-l1_01
+    image: ${IMG_UEAPP_L1}
+    volumes:
+      - common:/tmp
+    shm_size: '3gb'
+    depends_on:
+      - irfheadsim
+    user: ${CURRENT_UID}
+    environment:
+      - APPLICATION_ARGS=-D AP -N 0x524D -S 300 -u -Q ${QUANTUM:-62.5} --FH ecpri  --subcellsCount 2 --dlTimeOffset 1 --subcellsOffset 0
+
+  wts:
+    container_name: ${COMPOSE_PROJECT_NAME}_wts
+    image: ${IMAGE_PREFIX}airphone/snowfish/wts:${TAG_WTS}
+    user: macdit
+    volumes:
+      - common:/tmp
+      - ${RUN_COMPOSE_SCRIPT_PATH}/tests/${TEST_NAME}:/home/macdit/wts/config:rw
+    ports:
+      - "20000" # egate entry point
+    depends_on:
+      - irfheadsim
+    networks:
+      - airphone_network
+      - ran_network
+    cap_add:
+      - ALL
+    environment:
+      - COMPOSE_PROJECT_NAME
+
+  testsuite:
+    container_name: ${COMPOSE_PROJECT_NAME}_testsuite
+    image: ${IMAGE_PREFIX}airphone/snowfish/testsuite:${TAG_AIRPHONE}
+    user: ute
+    volumes:
+      - common:/tmp
+      - ${RUN_COMPOSE_SCRIPT_PATH}/tests/${TEST_NAME}/testsuite.robot:/home/ute/testsuite/testsuite.robot:rw
+    depends_on:
+      - wts
+    networks:
+      - airphone_network
+    environment:
+      - COMPOSE_PROJECT_NAME
+    command: 'sleep infinity'
+
+  gnbl2l3:
+    container_name: ${COMPOSE_PROJECT_NAME}_gnbl2l3
+    image: ${GNB_IMAGE_PREFIX}gnb:${TAG_GNB_L2L3}
+    command: bash -c 'while [ ! -e /tmp/l1sw_is_ready ]; do echo "waiting for l1sw to be ready..." && sleep 1; done && sh /workspace/config/scripts/run_elixir.sh'
+    volumes:
+      - common:/tmp
+      - ${RUN_COMPOSE_SCRIPT_PATH}/config/gnb:/workspace/config/scripts:rw
+      - ${RUN_COMPOSE_SCRIPT_PATH}/tests/${TEST_NAME}/swconfig_GNB.txt:/workspace/config/swconfig/swconfig.txt:rw
+      - ${RUN_COMPOSE_SCRIPT_PATH}/tests/${TEST_NAME}/l1conf.json:/workspace/config/l1conf.json:rw
+      - ${RUN_COMPOSE_SCRIPT_PATH}/tests/${TEST_NAME}/SCF.xml:/workspace/config/SCF.xml:rw
+    depends_on:
+      - wts
+      - trswrapperGnb
+    networks:
+      - ran_network
+    environment:
+      - COMPOSE_PROJECT_NAME
+      - TEST_NAME
+    user: ${CURRENT_UID}
+    restart: 'no'
+    shm_size: 16G
+    ulimits:
+      core:
+        soft: 0
+        hard: 0
+      memlock:
+        soft: 4294967296
+        hard: 4294967296
+    security_opt:
+      - seccomp:unconfined
+
+  gnb-l1sw:
+    container_name: ${COMPOSE_PROJECT_NAME}_gnb-l1sw
+    image: ${GNB_L1_IMAGE_PREFIX}l3call-l1app:${TAG_GNB_L1}
+    shm_size: 16G
+    volumes:
+      - common:/tmp
+    depends_on:
+      - irfheadsim
+    user: ${CURRENT_UID}
+    environment:
+      - APPLICATION_ARGS=-D AP -N 0x123E -S 300 -Q ${QUANTUM:-62.5} --FH ecpri  --subcellsCount 2 --dlTimeOffset 1
+
+volumes:
+  common:
+
+
+networks:
+  airphone_network:
+    driver: bridge
+  ran_network:
+    driver: bridge

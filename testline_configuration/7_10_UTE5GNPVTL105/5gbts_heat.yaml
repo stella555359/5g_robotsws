@@ -1,0 +1,357 @@
+# Copyright (c) Nokia 2020
+heat_template_version: 2016-10-14
+description: '5GBTS vCU deployment heat template'
+parameters:
+  image:
+    type: string
+    description: image name or UUID
+    constraints:
+    - custom_constraint: glance.image
+  ssh_public_key:
+    type: string
+    description: key pair publich ssh key
+  availability_zones:
+    description: availability zone region
+    type: json
+    default:
+      default:
+      oam_000:
+      oam_001:
+      cpcl_000:
+      cpcl_001:
+      cpnb_000:
+      cpnb_001:
+      cpif_000:
+      cpif_001:
+      cpnrt_000:
+      cpnrt_001:
+      db_000:
+      db_001:
+      db_002:
+      uvm:
+      cpues:
+        default:
+        availability_zone_list:
+      upues:
+        default:
+        availability_zone_list:
+  vnf_name:
+    type: string
+    description: 5GBTS VNF name
+    default: 5gbts
+    constraints:
+      - allowed_pattern: "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+        description: "Invalid vnf_name format"
+      - length: {min: 1, max: 45}
+        description: "Invalid vnf_name length (should be [1,45] since the length of vnf_name+cluster_id =<47)"
+  cluster_id:
+    description: Cluster identification.
+    type: string
+    default: "1"
+    constraints:
+      - allowed_pattern: "[0-9]+"
+        description: "only number for cluster_id"
+      - length: {min: 1, max: 8}
+        description: "Invalid cluster_id length (should be [1,8])"
+  network-interface-enable:
+    description: indicate if external network interfaces should be activated or not after commission.
+    type: boolean
+    default: true
+  config_drive:
+    type: json
+    description: use config drive instead of metadata server
+    default:
+      basic: false
+      redundant: false
+  dns_forwarders:
+    type: comma_delimited_list
+    description: list of servers to forward queries to
+    default: []
+    constraints:
+    - length:
+        min: 0
+        max: 3
+  vnf_layout:
+    type: string
+    description: basic or redundant.
+    default: basic
+    constraints:
+      - allowed_values: [basic, redundant]
+  flavors:
+    type: json
+    description: flavor to use
+    default:
+      db: 5gbts19b_db
+      uvm: 5gbts19b_uvm
+      oam: 5gbts19b_oam
+      cpue: 5gbts19b_cpue
+      upue: 5gbts19b_upue
+      cpif: 5gbts19b_cpif
+      cpnrt: 5gbts19b_cpnrt
+      cpnb: 5gbts19b_cpnb
+      cpcl: 5gbts19b_cpcl
+  ntp_servers:
+    type: comma_delimited_list
+    description: list of servers to sync time from
+    constraints:
+    - length:
+        min: 1
+        max: 3
+  number_of_upue_nodes:
+    type: number
+    description: number of application nodes to instantiate
+    default: 1
+    constraints:
+    - range:
+        min: 1
+        max: 36
+  number_of_cpue_nodes:
+    type: number
+    description: number of application nodes to instantiate
+    default: 1
+    constraints:
+    - range:
+        min: 1
+        max: 12
+  number_of_uvm_nodes:
+    type: number
+    description: number of upgrade nodes to instantiate
+    default: 0
+    constraints:
+    - range:
+        min: 0
+        max: 1
+  cleartextpassword:
+    type: json
+    description: cleartext password to use for accounts
+    default:
+      georesiliency: 'VpOn9JSX6r%G#T'
+      wsuser: 'A0zY~rP#8Mx@'
+  password:
+    type: json
+    description: password hash to use for accounts
+    default:
+      _nokfsoperator: '!'
+      root: '!'
+      georesiliency: '$5$rounds=10000$YLkADD9q$/7cX20b5eNgcjvnN1kteCmZR4siF6oQfW1/9hzh4YZ7'
+      wsuser: '$5$rounds=10000$6Kj3xARF$6D8XNkLOFxc8yswG4hhvCXyCdHau5WY6yxH/ZxRrle8'
+  timezone:
+    type: string
+    description: symbolic timezone region name
+    constraints:
+    - custom_constraint: timezone
+  uvm_image:
+    type: string
+    description: image name or UUID for upgrade node
+    constraints:
+    - custom_constraint: glance.image
+  internal_provider_networks:
+    description: provider net name for internal networks
+    type: string
+  internal_subnets:
+    description: Internal network to attach to a interface node
+    type: json
+  internal_e1_provider_networks:
+    description: provider net name for internal_e1 networks
+    type: string
+  internal_e1_networks:
+    description: internal_e1 network to attach to a interface node
+    type: json
+  internal_segment_ids:
+    description: Internal network segment ids
+    type: json
+    default:
+      internal: 0
+      internal_srv: 0
+      internal_e1: 0
+  external_networks:
+    description: External network to attach to a interface node
+    type: json
+  user_info:
+    type: json
+    description: add user to client host
+    default: {}
+  extra_cloud_config_data:
+    type: json
+    default: {}
+  config_external_ip:
+    type: string
+    description: configure external ip and roles if set enabled
+    default: disabled
+    constraints:
+      - allowed_values: [enabled, disabled]
+  dual_stack:
+    type: string
+    description: configure single network or dual network
+    default: disabled
+    constraints:
+      - allowed_values: [disabled, enabled]
+
+conditions:
+  deploy_basic_condition: {equals : [{get_param: vnf_layout}, "basic"]}
+  deploy_redundant_condition: {equals : [{get_param: vnf_layout}, "redundant"]}
+
+resources:
+  resources_basic:
+    type: OS::Heat::Value
+    condition: deploy_basic_condition
+    properties:
+      type: json
+      value:
+        oam_nodes_basic:
+          server:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, oam]}
+        cpif_nodes_basic:
+          server:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, cpif]}
+        cpcl_nodes_basic:
+          server:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, cpcl]}
+        cpnb_nodes_basic:
+          server:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, cpnb]}
+        cpnrt_nodes_basic:
+          server:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, cpnrt]}
+        upue_nodes_basic:
+          count: {get_param: number_of_upue_nodes}
+          blacklist: []
+          0:
+            server:
+              imageId: {get_param: image}
+              flavorId: {get_param: [flavors, upue]}
+        cpue_nodes_basic:
+          count: {get_param: number_of_cpue_nodes}
+          blacklist: []
+          0:
+            server:
+              imageId: {get_param: image}
+              flavorId: {get_param: [flavors, cpue]}
+        db_nodes_basic:
+          server:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, db]}
+        upgrade_nodes_basic:
+          count: {get_param: number_of_uvm_nodes}
+          0:
+            server:
+              imageId: {get_param: image}
+              flavorId: {get_param: [flavors, uvm]}
+
+  resources_redundant:
+    type: OS::Heat::Value
+    condition: deploy_redundant_condition
+    properties:
+      type: json
+      value:
+        oam_nodes_redundant:
+          server_0:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, oam]}
+          server_1:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, oam]}
+        cpif_nodes_redundant:
+          server_0:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, cpif]}
+          server_1:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, cpif]}
+        cpnrt_nodes_redundant:
+          server_0:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, cpnrt]}
+          server_1:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, cpnrt]}
+        cpnb_nodes_redundant:
+          server_0:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, cpnb]}
+          server_1:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, cpnb]}
+        cpcl_nodes_redundant:
+          server_0:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, cpcl]}
+          server_1:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, cpcl]}
+        db_nodes_redundant:
+          server_0:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, db]}
+          server_1:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, db]}
+          server_2:
+            imageId: {get_param: image}
+            flavorId: {get_param: [flavors, db]}
+        cpue_nodes_redundant:
+          count: {get_param: number_of_cpue_nodes}
+          blacklist: []
+          0:
+            server:
+              imageId: {get_param: image}
+              flavorId: {get_param: [flavors, cpue]}
+        upue_nodes_redundant:
+          count: {get_param: number_of_upue_nodes}
+          blacklist: []
+          0:
+            server:
+              imageId: {get_param: image}
+              flavorId: {get_param: [flavors, upue]}
+        upgrade_nodes_redundant:
+          count: {get_param: number_of_uvm_nodes}
+          0:
+            server:
+              imageId: {get_param: image}
+              flavorId: {get_param: [flavors, uvm]}
+
+  vnf_parameters:
+    type: 5gbts_vnf.yaml
+    properties:
+      cbam:
+        publicSshKey: {get_param: ssh_public_key}
+        extensions:
+          availability_zones: {get_param: availability_zones}
+          vnf_name: {get_param: vnf_name}
+          cluster_id: {get_param: cluster_id}
+          external_networks: {get_param: external_networks}
+          internal_provider_networks: {get_param: internal_provider_networks}
+          internal_e1_provider_networks: {get_param: internal_e1_provider_networks}
+          internal_e1_networks: {get_param: internal_e1_networks}
+          internal_networks: {get_param: internal_subnets}
+          config_external_ip: {get_param: config_external_ip}
+          internal_segment_ids: {get_param: internal_segment_ids}
+          cleartextpassword: {get_param: cleartextpassword}
+          password: {get_param: password}
+          timezone: {get_param: timezone}
+          ntp_servers: {get_param: ntp_servers}
+          dns_forwarders: {get_param: dns_forwarders}
+          user_info: {get_param: user_info}
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+          dual_stack: {get_param: dual_stack}
+          vnf_layout: {get_param: vnf_layout}
+          network-interface-enable: {get_param: network-interface-enable}
+        resources:
+          if:
+          - deploy_basic_condition
+          - {get_attr: [resources_basic, value]}
+          - {get_attr: [resources_redundant, value]}
+
+outputs:
+  management_ip:
+    description: Primary management IP address allocated to access the system
+    value: {get_attr: [vnf_parameters, management_ip]}
+
+  management_ips:
+    description: All management IP address allocated to access the system
+    value: {get_attr: [vnf_parameters, management_ips]}

@@ -1,0 +1,54 @@
+heat_template_version: 2016-04-08
+description: "Template for creating a cinder volume instance belonging to a volume group"
+
+parameters:
+  index:
+    description: Index to fetch own parameters from volumes list
+    type: number
+  volumes:
+    description: Sizes and options for the volumes to be created
+    type: json
+  name_prefix:
+    description: Prefix to use in resource names to help differentiate them from similar resources of other stacks
+    type: string
+
+resources:
+  cinder_volume:
+    type: OS::Cinder::Volume
+    properties:
+      name:
+        str_replace:
+          template: $prefix-$vol
+          params:
+            $prefix: {get_param: name_prefix}
+            $vol: {get_param: [volumes, {get_param: index}, name]}
+      size: {get_param: [volumes, {get_param: index}, size]}
+
+outputs:
+  volume_id:
+    description: The resource uuid value of the volume
+    value: {get_resource: cinder_volume}
+  provider_map:
+    description: The storage provider metadata patameter
+    value:
+      map_merge:
+        repeat:
+          for_each:
+            <%name%>: [{get_param: [volumes, {get_param: index}, name]}]
+          template:
+            storage.local.<%name%>:
+              fstype: ext4
+              mount-to: {get_param: [volumes, {get_param: index}, mount]}
+              disk: {get_resource: cinder_volume}
+  mount:
+    description: cloud-config directive to mount the disk from cloud-init
+    value:
+      - {get_resource: cinder_volume}
+      - {get_param: [volumes, {get_param: index}, mount]}
+      - "auto"
+      - "defaults,noexec"
+  fs_setup:
+    description: cloud-config directive to initialize file system from cloud-init
+    value:
+      filesystem: "ext4"
+      device: {get_resource: cinder_volume}

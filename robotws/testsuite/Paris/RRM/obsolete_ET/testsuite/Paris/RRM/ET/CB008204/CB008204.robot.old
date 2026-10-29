@@ -1,0 +1,1047 @@
+*** Settings ***
+
+Documentation
+...   author: Mateusz Plinta, Justyna Balcerzak, Mateusz Adamek
+...   contact: mateusz.plinta@nokia.com, justyna.balcerzak@nokia.com, mateusz.adamek@nokia.com
+...   description: CB008204
+
+Library    ta5g_enb
+Library    ute_fsmaccess
+Library    ta5g_iphy
+Library    ute_wtssim
+Library    ta5g_egate
+Library    ta5g_testline_management
+Library    ta5g_throughput
+Library    ta5g_tshark
+Library    ta_messaging
+Library    ta_egate_cmd_parser
+
+Library    taf.collectors.tcpdump       WITH NAME  tct
+Library    resources/suite_specific_keywords.py
+Library    resources/egate_actions.py
+Library    resources/wts/prep_wts_configs.py    WITH NAME    prep_wts_configs
+Library    testsuite.Paris.RRM.ET.resources_KRK.python.pm_counters
+Library    testsuite.Paris.RRM.ET.resources_KRK.python.common_gnb        WITH NAME    common_gnb
+Library    resources/pm_counters.py
+
+Resource   taf/rfrl/common_resources/robot/libraries_instances.robot
+Resource   resources/keywords.robot
+
+Force Tags      STATE_CONFIGURED    RAN_5G     SBTS00    SBTS23R1
+
+Suite Setup    Run Keywords    Set variables based on deployment and release
+...                     AND    Add Swconfig Flags For L2PS TA
+...                     AND    Add Swconfig Flag For Timing Advance
+Suite Teardown    Run Keyword And Ignore Error    Collect Admin Api Logs    subdir=${SUITE_NAME}
+...                                                                         dir_name=admin_api_logs
+
+Variables    resources/variables.py
+Variables    resources/counters_vars.py
+Variables    resources/wts/ue_caps_vars.py
+Variables    resources/delta/split_A.py
+Variables    resources/delta/split_B.py
+Variables    resources/delta/split_D.py
+Variables    resources/delta/split_E.py
+Variables    resources/delta/split_F.py
+Variables    resources/delta/helper_delta.py
+
+*** Test Cases ***
+[1]CB008204_A03_SA_PDCP_Classical_CA_Counters_to_measure_UL_traffic_lost_SN_PDCP
+    [Tags]    CRT    CLOUD_5G_I_BOO_AP_LOO     VARIANT_SANSA_FS_ECPRI_CMWV_FDD+TDD
+    [Setup]     Run Keywords    Prepare swconfig for A03
+    ...                 AND     prep_wts_configs.Create WTS config for A03
+    ...                 AND     Adjust parameters using delta   delta=${DELTA_TC_A03}
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx6}
+    ...                                                 wts_config_path=${WTS_CONFIG_PATH}
+    ...                 AND     Wait for first counters values to arrive
+    ...                 AND     Start collecting logs
+
+    ${ue_id}=    Set Variable    1
+    ${packets}=     Set Variable    50000
+    ${start_discard}=    Set Variable    100
+    ${finish_discard}=    Set Variable    1000
+    ${down_border}=    Set Variable    0.999
+    ${top_border}=    Set Variable      1.001
+    ${NOTHING}=    Set Variable    0.0000000000001
+
+    # Step 2: Discard packets on PDCP
+    Set discard packets on PDCP   ue_id=${ue_id}    start_discard=${start_discard}    finish_discard=${finish_discard}
+
+    # Step 3: Set traffic type as internal
+    Prepare internal traffic generator    ue_id=${ue_id}    pdu_id=1
+
+    # Step 4: SA UE attached to FDD Primary Cell
+    Attach UE and Establish PDU session    ue_id=${ue_id}
+
+    # Step 5: Start DL/UL data traffic
+    Start traffic CA stream
+    Start traffic CA stream with packets
+    Check in egate that CA is working    id=${ue_id}    scell=0-1      type=pusch
+    Wait for throughput stable      sec=20
+    egate_actions.Bearer Stats    ue=1    pdu=1   qfi=1   dir=ul
+    Stop traffic stream     ue=1    pdu=1   qfi=1   dir=dl  trf_id=1,2
+
+    # Step 6: Wait for PM stats period to finish
+    Wait for next pm period to start
+
+    # Step 7: Collect counters
+    ${counters_list} =   Create List    ${UL_PDCP_PDU_F1_PMQAP}   ${UL_PDCP_PDU_LOST_F1_PMQAP}   ${UL_PDCP_SDU_CU_PMQAP}
+    ...                                 ${UL_PDCP_SDU_LOST_CU_PMQAP}   ${UL_PDCP_SDU_VOL_SNT_PMQAP}     ${UL_PDCP_VOL_SNT_NGU_QOS_GRP_06}
+    ...                                 ${UL_PDCP_SDU_SNT_NGU_QOS_GRP_06}   ${UL_SDU_DISC_OTHER_QOS_GRP_06}     ${UL_PDCP_NUM_SNT_F1_QoS_GRP_06}
+    ...                                 ${DL_SDU_DISC_BUFTH_QOS_GRP_06}     ${DL_SDU_DISC_TMR_QOS_GRP_06}
+    ...                                 ${DL_SDU_DISC_REL_QOS_GRP_06}       ${DL_SDU_DISC_QUEDLY_QOS_GRP_06}
+    ${counters_data} =   get_pm_counters_values    counter_ids_list=${counters_list}    csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    ${EXPRESSION} =  catenate  SEPARATOR=
+    ...    (${down_border}*${finish_discard}) <\= {"${UL_PDCP_SDU_LOST_CU_PMQAP}": "NRCELL-1/NRPMQAP-1"} <\=
+    ...    (${top_border}*${finish_discard} + ${NOTHING})
+
+    Verify any counters extended   {"${UL_PDCP_PDU_LOST_F1_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= 0
+    ...     1 > ({"${UL_PDCP_SDU_VOL_SNT_PMQAP}": "NRCELL-1/NRPMQAP-1"}/8000) - ${UL_PDCP_VOL_SNT_NGU_QOS_GRP_06} >\= 0
+    ...     (${down_border}*${packets}) <\= {"${UL_PDCP_SDU_CU_PMQAP}": "NRCELL-1/NRPMQAP-1"} <\= (${top_border}*${packets} + ${NOTHING})
+    ...     {"${UL_PDCP_PDU_F1_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= ${UL_PDCP_NUM_SNT_F1_QoS_GRP_06}
+    ...     {"${UL_PDCP_PDU_F1_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= ${UL_PDCP_SDU_SNT_NGU_QOS_GRP_06} + ${UL_SDU_DISC_OTHER_QOS_GRP_06}
+    ...     ${EXPRESSION}
+    ...                            counters_data=${counters_data}
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Clean swconfig after A03
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_A03}
+
+
+[1]CB008204_A05_NSA_Classical_PDCP_Counters_to_measure_UL_traffic_drop_rate_loss_ratio_lost_SN_GTP
+    [Tags]    CRT    CLOUD_5G_I_LO_AP_LO    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AZQJ
+    [Setup]     Run Keywords    Adjust parameters using delta   delta=${DELTA_TC_A05}
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx4}
+    ...                 AND     Wait for first counters values to arrive
+    ...                 AND     Start collecting logs
+
+    ${packets}=     Set Variable    10000
+    Setup X2 link
+    Set enb param       id_=1   enable_gtp_sn_over_x2=on
+    Set enb endc param  id_=101      force_drop_ul_gtp=250:100:10
+    Set bearer param    ue=101   id_=2    scg_ul_dist_percent=50
+    Attach ue to enb   ue_id=101    optional_parameters=profile\=1
+    Wait for ue to be active
+    Start gnb addition procedure    ue=101    target_gnb=2    target_cells=1    bearer=2    dc_type=split_scg    timeout=${20}
+
+    Start traffic stream    ue=101   id=2    trf_id=1    mbps=80     dir=dl
+    Start traffic stream    ue=101   id=2    dir=ul      trf_id=1    mbps=10     packets=${packets}
+
+    egate_actions.Bearer Stats    ue=101    id=2   dir=ul  type=l3     dc_cell_group=scg
+    egate_actions.Bearer Stats    ue=101    id=2   dir=ul  type=l3     dc_cell_group=mcg
+
+    Wait for throughput stable      sec=15
+
+    egate_actions.Bearer Stats    ue=101    id=2   dir=ul  type=l3     dc_cell_group=scg
+    egate_actions.Bearer Stats    ue=101    id=2   dir=ul  type=l3     dc_cell_group=mcg
+
+    Stop traffic stream     ue=101   trf_id=1
+    Wait for next pm period to start
+
+    ${counters_list} =   Create List    ${UL_PDCP_SDU_VOL_SNT_PMQAP}    ${UL_PDCP_VOL_SNT_S1U_QOS_GRP_09}   ${UL_PDCP_PDU_F1_PMQAP}
+    ...                                 ${UL_PDCP_NUM_SNT_F1_QoS_GRP_09}    ${UL_PDCP_PDU_LOST_F1_PMQAP}    ${UL_PDCP_NUM_RCV_X2_QOS_GRP_09}
+    ...                                 ${UL_PDCP_PDU_LOST_X2_PMQAP}    ${UL_PDCP_PDU_X2_PMQAP}     ${UL_PDCP_SDU_CU_PMQAP}
+    ...                                 ${UL_PDCP_SDU_LOST_CU_PMQAP}    ${UL_PDCP_SDU_SNT_S1U_QOS_GRP_09}
+    ${counters_data} =   get_pm_counters_values    counter_ids_list=${counters_list}    csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+
+    ${SUM_OF_COUNTERS_EXPR} =  catenate  SEPARATOR=
+    ...   {"${UL_PDCP_PDU_X2_PMQAP}": "NRCELL-1/NRPMQAP-1"} - {"${UL_PDCP_PDU_LOST_X2_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\=
+    ...   {"${UL_PDCP_NUM_RCV_X2_QOS_GRP_09}": "NRBTS-1/NX2UB"}
+
+    ${DIFFERENCE_OF_COUNTERS_EXPR} =  catenate  SEPARATOR=
+    ...     {"${UL_PDCP_SDU_CU_PMQAP}": "NRCELL-1/NRPMQAP-1"} - {"${UL_PDCP_SDU_LOST_CU_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\=
+    ...     {"${UL_PDCP_SDU_SNT_S1U_QOS_GRP_09}": "NRBTS-1/NS1UB"}
+
+    Verify any counters extended    {"${UL_PDCP_SDU_LOST_CU_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= 2500
+    ...   1 > ({"${UL_PDCP_SDU_VOL_SNT_PMQAP}": "NRCELL-1/NRPMQAP-1"}/8000) - {"${UL_PDCP_VOL_SNT_S1U_QOS_GRP_09}": "BTS/NRBTS-1/NS1UB"} >\= 0
+    ...   {"${UL_PDCP_SDU_CU_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= ${packets}
+    ...   {"${UL_PDCP_PDU_F1_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= {"${UL_PDCP_NUM_SNT_F1_QoS_GRP_09}": "NRBTS-1/NRDU-1/NF1UD"}
+    ...   {"${UL_PDCP_PDU_LOST_F1_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= 0
+    ...   ${SUM_OF_COUNTERS_EXPR}
+    ...   {"${UL_PDCP_PDU_X2_PMQAP}": "NRCELL-1/NRPMQAP-1"} >\= {"${UL_PDCP_PDU_LOST_X2_PMQAP}": "NRCELL-1/NRPMQAP-1"}
+    ...   {"${UL_PDCP_SDU_CU_PMQAP}": "NRCELL-1/NRPMQAP-1"} >\= {"${UL_PDCP_SDU_LOST_CU_PMQAP}": "NRCELL-1/NRPMQAP-1"}
+    ...   {"${UL_PDCP_SDU_LOST_CU_PMQAP}": "NRCELL-1/NRPMQAP-1"} >\= {"${UL_PDCP_PDU_LOST_X2_PMQAP}": "NRCELL-1/NRPMQAP-1"}
+    ...   {"${UL_PDCP_SDU_CU_PMQAP}": "NRCELL-1/NRPMQAP-1"} >\= {"${UL_PDCP_PDU_X2_PMQAP}": "NRCELL-1/NRPMQAP-1"}
+    ...   ${DIFFERENCE_OF_COUNTERS_EXPR}
+    ...                            counters_data=${counters_data}    timestamp_offset=${0}
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_A05}
+
+
+[1]CB008204_A09_SA_Multiple_bearer_scenario
+    [Tags]    CRT    CLOUD_5G_I_LO_AP_LO    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AZQJ
+    [Setup]     Run Keywords    Adjust parameters using delta   delta=${DELTA_TC_A09}
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx4}
+    ...                 AND     Wait for first counters values to arrive
+    ...                 AND     Start collecting logs
+
+    Prepare additional bearer setup for VoNR    id=1    qosflow=2,3
+    Prepare internal traffic generator    ue_id=1    pdu_id=1
+    Set UE capabilities     ue_param_id=1    ue_nr_capabilities=${UE_CAPABILITIES_A09}
+    Attach UE and Establish PDU session    ue_id=1
+
+    #NON-GBR
+    Start traffic stream    ue=1    pdu=1    qfi=1    dir=dl    trf_id=1    mbps=150
+    Start traffic stream    ue=1    pdu=1    qfi=1    dir=dl    trf_id=2    mbps=150
+    Start traffic stream    ue=1    pdu=1    qfi=1    dir=dl    trf_id=3    mbps=150
+    Start traffic stream    ue=1    pdu=1    qfi=1    dir=dl    trf_id=4    mbps=100
+    Start traffic stream    ue=1    pdu=1    qfi=1    dir=ul    trf_id=6    mbps=10
+
+    #For additional debug log
+    egate_actions.Ue Stats    id=1    type=pdsch
+    egate_actions.Bearer Stats    ue=1    pdu=1    qfi=1
+
+    Start traffic stream    ue=1    pdu=1    qfi=1    dir=dl    trf_id=5    mbps=100    packets=100000
+    Wait for throughput stable    sec=40
+    Stop traffic stream    ue=1    pdu=1    qfi=1    dir=dl    trf_id=1,2,3,4,5,6
+
+    #For additional debug log
+    egate_actions.Ue Stats    id=1    type=pdsch
+    egate_actions.Bearer Stats    ue=1    pdu=1    qfi=1
+
+    Wait for next pm period to start
+
+    #GBR
+    Start traffic stream    ue=1    pdu=1    qfi=3    dir=dl    trf_id=1    mbps=150
+    Start traffic stream    ue=1    pdu=1    qfi=3    dir=dl    trf_id=2    mbps=150
+    Start traffic stream    ue=1    pdu=1    qfi=3    dir=dl    trf_id=3    mbps=150
+    Start traffic stream    ue=1    pdu=1    qfi=3    dir=dl    trf_id=4    mbps=100
+    Start traffic stream    ue=1    pdu=1    qfi=3    dir=ul    trf_id=6    mbps=10
+
+    #For additional debug log
+    egate_actions.Ue Stats    id=1    type=pdsch
+    egate_actions.Bearer Stats    ue=1    pdu=1    qfi=3
+
+    Start traffic stream    ue=1    pdu=1    qfi=3    dir=dl    trf_id=5    mbps=100    packets=100000
+    Wait for throughput stable    sec=40
+    Stop traffic stream    ue=1    pdu=1    qfi=3    dir=dl    trf_id=1,2,3,4,5,6
+
+    #For additional debug log
+    egate_actions.Ue Stats    id=1    type=pdsch
+    egate_actions.Bearer Stats    ue=1    pdu=1    qfi=3
+
+    Wait for next pm period to start
+
+    ${counters_list} =   Create List    ${DL_PDCP_SDU_VOL_RCV_PMQAP}    ${DL_PDCP_SDU_USDAT_CU_PMQAP}    ${DL_PDCP_SDU_DISC_CU_PMQAP}
+    ...                                 ${DL_PDCP_SDU_RCV_NGU_QOS_GRP_06}    ${DL_PDCP_SDU_RCV_NGU_QOS_GRP_01}
+    ...                                 ${DL_PDCP_VOL_RCV_NGU_QOS_GRP_06}    ${DL_PDCP_VOL_RCV_NGU_QOS_GRP_01}
+    ...                                 ${DL_SDU_DISC_OTHER_QOS_GRP_06}    ${DL_SDU_DISC_OTHER_QOS_GRP_01}
+    ${counters_data} =   get_pm_counters_values    counter_ids_list=${counters_list}    csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    Verify any counters extended    1 > ({"${DL_PDCP_SDU_VOL_RCV_PMQAP}": "NRCELL-1/NRPMQAP-1"}/8000) - ${DL_PDCP_VOL_RCV_NGU_QOS_GRP_06} >\= 0
+    ...                            {"${DL_PDCP_SDU_USDAT_CU_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= ${DL_PDCP_SDU_RCV_NGU_QOS_GRP_06}
+    ...                            {"${DL_PDCP_SDU_DISC_CU_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= ${DL_SDU_DISC_OTHER_QOS_GRP_06}
+    ...                            0 \=\= {"${DL_PDCP_SDU_VOL_RCV_PMQAP}": "NRCELL-1/NRPMQAP-2"}
+    ...                            0 \=\= {"${DL_PDCP_SDU_USDAT_CU_PMQAP}": "NRCELL-1/NRPMQAP-2"}
+    ...                            0 \=\= {"${DL_PDCP_SDU_DISC_CU_PMQAP}": "NRCELL-1/NRPMQAP-2"}
+    ...                            counters_data=${counters_data}    timestamp_offset=${1}
+
+    # Verify counters from 2nd period
+    Verify any counters extended   0 \=\= {"${DL_PDCP_SDU_VOL_RCV_PMQAP}": "NRCELL-1/NRPMQAP-1"}
+    ...                            0 \=\= {"${DL_PDCP_SDU_USDAT_CU_PMQAP}": "NRCELL-1/NRPMQAP-1"}
+    ...                            0 \=\= {"${DL_PDCP_SDU_DISC_CU_PMQAP}": "NRCELL-1/NRPMQAP-1"}
+    ...                            1 > ({"${DL_PDCP_SDU_VOL_RCV_PMQAP}": "NRCELL-1/NRPMQAP-2"}/8000) - ${DL_PDCP_VOL_RCV_NGU_QOS_GRP_01} >\= 0
+    ...                            {"${DL_PDCP_SDU_USDAT_CU_PMQAP}": "NRCELL-1/NRPMQAP-2"} \=\= ${DL_PDCP_SDU_RCV_NGU_QOS_GRP_01}
+    ...                            {"${DL_PDCP_SDU_DISC_CU_PMQAP}": "NRCELL-1/NRPMQAP-2"} \=\= ${DL_SDU_DISC_OTHER_QOS_GRP_01}
+    ...                            counters_data=${counters_data}    timestamp_offset=${0}
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_A09}
+
+
+[1]CB008204_A10_NSA_ulDataPath_ulOverLteNr_PrimaryPathOverLte_Counter_to_measure_UL_data_received_over_X2_U_for_EN_DC_bearers_trans_via_LTE_leg_only
+    [Tags]    CRT    CLOUD_5G_I_LO_AP_LO    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AZQJ
+    [Setup]     Run Keywords    Adjust parameters using delta for TC A10 A11 A12 in NRDRB    ulDataPath=ulOverLteNr_PrimaryPathOverLte
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx4}
+    ...                 AND     Start collecting logs
+
+    ${ue_id}=    Set Variable    101
+    Create aliases  ue_id=${ue_id}
+
+    Setup X2 link
+    Update online dual connectivity params
+
+    Set phr testmode
+    Set phr testmode wrong conditions
+
+    ${prev_period_start} =   Wait for first counters values to arrive
+
+    Start TTI Traces
+
+    #STEP 4 #STEP 5
+    Attach ue to enb   ue_id=${ue_id}
+    Wait for ue to be active
+    Start gnb addition procedure    ue=${ue_id}    target_gnb=2    target_cells=1    bearer=2    dc_type=split_scg    timeout=${20}
+
+    #STEP 6
+    Start traffic stream    ue=${ue_id}   dir=ul  id=2    trf_id=2    mbps=10      size=500     seconds=10
+    Wait for UL traffic finish
+
+    #STEP7
+    Expect RLO messages flow    ue_id=${ue_id}
+    Trigger radio link outage   ue_id=${ue_id}    profile_id=1
+    Check if RLO messages flow occurred    ue_id=${ue_id}
+    Pcap verify RLO messages content    ue_id=${ue_id}    cellGroup=0    dataSplitThreshold=inf
+
+    #STEP 8
+    Start traffic stream    ue=${ue_id}   dir=ul  id=2    trf_id=2    mbps=10      size=500     seconds=10
+    Wait for throughput stable     sec=5
+    ${bytes_sent} =   Get sent bytes from bearer statistics on egate    ue=${ue_id}    id=2    dir=ul    trf_id=2
+    Wait for UL traffic finish    sec=${5}
+
+    #STEP 9
+    Trigger radio link outage   ue_id=${ue_id}    profile_id=2
+    Expect RLR messages flow    ue_id=${ue_id}
+    Check if RLR messages flow occurred    ue_id=${ue_id}
+    Pcap verify RLR messages content     ue_id=${ue_id}    cellGroup=0    dataSplitThreshold=b200
+
+    #STEP 10
+    Start traffic stream    ue=${ue_id}   dir=ul  id=2    trf_id=2    mbps=10     size=500     seconds=10
+    Wait for UL traffic finish
+
+    Stop TTI Traces
+
+    Ensure next pm_period started    ${prev_period_start}
+    Verify any counters extended
+    ...   1 > ({"${UL_PDCP_VOL_RCV_X2_LTE_PMQAP}": "NRCELL-1/NRPMQAP-1"}/8000) - {"${UL_PDCP_VOL_RCV_X2_QOS_GRP_09}": "NX2UB"} >\= 0
+    ...   csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_A10_A11_A12}
+
+
+[1]CB008204_A13_NSA_ulDataPath_ulOverLte_Counter_to_measure_UL_data_received_over_X2_U_for_EN_DC_bearers_when_trans_via_LTE_leg_only
+    [Tags]    CRT    CLOUD_5G_I_LO_AP_LO    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AZQJ
+    [Setup]     Run Keywords    prep_wts_configs.Create WTS config for A13
+    ...                 AND     Adjust parameters using delta   delta=${DELTA_TC_A13}
+    # Step 1: Cell is onAir
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx4}
+    ...                                                 wts_config_path=${WTS_CONFIG_PATH}
+    ...                 AND     Start collecting logs
+    # Step 2: Establish X2 Link
+    Setup X2 link
+    # Step 3: Wait for first PM stats collection
+    Wait for first counters values to arrive
+    # Step 4: Attach NSA UE11 with matching parameters configured in PMQAP profile
+    ${ue_11}=    Set Variable    101
+    ${ue_12}=    Set Variable    102
+    Attach ue to enb   ue_id=${ue_11}
+    # Step 5: Make SgNB Addition procedure
+    Start gnb addition procedure    ue=${ue_11}    target_gnb=2    target_cells=1    bearer=2    dc_type=split_scg    timeout=${20}
+    # Step 6: Start UL data traffic on UE11
+    Start traffic stream    ue=${ue_11}   id=2    dir=ul    trf_id=2    mbps=10     size=500     seconds=10
+    Wait for throughput stable    ${11}
+#    ${bytes_sent} =   Get sent bytes from bearer statistics on egate    ue=11    id=2    dir=ul    trf_id=2
+    # Step 7: Detach UE11
+    Detach ue    ue_id=${ue_11}
+    # Step 8: Attach NSA UE12 with parameters not matching configured in PMQAP profile (e.g., with different QCI)
+    Attach ue to enb   ue_id=${ue_12}
+    # Step 9: Make SgNB Addition procedure
+    Start gnb addition procedure    ue=${ue_12}    target_gnb=2    target_cells=1    bearer=2    dc_type=split_scg    timeout=${20}
+    # Step 10: Start UL data traffic on UE12
+    Start traffic stream    ue=${ue_12}   id=2    dir=ul    trf_id=2    mbps=10     size=500     seconds=10
+    Wait for throughput stable    ${11}
+    # Step 11: Detach UE12
+    Detach ue    ue_id=${ue_12}
+    # Step 12: Collect counters
+    Wait for next pm period to start
+    Verify any counters extended
+    ...   1 > ({"${UL_PDCP_VOL_RCV_X2_LTE_PMQAP}": "NRCELL-1/NRPMQAP-1"}/8000) - {"${UL_PDCP_VOL_RCV_X2_QOS_GRP_09}": "NX2UB"} >\= 0
+    ...   csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_A13}
+
+
+[1]CB008204_B02_NSA_RLC_Classical_AM_Counters_to_measure_DL_packet_drop_rate
+    [Tags]    CRT    CLOUD_5G_I_LO_AP_LO    VARIANT_SA+NSA_FS_ECPRI_MMWV_TDD
+    [Setup]     Run Keywords    Adjust parameters using delta   delta=${DELTA_TC_B02}
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1}
+    ...                 AND     Wait for first counters values to arrive
+    ...                 AND     Start collecting logs
+
+    Setup X2 link    timeout=${60}
+    Wait for Information Block reception for given cells    cells=${CELLS_GNBx4}  infoblocktype=MasterInformationBlock-NR  timeout=${720}
+    Attach ue to enb   ue_id=101    optional_parameters=profile\=1
+    Start gnb addition procedure    ue=101   target_gnb=2    target_cells=3    bearer=2    dc_type=split_scg    timeout=${20}
+
+    Start traffic stream    ue=101   dir=dl  id=2    trf_id=1    mbps=150    size=500    packets=1000
+    Wait for next pm period to start
+
+    Start traffic stream    ue=101   dir=dl  id=2    trf_id=1    mbps=150    seconds=120
+    Start traffic stream    ue=101   dir=dl  id=2    trf_id=2    mbps=150    seconds=120
+    Start traffic stream    ue=101   dir=dl  id=2    trf_id=3    mbps=150    seconds=120
+    Start traffic stream    ue=101   dir=dl  id=2    trf_id=4    mbps=150    seconds=120
+    Start traffic stream    ue=101   dir=dl  id=2    trf_id=5    mbps=150    seconds=120
+
+    Start traffic stream    ue=101   dir=ul  id=2    trf_id=1    mbps=10     seconds=120
+    Wait for throughput stable      sec=15
+    egate_actions.Bearer Inject Gtpu Error Ind    by=sgw    device_id=1    bearer=2    ue=101
+
+    Wait for next pm period to start
+    ${counters_list} =   Create List    ${DL_RLC_SDU_USDAT_DU_PMQAP}    ${DL_RLC_SDU_DISC_DU_PMQAP}    ${DL_RLC_PDU_D_RBR_H_QOS_GRP_09}
+    ...                                 ${DL_RLC_PDU_TX_H_QOS_GRP_09}
+    ${counters_data} =   get_pm_counters_values    counter_ids_list=${counters_list}    csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    Verify any counters extended   {"${DL_RLC_PDU_TX_H_QOS_GRP_09}": "NRBTS-1/NRDU-1/NHRLC"} > 0
+    ...    {"${DL_RLC_PDU_TX_H_QOS_GRP_09}": "NRBTS-1/NRDU-1/NHRLC"} \=\= {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-3/NRPMQAP-1/HRLCQ"}
+    ...    {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-3/NRPMQAP-1/HRLCQ"} > 0
+    ...    {"${DL_RLC_PDU_D_RBR_H_QOS_GRP_09}": "NRBTS-1/NRDU-1/NHRLC"} \=\= 0
+    ...    {"${DL_RLC_PDU_D_RBR_H_QOS_GRP_09}": "NRBTS-1/NRDU-1/NHRLC"} \=\= {"${DL_RLC_SDU_DISC_DU_PMQAP}": "NRCELL-3/NRPMQAP-1/HRLCQ"}
+    ...    {"${DL_RLC_SDU_DISC_DU_PMQAP}": "NRCELL-3/NRPMQAP-1/HRLCQ"} \=\= 0
+    ...                            counters_data=${counters_data}    timestamp_offset=${1}
+
+    Verify any counters extended    {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-3/NRPMQAP-1/HRLCQ"} > 0
+    # ...    {"${DL_RLC_PDU_D_RBR_H_QOS_GRP_09}": "NRBTS-1/NRDU-1/NHRLC"} \=\= {"${DL_RLC_SDU_DISC_DU_PMQAP}": "NRCELL-2/NRPMQAP-1/HRLCQ"}
+    ...    {"${DL_RLC_PDU_D_RBR_H_QOS_GRP_09}": "NRBTS-1/NRDU-1/NHRLC"} > 0
+    ...    {"${DL_RLC_SDU_DISC_DU_PMQAP}": "NRCELL-3/NRPMQAP-1/HRLCQ"} > 0
+    ...    counters_data=${counters_data}    timestamp_offset=${0}
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_B02}
+
+
+[1]CB008204_B03_SA_RLC_Classical_UM_Counters_to_measure_DL_packet_drop_rate
+    [Tags]    CRT    CLOUD_5G_I_LO_AP_LO    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AZQJ
+    [Setup]     Run Keywords    Adjust parameters using delta   delta=${DELTA_TC_B03}
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx4}
+    ...                 AND     Wait for first counters values to arrive
+    ...                 AND     Start collecting logs
+
+    Prepare internal traffic generator    ue_id=1    pdu_id=1
+    Prepare internal traffic generator    ue_id=2    pdu_id=1
+    Attach UE and Establish PDU session    ue_id=1
+
+    Modify pdu session    ue_id=1    pdu_id=1    qos_to_add=2    by=ue
+    Start traffic stream    ue=1    pdu=1    qfi=2    dir=dl    trf_id=1    mbps=175    size=500    packets=1000
+    Wait for throughput stable      sec=15
+    Wait for next pm period to start
+
+    Start traffic stream    ue=1    pdu=1    qfi=2    dir=dl    trf_id=1    mbps=175    seconds=120    protocol=tcp
+    Start traffic stream    ue=1    pdu=1    qfi=2    dir=dl    trf_id=2    mbps=175    seconds=120    protocol=tcp
+    Start traffic stream    ue=1    pdu=1    qfi=2    dir=dl    trf_id=3    mbps=175    seconds=120    protocol=tcp
+    Start traffic stream    ue=1    pdu=1    qfi=2    dir=dl    trf_id=4    mbps=175    seconds=120    protocol=tcp
+    Start traffic stream    ue=1    pdu=1    qfi=2    dir=dl    trf_id=5    mbps=175    seconds=120    protocol=tcp
+    Start traffic stream    ue=1    pdu=1    qfi=2    dir=dl    trf_id=6    mbps=175    seconds=120    protocol=tcp
+
+    Start traffic stream    ue=1    pdu=1   qfi=2    dir=ul    trf_id=1    mbps=10    seconds=10    size=500    protocol=tcp
+    Wait for throughput stable      sec=15
+    Modify pdu session    ue_id=1    pdu_id=1    qos_to_del=2    by=ue
+
+    ###
+    #egate_actions.ue_change_location      id=2    enb=2   cell=1
+    Attach UE and Establish PDU session    ue_id=2
+    Modify pdu session    ue_id=2    pdu_id=1    qos_to_add=2    by=ue
+    Start traffic stream    ue=2    pdu=1    qfi=2    dir=dl    trf_id=1    mbps=175    seconds=120    protocol=tcp
+    Start traffic stream    ue=2    pdu=1    qfi=2    dir=dl    trf_id=1    mbps=175    seconds=120    protocol=tcp
+    Start traffic stream    ue=2    pdu=1    qfi=2    dir=dl    trf_id=1    mbps=175    seconds=120    protocol=tcp
+    Start traffic stream    ue=2    pdu=1    qfi=2    dir=dl    trf_id=1    mbps=175    seconds=120    protocol=tcp
+    Start traffic stream    ue=2    pdu=1    qfi=2    dir=dl    trf_id=1    mbps=175    seconds=120    protocol=tcp
+    Start traffic stream    ue=2    pdu=1    qfi=2    dir=dl    trf_id=1    mbps=175    seconds=120    protocol=tcp
+    Wait for throughput stable      sec=15
+    Modify pdu session    ue_id=2    pdu_id=1    qos_to_del=2    by=ue
+    ###
+    Deregister UE   ue_id=2
+    BuiltIn.Sleep   21s
+    Attach UE and Establish PDU session    ue_id=2
+    BuiltIn.Sleep   20s
+    Deregister UE   ue_id=2
+    BuiltIn.Sleep   20s
+    Attach UE and Establish PDU session    ue_id=2
+    BuiltIn.Sleep   20s
+    Deregister UE   ue_id=2
+    BuiltIn.Sleep   20s
+
+    Wait for next pm period to start
+
+    # Verify Counters
+    ${counters_list} =   Create List    ${DL_RLC_SDU_USDAT_DU_PMQAP}    ${DL_RLC_SDU_DISC_DU_PMQAP}
+    ...                                 ${DL_RLC_PDU_TX_H_QOS_GRP_05}    ${DL_RLC_PDU_D_RBR_H_QOS_GRP_05}
+    ${counters_data} =   get_pm_counters_values    counter_ids_list=${counters_list}    csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    Verify any counters extended   ${DL_RLC_PDU_TX_H_QOS_GRP_05} \=\= {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-1/NRPMQAP-1/HRLCQ"}
+    ...                            ${DL_RLC_PDU_TX_H_QOS_GRP_05} > 0
+    ...                            {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-1/NRPMQAP-1/HRLCQ"} > 0
+    ...                            ${DL_RLC_PDU_D_RBR_H_QOS_GRP_05} \=\= {"${DL_RLC_SDU_DISC_DU_PMQAP}": "NRCELL-1/NRPMQAP-1/HRLCQ"}
+    ...                            ${DL_RLC_PDU_D_RBR_H_QOS_GRP_05} \=\= 0
+    ...                            {"${DL_RLC_SDU_DISC_DU_PMQAP}": "NRCELL-1/NRPMQAP-1/HRLCQ"} \=\= 0
+    ...                            counters_data=${counters_data}    timestamp_offset=${1}
+
+
+    Verify any counters extended   {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-1/NRPMQAP-1/HRLCQ"} > 0
+    # ...                            ${DL_RLC_PDU_D_RBR_H_QOS_GRP_05} \=\= {"${DL_RLC_SDU_DISC_DU_PMQAP}": "NRCELL-1/NRPMQAP-1/HRLCQ"}
+    ...                            ${DL_RLC_PDU_D_RBR_H_QOS_GRP_05} > 0
+    ...                            {"${DL_RLC_SDU_DISC_DU_PMQAP}": "NRCELL-1/NRPMQAP-1/HRLCQ"} > 0
+    ...                            counters_data=${counters_data}    timestamp_offset=${0}
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_B03}
+
+
+[1]CB008204_B04_SA_RLC_Classical_AM_Multi_bearer_scenario_Counters_to_measure_DL_packet_drop_rate
+    [Tags]    CRT    CLOUD_5G_I_LO_AP_LO    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AZQJ
+    [Setup]     Run Keywords    Adjust parameters using delta   delta=${DELTA_TC_B04}
+    # Step 1: Cell is onAir
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx4}
+    # Step 2: Wait for first PM stats collection
+    ...                 AND     Wait for first counters values to arrive
+    ...                 AND     Start collecting logs
+
+    # Step 3: Set traffic type as internal
+    Prepare internal traffic generator
+
+    # Step 4: SA UE attached
+    Attach UE and Establish PDU session    ue_id=1
+
+    # Step 5: Add second bearer
+    Modify PDU session    ue_id=1    pdu_id=1    qos_to_add=2    by=amf
+
+    # Step 6: Start DL/UL data traffic on first bearer
+    Start traffic stream    ue=1    pdu=1    qfi=1    dir=dl    trf_id=1    mbps=30    seconds=10    size=500
+    Start traffic stream    ue=1    pdu=1    qfi=1    dir=ul    trf_id=1    mbps=10    seconds=10    size=500
+
+    # Step 7: Wait for second PM stats collection
+    Wait for next pm period to start
+
+    # Step 8: Start DL/UL data traffic on second bearer
+    Start traffic stream    ue=1    pdu=1    qfi=2    dir=dl    trf_id=1    mbps=30    seconds=10    size=500
+    Start traffic stream    ue=1    pdu=1    qfi=2    dir=ul    trf_id=1    mbps=10    seconds=10    size=500
+
+    # Step 9: Wait for third PM stats collection and collect counters
+    Wait for next pm period to start
+
+    ${counters_list} =   Create List    ${DL_RLC_SDU_USDAT_DU_PMQAP}  ${DL_RLC_PDU_TX_H_QOS_GRP_06}  ${DL_RLC_PDU_TX_H_QOS_GRP_05}
+    ${counters_data} =   get_pm_counters_values    counter_ids_list=${counters_list}    csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    # Verify counters from 2nd period
+    Verify any counters extended   {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-1/NRPMQAP-1"} > 0
+    ...                            {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-1/NRPMQAP-2"} \=\= 0
+    ...                            {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= ${DL_RLC_PDU_TX_H_QOS_GRP_06}
+    ...                            {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-1/NRPMQAP-2"} \=\= ${DL_RLC_PDU_TX_H_QOS_GRP_05}
+    ...                            counters_data=${counters_data}    timestamp_offset=${1}
+
+    # Verify counters from 3rd period
+    Verify any counters extended   {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= 0
+    ...                            {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-1/NRPMQAP-2"} > 0
+    ...                            {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= ${DL_RLC_PDU_TX_H_QOS_GRP_06}
+    ...                            {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-1/NRPMQAP-2"} \=\= ${DL_RLC_PDU_TX_H_QOS_GRP_05}
+    ...                            counters_data=${counters_data}    timestamp_offset=${0}
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_B04}
+
+
+[1]CB008204_B05_SA_RLC_Classical_UM_Counters_to_measure_DL_packet_drop_rate
+    [Tags]    CRT    CLOUD_5G_I_LO_AP_LO    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AZQJ
+    [Setup]     Run Keywords    Adjust parameters using delta   delta=${DELTA_TC_B05}
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx4}
+    ...                 AND     Wait for first counters values to arrive
+    ...                 AND     Start collecting logs
+
+    ${ue_id}=    Set Variable    1
+
+    Prepare additional bearer setup for VoNR    id=${ue_id}    qosflow=2,3
+    Prepare internal traffic generator    ue_id=${ue_id}    pdu_id=1
+
+    Set UE capabilities     ue_param_id=${ue_id}    ue_nr_capabilities=${UE_CAPABILITIES_B05}
+    Attach UE and Establish PDU session    ue_id=${ue_id}    timeout=${30}
+
+    Wait for next pm period to start
+
+    Start traffic stream    ue=${ue_id}    pdu=1    qfi=3    dir=dl    trf_id=1    mbps=150
+    Start traffic stream    ue=${ue_id}    pdu=1    qfi=3    dir=dl    trf_id=2    mbps=150
+    Start traffic stream    ue=${ue_id}    pdu=1    qfi=3    dir=dl    trf_id=3    mbps=150
+    Start traffic stream    ue=${ue_id}    pdu=1    qfi=3    dir=dl    trf_id=4    mbps=150
+    Start traffic stream    ue=${ue_id}    pdu=1    qfi=3    dir=dl    trf_id=5    mbps=150
+    Start traffic stream    ue=${ue_id}    pdu=1    qfi=3    dir=dl    trf_id=6    mbps=150
+
+    Wait for throughput stable      sec=40
+
+    Stop traffic stream     ue=${ue_id}    pdu=1   qfi=3   dir=dl  trf_id=1,2,3,4,5,6
+
+    Wait for next pm period to start
+
+    # Verify Counters
+    ${counters_list} =   Create List    ${DL_RLC_PDU_5QI1_DISCARD_TIMER}    ${DL_RLC_SDU_DISC_DU_PMQAP}     ${DL_RLC_SDU_USDAT_DU_PMQAP}
+    ${counters_data} =   get_pm_counters_values    counter_ids_list=${counters_list}    csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    Verify any counters extended   {"${DL_RLC_SDU_DISC_DU_PMQAP}": "NRCELL-1/NRPMQAP-1/HRLCQ"} > 0
+    ...                            {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-1/NRPMQAP-1"} > 0
+    ...   {"${DL_RLC_SDU_DISC_DU_PMQAP}": "NRCELL-1/NRPMQAP-1/HRLCQ"} \=\= {"${DL_RLC_PDU_5QI1_DISCARD_TIMER}": "NRCELL-1/NLRLC"}
+    ...                            counters_data=${counters_data}    timestamp_offset=${0}
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_B05}
+
+
+[1]CB008204_D01_Counters_to_measure_max_DL_UL_PRB_utilization
+    [Tags]    CRT    CLOUD_5G_I_LO_AP_LO    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AZQJ
+    [Setup]     Run Keywords    Adjust parameters using delta   delta=${DELTA_TC_D01}
+    # Step 1: Cell is onAir and Wait for first PM stats collection
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx4}
+    # Step 3: Wait for first pm stats collection
+    ...                 AND     Wait for first counters values to arrive
+    ...                 AND     Start collecting logs
+
+    ${ue_1}=    Set Variable    1
+    ${ue_nsa}=    Set Variable    101
+    # Step 2:  Set traffic type as internal
+    Prepare internal traffic generator   ue_id=${ue_1}   pdu_id=1
+
+    # Step 4: Attach SA UE1
+    Attach UE and Establish PDU session    ue_id=${ue_1}
+
+    # Step 5: Start minimum DL/UL data traffic on SA UE1 which will last 3 pm stats collecting periods
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=1    burst=1    seconds=900    size=50    period_ms=1000
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=ul    trf_id=1    burst=1    seconds=900    size=50    period_ms=1000
+
+    # wait till end of 1st period
+    Wait for next pm period to start
+
+    # Step 6: In the middle of 2nd period start 2 minutes maximum DL/UL data traffic on SA UE1 (make sure that all resources are used):
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=2    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=3    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=4    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=5    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=6    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=7    mbps=130   seconds=120    size=500
+
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=ul    trf_id=2    mbps=120   seconds=120    size=500
+
+    # wait till end of 2nd period
+    Wait for next pm period to start
+    # wait till end of 3rd period
+    Wait for next pm period to start
+    # Step 7: Detach SA UE1
+    Deregister UE   ue_id=${ue_1}   by=ue   ue_deregister_type=switch_off
+
+    # Step 8: Attach NSA UE
+    Setup X2 link
+    Attach ue to enb   ue_id=${ue_nsa}
+    Start gnb addition procedure    ue=${ue_nsa}    target_gnb=2    target_cells=1    bearer=2    dc_type=split_scg    timeout=${20}
+
+    # Step 9: maximum DL/UL data traffic on NSA UE
+    Start traffic stream    ue=${ue_nsa}    id=2    dir=dl    trf_id=2    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_nsa}    id=2    dir=dl    trf_id=3    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_nsa}    id=2    dir=dl    trf_id=4    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_nsa}    id=2    dir=dl    trf_id=5    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_nsa}    id=2    dir=dl    trf_id=6    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_nsa}    id=2    dir=dl    trf_id=7    mbps=130   seconds=120    size=500
+
+    Start traffic stream    ue=${ue_nsa}    id=2    dir=ul    trf_id=2    mbps=120   seconds=120    size=500
+
+    # wait till end of 4th period
+    Wait for next pm period to start
+
+    # Step 10: Collect counter stats
+    ${counters_list} =   Create List    ${DL_PRB_UTIL_SLOT_MAX}  ${UL_PRB_UTIL_SLOT_MAX}
+    ${counters_data} =   get_pm_counters_values    counter_ids_list=${counters_list}    csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    # Verify counters from 1st period
+    Verify any counters extended   {"${DL_PRB_UTIL_SLOT_MAX}": "NRCELL-1"} \=\= 18
+    ...                            0 < {"${UL_PRB_UTIL_SLOT_MAX}": "NRCELL-1"} <\= 10
+    ...                            counters_data=${counters_data}    timestamp_offset=${3}
+
+    # Verify counters from 2nd period
+    Verify any counters extended   96 < {"${DL_PRB_UTIL_SLOT_MAX}": "NRCELL-1"} <\= 100
+    ...                            96 < {"${UL_PRB_UTIL_SLOT_MAX}": "NRCELL-1"} <\= 100
+    ...                            counters_data=${counters_data}    timestamp_offset=${2}
+
+    # Verify counters from 3rd period
+    Verify any counters extended   {"${DL_PRB_UTIL_SLOT_MAX}": "NRCELL-1"} \=\= 6
+    ...                            0 < {"${UL_PRB_UTIL_SLOT_MAX}": "NRCELL-1"} <\= 5
+    ...                            counters_data=${counters_data}    timestamp_offset=${1}
+
+    # Verify counters from 4th period
+    Verify any counters extended   96 < {"${DL_PRB_UTIL_SLOT_MAX}": "NRCELL-1"} <\= 100
+    ...                            96 < {"${UL_PRB_UTIL_SLOT_MAX}": "NRCELL-1"} <\= 100
+    ...                            counters_data=${counters_data}    timestamp_offset=${0}
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_D01}
+
+
+[1]CB008204_D03_scs30_cell_size_15km_NSA__Counters_for_5G_Timing_advance_measurement_based_on_expectedCellSize
+    [Tags]    CRT    CLOUD_5G_I_LO_AP_LO    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AZQJ
+    [Setup]     Run Keywords    Adjust parameters using delta   delta=${DELTA_TC_D03}
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx4}
+    ...                 AND     Wait for first counters values to arrive
+    ...                 AND     Start collecting logs
+
+    ${ue_11}=    Set Variable    101
+    ${ue_12}=    Set Variable    102
+
+    ${profile_id_1}=    Set Variable    1
+    ${profile_id_2}=    Set Variable    2
+
+    Setup X2 link
+    Wait for X2 establishment
+
+    Set UE testmode     profile_id=${profile_id_1}    ue_p_delay_initial=106     ue_speed=5
+    ...                 nb_reps_ta_sim=10    ue_p_delay_max=108   ue_p_delay_min=106
+
+    Set UE testmode     profile_id=${profile_id_2}    ue_p_delay_initial=346    ue_speed=5
+    ...                 nb_reps_ta_sim=10    ue_p_delay_max=348   ue_p_delay_min=342
+
+    Set UE to testmode    _id=${ue_11}    testmode=ta    action=activate    profile_id=${profile_id_1}
+    Attach ue to enb   ue_id=${ue_11}    optional_parameters=profile\=${profile_id_1}
+    Start gnb addition procedure    ue=${ue_11}    target_gnb=2    target_cells=1    bearer=2    dc_type=split_scg    timeout=${20}
+    Wait for ue to be active    sec=30
+    Detach ue    ue_id=${ue_11}
+
+    Set UE to testmode    _id=${ue_12}    testmode=ta    action=activate    profile_id=${profile_id_2}
+    Attach ue to enb   ue_id=${ue_12}    optional_parameters=profile\=${profile_id_2}
+    Start gnb addition procedure    ue=${ue_12}    target_gnb=2    target_cells=1    bearer=2    dc_type=split_scg    timeout=${20}
+    Wait for ue to be active    sec=30
+    Detach ue    ue_id=${ue_12}
+
+    Wait for next pm period to start
+
+    #Validate PM counters
+    ${counters_list} =   Create List    ${TA_RACH_RESP_BIN_03}
+    ...                                 ${TA_RACH_RESP_BIN_08}
+    ...                                 ${TA_RRC_CON_BIN_03}
+    ...                                 ${TA_RRC_CON_BIN_08}
+    ...                                 ${EXP_CELL_SIZE_CFG}
+    ${counters_data} =   Get pm counters values    counter_ids_list=${counters_list}    csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    Verify any counters extended   {"${TA_RACH_RESP_BIN_03}": "NRCELL-1/NRTA"} \=\= 1
+    ...                            {"${TA_RACH_RESP_BIN_08}": "NRCELL-1/NRTA"} \=\= 1
+    ...                            {"${TA_RRC_CON_BIN_03}": "NRCELL-1/NRTA"} > 0
+    ...                            {"${TA_RRC_CON_BIN_08}": "NRCELL-1/NRTA"} > 0
+    ...                            {"${EXP_CELL_SIZE_CFG}": "NRCELL-1/NRTA"} \=\= 4
+    ...                            counters_data=${counters_data}    timestamp_offset=${0}
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_D03}
+
+
+[1]CB008204_D08_Counters_to_measure_max_DL_UL_PRB_utilization_with_DL_CA
+    [Tags]    CRT    CLOUD_5G_I_BOO_AP_LOO     VARIANT_SANSA_FS_ECPRI_CMWV_FDD+TDD
+    [Setup]     Run Keywords    Adjust parameters using delta   delta=${DELTA_TC_D08}
+    # Step 1: Cell is onAir and Wait for first PM stats collection
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx6}
+    # Step 3: Wait for first pm stats collection
+    ...                 AND     Wait for first counters values to arrive
+    ...                 AND     Start collecting logs
+
+    ${ue_1}=    Set Variable    1
+    # Step 2:  Set traffic type as internal
+    Prepare internal traffic generator   ue_id=${ue_1}   pdu_id=1
+
+    # Step 4: Attach SA UE1 to FDD cell
+    Attach UE and Establish PDU session    ue_id=${ue_1}
+
+    # Step 5: Start maximum DL/UL data traffic on SA UE1 (make sure that all resources are 	used on both carriers)
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=1    mbps=150    seconds=10    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=ul    trf_id=1    mbps=150    seconds=10    size=500
+    Wait for throughput stable     sec=3
+    Check in egate that CA is working    id=${ue_1}    scell=0-1    type=pdsch
+
+    # Step 7: Detach SA UE1
+    Deregister UE   ue_id=${ue_1}   by=ue   ue_deregister_type=switch_off
+
+    # Step 8: Change value of NRBTS.sCellActivationMethod to bufferBased
+    common_gnb.Update parameter value    parameter=sCellActivationMethod    value=bufferBased    dist_name=MRBTS-1/NRBTS-1
+
+    # Step 9: Wait until pm counter period ends - 1st period end
+    Wait for next pm period to start
+
+    # Step 10: Attach SA UE1 again to FDD cell
+    Attach UE and Establish PDU session    ue_id=${ue_1}
+
+    # Step 11: Start maximum DL/UL data traffic on SA UE1 (make sure that all resources are 	used on both carriers):
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=1    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=2    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=3    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=4    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=5    mbps=130   seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=6    mbps=130   seconds=120    size=500
+
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=ul    trf_id=1    mbps=150   seconds=10    size=500
+
+    # wait till end of 2nd period
+    Wait for next pm period to start
+
+    # Step 12: Collect counter stats
+    ${DL_PRB_UTIL_SLOT_MAX} =  Set Variable   M55308C36001
+    ${UL_PRB_UTIL_SLOT_MAX} =  Set Variable   M55308C36002
+
+    ${counters_list} =   Create List    ${DL_PRB_UTIL_SLOT_MAX}  ${UL_PRB_UTIL_SLOT_MAX}
+    ${counters_data} =   get_pm_counters_values    counter_ids_list=${counters_list}    csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    # Verify counters from 1st period
+    Verify any counters extended   96 < {"${DL_PRB_UTIL_SLOT_MAX}": "NRCELL-1"} <\= 100
+    ...                            96 < {"${UL_PRB_UTIL_SLOT_MAX}": "NRCELL-1"} <\= 100
+    ...                            counters_data=${counters_data}    timestamp_offset=${1}
+
+    # Verify counters from 2nd period
+    Verify any counters extended   96 < {"${DL_PRB_UTIL_SLOT_MAX}": "NRCELL-1"} <\= 100
+    ...                            96 < {"${DL_PRB_UTIL_SLOT_MAX}": "NRCELL-3"} <\= 100
+    ...                            96 < {"${UL_PRB_UTIL_SLOT_MAX}": "NRCELL-1"} <\= 100
+    ...                            counters_data=${counters_data}    timestamp_offset=${0}
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_D08}
+
+
+[1]CB008204_E01_Counters_to_measure_DL_UL_used_PRB_per_PMQAP
+    [Tags]    CRT    CLOUD_5G_I_LO_AP_LO    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AZQJ
+    [Setup]     Run Keywords    prep_wts_configs.Create WTS config for E01
+    ...                 AND     Adjust parameters using delta   delta=${DELTA_TC_E01}
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx4}
+    ...                                                 wts_config_path=${WTS_CONFIG_PATH}
+    # Step 1: Cell is onAir and Wait for first PM stats collection
+    ...                 AND     Wait for first counters values to arrive
+    ...                 AND     Start collecting logs
+
+    ${ue_1}=    Set Variable    1
+    ${ue_2}=    Set Variable    21
+
+    # Step 2:  Set traffic type as internal
+    Prepare internal traffic generator   ue_id=${ue_1}   pdu_id=1
+    Prepare internal traffic generator   ue_id=${ue_2}   pdu_id=1
+
+    # Step 4: Attach SA UE1 with matching parameters configured in first PMQAP profile
+    Attach UE and Establish PDU session    ue_id=${ue_1}
+
+    # Step 5: Start DL/UP data traffic on SA UE1
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=1    packets=1    size=1000
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=ul    trf_id=1    packets=1    size=1000
+
+    # Step 6: Detach SA UE1
+    Deregister UE   ue_id=${ue_1}   by=ue   ue_deregister_type=switch_off
+
+    # Step 7: Wait until pm stats collection period will finish
+    Wait for next pm period to start
+    # Verify counters for E01 2nd cycle
+
+    # Step 8: Attach SA UE2 with matching parameters configured in second PMQAP profile
+    Attach UE and Establish PDU session    ue_id=${ue_2}
+
+    # Step 9: Start DL/UP data traffic on SA UE2
+    Start traffic stream    ue=${ue_2}    pdu=1    dir=dl    trf_id=1    packets=1    size=1000
+    Start traffic stream    ue=${ue_2}    pdu=1    dir=ul    trf_id=1    packets=1    size=1000
+
+    # Step 10: Detach SA UE2
+    Deregister UE   ue_id=${ue_2}   by=ue   ue_deregister_type=switch_off
+
+    # Step 11: Collect counters stats
+    Wait for next pm period to start
+    ${counters_list} =   Create List    ${DL_PRB_USED_DATA_PMQAP}  ${UL_PRB_USED_DATA_PMQAP}
+    ${counters_data} =   get_pm_counters_values    counter_ids_list=${counters_list}    csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    # Verify counters from 1st period
+    Verify any counters extended
+    ...   0 <\= {"${DL_PRB_USED_DATA_PMQAP}": "NRCELL-1/NRPMQAP-1"} <\= 20
+    ...   0 <\= {"${UL_PRB_USED_DATA_PMQAP}": "NRCELL-1/NRPMQAP-1"} <\= 30
+    ...   {"${DL_PRB_USED_DATA_PMQAP}": "NRCELL-1/NRPMQAP-2"} \=\= 0
+    ...   {"${UL_PRB_USED_DATA_PMQAP}": "NRCELL-1/NRPMQAP-2"} \=\= 0
+    ...   counters_data=${counters_data}    timestamp_offset=${1}
+
+    # Verify counters from 2nd period
+    Verify any counters extended
+    ...     {"${DL_PRB_USED_DATA_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= 0
+    ...     {"${UL_PRB_USED_DATA_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= 0
+    ...     0 <\= {"${DL_PRB_USED_DATA_PMQAP}": "NRCELL-1/NRPMQAP-2"} <\= 20
+    ...     0 <\= {"${UL_PRB_USED_DATA_PMQAP}": "NRCELL-1/NRPMQAP-2"} <\= 30
+    ...     counters_data=${counters_data}    timestamp_offset=${0}
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_E01}
+
+
+[1]CB008204_E03_Counters_to_measure_DL_UL_PRB_utilization_per_PMQAP_with_DL_CA
+    [Tags]    CRT    CLOUD_5G_I_BOO_AP_LOO     VARIANT_SANSA_FS_ECPRI_CMWV_FDD+TDD
+    [Setup]     Run Keywords   Adjust parameters using delta   delta=${DELTA_TC_E03}
+    # Step 1: Cell is onAir and Wait for first PM stats collection
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx6}
+    # Step 3: Wait for first pm stats collection
+    ...                 AND     Wait for first counters values to arrive
+    ...                 AND     Start collecting logs
+
+    ${ue_1}=    Set Variable    1
+
+    # Step 2:  Set traffic type as internal
+    Prepare internal traffic generator   ue_id=${ue_1}   pdu_id=1
+
+    # Step 4: Attach SA UE1 to FDD cell with matching parameters configured in PMQAP profile
+    Attach UE and Establish PDU session    ue_id=${ue_1}
+
+    # Step 5: Start DL/UP data traffic on SA UE1
+    Start traffic stream    ue=1    pdu=1    dir=dl    trf_id=1    mbps=130    seconds=120    size=500
+    Start traffic stream    ue=1    pdu=1    dir=dl    trf_id=2    mbps=130    seconds=120    size=500
+    Start traffic stream    ue=1    pdu=1    dir=dl    trf_id=3    mbps=130    seconds=120    size=500
+    Start traffic stream    ue=1    pdu=1    dir=dl    trf_id=4    mbps=130    seconds=120    size=500
+    Start traffic stream    ue=1    pdu=1    dir=dl    trf_id=5    mbps=130    seconds=120    size=500
+    Start traffic stream    ue=1    pdu=1    dir=dl    trf_id=6    mbps=130    seconds=120    size=500
+
+    Start traffic stream    ue=1    pdu=1    dir=ul    trf_id=1    mbps=150    seconds=120    size=500
+
+    Check in egate that CA is working    id=${ue_1}    scell=0-1    type=pdsch
+
+    # Step 6: Detach SA UE1
+    Deregister UE   ue_id=${ue_1}   by=ue   ue_deregister_type=switch_off
+
+    # Step 7: Change value of NRBTS.sCellActivationMethod to bufferBased
+    Update parameter value    parameter=sCellActivationMethod    value=bufferBased    dist_name=MRBTS-1/NRBTS-1
+
+    # Step 8: Wait until pm counter period ends
+    Wait for next pm period to start
+
+    # Step 9: Attach SA UE1 again to FDD cell
+    Attach UE and Establish PDU session    ue_id=${ue_1}
+
+    # Step 10: Start maximum DL/UL data traffic on SA UE1 (make sure that all resources are used on both carriers):
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=1    mbps=130    seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=2    mbps=130    seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=3    mbps=130    seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=4    mbps=130    seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=5    mbps=130    seconds=120    size=500
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=dl    trf_id=6    mbps=130    seconds=120    size=500
+
+    Start traffic stream    ue=${ue_1}    pdu=1    dir=ul    trf_id=1    mbps=150    seconds=120    size=500
+
+    Check in egate that CA is working    id=${ue_1}    scell=0-1    type=pdsch
+
+    # Step 11: Collect counters stats
+    Wait for next pm period to start
+
+     # Step 12: Collect counter stats
+    ${DL_PRB_UTIL_SLOT_MAX_PMQAP} =  Set Variable   M55363C00003
+    ${UL_PRB_UTIL_SLOT_MAX_PMQAP} =  Set Variable   M55363C00004
+
+    ${counters_list} =   Create List    ${DL_PRB_UTIL_SLOT_MAX_PMQAP}  ${UL_PRB_UTIL_SLOT_MAX_PMQAP}
+    ${counters_data} =   get_pm_counters_values    counter_ids_list=${counters_list}    csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    # Verify counters from 1st period
+    Verify any counters extended   96 < {"${DL_PRB_UTIL_SLOT_MAX_PMQAP}": "NRCELL-1/NRPMQAP-1"} <\= 100
+    ...                            96 < {"${DL_PRB_UTIL_SLOT_MAX_PMQAP}": "NRCELL-3/NRPMQAP-1"} <\= 100
+    ...                            96 < {"${UL_PRB_UTIL_SLOT_MAX_PMQAP}": "NRCELL-1/NRPMQAP-1"} <\= 100
+    ...                            counters_data=${counters_data}    timestamp_offset=${1}
+
+    # Verify counters from 2nd period
+    Verify any counters extended   96 < {"${DL_PRB_UTIL_SLOT_MAX_PMQAP}": "NRCELL-1/NRPMQAP-1"} <\= 100
+    ...                            96 < {"${DL_PRB_UTIL_SLOT_MAX_PMQAP}": "NRCELL-3/NRPMQAP-1"} <\= 100
+    ...                            96 < {"${UL_PRB_UTIL_SLOT_MAX_PMQAP}": "NRCELL-1/NRPMQAP-1"} <\= 100
+    ...                            counters_data=${counters_data}    timestamp_offset=${0}
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_E01}
+
+
+[1]CB008204_F02_NSA_RLC_Classical_AM_Counters_to_measure_DL_packet_loss_ratio
+    [Tags]    CRT    CLOUD_5G_I_LO_AP_LO    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AZQJ
+    [Setup]     Run Keywords    Adjust parameters using delta   delta=${DELTA_TC_F02}
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx4}
+    ...                 AND     Wait for first counters values to arrive
+    ...                 AND     Start collecting logs
+
+    ${ue_id}=    Set Variable    101
+    ${profile_id}=    Set Variable    1
+
+    Setup X2 link
+    Wait for X2 establishment
+
+    Configure dlrlcdrop testmode    profile_id=${profile_id}
+
+    Attach ue to enb   ue_id=${ue_id}    optional_parameters=profile\=${profile_id}
+
+    Start gnb addition procedure    ue=${ue_id}    target_gnb=2    target_cells=2    bearer=2    dc_type=split_scg    timeout=${20}
+
+    Start traffic stream    ue=${ue_id}    id=2    dir=dl    trf_id=1    mbps=150    size=500    packets=10000
+
+    Wait for next pm period to start
+
+    Start traffic stream    ue=${ue_id}     id=2     dir=dl    trf_id=1    mbps=150    seconds=60
+    Start traffic stream    ue=${ue_id}     id=2     dir=dl    trf_id=2    mbps=150    seconds=60
+    Start traffic stream    ue=${ue_id}     id=2     dir=dl    trf_id=3    mbps=150    seconds=60
+    Start traffic stream    ue=${ue_id}     id=2     dir=dl    trf_id=4    mbps=150    seconds=60
+    Start traffic stream    ue=${ue_id}     id=2     dir=dl    trf_id=5    mbps=150    seconds=60
+
+    Start traffic stream    ue=${ue_id}    id=2     dir=ul    trf_id=1    mbps=10    seconds=60
+
+    Set UE to testmode     _id=${ue_id}    testmode=dlrlcdrop     profile_id=${profile_id}    action=activate
+
+    Wait for next pm period to start
+
+    ${counters_list} =   Create List    ${DL_RLC_SDU_USDAT_DU_PMQAP}    ${DL_RLC_SDU_TX_AIR_PMQAP}    ${DL_RLC_SDU_LOST_AIR_PMQAP}
+    ${counters_data} =   get_pm_counters_values    counter_ids_list=${counters_list}    csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    Verify any counters extended   {"${DL_RLC_SDU_TX_AIR_PMQAP}": "NRCELL-2/NRPMQAP-1"} > 0
+    ...                            {"${DL_RLC_SDU_USDAT_DU_PMQAP}": "NRCELL-2/NRPMQAP-1"} \=\= {"${DL_RLC_SDU_TX_AIR_PMQAP}": "NRCELL-2/NRPMQAP-1"}
+    ...                            counters_data=${counters_data}    timestamp_offset=${1}
+
+    Verify any counters extended   {"${DL_RLC_SDU_TX_AIR_PMQAP}": "NRCELL-2/NRPMQAP-1"} > 0
+    ...                            {"${DL_RLC_SDU_LOST_AIR_PMQAP}": "NRCELL-2/NRPMQAP-1"} > 0
+    ...                            counters_data=${counters_data}    timestamp_offset=${0}
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_F02}
+
+
+[1]CB008204_F04_SA_RLC_Classical_AM_UM_Multi_bearer_scenario_Counters_to_measure_DL_packet_loss_ratio
+    [Tags]    CRT    CLOUD_5G_I_LO_AP_LO    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AZQJ
+    [Setup]     Run Keywords    Adjust parameters using delta   delta=${DELTA_TC_F04}
+    ...                 AND     Prepare environment     sib1_reception_dict=${CELLS_ENBx1_GNBx4}
+    ...                 AND     Wait for first counters values to arrive
+    ...                 AND     Start collecting logs
+
+    Set UE capabilities     ue_param_id=1    ue_nr_capabilities=${UE_CAPABILITIES_F04}
+
+    Prepare internal traffic generator    ue_id=1    pdu_id=1
+    Attach UE and Establish PDU session    ue_id=1
+
+    Modify pdu session    ue_id=1    pdu_id=1    qos_to_add=2    by=amf
+    Modify pdu session    ue_id=1    pdu_id=1    qos_to_add=3    by=amf
+
+    Start traffic stream    ue=1    pdu=1    qfi=1    dir=dl    trf_id=1    mbps=30    seconds=10    size=500
+    Start traffic stream    ue=1    pdu=1    qfi=1    dir=ul    trf_id=1    mbps=10    seconds=10    size=500
+
+    Wait for next pm period to start
+
+    Start traffic stream    ue=1    pdu=1   qfi=2   dir=dl      trf_id=1    mbps=30     seconds=10      size=500
+    Start traffic stream    ue=1    pdu=1   qfi=2   dir=ul      trf_id=1    mbps=10     seconds=10      size=500
+    Start traffic stream    ue=1    pdu=1   qfi=3   dir=dl      trf_id=1    mbps=30     seconds=10      size=500
+    Start traffic stream    ue=1    pdu=1   qfi=3   dir=ul      trf_id=1    mbps=10     seconds=10      size=500
+
+    Wait for next pm period to start
+
+    # Verify counters
+    ${counters_list} =   Create List    ${DL_RLC_SDU_TX_AIR_PMQAP}      ${DL_RLC_PDU_TX_H_QOS_GRP_01}
+    ${counters_data} =   get_pm_counters_values    counter_ids_list=${counters_list}    csv_filepath=${OUTPUT_DIR}/${TEST_PREFIX}/counters
+
+    # Verify counters for F04 2nd cycle
+    Verify any counters extended   {"${DL_RLC_SDU_TX_AIR_PMQAP}": "NRCELL-1/NRPMQAP-1"} > 0
+    ...                            {"${DL_RLC_SDU_TX_AIR_PMQAP}": "NRCELL-1/NRPMQAP-2"} \=\= 0
+    ...                            {"${DL_RLC_SDU_TX_AIR_PMQAP}": "NRCELL-1/NRPMQAP-3"} \=\= 0
+    ...                            counters_data=${counters_data}    timestamp_offset=${1}
+
+    # Verify counters for F04 3rd cycle
+    Verify any counters extended   {"${DL_RLC_SDU_TX_AIR_PMQAP}": "NRCELL-1/NRPMQAP-1"} \=\= 0
+    ...                            {"${DL_RLC_SDU_TX_AIR_PMQAP}": "NRCELL-1/NRPMQAP-2"} \=\= 0
+    ...                            {"${DL_RLC_SDU_TX_AIR_PMQAP}": "NRCELL-1/NRPMQAP-3"} > 0
+    ...                            ${DL_RLC_PDU_TX_H_QOS_GRP_01} > 0
+    ...                            counters_data=${counters_data}    timestamp_offset=${0}
+
+    [Teardown]    Run Keywords    Produce Scout Data
+    ...                    AND    Teardown collecting logs in robot
+    ...                    AND    Cleanup parameters after testcase    delta=${CLEANUP_DELTA_TC_F04}

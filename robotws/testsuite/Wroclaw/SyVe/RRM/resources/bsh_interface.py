@@ -1,0 +1,230 @@
+"""
+:author: Lukasz Wesolowski
+:contact: lukasz.wesolowski@nokia.com
+"""
+import re
+
+from taf.config.testline.connection_details import SshServiceDetails
+
+from taf.ul.bts_components.invoke_shell.InvokeShellHandler import InvokeSshHandler
+from testsuite.Wroclaw.SyVe.RRM.resources.ProxySsh import execute_ssh_proxy_command
+from testsuite.Wroclaw.SyVe.RRM.resources.exceptions import (IncorrectBshNumber, DeviceHostnameNotFound, CommandError,
+                                                             NodeIdNotFound)
+from testsuite.Wroclaw.SyVe.RRM.resources.Logger import Logger
+
+
+def execute_ssh_command_on_bsh(smod_ssh_connection_parameters, bsh_number, command, look_for_keys=False, timeout=60):
+    """
+    Executes command on smod bsh device based on bsh number via ssh connection with proxy.
+
+    :param smod_ssh_connection_parameters: smod ssh credentials defined as SshServiceDetails object
+    :type smod_ssh_connection_parameters: class obj
+    :param bsh_number: bsh number of device including device id and cpu id, e.g.: "0:1" or "1:1"
+    :type bsh_number: str
+    :param command: command to execute on bsh, e.g.: "hostname"
+    :type command: str
+    :param look_for_keys: if True ssh keys will be used to connection first, False otherwise. Defaults to False.
+    :type look_for_keys: bool
+    :param timeout: timeout (in seconds) for command execution, defaults to 60
+    :type timeout: int or str
+
+    :return: output and error message from command execution, e.g.:
+             ('asp-1b', '') or ('', '/bin/bash: line 1: hostnames: command not found')
+    :rtype: tuple
+
+    :raises IncorrectBshNumber exception when incorrect bsh number has been provided.
+    :raises DeviceHostnameNotFound exception when device's hostname could not be found.
+    :raises CommandError exception when "chk topo" command execution used to get device hostname has failed.
+    """
+    _verify_bsh_number(bsh_number)
+
+    bsh_credentials = _get_ssh_credential_details_for_device_based_on_bsh_number(
+        smod_ssh_connection_parameters=smod_ssh_connection_parameters, bsh_number=bsh_number, slave_bts=False,
+        timeout=timeout)
+
+    output, error = execute_ssh_proxy_command(proxy_connection_details=smod_ssh_connection_parameters,
+                                              ssh_connection_parameters=bsh_credentials,
+                                              command=command,
+                                              execution_timeout=timeout,
+                                              look_for_keys=look_for_keys)
+
+    return output, error
+
+
+def get_ssh_credential_details_for_device_based_on_bsh_number(smod_ssh_connection_parameters, bsh_number,
+                                                              slave_bts=False, timeout=30):
+    """
+    Gets ssh credential details for smod device based on bsh number.
+    Device hostname is getting from "chk topo" command output performed on SMOD via ssh connection.
+    Username and password is the same as SMOD device credentials used to ssh connection.
+
+    :param smod_ssh_connection_parameters: smod ssh credentials defined as SshServiceDetails object
+    :type smod_ssh_connection_parameters: class obj
+    :param bsh_number: bsh number of device including device id and cpu id, e.g.: "0:1" or "1:1"
+    :type bsh_number: str
+    :param slave_bts: Used for fullrack configuration only. True if command should be performed on the slave BTS,
+                      False otherwise. Defaults to False
+    :type slave_bts: bool
+    :param timeout: timeout (in seconds) for smod command execution, defaults to 30
+    :type timeout: int or str
+
+    :return: SshServiceDetails object with following credential attributes: addr, username and password
+    :rtype: class obj
+
+    :raises IncorrectBshNumber exception when incorrect bsh number has been provided.
+    :raises DeviceHostnameNotFound exception when device's hostname could not be found.
+    :raises CommandError exception when "chk topo" command execution used to get device hostname has failed.
+    """
+    _verify_bsh_number(bsh_number)
+
+    return _get_ssh_credential_details_for_device_based_on_bsh_number(
+        smod_ssh_connection_parameters=smod_ssh_connection_parameters, bsh_number=bsh_number, slave_bts=slave_bts,
+        timeout=timeout)
+
+
+def _get_ssh_credential_details_for_device_based_on_bsh_number(smod_ssh_connection_parameters, bsh_number, slave_bts,
+                                                               timeout=30):
+    """
+    Gets ssh credential details for smod device based on bsh number.
+    Device hostname is getting from "chk topo" command output performed on SMOD via ssh connection.
+    Username and password is the same as SMOD device credentials used to ssh connection.
+
+    :param smod_ssh_connection_parameters: smod ssh credentials defined as SshServiceDetails object
+    :type smod_ssh_connection_parameters: class obj
+    :param bsh_number: bsh number of device including device id and cpu id, e.g.: "0:1" or "1:1"
+    :type bsh_number: str
+    :param slave_bts: Used for fullrack configuration only. True if command should be performed on the slave BTS,
+                      False otherwise.
+    :type slave_bts: bool
+    :param timeout: timeout (in seconds) for smod command execution, defaults to 30
+    :type timeout: int or str
+
+    :return: SshServiceDetails object with following credential attributes: addr, username and password
+    :rtype: class obj
+
+    :raises DeviceHostnameNotFound exception when device's hostname could not be found.
+    :raises CommandError exception when "chk topo" command execution used to get device hostname has failed.
+    """
+
+    bsh_hostname = _get_device_hostname_based_on_bsh_number(bsh_number=bsh_number, slave_bts=slave_bts,
+                                                            timeout=int(timeout))
+
+    bsh_ssh_connection_details = SshServiceDetails(addr=bsh_hostname, username=smod_ssh_connection_parameters.username,
+                                                   password=smod_ssh_connection_parameters.password)
+
+    return bsh_ssh_connection_details
+
+
+def _get_device_hostname_based_on_bsh_number(bsh_number, slave_bts, timeout=30):
+    """
+    Gets bsh device hostname based on bsh number using smod ssh connection.
+    Command "chk topo" is executed on smod to get smod devices topology.
+    Example of "chk topo" command output:
+    ++ [fct-0a] sysbshtopo      : rack topology and accesses between cpus
+    - backplane id = "3" ...................................................... ok
+    - ctrll C1 ASIB [0x1011] lfs       0:0  ................................... i
+    - slave B1 ABIO [0x1230] lfs   bsh -t 5 1:0  (fsp-1a) ..................... ok
+    - slave B1 ABIO [0x1240] loki  bsh -t 5 1:1  (fsp-1b) ..................... ok
+    - slave B1 ABIO [0x1250] loki  bsh -t 5 1:2  (fsp-1c) ..................... ok
+    - content of /tftpboot/slot01 ............................................. ok
+
+    [fct-0a] duration : 1.9 sec
+    [fct-0a] # passed : 5
+    [fct-0a] # failed : 0
+    [fct-0a] # info   : 1
+
+    :param bsh_number: bsh number of device including device id and cpu id, e.g.: "0:1" or "1:1"
+    :type bsh_number: str
+    :param slave_bts: Used for fullrack configuration only. True if command should be performed on the slave BTS,
+                      False otherwise.
+    :type slave_bts: bool
+    :param timeout: timeout (in seconds) for smod command execution, defaults to 30
+    :type timeout: int
+
+    :return: smod device hostname, e.g.: asp-1a
+    :rtype: str
+
+    :raises DeviceHostnameNotFound exception when device's hostname could not be found.
+    :raises CommandError exception when "chk topo" command execution used to get device hostname has failed.
+    """
+    topology_info = _get_topology_info(slave_bts=slave_bts, timeout=timeout)
+
+    Logger.debug(f"Topology info: {topology_info}")
+
+    bts_side = "left" if "[0x1" in topology_info else "right"
+    node_id = _convert_bsh_id_to_node_id(bsh_id=bsh_number, bts_side=bts_side)
+
+    Logger.debug(f"Node_ID: {node_id}, BTS side: {bts_side}")
+
+    for line in topology_info.split("\n"):
+        if node_id in line:
+            alias_search = re.search(r"\s\(.*\)\s", line)
+            if alias_search:
+                return alias_search.group().strip()[1:-1]
+
+    raise DeviceHostnameNotFound(f"Device hostname for bsh number '{bsh_number}' (node ID: '{node_id}') "
+                                 f"not found: \n'{topology_info}'")
+
+
+def _get_topology_info(slave_bts, timeout=30):
+    """
+    Gets smod devices topology information by executing "chk topo" command on smod via ssh connection.
+    :param slave_bts: Used for fullrack configuration only. True if command should be performed on the slave BTS,
+                          False otherwise.
+    :type slave_bts: bool
+    :param timeout: timeout (in seconds) for smod command execution, defaults to 30
+    :type timeout: int or str
+
+    :return: output from "chk topo" command execution
+    :rtype: str
+    :raises CommandError exception when "chk topo" command execution has failed.
+    """
+    smod_invoke_session = InvokeSshHandler()
+    command_output = smod_invoke_session.get_chk_topo_output_from_smod(timeout=timeout, slave_bts=slave_bts)
+
+    if re.search("error", command_output, re.IGNORECASE) is not None:
+        raise CommandError(f"Command 'chk topo' execution ERROR found: {command_output}")
+    elif not command_output:
+        raise CommandError("Unknown command error, output is empty...")
+
+    return command_output
+
+
+def _verify_bsh_number(bsh_number):
+    """
+    Verifies if bsh number is supported. Bsh number should consist of device id (int number form 0 to 3) and
+    cpu id (int number form 0 to 3).
+    :param bsh_number: bsh number of device including device id and cpu id, e.g.: "0:1" or "1:1"
+    :type bsh_number: str
+
+    :raises IncorrectBshNumber exception when incorrect bsh number has been provided.
+    """
+    if not re.match(r"[1-3]:[0-3]|0:[1-3]", bsh_number):
+        raise IncorrectBshNumber(f"Bsh number '{bsh_number}' is not supported.")
+
+
+def _convert_bsh_id_to_node_id(bsh_id, bts_side):
+    """
+    Converts bsh ID to device node ID.
+
+    :param bsh_id: bsh ID to convert e.g. '1:2'
+    :type bsh_id: str
+    :param bts_side: bts location in amia case, 'left' or 'right'
+    :type bts_side: str
+
+    :return: converted node ID e.g. '0x1250'
+    :rtype: str
+    """
+    bsh_to_node_id = {'left': {'0:1': '0x1051', '0:2': '0x1031', '0:3': '0x1041',
+                               '1:0': '0x1230', '1:1': '0x1240', '1:2': '0x1250', '1:3': '0x1260',
+                               '2:0': '0x1330', '2:1': '0x1340', '2:2': '0x1350', '2:3': '0x1360',
+                               '3:0': '0x1430', '3:1': '0x1440', '3:2': '0x1450', '3:3': '0x1460'},
+                      'right': {'0:1': '0x2051', '0:2': '0x2031', '0:3': '0x2041',
+                                '1:0': '0x2230', '1:1': '0x2240', '1:2': '0x2250', '1:3': '0x2260',
+                                '2:0': '0x2330', '2:1': '0x2340', '2:2': '0x2350', '2:3': '0x2360',
+                                '3:0': '0x2430', '3:1': '0x2440', '3:2': '0x2450', '3:3': '0x2460'}}
+
+    if node_id := bsh_to_node_id[bts_side].get(bsh_id):
+        return node_id
+
+    raise NodeIdNotFound(f"Node ID not found for particular bsh ID: '{bsh_id}' and bts side: '{bts_side}'")

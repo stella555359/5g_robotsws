@@ -1,0 +1,107 @@
+heat_template_version: 2016-10-14
+description: 'v77: Template to instantiate standalone management node instance'
+parameters:
+  vnf_name:
+    type: string
+    description: 5GBTS VNF name
+    default: 5GBTS
+    constraints:
+      - length: {min: 1, max: 38}
+        description: ( VNF NAME must be length <1-38>)
+  cluster_id:
+    description: Cluster identification.
+    type: string
+    default: '1'
+    constraints:
+      - length: {min: 1, max: 8}
+        description: "Invalid cluster_id length (should be [1,8])"
+  ha_cluster:
+    type: comma_delimited_list
+    description: HA nodes acting as etcd member instances and quorate voter
+    default:
+    - oam-000
+  password:
+    type: json
+    description: password hash to use for RCP account
+  user_info:
+    type: json
+    description: add user to client host
+    default: {}
+  extra_cloud_config_data:
+    type: json
+    default: {}
+  run_command:
+    type: comma_delimited_list
+    description: command only runs during first boot
+    default: []
+  boot_command:
+    type: comma_delimited_list
+    description: command runs on every boot
+    default: []
+  config_external_ip:
+    description: configure external ip and roles if set enabled
+    type: string
+    default: disabled
+
+resources:
+  add_user:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        map_merge:
+        - {get_param: extra_cloud_config_data}
+        - {get_param: user_info}
+  run_cmd:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        map_merge:
+        - runcmd: {get_param: run_command}
+        - bootcmd: {get_param: boot_command}
+
+outputs:
+  userdata:
+    description: common cloud-init userdata parameters shared by all instances
+    value:
+      add_user: {get_resource: add_user}
+      run_cmd: {get_resource: run_cmd}
+  metadata:
+    description: common metadata parameters shared by all instances
+    value:
+      cluster-id:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      ha_db_backend: memory
+      ha_db_memory_size: 256
+      etcd-instances:
+        repeat:
+          for_each:
+            <name>: {get_param: ha_cluster}
+          template:
+            str_replace:
+              template: $vnf-$cid-<host>
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                <host>: <name>
+      quorate-monitor-voter-nodes:
+        repeat:
+          for_each:
+            <name>: {get_param: ha_cluster}
+          template:
+            str_replace:
+              template: $vnf-$cid-<host>
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                <host>: <name>
+      cloudplatform:
+        if:
+          - equals:
+            - get_param: config_external_ip
+            - enabled
+          - NCIR
+          - ~

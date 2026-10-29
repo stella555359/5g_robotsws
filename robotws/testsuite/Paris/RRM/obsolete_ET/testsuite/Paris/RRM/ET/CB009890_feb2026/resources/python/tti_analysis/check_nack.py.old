@@ -1,0 +1,191 @@
+import logging
+
+from datetime import datetime
+from datetime import timedelta
+
+from testsuite.Paris.RRM.ET.CB009890.resources.python.tti_analyzer_framework import pandas_gate
+from testsuite.Paris.RRM.ET.CB009890.resources.python.tti_analysis.helper_functions import display_df_as_html
+
+# Robot Framework Libraries:
+from robot.libraries.BuiltIn import BuiltIn
+
+rbi = BuiltIn()
+pd = None
+
+
+def log_begin_end_func_name(fn):
+    def inner(*args, **kwargs):
+        logging.info("============================== Begin Function {0}".format(fn.__name__))
+        func_return = fn(*args, **kwargs)
+        logging.info("============================== End Function {0}".format(fn.__name__))
+        return func_return
+    return inner
+
+
+""" Functions to be used """
+
+
+@log_begin_end_func_name
+def check_nack_in_df(path_to_pickle, by='physCellId', column_name='dlHarqRxDataArray.ackNack'):
+    """ This function checks if there are NACKS in DF
+        Test will fail if NACK is present
+
+        :param path_to_pickle: Path of input pickle file
+        :param column_name: column name to check for NACKS e.g dlHarqRxDataArray.ackNack
+
+    """
+    df = pd.read_pickle(path_to_pickle)
+    df = df[['timeStamp', 'sfn', 'slot', 'rnti', 'physCellId', column_name]]
+
+    # Validation Threshold: Percentage of NACKs and DTX to accept
+    # threshold = 0.1
+    # threshold = 1.0
+    threshold = 1.2
+
+    # Check NACK and DTX in dataframe
+    is_nack_present = any(x in df[column_name].values for x in ('NACK', 'DTX'))
+    rbi.log("Is NACK or DTX present: {}".format(is_nack_present))
+    nack_dtx_df = df.loc[df[column_name] != 'ACK'].dropna(subset=[column_name])
+
+    # Get percentage of NACK
+    percentage = 100 * len(nack_dtx_df) / len(df[column_name])
+    rbi.log("Percentage of NACK and DTX: {} Threshold accepted: {}".format(percentage, threshold))
+
+    global filtered_df_nack
+    filtered_df_nack = df[[by, column_name]].dropna()
+    rbi.log('filtered_df_acknack: {}'.format(filtered_df_nack))
+
+    global acknack_stats
+    acknack_stats = filtered_df_nack.value_counts().reset_index()
+    # acknack_stats = acknack_stats.rename(columns={0: 'Count'})
+    """Identify total events per defined group in trace"""
+    global total_events_grouped
+    total_events_grouped = filtered_df_nack.groupby(by).size()
+    """Add new columns to df"""
+    acknack_stats['Total Count'] = acknack_stats[by].map(total_events_grouped)
+    acknack_stats['Percentage'] = (acknack_stats['count'] / acknack_stats['Total Count']) * 100
+    """Combine stats"""
+    global combined_acknack_stats
+    combined_acknack_stats = acknack_stats.pivot(index=by, columns=column_name, values=['count', 'Percentage'])
+    combined_acknack_stats.fillna(0, inplace=True)
+    rbi.log('ackNack_stats: {}'.format(combined_acknack_stats))
+
+    if is_nack_present:
+        rbi.log("Showing first 10 failing rows...")
+        # display_df_as_html(nack_dtx_df.head(10))
+        if percentage > threshold:
+            rbi.log('Percentage ({}) did not reach threshold criteria ({}). Failing test case..'
+                    .format(percentage, threshold))
+            msg = '[ERR] NACKs or DTX present on {} rows. Percentage ({}) did not reach threshold criteria ({})'
+            rbi.fail(msg.format(len(nack_dtx_df), percentage, threshold))
+        else:
+            rbi.log("NACK or DTX present but threshold reached.. Passing test case")
+
+    return combined_acknack_stats
+
+
+@log_begin_end_func_name
+def check_reTx_in_df(path_to_pickle, by='physCellId', column_name='dlFdSchedData.txNumber'):
+    """ This function checks if there are reTx in DF
+        Test will fail if ReTx is present
+
+        :param path_to_pickle: Path of input pickle file
+        :param column_name: column name to check for txNumber e.g dlFdSchedData.txNumber
+
+    """
+    global reTx_df
+    df = pd.read_pickle(path_to_pickle)
+    df = df[['timeStamp', 'sfn', 'slot', 'rnti', 'physCellId', column_name]]
+
+    # Validation Threshold: Percentage of NACKs and DTX to accept
+    threshold = 0.1
+
+    # Check RETX in dataframe
+    is_retx_present = 2 in df[column_name].values
+    print("Is Retransmission present: {}".format(is_retx_present))
+    reTx_df = df.loc[df[column_name] != 1].dropna(subset=[column_name])
+
+    # Get percentage of ReTx
+    percentage = 100 * len(reTx_df) / len(df[column_name])
+    # percentage = 100 * len(df[df[column_name] == 2]) / len(df[column_name])
+    rbi.log("Percentage of ReTx: {} Threshold accepted: {}".format(percentage, threshold))
+
+    global filtered_df
+    filtered_df = df[[by, column_name]].dropna()
+    rbi.log('filtered_df: {}'.format(filtered_df))
+
+    global retx_stats
+    retx_stats = filtered_df.value_counts().reset_index()
+    # retx_stats = retx_stats.rename(columns={0: 'Count'})
+    """Identify total events per defined group in trace"""
+    global total_events_grouped
+    total_events_grouped = filtered_df.groupby(by).size()
+    """Add new columns to df"""
+    retx_stats['Total Count'] = retx_stats[by].map(total_events_grouped)
+    retx_stats['Percentage'] = (retx_stats['count'] / retx_stats['Total Count']) * 100
+    """Combine stats"""
+    global combined_retx_stats
+    combined_retx_stats = retx_stats.pivot(index=by, columns=column_name, values=['count', 'Percentage'])
+    combined_retx_stats.fillna(0, inplace=True)
+    rbi.log('ReTx_stats: {}'.format(combined_retx_stats))
+
+    if is_retx_present:
+        rbi.log("Showing first 10 failing rows...")
+        # display_df_as_html(reTx_df.head(10))
+        if percentage > threshold:
+            rbi.log('Percentage ({}) did not reach threshold criteria ({}). Failing test case..'
+                    .format(percentage, threshold))
+            rbi.fail('[ERR] ReTx present on {} rows. Percentage ({}) did not reach threshold criteria ({})'.format(len(
+                reTx_df), percentage, threshold))
+        else:
+            rbi.log("ReTx present but threshold reached.. Passing test case")
+
+    return combined_retx_stats
+
+
+@log_begin_end_func_name
+def get_directory(path):
+    path_tmp = path.split("/")
+    path = "/".join(path_tmp[:-1])
+    return path
+
+
+@log_begin_end_func_name
+def filter_valid_events_and_check_acknack_retx(path_to_pickle):
+
+    global pd
+    pd = pandas_gate.install_and_import_pandas()
+    df = pd.read_pickle(path_to_pickle)
+    pd.reset_option('^display.')
+
+    path_to_filtered_ttitrace_pkl = get_directory(path_to_pickle)+'/filtered_ttiTrace_acknack_retx.pkl'
+
+    # TTI Trace Events
+    dlFdSchedData_numOfPrb_event = 'dlFdSchedData.numOfPrb'
+    isValidWhatIsProposed = 'dlFdSchedData.isValidWhatIsProposed'
+    dlHarqRxDataArray_ackNack_event = 'dlHarqRxDataArray.ackNack'
+    dlFdSchedData_txNumber_event = 'dlFdSchedData.txNumber'
+
+    filtered_df = (
+        df.loc[((df[isValidWhatIsProposed] != 0) & (df['rnti'] != 65535)),
+               ['timeStamp', 'sfn', 'slot', 'rnti', 'lcrId', 'physCellId',
+                dlFdSchedData_txNumber_event, dlFdSchedData_numOfPrb_event, dlHarqRxDataArray_ackNack_event]]).dropna(
+        subset=[
+            dlFdSchedData_txNumber_event,
+            dlHarqRxDataArray_ackNack_event,
+            dlFdSchedData_numOfPrb_event
+        ], how='all').reset_index(drop=True)
+
+    # Save back to pickle
+    filtered_df.to_pickle(path_to_filtered_ttitrace_pkl)
+    combined_acknack_stats_physCellId = check_nack_in_df(path_to_filtered_ttitrace_pkl, by='physCellId',
+                                                         column_name='dlHarqRxDataArray.ackNack')
+    combined_acknack_stats_rnti = check_nack_in_df(path_to_filtered_ttitrace_pkl, by='rnti',
+                                                   column_name='dlHarqRxDataArray.ackNack')
+    combined_retx_stats_physCellId = check_reTx_in_df(path_to_filtered_ttitrace_pkl, by='physCellId',
+                                                      column_name='dlFdSchedData.txNumber')
+    combined_retx_stats_rnti = check_reTx_in_df(path_to_filtered_ttitrace_pkl, by='rnti',
+                                                column_name='dlFdSchedData.txNumber')
+
+    return [combined_acknack_stats_physCellId, combined_acknack_stats_rnti,
+            combined_retx_stats_physCellId, combined_retx_stats_rnti]

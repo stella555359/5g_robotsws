@@ -1,0 +1,35 @@
+# *** Settings ***
+# Documentation    Auther:xiaoxia.hao@nokia-sbell.com
+# Suite Setup    702 Suite Setup For UTE
+# Suite Teardown    702 Suite TearDown For UTE
+# Force Tags            5G_RAN_TDD    STATE_SW_UPLOADED    master_classicalbts_all    CLOUD_5G_CLASSICAL_ASIKL_ABILB1_2xAZQH
+# ...    PY39
+# ...           CIT    5G_RAN    SBTS23R4    RAN_5G    RAN_5G_TDD
+# Resource    Resources/5GC000702_common_ute.robot
+# 
+# *** Variables ***
+# 
+# *** Test Cases ***
+# [1]5GC000702_M_159_Configuration_Of_2S_1CC_4DL_2UL_RU_lock_unlock_AZQH
+#     [Documentation]    1 RU lock and unlock one by one, 5GC001821-4;5GC000702-28
+#     ...                CHBW:80MHz
+#     [Timeout]    90m
+#     [Setup]  702 Case SetUp For UTE    update_param_name=${FRAME_TO_11163ms_80MHz_4Symbols}
+#     5GC000702_M_159_Configuration_Of_2S_1CC_4DL_2UL_RU_lock_unlock_AZQH
+#     [Teardown]   702 Case TearDown For UTE    case_contain_special_operation=${True}
+# 
+# [1]5GC000702_M_161_Configuration_Of_2S_1CC_4DL_2UL_RU_lock_unlock_AZQH
+#     [Documentation]    1 RU lock and unlock one by one, 5GC000702-36;5GC000702-28
+#     ...                CHBW:80MHz
+#     [Timeout]    90m
+#     [Setup]  702 Case SetUp For UTE    scf_file_name=Configuration_36
+#     5GC000702_M_161_Configuration_Of_2S_1CC_4DL_2UL_RU_lock_unlock_AZQH
+#     [Teardown]   702 Case TearDown For UTE
+# 
+# [1]5GC000702_M_112_Configuration_Of_2S_1CC_4DL_256QAM_2UL_64QAM_100MHz_mcs15_SFP_FORT_[L3CALL]_AZQL
+#     [Documentation]    L3 call for 100M 4X4,5GC001821-4;5GC000702-28
+#     ...               CHBW:100MHz
+#     [Timeout]    60m
+#     [Setup]  702 Case SetUp For UTE
+#     5GC000702_M_112_Configuration_Of_2S_1CC_4DL_256QAM_2UL_64QAM_100MHz_mcs15_SFP_FORT_L3_Call_AZQL
+#     [Teardown]   702 Case TearDown For UTE

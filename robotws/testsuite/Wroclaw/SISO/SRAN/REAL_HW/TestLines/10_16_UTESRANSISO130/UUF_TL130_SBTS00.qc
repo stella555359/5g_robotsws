@@ -1,0 +1,22 @@
+{
+    "SBTS.*_ENB_9999.*": {
+        "Root\\Test_Sets\\Trunk\\VRF_WRO1\\VRF_WRO1_T06": {
+            "10_16_UTESRANSISO100": [
+                "[1][1.0] E2E_TL_SW_upgrade_rollback_with_OAM_KPI"
+            ]
+        },
+        "label": ".*CLOUD_10_16_UTESRANSISO100.*",
+        "qc_domain": "MN_RAN",
+        "qc_project": "RAN_VRF"
+    },
+    "SBTS26R2_ENB_0000.*": {
+        "Root\\Test_Sets\\26R2\\Regression\\VRF_WRO1\\VRF_WRO1_T06": {
+            "10_16_UTESRANSISO100": [
+                "[1][1.0] E2E_TL_SW_upgrade_rollback_with_OAM_KPI"
+            ]
+        },
+        "label": ".*CLOUD_10_16_UTESRANSISO100.*",
+        "qc_domain": "MN_RAN",
+        "qc_project": "RAN_VRF"
+    }
+}

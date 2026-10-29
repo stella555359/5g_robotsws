@@ -1,0 +1,45 @@
+*** Settings ***
+Library     ./lib/get_qualcomm_tput_bler.py
+Library     ./lib/get_ue_disp.py
+Library     ./lib/check_btslog.py
+Library     ./lib/access_env_info.py
+Library     ./lib/hard_reboot.py
+Library     ./lib/handle_nack_and_dtx.py
+Library     ./lib/7113_check_file.py
+Library     ./lib/check_num_scheduled_UEs_per_slot.py
+Library     ./lib/CB010659_9198_DFTsOFDM_check_PRB_235_Rule.py
+Library     ./lib/CB010659_check_maxCoedeRatePRB.py
+Library     ./lib/CB010659_check_reTx_status_and_reservedMCS.py
+Library     ./lib/CB009198_mcs_table_check_dft.py
+Library     ./lib/CB010708_mcs_table_check.py
+Library     ./lib/CB010708_mcs_table_check_256QAM.py
+Library     ./lib/Reorder_CSV.py
+Library     ./lib/Reorder_Features.py
+Library     ./lib/CB008305_check_cdm_group_dmrs_port.py
+Library     ./lib/CB008322_check_point.py
+Library     ./lib/CB008322_get_pattern_id.py
+Library     ./lib/CB008360_check_point.py
+Library     ./lib/getsubcellid.py
+Library     ./lib/CB009235_check.py
+Library     ./lib/CB009235_check_goodluck.py
+Library     ./lib/CB009235_powerboost_check_goodluck.py
+Library     ./lib/Pdcch_bler_target_check_CNI122436.py
+Library     ./lib/ERR_WRN_Check.py
+Library     tak_qualcomm
+Library     tak_files
+Library     taf.transport.ssh    WITH NAME    TAF_SSH
+Library     ta_a2a
+Library     tak_pa
+Library     tak_mcs
+Library     DateTime
+Library     Collections
+Library     OperatingSystem
+Library     taf.sbts.oam.coam.admin    WITH NAME    TAF_ADMIN
+Resource    internal_capture_log.robot
+Resource    internal_airphone.robot
+Resource    internal_gnb.robot
+Resource    internal_check_log.robot
+Resource    internal_qualcomm.robot
+Resource    internal_spark.robot
+Resource    internal_modify_L1ByP.robot
+Resource    ERR_WRN_Check.robot

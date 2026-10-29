@@ -1,0 +1,1 @@
+UUF_EMAIL_RECIPIENTS = "I_MN_RAN_RD_VRF_WRO3_3@internal.nsn.com"

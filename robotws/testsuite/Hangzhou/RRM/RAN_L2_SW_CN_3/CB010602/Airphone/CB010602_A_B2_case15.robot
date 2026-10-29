@@ -1,0 +1,167 @@
+# *** Settings ***
+# Documentation     Author: zhaona.jiang@nokia-sbell.com
+# ...
+# ...               QC case full name:
+# ...               CB010602_A_B2_case15_Rank4_8X4_CL_SRS based beamforming extension dft beam fallback refine beam
+# 
+# Suite Setup       Common Suite Setup
+# Suite Teardown    Common Suite Teardown
+# Test Setup        Common Test Setup
+# Test Teardown     Common Test Teardown
+# Force Tags        CLOUD_5G_I_BOO_AP_KLLL_SANSA_L1B_ECPRI_CMWV_TDD    AP    CRT    SBTS00    SBTS23R1    RAN_5G_TDD    RAN_5G
+# Test Timeout      60 minutes
+# Resource          ../../resources/sg11/internal_resource/robot/modify_configuration.robot
+# Resource          ../../resources/sg11/internal_resource/robot/internal_gnb_operate.robot
+# Resource          ../../resources/sg11/internal_resource/robot/internal_ap_operate.robot
+# 
+# *** Variables ***
+# ${CONFIG_DIR_PATH}    ${CURDIR}/../../resources/sg11/internal_resource/config/
+# ${SCFC_NAME}      gNB_scf_ASIB_ABIO_TDD_eCPRI_cmwv_SANSA_L1b_2S_1CC.xml
+# ${AIRPHONE_NAME}    AP_iphy_AEQE_ASIB_ABIO_TDD_eCPRI_cmwv_SANSA_L1b_2S_1CC.xml
+# ${WTS_NAME}       wts_config_ASIB_ABIO_TDD_eCPRI_cmwv_SANSA_L1b_2S_1CC.cfg
+# ${COMAVALUE}      ${CONFIG_DIR_PATH}/AP/ap_coma.txt
+# ${UE1_ID}          1
+# ${PDU_ID}         1
+# ${GW_ID}          1
+# ${SLICE_ID}       1
+# @{LOG_NAME_LIST}    gnb_snapshot    sosreport    tshark    egatelog
+# ${FILTER1}    ((dldata_pdschsendreq)||(DlData_CsiRsResource_t.density == 1)) && !(3gpp.rnti == 65535)
+# @{title1}    DlData_PdschGrant.bestBeamPowerOffset    3gpp.rnti    DlData_PdschGrant.closedLoop3gppCodebook    DlData_PdschGrant.numOfLayers
+# ...          DlData_PdschGrant.patternId_item    DlData_CsiRsResource_t.patternId_item    DlData_CsiRsResource_t.csiBestBeamPowerOffset
+# ...          DlData_CsiRsResource_t.csiRsConfig
+# 
+# ${actUlSrsBm}    text|true|//*[@name\="actUlSrsBm"]
+# ${actDlSrsBm}    text|true|//*[@name\="actDlSrsBm"]
+# ${actCsirsMultiplexing}    text|true|//*[@name\="actCsirsMultiplexing"]
+# ${actFdmScheduling}    text|true|//*[@name\="actFdmScheduling"]
+# ${chBw}    text|20MHz|//*[@name\="chBw"]
+# ${bSRS}    text|0|//*[@name\="bSRS"]
+# ${cSRS}    text|13|//*[@name\="cSRS"]
+# ${srsUePeriodicity}    text|slots10|//*[@name\="srsUePeriodicity"]
+# ${numberOfTransmittedSsBlocks}    text|6 beams|//*[contains(@distName, 'NRCELLGRP')]/*[@name='numberOfTransmittedSsBlocks']
+# ${basicBeamSet}    text|beamSet_6|//*[@name\="basicBeamSet"]
+# ${nrCellType}    text|8DL4UL|//*[@name\="nrCellType"]
+# ${dlMimoMode}    text|8x4 Closed Loop Spatial Multiplexing|//*[@name\="dlMimoMode"]
+# ${nrBtsBeamRefinementP2}    text|false|//*[@name\="nrBtsBeamRefinementP2"]
+# ${maxCsirsNumber}    text|2|//*[@name\="maxCsirsNumber"]
+# ${csirsNumberWithinReportPeriod_Set1}    text|1|//*[@name\="csirsNumberWithinReportPeriod_Set1"]
+# ${actCDrx}    text|false|//*[@name\="actCDrx"]
+# ${frameStructureType}    text|semiStatic|//*[@name\="frameStructureType"]
+# ${guardPeriodLength}    text|2Symbols|//*[@name\="guardPeriodLength"]
+# ${prachConfigurationIndex}    text|98|//*[@name\="prachConfigurationIndex"]
+# ${ulDlDataSlotRatio}    text|1/4|//*[@name\="ulDlDataSlotRatio"]
+# ${type0CoresetConfigIndex}    text|2|//*[@name\="type0CoresetConfigurationIndex"]
+# ${bwp_profile50}    attrib\=distName|replace('BWP_PROFILE-54', 'BWP_PROFILE-50')|//managedObject
+# ${bwp_profile50_p}    text|replace('BWP_PROFILE-54', 'BWP_PROFILE-50')|//p
+# ${bwp_duration1}    text|3|//*[contains(@distName, 'BWP_PROFILE-5')]//item[1]/*[@name\='duration']
+# ${bwp_duration3}    text|3|//*[contains(@distName, 'BWP_PROFILE-5')]//item[3]/*[@name\='duration']
+# ${bwp_duration_dedi}    text|1|//*[contains(@distName, 'BWP_PROFILE-50/PDCCH-1/PDCCH_CONFIG_DEDICATED-1')]//*[@name\='duration']
+# ${nPdcchCandidatesInAL16}    text|n0|//*[contains(@distName, 'BWP_PROFILE-5')]//*[@name\="numOfPdcchCandidatesInAL16"]
+# ${nPdcchCandidatesInAL4_1}    text|n2|//*[contains(@distName, 'BWP_PROFILE-5')]//item[1]/*[@name\="numOfPdcchCandidatesInAL4"]
+# ${nPdcchCandidatesInAL4_3}    text|n2|//*[contains(@distName, 'BWP_PROFILE-5')]//item[3]/*[@name\="numOfPdcchCandidatesInAL4"]
+# ${nPdcchCandidatesInAL4_2}
+# ...    text|n4|//*[contains(@distName, 'BWP_PROFILE-50/PDCCH-1/PDCCH_CONFIG_COMMON-1')]//item[2]/*[@name\="numOfPdcchCandidatesInAL4"]
+# ${nPdcchCandidatesInAL8}    text|n0|//*[contains(@distName, 'BWP_PROFILE-5')]//*[@name\="numOfPdcchCandidatesInAL8"]
+# ${nPdcchCandidatesInAL2_2}    text|n0|//*[contains(@distName, 'BWP_PROFILE-5')]//item[2]/*[@name\="numOfPdcchCandidatesInAL2"]
+# ${bwp_dedi_size}    text|48|//*[contains(@distName, 'BWP_PROFILE-50/PDCCH-1/PDCCH_CONFIG_DEDICATED-1')]//*[@name\='size']
+# ${nPdcchCandidatesInAL4_dedi}    text|n2|//*[contains(@name, 'searchSpaceDedicated')]//item[2]/*[@name\='numOfPdcchCandidatesInAL4']
+# ${csiReportPeriodicity}    text|slots160|//*[@name\="csiReportPeriodicity"]
+# 
+# *** Test Cases ***
+# CB010602_A_B2_case15_Rank4_8X4_CL_SRS based beamforming extension dft beam fallback refine beam
+#     Step1:Commission the above configuration on WebUI
+#     Step2:attach 2ue with t4r4 3ue with t2r4
+#     Step3:Inject dl and ul data
+#     Step4:Detach UE
+# 
+# *** Keywords ***
+# Step1:Commission the above configuration on WebUI
+#     Start Collect GNB and AP Syslog in 'Step1_before_onair' File
+#     ${CONFIG_DIR_PATH}    Set Variable    ${CONFIG_DIR_PATH}/${SW_BRANCH}
+#     change_iphy_rru_version    ${CONFIG_DIR_PATH}${/}${AIRPHONE_NAME}
+#     Airphone Download L1ByPTestModeConfiguration from ABIL    ${test_log_directory()}/L1ByPTestModeConfiguration.xml
+#     Set Pos By Modify L1ByPTestModeConfiguration    001    0    001    0    001    0    001    0    0
+#     Set Pos By Modify L1ByPTestModeConfiguration    001    0    001    0    001    0    001    0    1
+#     Set Pos By Modify L1ByPTestModeConfiguration    001    0    001    0    001    0    001    0    2
+#     Set Pos By Modify L1ByPTestModeConfiguration    001    0    001    0    001    0    001    0    3
+#     Set Pos By Modify L1ByPTestModeConfiguration    001    0    001    0    001    0    001    0    4
+#     Set Pos By Modify L1ByPTestModeConfiguration
+#     ...    001    0    001    0    001    0    001    0    5    0    0    0    0    0    0    0    0    4    4
+# #    Airphone Upload L1ByPTestModeConfiguration to ASIK    ${test_log_directory()}/L1ByPTestModeConfiguration.xml
+#     modify_swconfig_by_CB010602    ${CONFIG_DIR_PATH}${/}${SCFC_NAME}    1csirs
+#     ${scfc_path}    Set Variable    ${TEST_LOG_DIRECTORY()}${/}scfc.xml
+#     copy_file    ${CONFIG_DIR_PATH}/${SCFC_NAME}    ${scfc_path}
+#     add_xml_element     ${scfc_path}    ${scfc_path}     <p name="tiltOffset">0</p>|//*[@name\='beamSet']/item
+#     add_all_elements    ${scfc_path}     NRCELL    mMimoAntArrayMode     Full 64TRX Array (4x8x2)
+#     add_srsForBeamMgmt_list_in_cells    ${scfc_path}
+#     add_periodicCsiAcquisition_list_in_cells    ${scfc_path}
+#     add_all_elements    ${scfc_path}     NRCELL    actUeCsirsCoexistCellCsirs     true
+#     add_all_elements    ${scfc_path}     NRBTS    actChannelMapVal     Disabled
+#     del_elements_from_xml    xml_path=${scfc_path}    parameter=lteToNrFrameShift
+#     del_elements_from_xml    xml_path=${scfc_path}    parameter=tdLteUlDlConfig
+#     add_xml_element
+#     ...    ${scfc_path}    ${scfc_path}     <p name="actPdschBeamPowerBalance">true</p>|//*[matches(@class, 'com.nokia.srbts.nrbts:NRCELL')]
+#     add_xml_element
+#     ...    ${scfc_path}    ${scfc_path}     <p name="actCsirsBeamPowerBalance">true</p>|//*[matches(@class, 'com.nokia.srbts.nrbts:NRCELL')]
+#     add_xml_element
+#     ...    ${scfc_path}    ${scfc_path}     <p name="beamPowerOffsetThreshold">15</p>|//*[matches(@class, 'com.nokia.srbts.nrbts:NRCELL')]
+#     ${modify_list}    create list    ${chBw}    ${dlMimoMode}    ${actUlSrsBm}    ${actDlSrsBm}    ${nrCellType}    ${nrBtsBeamRefinementP2}
+#     ...            ${csirsNumberWithinReportPeriod_Set1}    ${frameStructureType}    ${guardPeriodLength}    ${ulDlDataSlotRatio}
+#     ...            ${prachConfigurationIndex}    ${numberOfTransmittedSsBlocks}    ${basicBeamSet}    ${bSRS}    ${cSRS}    ${srsUePeriodicity}
+#     ...            ${actFdmScheduling}    ${bwp_profile50}    ${bwp_profile50_p}    ${bwp_duration1}    
+#    ...    ${bwp_duration3}    ${nPdcchCandidatesInAL16}
+#     ...            ${nPdcchCandidatesInAL4_1}    ${nPdcchCandidatesInAL4_3}    ${nPdcchCandidatesInAL4_2}    ${nPdcchCandidatesInAL8}
+#     ...            ${nPdcchCandidatesInAL2_2}    ${bwp_duration_dedi}    ${actCsirsMultiplexing}    ${maxCsirsNumber}    ${bwp_dedi_size}
+#     ...            ${nPdcchCandidatesInAL4_dedi}    ${csiReportPeriodicity}
+#     modify_xml    ${scfc_path}    ${scfc_path}    ${modify_list}
+#     Modify TL VM And AP SCTP Configuration
+#     Perform Full Commission And Reach Onair With Log
+#     ...    ${scfc_path}    ${CONFIG_DIR_PATH}${/}${WTS_NAME}    L1b=True
+#     [Teardown]    Stop Collect GNB and AP Syslog in 'Step1_before_onair' File
+# 
+# Step2:attach 2ue with t4r4 3ue with t2r4
+#     Start Collect GNB and AP Syslog in 'Step2_attach' File
+#     Start GNB BIP Log
+#     Attach SA ue with capability to 5g cell    2    CA_P2_8x4_t4r4_n4
+#     Attach SA ue with capability to 5g cell    3    CA_P2_8x4_t2r4_n2    3
+#     ${save_log}=    Set Variable    ${TEST_LOG_DIRECTORY()}Step2_attach
+#     Stop Gnb BIP Log    log_dir=${save_log}${/}
+#     airphone_collect_egate_log_files      ${save_log}   unzip=TRUE
+#     check_log_with_au2anlysis    ini_path=${CURDIR}/log_check/rrc_case15.ini    log_need_to_check=p    save_log_directory=${save_log}
+#     [Teardown]    Stop Collect GNB and AP Syslog in 'Step2_attach' File
+# 
+# Step3:Inject dl and ul data
+#     Start Collect GNB and AP Syslog in 'Step3_inject_buffer' File
+#     send 5ues buffer
+#     Start GNB BIP Log
+#     Wait Throughput Timer    3
+#     ${save_log}=    Set Variable    ${TEST_LOG_DIRECTORY()}Step3_inject_buffer
+#     Stop Gnb BIP Log    log_dir=${save_log}${/}
+#     Start GNB Ttitrace With Streaming Mode
+#     Wait Throughput Timer    3
+#     ${pacp}=    Stop GNB Ttitrace With Streaming Mode    save_path=${save_log}
+#     Decoder Tttirace From Pcap To Csv    ${pacp}    ${save_log}/tti
+#     Check beamOffset in bip    ${save_log}
+#     ${counter_file}    download PM counter file    ${save_log}
+# 	${BEAM_PWR_OFFSET_RI4_INDEX4}=    get_counter_value_from_counter_file    counter_file=${counter_file}   counter_id=M55305C14015   cell_id=1
+# 	should be true    ${BEAM_PWR_OFFSET_RI4_INDEX4} > 40000
+# 	should be true    ${BEAM_PWR_OFFSET_RI4_INDEX4} < 84001
+#     [Teardown]    Stop Collect GNB and AP Syslog in 'Step3_inject_buffer' File
+# 
+# Step4:Detach UE
+#     Start Collect GNB and AP Syslog in 'Step4_detach' File
+#     #Stop '5'UE DL Traffic
+#     Detach '5'UE
+#     [Teardown]    Stop Collect GNB and AP Syslog in 'Step4_detach' File
+# 
+# send ${UENUM}ues buffer
+#     : FOR    ${ueId}    IN RANGE    1    ${UENUM}+1
+#     \    SA send multiple trf data    ${ueId}    DL    10M    1
+#     \    SA send multiple trf data    ${ueId}    UL    10M    1
+# 
+# Check beamOffset in bip
+#     [Arguments]    ${log_dir}
+#     Convert BIP To CSV    ${log_dir}/tcpdump_L2L1_bip_filtering_off.pcap0    ${log_dir}/bip_case15.csv    ${FILTER1}    ${title1}
+#     Check Log With Au2anlysis    ini_path=${CURDIR}/log_check/bip_case15.ini     log_need_to_check=i    save_log_directory=${log_dir}
+# 
+# 

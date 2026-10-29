@@ -1,0 +1,820 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for 5GC001248-J feature tests cases
+...
+...               Automation author           : yann.ah.herve@nokia.com
+...               Automation contact          : yann.ah.herve@nokia.com
+...               Creation Date               : 05-March-2020
+...               Modified Date               : 14-April-2023
+...               Last Modified by            : vincent.boulet@nokia.com
+...             24-06-2021              |       Remove hardcode MCS and use L.A. algorithm instead (much better !)
+...             16-08-2021              |       Add a counter to monito RLC failures (M55112C00502)
+...             16-08-2021              |       Increase counter value for X2 PDCP lost in case of TC J_64.
+...             29-Nov-2021             |       Remove of AirphoneConfig.xml for 1248-M + cleanup
+...             02-Dec-2021             |       Move to WTS runner
+...             02-Dec-2021             |       Remove RAD param related keywords (cleanup, useless now)
+...             18-Jan-2022             |       Remove AP Config XML dependencies (no more used)
+...             20-Jan-2022             |       Remove changes related to SA (5-QI) bearers an keep only NSA ones (qCI)
+...                                     |       After an SCF update on UTE side (VONR ???), DRB definitions for SA bearer
+...                                     |       have been updated and no more include PDCP FC parameters.
+...                                     |       So, 1248-J tests no more work...
+...                                     |       + cleanup
+...             7-Feb-2022              |       Increase margins regarding rank 1 transmissions in case of M_79 TC
+...             10-Feb-2022             |       Increase again margins regarding rank 1 transmissions in case of M_79 TC
+...             14-Feb-2022             |       Update pathes for itf_l2_hi_cu_user_BearerSetupReq parameters
+...             08-March-2022           |       Remove counters check as not relevant and sporadic
+...                                     |       issues encountered
+...             13-May-2022             |       AiC [VRAN2.0] support
+...             30-May-2022             |       Fix LUA output (Uint8)
+...             17-June-2022            |       Adaptation to use MC_SHARK
+...             08-Sep-2022             |       Setting maxi for M55117C0052[8-9] to 3 instead 2 for managing configurations update with 2 cells
+...             09-Sep-2022             |       Setting maxi for M55117C0053[2-3] to 3 instead 2 for managing configurations update with 2 cells
+...             14-Apr-2023             |       Skip the Sherpa capture for VRAN because it would require a commissioning to create a route on Vdu
+...             18-Sep-2024             |       Scout data
+
+Library                             taf.wts.runner                      WITH NAME    wtsemu
+
+Resource             ../../../../../resources/SWENG/robot/Setup.robot
+Resource             ../../../../../resources/SWENG/robot/Tools.robot
+Variables            ../../../../../resources/SWENG/python/Colors.py
+
+*** Variables ***
+
+#
+# Dictionary embedding for each TC the expected counter values for such or such counter
+# (e.g.: dict_kpis_tc_1248_J_69_M55319C02009)
+# For each counter a min/max range is defined in a list type (e.g.: dict_kpis_tc_1248_J_69_M55319C02009)
+# There is one such array for each TC (e.g.: dict_kpis_tc_1248_J_69)
+# PM value generation is based on a script with a min/max 10 % margin. For example:
+# ./list_counters_values.sh ~/5GC001248_refactoring/PMs_runs_auto/PM_15062021_1924/ J_1 59
+#
+#
+# Counter values checked for 1248-J:
+# ---------------------------------
+# M55319C02009 (DL PDCP SDU volume transmitted for NSA Bearer - QoS Group 09)
+# M55314C03009 (Downlink data volume received over F1-U - QoS Group 9)
+# M55323C01009 (Downlink data volume sent over F1-U - QoS Group 9)
+# M55323C04009 (Number of downlink PDCP PDU packet lost on F1-U interface- QoS Group 9) => Mettre 1000
+# M55313C08009 (DL data volume sent over NR X2-U DL GTP-U tunnel - QoS Group 09)
+# M55313C04009 (Number of downlink PDCP PDU packet lost on NR X2-U interface- QoS Group 09) => Mettre 1000
+#
+# Counters values check removed during 1248-J refactoring: (too sensistive and useless regarding 1248-J changes)
+# M55320C06009 (DL PDCP SDUs discarded due to exceeding buffer threshold - QoS Group 09)
+# M55320C09009 (DL PDCP SDUs discarded due to the exceeding Queuing delay - QoS Group 09)
+# M55319C09009 (DL PDCP SDU delay - QoS Group 09)
+# M55313C02009 (Downlink data volume received over X2-U DL data forwarding GTP-U tunnel - QoS Group 09)
+# M55313C03009 (Downlink data volume discarded over X2-U DL data forwarding GTP-U tunnel - QoS Group 09)
+# M55313C16009 (Downlink data volume sent over X2-U DL data forwarding GTP-U tunnel - QoS Group 09)
+# M55112C00502 (Number of SGNB RELEASE REQUIRED message sent with cause equal to Radio Connection With UE lost)
+
+
+
+# Refactored KPIs. Based on run inside:
+# \Refactoring 1248_J\Runs complets\TL22\CrtTest_2021_07_07-16_58\Logs
+# \20210707_165822249630.5GC001248_J_Tests\PM_07072021_1751
+# with +/- 20 % margin
+# gNB:SBTS22R1_ENB_9999_210627_000004
+# AP: 4.0.17274 + \\eseefsn50.emea.nsn-net.net\rotta4internal\5G_2\ESunil\07072021\correctionKnife.
+# Topology: LO + L1BP
+@{dict_kpis_tc_1248_J_61_M55319C02009}       892016      1338022
+@{dict_kpis_tc_1248_J_61_M55314C03009}       14175      864853
+@{dict_kpis_tc_1248_J_61_M55323C01009}       14175      864853
+@{dict_kpis_tc_1248_J_61_M55323C04009}       0      ${acceptable_lost_threshold}
+@{dict_kpis_tc_1248_J_61_M55313C08009}       317428      1207591
+@{dict_kpis_tc_1248_J_61_M55313C04009}       0      ${acceptable_lost_threshold}
+@{dict_kpis_tc_1248_J_61_M55112C00502}       0      0
+&{dict_kpis_tc_1248_J_61}        M55319C02009=${dict_kpis_tc_1248_J_61_M55319C02009}
+...                M55314C03009=${dict_kpis_tc_1248_J_61_M55314C03009}
+...                M55323C01009=${dict_kpis_tc_1248_J_61_M55323C01009}
+...                M55323C04009=${dict_kpis_tc_1248_J_61_M55323C04009}
+...                M55313C08009=${dict_kpis_tc_1248_J_61_M55313C08009}
+...                M55313C04009=${dict_kpis_tc_1248_J_61_M55313C04009}
+...                M55112C00502=${dict_kpis_tc_1248_J_61_M55112C00502}
+
+
+# Refactored KPIs. Based on run inside:
+# \Refactoring 1248_J\Runs complets\TL22\CrtTest_2021_07_07-16_58\Logs
+# \20210707_165822249630.5GC001248_J_Tests\PM_07072021_1824
+# with +/- 20 % margin
+# gNB:SBTS22R1_ENB_9999_210627_000004
+# AP: 4.0.17274 + \\eseefsn50.emea.nsn-net.net\rotta4internal\5G_2\ESunil\07072021\correctionKnife.
+# Topology: LO + L1BP
+@{dict_kpis_tc_1248_J_60_M55319C02009}       1380003      2070003
+@{dict_kpis_tc_1248_J_60_M55314C03009}       927468      1784199
+@{dict_kpis_tc_1248_J_60_M55323C01009}       927468      1784199
+@{dict_kpis_tc_1248_J_60_M55323C04009}       0      ${acceptable_lost_threshold}
+@{dict_kpis_tc_1248_J_60_M55313C08009}       193602      756759
+@{dict_kpis_tc_1248_J_60_M55313C04009}       0      ${acceptable_lost_threshold}
+@{dict_kpis_tc_1248_J_60_M55112C00502}       0      0
+&{dict_kpis_tc_1248_J_60}        M55319C02009=${dict_kpis_tc_1248_J_60_M55319C02009}
+...                M55314C03009=${dict_kpis_tc_1248_J_60_M55314C03009}
+...                M55323C01009=${dict_kpis_tc_1248_J_60_M55323C01009}
+...                M55323C04009=${dict_kpis_tc_1248_J_60_M55323C04009}
+...                M55313C08009=${dict_kpis_tc_1248_J_60_M55313C08009}
+...                M55313C04009=${dict_kpis_tc_1248_J_60_M55313C04009}
+...                M55112C00502=${dict_kpis_tc_1248_J_60_M55112C00502}
+
+# Refactored KPIs. Based on run inside:
+# \Refactoring 1248_J\Runs complets\TL22\CrtTest_2021_07_07-16_58\Logs
+# \20210707_165822249630.5GC001248_J_Tests\PM_07072021_1845
+# with +/- 20 % margin
+# gNB:SBTS22R1_ENB_9999_210627_000004
+# AP: 4.0.17274 + \\eseefsn50.emea.nsn-net.net\rotta4internal\5G_2\ESunil\07072021\correctionKnife.
+# Topology: LO + L1BP
+@{dict_kpis_tc_1248_J_73_M55319C02009}       304260      456390
+@{dict_kpis_tc_1248_J_73_M55314C03009}       304990      457484
+@{dict_kpis_tc_1248_J_73_M55323C01009}       304990      457484
+@{dict_kpis_tc_1248_J_73_M55323C04009}       0      ${acceptable_lost_threshold}
+@{dict_kpis_tc_1248_J_73_M55313C08009}       0      0
+@{dict_kpis_tc_1248_J_73_M55313C04009}       0      ${acceptable_lost_threshold}
+@{dict_kpis_tc_1248_J_73_M55112C00502}       0      0
+&{dict_kpis_tc_1248_J_73}        M55319C02009=${dict_kpis_tc_1248_J_73_M55319C02009}
+...                M55314C03009=${dict_kpis_tc_1248_J_73_M55314C03009}
+...                M55323C01009=${dict_kpis_tc_1248_J_73_M55323C01009}
+...                M55323C04009=${dict_kpis_tc_1248_J_73_M55323C04009}
+...                M55313C08009=${dict_kpis_tc_1248_J_73_M55313C08009}
+...                M55313C04009=${dict_kpis_tc_1248_J_73_M55313C04009}
+...                M55112C00502=${dict_kpis_tc_1248_J_73_M55112C00502}
+
+# Refactored KPIs. Based on run inside:
+# \Refactoring 1248_J\Runs complets\TL22\CrtTest_2021_07_07-16_58\Logs
+# \20210707_165822249630.5GC001248_J_Tests\PM_07072021_1911
+# with +/- 20 % margin
+# gNB:SBTS22R1_ENB_9999_210627_000004
+# AP: 4.0.17274 + \\eseefsn50.emea.nsn-net.net\rotta4internal\5G_2\ESunil\07072021\correctionKnife.
+# Topology: LO + L1BP
+@{dict_kpis_tc_1248_J_59_M55319C02009}       1543061    2314591
+@{dict_kpis_tc_1248_J_59_M55314C03009}       562151     1931848
+@{dict_kpis_tc_1248_J_59_M55323C01009}       562151     1931848
+@{dict_kpis_tc_1248_J_59_M55323C04009}       0      ${acceptable_lost_threshold}
+@{dict_kpis_tc_1248_J_59_M55313C08009}       267789      1431089
+@{dict_kpis_tc_1248_J_59_M55313C04009}       0      ${acceptable_lost_threshold}
+@{dict_kpis_tc_1248_J_59_M55112C00502}       0      0
+&{dict_kpis_tc_1248_J_59}        M55319C02009=${dict_kpis_tc_1248_J_59_M55319C02009}
+...                M55314C03009=${dict_kpis_tc_1248_J_59_M55314C03009}
+...                M55323C01009=${dict_kpis_tc_1248_J_59_M55323C01009}
+...                M55323C04009=${dict_kpis_tc_1248_J_59_M55323C04009}
+...                M55313C08009=${dict_kpis_tc_1248_J_59_M55313C08009}
+...                M55313C04009=${dict_kpis_tc_1248_J_59_M55313C04009}
+...                M55112C00502=${dict_kpis_tc_1248_J_59_M55112C00502}
+
+# Refactored KPIs. Based on run inside:
+# \Refactoring 1248_J\Runs complets\TL22\CrtTest_2021_07_07-16_58\Logs
+# \20210707_165822249630.5GC001248_J_Tests\PM_07072021_1932
+# with +/- 20 % margin
+# gNB:SBTS22R1_ENB_9999_210627_000004
+# AP: 4.0.17274 + \\eseefsn50.emea.nsn-net.net\rotta4internal\5G_2\ESunil\07072021\correctionKnife.
+# Topology: LO + L1BP
+@{dict_kpis_tc_1248_J_66_M55319C02009}       564516      846772
+@{dict_kpis_tc_1248_J_66_M55314C03009}       565757      848635
+@{dict_kpis_tc_1248_J_66_M55323C01009}       565757      848635
+@{dict_kpis_tc_1248_J_66_M55323C04009}       0      ${acceptable_lost_threshold}
+@{dict_kpis_tc_1248_J_66_M55313C08009}       0      0
+@{dict_kpis_tc_1248_J_66_M55313C04009}       0      ${acceptable_lost_threshold}
+@{dict_kpis_tc_1248_J_66_M55112C00502}       0      0
+&{dict_kpis_tc_1248_J_66}        M55319C02009=${dict_kpis_tc_1248_J_66_M55319C02009}
+...                M55314C03009=${dict_kpis_tc_1248_J_66_M55314C03009}
+...                M55323C01009=${dict_kpis_tc_1248_J_66_M55323C01009}
+...                M55323C04009=${dict_kpis_tc_1248_J_66_M55323C04009}
+...                M55313C08009=${dict_kpis_tc_1248_J_66_M55313C08009}
+...                M55313C04009=${dict_kpis_tc_1248_J_66_M55313C04009}
+...                M55112C00502=${dict_kpis_tc_1248_J_66_M55112C00502}
+
+
+# Refactored KPIs. Based on run inside:
+# \Refactoring 1248_J\Runs complets\TL22\CrtTest_2021_07_07-16_58\
+# Logs\20210707_165822249630.5GC001248_J_Tests\PM_07072021_1721
+# with +/- 20 % margin
+# gNB:SBTS22R1_ENB_9999_210627_000004
+# AP: 4.0.17274 + \\eseefsn50.emea.nsn-net.net\rotta4internal\5G_2\ESunil\07072021\correctionKnife.
+# Topology: LO + L1BP
+# M55313C04009 is set to 10000 to avoid failure in case of packet lost on X2 reported by WTS.
+@{dict_kpis_tc_1248_J_64_M55319C02009}       1055599      1583397
+@{dict_kpis_tc_1248_J_64_M55314C03009}       861142      1291712
+@{dict_kpis_tc_1248_J_64_M55323C01009}       861142      1291712
+@{dict_kpis_tc_1248_J_64_M55323C04009}       0      ${acceptable_lost_threshold}
+@{dict_kpis_tc_1248_J_64_M55313C08009}       196802      295202
+@{dict_kpis_tc_1248_J_64_M55313C04009}       0      1000
+@{dict_kpis_tc_1248_J_64_M55112C00502}       0      0
+&{dict_kpis_tc_1248_J_64}        M55319C02009=${dict_kpis_tc_1248_J_64_M55319C02009}
+...                M55314C03009=${dict_kpis_tc_1248_J_64_M55314C03009}
+...                M55323C01009=${dict_kpis_tc_1248_J_64_M55323C01009}
+...                M55323C04009=${dict_kpis_tc_1248_J_64_M55323C04009}
+...                M55313C08009=${dict_kpis_tc_1248_J_64_M55313C08009}
+...                M55313C04009=${dict_kpis_tc_1248_J_64_M55313C04009}
+...                M55112C00502=${dict_kpis_tc_1248_J_64_M55112C00502}
+
+# Refactored KPIs. Based on run inside:
+# \Refactoring 1248_J\Runs complets\TL22\CrtTest_2021_07_07-16_58\
+# Logs\20210707_165822249630.5GC001248_J_Tests\PM_07072021_1958
+# with +/- 20 % margin
+# gNB:SBTS22R1_ENB_9999_210627_000004
+# AP: 4.0.17274 + \\eseefsn50.emea.nsn-net.net\rotta4internal\5G_2\ESunil\07072021\correctionKnife.
+# Topology: LO + L1BP
+@{dict_kpis_tc_1248_J_62_M55319C02009}       1543968      2315952
+@{dict_kpis_tc_1248_J_62_M55314C03009}       1164204      1746304
+@{dict_kpis_tc_1248_J_62_M55323C01009}       1164204      1746304
+@{dict_kpis_tc_1248_J_62_M55323C04009}       0      ${acceptable_lost_threshold}
+@{dict_kpis_tc_1248_J_62_M55313C08009}       383882      575822
+@{dict_kpis_tc_1248_J_62_M55313C04009}       0      ${acceptable_lost_threshold}
+@{dict_kpis_tc_1248_J_62_M55112C00502}       0      0
+&{dict_kpis_tc_1248_J_62}        M55319C02009=${dict_kpis_tc_1248_J_62_M55319C02009}
+...                M55314C03009=${dict_kpis_tc_1248_J_62_M55314C03009}
+...                M55323C01009=${dict_kpis_tc_1248_J_62_M55323C01009}
+...                M55323C04009=${dict_kpis_tc_1248_J_62_M55323C04009}
+...                M55313C08009=${dict_kpis_tc_1248_J_62_M55313C08009}
+...                M55313C04009=${dict_kpis_tc_1248_J_62_M55313C04009}
+...                M55112C00502=${dict_kpis_tc_1248_J_62_M55112C00502}
+
+
+# Total number of downlink data bytes sent over NR X2-U or
+# NR F1-U DL GTP-U tunnel during the initial phase of data transmission - QoS Group 09
+# Large margin for J_63 and J_80 and it depends on attach timings / DDDS timings ?.
+@{dict_kpis_tc_1248_J_63_M55313C09009}       0      450
+&{dict_kpis_tc_1248_J_63}           M55313C09009=${dict_kpis_tc_1248_J_63_M55313C09009}
+
+@{dict_kpis_tc_1248_J_80_M55313C09009}       0      450
+&{dict_kpis_tc_1248_J_80}           M55313C09009=${dict_kpis_tc_1248_J_80_M55313C09009}
+
+# KPIs for 1248-D
+# YHE: Update DL PDCP value
+# LPU: Update M55117C005xx max to 2 because of SANSA topo
+# VBO: Setting max value for M55117C00528, M55117C00529 to 3 instead 2 for managing configurations update with 2 cells
+@{dict_kpis_tc_1248_D_M55117C00528}       1      3
+@{dict_kpis_tc_1248_D_M55117C00529}       1      3
+@{dict_kpis_tc_1248_D_M55117C00532}       1      3
+@{dict_kpis_tc_1248_D_M55117C00533}       1      3
+@{dict_kpis_tc_1248_D_M55110C00034}       1      1
+@{dict_kpis_tc_1248_D_M55112C00002}       1      1
+@{dict_kpis_tc_1248_D_M55112C00003}       1      1
+@{dict_kpis_tc_1248_D_M55112C03002}       1      1
+@{dict_kpis_tc_1248_D_M55113C01001}       1      1
+@{dict_kpis_tc_1248_D_M55113C01002}       1      1
+@{dict_kpis_tc_1248_D_M55319C02009}       171686      300000
+&{dict_kpis_tc_1248_D}                                M55117C00528=${dict_kpis_tc_1248_D_M55117C00528}
+...                                                   M55117C00529=${dict_kpis_tc_1248_D_M55117C00529}
+...                                                   M55117C00532=${dict_kpis_tc_1248_D_M55117C00532}
+...                                                   M55117C00533=${dict_kpis_tc_1248_D_M55117C00533}
+...                                                   M55110C00034=${dict_kpis_tc_1248_D_M55110C00034}
+...                                                   M55112C00002=${dict_kpis_tc_1248_D_M55112C00002}
+...                                                   M55112C00003=${dict_kpis_tc_1248_D_M55112C00003}
+...                                                   M55112C03002=${dict_kpis_tc_1248_D_M55112C03002}
+...                                                   M55113C01001=${dict_kpis_tc_1248_D_M55113C01001}
+...                                                   M55113C01002=${dict_kpis_tc_1248_D_M55113C01002}
+...                                                   M55319C02009=${dict_kpis_tc_1248_D_M55319C02009}
+
+@{counter_list_1248_M_for_rank1}       M55301C09001        M55301C10001
+@{counter_list_1248_M_for_rank2}       M55301C09002        M55301C10002
+
+# KPIs for 1248-M
+@{dict_kpis_tc_1248_M_1_RK1}       10000      100000
+@{dict_kpis_tc_1248_M_1_RK2}       0      0
+&{dict_kpis_tc_1248_M_1}                              PDSCH_RANK_1=${dict_kpis_tc_1248_M_1_RK1}
+...                                                   PDSCH_RANK_2=${dict_kpis_tc_1248_M_1_RK2}
+
+# YHE 03/10/21: During attach step, I think there may be some PDSCH still in 1L
+# => Increase max value to 300 to be sure that the M55301C09001 is ok.
+# It should not be needed for TC M_78 and counter M55301C09002
+@{dict_kpis_tc_1248_M_2_RK1}       0            300
+@{dict_kpis_tc_1248_M_2_RK2}       10000        100000
+&{dict_kpis_tc_1248_M_2}                        PDSCH_RANK_1=${dict_kpis_tc_1248_M_2_RK1}
+...                                             PDSCH_RANK_2=${dict_kpis_tc_1248_M_2_RK2}
+
+# Dictionary to retrieve domain to which a counter belongs
+&{dict_counter_domains}             M55319C02009=NRBTS
+...                                 M55314C03009=NRDU        M55323C01009=NRBTS
+...                                 M55323C04009=NRBTS
+...                                 M55313C08009=NRBTS     M55313C04009=NRBTS
+...                                 M55313C09009=NRBTS     M55112C00502=NRBTS
+...                                 M55117C00528=NRBTS     M55117C00529=NRBTS       M55117C00532=NRBTS
+...                                 M55117C00533=NRBTS     M55110C00034=NRBTS       M55112C00002=NRBTS
+...                                 M55112C00003=NRBTS     M55112C03002=NRBTS       M55113C01001=NRBTS
+...                                 M55113C01002=NRBTS     M55319C02009=NRBTS
+...                                 M55123C00003=NRBTS     M55123C00004=NRBTS
+...                                 M55301C09001=NRBTS     M55301C09002=NRBTS
+
+&{dict_counter_domains_AiC}         M55319C02009=NRBTS
+...                                 M55314C03009=NRDU        M55323C01009=NRBTS
+...                                 M55323C04009=NRBTS
+...                                 M55313C08009=NRBTS     M55313C04009=NRBTS
+...                                 M55313C09009=NRBTS     M55112C00502=NRBTS
+...                                 M55117C00528=NRDU      M55117C00529=NRDU       M55117C00532=NRDU
+...                                 M55117C00533=NRDU      M55110C00034=NRBTS       M55112C00002=NRCELL
+...                                 M55112C00003=NRCELL    M55112C03002=NRCELL      M55113C01001=NRCELL
+...                                 M55113C01002=NRCELL    M55319C02009=NRBTS
+...                                 M55123C00003=NRBTS     M55123C00004=NRBTS
+...                                 M55301C09001=NRCELL    M55301C09002=NRCELL
+
+# Dictionary to retrieve domainId to which a counter belongs
+&{dict_counter_domainIds}           M55319C02009=1
+...                                 M55314C03009=1        M55323C01009=1
+...                                 M55323C04009=1
+...                                 M55313C08009=1     M55313C04009=1
+...                                 M55313C09009=1     M55112C00502=1
+...                                 M55117C00528=1     M55117C00529=1       M55117C00532=1
+...                                 M55117C00533=1     M55110C00034=1       M55112C00002=1
+...                                 M55112C00003=1     M55112C03002=1       M55113C01001=1
+...                                 M55113C01002=1     M55319C02009=1
+...                                 M55123C00003=1     M55123C00004=1
+...                                 M55301C09001=1     M55301C09002=1
+
+&{dict_counter_domainIds_AiC}       M55319C02009=1
+...                                 M55314C03009=2        M55323C01009=1
+...                                 M55323C04009=1
+...                                 M55313C08009=1     M55313C04009=1
+...                                 M55313C09009=1     M55112C00502=1
+...                                 M55117C00528=2     M55117C00529=2       M55117C00532=2
+...                                 M55117C00533=2     M55110C00034=1       M55112C00002=1
+...                                 M55112C00003=1     M55112C03002=1       M55113C01001=1
+...                                 M55113C01002=1     M55319C02009=1
+...                                 M55123C00003=1     M55123C00004=1
+...                                 M55301C09001=1     M55301C09002=1
+
+# Dictionary to retrieve nodeTypes to which a counter belongs - AiC case
+&{dict_counter_nodeTypes}           M55319C02009=CU
+...                                 M55314C03009=DU        M55323C01009=CU
+...                                 M55323C04009=CU
+...                                 M55313C08009=CU     M55313C04009=CU
+...                                 M55313C09009=CU     M55112C00502=CU
+...                                 M55117C00528=DU     M55117C00529=DU       M55117C00532=DU
+...                                 M55117C00533=DU     M55110C00034=CU       M55112C00002=CU
+...                                 M55112C00003=CU     M55112C03002=CU       M55113C01001=CU
+...                                 M55113C01002=CU     M55319C02009=CU
+...                                 M55123C00003=CU     M55123C00004=CU
+...                                 M55301C09001=DU     M55301C09002=DU
+
+# Dictionary embedding counters dictionaries for all TCs
+&{dict_kpis_all_tc}    5GC001248_J_60=${dict_kpis_tc_1248_J_60}    5GC001248_J_73=${dict_kpis_tc_1248_J_73}
+...                    5GC001248_J_66=${dict_kpis_tc_1248_J_66}    5GC001248_J_59=${dict_kpis_tc_1248_J_59}
+...                    5GC001248_J_64=${dict_kpis_tc_1248_J_64}
+...                    5GC001248_J_63=${dict_kpis_tc_1248_J_63}    5GC001248_J_80=${dict_kpis_tc_1248_J_80}
+...                    5GC001248_J_61=${dict_kpis_tc_1248_J_61}    5GC001248_J_62=${dict_kpis_tc_1248_J_62}
+...                    5GC001248_D=${dict_kpis_tc_1248_D}
+...                    5GC001248_M_1=${dict_kpis_tc_1248_M_1}
+...                    5GC001248_M_2=${dict_kpis_tc_1248_M_2}
+
+*** Keywords ***
+-
+# KW used to be sure to report 2 layers inside PUCCH RI
+# Not used yet. Default value for scell ID (8) is used.
+Update Cell Range Bounds
+    [Documentation]                 KW used to update cell range bound which will be used for
+    ...                             all egate commands
+    ...                             Dedicated KW used to not every param changes.
+    [Arguments]                     ${ueSetting}
+
+    ${console_msg}           Evaluate     "${BG_CYAN}Updating Cell range bounds${NORMAL}"
+    Dated Log                ${console_msg}
+
+    # Update cell bound range only
+    wtsemu.enb_endc_param                serving_cell_index_range_scg=${auto_1248_cell_lower_bound}:${auto_1248_cell_upper_bound}
+
+
+Update RI reported values
+    [Documentation]             This KW is used to send a command to WTS in order to report a rank 2 towards gNB (i.e.: RI=1)
+    ...                         In fact, it seems useless as, by doing some trials, reported rank is already set to 2
+    ...                         However, when looking at the configured default test configuration RI is set to 0...
+    ...                         I don't really know why there is a difference. To be sure I have added this WTS command
+    ...                         in order to change the test mode RI to 1 instead of 0 as it's displayed.
+    ...                         May be it's useless ?
+    [Arguments]                 ${ueSetting}
+    ...                         ${ri_value}=1
+
+    ${console_msg}              Evaluate     "${BG_CYAN}Updating RI values to rank ${ri_value}${NORMAL}"
+    Dated Log                   ${console_msg}
+
+    # Be sure to have RI reported to 1 in order to perform DL in 2 layers.
+    wtsemu.csi_override_testmode_nr             profile_id=1            ri_mode=fixed               ri=1
+    wtsemu.ue_testmode_set_nr                   id=${ueSetting.ue}      testmode=csi_override       action=activate     profile_id=1
+
+
+# KW used to update DDDS reported value over X2 during test execution
+Update DDDS Parameters
+    [Documentation]                 KW used to update DDDS reported value over X2 during test execution
+
+    [Arguments]                     ${ueSetting}
+    ...                             ${dbs}=1000
+    ...                             ${ddr}=0
+    ...                             ${success_rate}=100
+
+    ${console_msg}           evaluate
+    ...                      "${BG_CYAN}Updating DDDS param to DBS=${dbs}, DDR=${ddr}, Success ratio=${success_rate}${NORMAL}"
+    Dated Log                ${console_msg}
+
+    # Set DDDS related parameters
+    wtsemu.enb_endc_param               id=${ueSetting.ue}        desired_buffer_sizes=${dbs}:${ddr}
+    ...                                 dl_data_delivery_success_rate=${success_rate}
+
+
+Set DDDS Drop Configuration
+    [Documentation]                 KW used to drop DDDS report on X2 side
+    ...                             As this command is not available under taf interface, direct connection
+    ...                             is used toward egate.
+    ...                             enb_endc_param id=1 ddds_transmission=3:200  : Drop 15 reports DDDS every
+    ...                             300 DDDS (150 ms hole)
+    ...                             ddds_transmission = off => Stop sending DDDS
+    ...                             ddds_transmission = on => Send DDDS again
+    [Arguments]                     ${ueSetting}
+    ...                             ${ddds_transmission}
+
+    # Run egate command
+    wtsemu.enb_endc_param             id=${ueSetting.ue}        ddds_transmission=${ddds_transmission}
+
+    ${console_msg}           Evaluate     "${BG_CYAN}DDDS reports are now set to: ${ddds_transmission}${NORMAL}"
+    Dated Log                ${console_msg}
+
+Enable BLER on F1 side
+    [Documentation]                 KW used to enable BLER on DU side by using link adaptation.
+    ...                             AP will reduc ereported CQI until target MCS (0) is reached.
+    ...                             This will reduce availbale DL thourhgput and thus trigger FC
+    ...                             at L2HI level.
+    ...                             BLER profile is supposed to be NOT defined inside AirphoneConfig.xml file.
+    ...                             Otherwise, egate commande will be ignored.
+    [Arguments]                     ${ueSetting}
+
+
+    # Define BLER configuration to reach MCS=0
+    wtsemu.bler_testmode_nr             profile_id=3        target_mcs=0       num_dl_pkts=2000
+
+    # Activate BLER generation
+    #
+    # Here several things are supposed to be true:
+    # 1. The test mode parameters related to BLER and RI have been removed from AirphoneConfig.xml file
+    # 2. Default value reported for RI is 1 inside PUCCH.
+    # It means DL traffic will use 2 layers.
+    # Otherwise, expected throughput (20 Mbps) can't be reached with MCS0. True so far
+    # 3. scell ID is set to 8 (auto_1248_default_cell_bound). True so far
+    wtsemu.ue_testmode_set_nr               id=${ueSetting.ue}            testmode=bler             profile_id=3
+    ...                                     scell=${auto_1248_default_cell_bound}                   action=activate
+
+    ${console_msg}           Evaluate     "${BG_CYAN}BLER is now enabled for UE ${ueSetting.ue}${NORMAL}"
+    Dated Log               ${console_msg}
+
+Disable BLER on F1 side
+    [Documentation]                 KW used to disable BLER on DU side.
+    [Arguments]                     ${ueSetting}
+
+    # Disable BLER generation
+    wtsemu.ue_testmode_set_nr               id=${ueSetting.ue}            testmode=bler             profile_id=3
+    ...                                     scell=${auto_1248_default_cell_bound}                   action=deactivate
+
+    ${console_msg}           Evaluate     "${BG_CYAN}BLER is now disabled for UE ${ueSetting.ue}${NORMAL}"
+    Dated Log               ${console_msg}
+
+
+Add New Bearer Definition Configuration
+    [Documentation]                 Keywork used to set flow control configuration like Five Qi and NRDBR
+    ...                             QCI (related to feature 5GC000776 ???)
+    ...                             Optionnal depends on enable_new_bearer_definition_configuration value
+    [Arguments]                     ${split_mode}
+    ...                             ${fc_mode}
+    ...                             ${initial_dl}
+
+    &{mode_fc_2}                    Run Keyword if    '${split_mode}' == 'dlOverF1U'
+    ...                                 Create Dictionary    dlDataSplitMode=${split_mode}
+    ...                                                      initialDLTrafficRouting=${initial_dl}
+    ...                                                      actPrioritizeX2AfterInactivity=false
+    ...                             ELSE
+    ...                                 Create Dictionary    dlDataSplitMode=${split_mode}
+    ...                                                      initialDLTrafficRouting=${initial_dl}
+    ...                                                      actPrioritizeX2AfterInactivity=true
+
+    # List of DRB configuration to be updated
+    @{nrdrb_list}                   Create List
+    ...                                 MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDRB-1
+    ...                                 MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDRB-2
+    ...                                 MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDRB-3
+    ...                                 MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDRB-4
+    ...                                 MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDRB-5
+    ...                                 MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDRB-6
+    ...                                 MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDRB-7
+    ...                                 MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDRB-8
+    ...                                 MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDRB-9
+
+    @{param_list_new_bearers_definition}                   Create List
+
+    FOR        ${drb}      IN      @{nrdrb_list}
+        &{p_drb}    Evaluate    {'dist_name': '${drb}','parameter': 'dlFlowControlAlgo','value':'${fc_mode}'}
+        Append To List    ${param_list_new_bearers_definition}    ${p_drb}
+        Run Keyword If    '${auto_1248_j_debug_scf_update}' == 'True'    Log To Console  Adding: ${p_drb} to SCF param list
+
+    END
+    FOR        ${drb}      IN      @{nrdrb_list}
+
+        &{p_drb}    Evaluate    {'dist_name': '${drb}','parameter': 'nsaDrbParam','value':[&{mode_fc_2}]}
+        Append To List    ${param_list_new_bearers_definition}    ${p_drb}
+        Run Keyword If    '${auto_1248_j_debug_scf_update}' == 'True'    Log To Console  Adding: ${p_drb} to SCF param list
+
+    END
+    [Return]                       @{param_list_new_bearers_definition}
+
+
+# Set gNB and WTS parameters related to 3GPP
+Build Set Flow Control Configuration List
+    [Documentation]                 Set FC parameters mode for NSA (useless far SA ???)
+    ...                             Default values are proposed, but can be override
+    [Arguments]                     ${split_mode}=dlOverF1UX2U
+    ...                             ${initial_dl}=initDLoverX2U
+    ...                             ${actDl256Qam}=false
+
+
+    &{mode_fc_1}                    Run Keyword if    '${split_mode}' == 'dlOverF1U'
+    ...                                 Create Dictionary    dlDataSplitMode=${split_mode}
+    ...                                                      initialDLTrafficRouting=${initial_dl}
+    ...                                                      dlFlowControlAlgo=3gppFlowControl
+    ...                                                      actPrioritizeX2AfterInactivity=false
+    ...                                                      actDl256Qam=${actDl256Qam}
+    ...                             ELSE
+    ...                                 Create Dictionary    dlDataSplitMode=${split_mode}
+    ...                                                      initialDLTrafficRouting=${initial_dl}
+    ...                                                      dlFlowControlAlgo=3gppFlowControl
+    ...                                                      actPrioritizeX2AfterInactivity=true
+    ...                                                      actDl256Qam=${actDl256Qam}
+
+    &{mode_fc_3}                    Create Dictionary       dlFlowControlAlgo=3gppFlowControl
+
+    # For the NRDRB-x like bearers (for NSA and 5GC000776)
+    ${new_bearer_definition_config}    Add New Bearer Definition Configuration      split_mode=${split_mode}
+    ...                                                                             fc_mode=3gppFlowControl
+    ...                                                                             initial_dl=${initial_dl}
+
+    # Disable inactivity detection when no traffic to avoid unexpected UE release.
+    &{p_inact_det}    Evaluate    {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'actInactDetNSAUe','value':'false'}
+    Append To List    ${new_bearer_definition_config}               ${p_inact_det}
+
+    [Return]                        @{new_bearer_definition_config}
+
+
+Set Flow Control Configuration
+    [Documentation]                 Set FC configuration for both WTS and gNB
+    ...                             Default values are proposed, but can be overriden
+    [Arguments]                     ${FC_protocol}=3gpp
+    ...                             ${split_mode}=dlOverF1UX2U
+    ...                             ${initial_dl}=initDLoverX2U
+
+    # WTS updates:
+    Modify Field in WtsEmu Cfg File     field=control_flow_period    value=3gpp1
+
+    ${param_list_scf}     Build Set Flow Control Configuration List    split_mode=${split_mode}
+    ...                                                                initial_dl=${initial_dl}
+
+    Run Keyword If       '${auto_1248_j_debug_scf_update}' == 'True'
+    ...                      Log to console                  SCF params: ${param_list_scf}
+
+    Run Keyword If       '${auto_1248_j_debug_scf_update}' == 'True'
+    ...                      Log to console                  Updating SCF file
+
+    # Modify COAM parameters with rest API            modify_param=@{param_list_scf}
+    OAM Set Params       ${param_list_scf}
+
+# KW to parse counter list for each TC and compare with predefined value with an error percentage
+Verify Counter Cumulative Values With Margin
+    [Documentation]                 KW to parse counter list for each TC and
+    ...                             compare with predefined value with an error percentage
+    [Arguments]                     ${TC_name}
+    ...                             ${Error_percentage}=5
+
+
+   ${date}                          Get Current Date
+   ${date_in_dir_name}              Convert Date         ${date}     result_format=%d%m%Y_%H%M
+   ${log_path_pm}                   Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+   #Real/20200423_121416.5GC001248_J_Tests/Logs/20200423121428855369/PM_23042020_1254/
+   # Retrieve BTS domain Id from OAM
+   # Run Keyword And Ignore Error     Get TL Info
+   # To enable counter KW debug mode (Verify Object Counter ...)
+   # Set Debug Mode
+
+    ${pm_latest}                    Collect PM files from BTS    ${log_path_pm}
+
+    ${tc_kpi_dict}                  Get From Dictionary     ${dict_kpis_all_tc}     ${TC_name}
+    ${tc_dict_keys}                 Get Dictionary Keys     ${tc_kpi_dict}
+
+    Run Keyword If   '${auto_1248_j_debug_scf_update}' == 'True'    Log To Console    ${tc_kpi_dict}
+    Run Keyword If   '${auto_1248_j_debug_scf_update}' == 'True'    Log To Console    Keys: ${tc_dict_keys}
+
+    # For loop parsing counter defined inside ${tc_kpi_dict} and compare with a predefinied value
+    FOR    ${counter}    IN    @{tc_dict_keys}
+        ${domain}            Get From Dictionary     ${dict_counter_domains}     ${counter}
+        ${min_max}           Get From Dictionary     ${tc_kpi_dict}     ${counter}
+        ${valeur_min}        Get From List     ${min_max}        0
+        ${valeur_max}        Get From List     ${min_max}        1
+        ${valeur_min_to_string}                Convert To String    ${valeur_min}
+        ${valeur_max_to_string}                Convert To String    ${valeur_max}
+        &{counter_dict}      Create Dictionary
+        ...                  counter=${counter}    obj=${domain}    min=${valeur_min_to_string}    max=${valeur_max_to_string}
+
+        ${value}           Run Keyword If    '${domain}'=='NRBTS'
+        ...                   Retrieve Counter Sum of Values From Pm Files For Object With Name
+        ...                   ${log_path_pm}     ${domain}         ${counter}      ${NRBTS_ID}
+        ...                ELSE
+        ...                   Retrieve Counter Sum of Values From Pm Files For Object With Name
+        ...                   ${log_path_pm}     ${domain}         ${counter}
+
+        # Print debug about counter values and deviation compared to expected values
+        ${average}            Evaluate        (${valeur_max} + ${valeur_min}) / 2
+        ${kpi_deviation}      Run Keyword If            ${average}!=0
+        ...                            Evaluate        (${value} - ${average})*100 / ${average}
+        ...                      ELSE
+        ...                            Evaluate        0
+        Log To Console  Compteur: ${counter} Min: ${valeur_min} - Value : ${value} - Max: ${valeur_max} ---> Deviation is ${kpi_deviation} %
+
+        ${range_status}   Run Keyword If    '${domain}'=='NRBTS'
+        ...                   Verify Object Counter with ID Sum Of Values In A Range    ${log_path_pm}     ${NRBTS_ID}      &{counter_dict}
+        ...               ELSE
+        ...                   Verify Object Counter Sum Of Values In A Range    ${log_path_pm}    &{counter_dict}
+        Should Be True   '${range_status}' == 'True'
+
+    END
+
+Verify Counter Cumulative Values With Margin for AiC
+    [Documentation]                 KW to parse counter list for each TC and
+    ...                             compare with predefined value with an error percentage
+    ...                             For AllInCloud (AiC) - VRAN2.0
+    [Arguments]                     ${TC_name}
+    ...                             ${Error_percentage}=5
+
+   ${date}                          Get Current Date
+   ${date_in_dir_name}              Convert Date         ${date}     result_format=%d%m%Y_%H%M
+   ${log_path_pm}                   Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+   #Real/20200423_121416.5GC001248_J_Tests/Logs/20200423121428855369/PM_23042020_1254/
+   # Retrieve BTS domain Id from OAM
+   # Run Keyword And Ignore Error     Get TL Info
+   # To enable counter KW debug mode (Verify Object Counter ...)
+   # Set Debug Mode
+
+    ${tc_kpi_dict}                  Get From Dictionary     ${dict_kpis_all_tc}     ${TC_name}
+    ${tc_dict_keys}                 Get Dictionary Keys     ${tc_kpi_dict}
+    # ${tc_dict_keys}                 Get Dictionary Keys     ${tc_kpi_dict}   sort_keys=False
+
+    Run Keyword If   '${auto_1248_j_debug_scf_update}' == 'True'    Log To Console    ${tc_kpi_dict}
+    Run Keyword If   '${auto_1248_j_debug_scf_update}' == 'True'    Log To Console    Keys: ${tc_dict_keys}
+
+    # For loop parsing counter defined inside ${tc_kpi_dict} and compare with a predefinied value
+    FOR    ${counter}    IN    @{tc_dict_keys}
+        ${domain}                   Get From Dictionary     ${dict_counter_domains_AiC}     ${counter}
+        ${domainId}                 Get From Dictionary     ${dict_counter_domainIds_AiC}   ${counter}
+        ${nodeType}                 Get From Dictionary     ${dict_counter_nodeTypes}   ${counter}
+        ${min_max}                  Get From Dictionary     ${tc_kpi_dict}     ${counter}
+        ${valeur_min}               Get From List     ${min_max}        0
+        ${valeur_max}               Get From List     ${min_max}        1
+        ${valeur_min_to_string}     Convert To String    ${valeur_min}
+        ${valeur_max_to_string}     Convert To String    ${valeur_max}
+
+        &{counter_dict}      Create Dictionary
+        ...                  counter=${counter}    obj=${domain}    objId=${domainId}     min=${valeur_min_to_string}    max=${valeur_max_to_string}
+        run Keyword if    '${domain}'=='NRBTS'     Set to Dictionary       ${counter_dict}       objId=${NRBTS_ID}
+        ...     ELSE                               Set to Dictionary       ${counter_dict}       objId=${domainId}
+
+        ${value}    run Keyword if    '${nodeType}'=='DU'   Counters.Retrieve Counter Sum of Values From Pm Files For Object and Id on vDU
+        ...                                                                  &{counter_dict}
+        ...                   ELSE                          Counters.Retrieve Counter Sum of Values From Pm Files For Object and Id on vCU
+        ...                                                                  &{counter_dict}
+
+        # Print debug about counter values and deviation compared to expected values
+        ${average}            Evaluate        (${valeur_max} + ${valeur_min}) / 2
+        ${kpi_deviation}      Run Keyword If            ${average}!=0
+        ...                            Evaluate        (${value} - ${average})*100 / ${average}
+        ...                      ELSE
+        ...                            Evaluate        0
+        Log To Console  Compteur: ${counter} Min: ${valeur_min} - Value : ${value} - Max: ${valeur_max} ---> Deviation is ${kpi_deviation} %
+
+        ${range_status}    run Keyword if    '${nodeType}'=='DU'   Counters.Verify Object Counter with ID Sum Of Values In A Range on vDU
+        ...                                                                  &{counter_dict}
+        ...                   ELSE                                 Counters.Verify Object Counter with ID Sum Of Values In A Range on vCU
+        ...                                                                  &{counter_dict}
+
+        Should Be True   '${range_status}' == 'True'
+
+    END
+
+Verify Counter Cumulative Values With Margin for 1248_M
+    [Documentation]         Dedicated KW for checkout 1248_M counter
+    ...                     Now gNB seems to use 4TX instead of 2 TX previously
+    ...                     Thus M55301C09001/M55301C09002 (PDSCH transmissions using 2TX transmission with rank x)
+    ...                     are no more incremented.
+    ...                     Now it's M55301C10001/M55301C10002 (PDSCH transmissions using 4TX transmission with rank x)
+    ...                     The best solution is to check M55301C09001+M55301C10001 or M55301C09002+M55301C10002
+    ...                     to cover both cases.
+
+    [Arguments]                     ${TC_name}
+
+    ${date}                          Get Current Date
+    ${date_in_dir_name}              Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                   Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+    ${pm_latest}                     Collect PM files from BTS    ${log_path_pm}
+
+    # Sum-up PDSCH with rank 1 transmission
+    ${pdsch_transmissions_rank1}              Set Variable                    0
+    FOR    ${counter}    IN    @{counter_list_1248_M_for_rank1}
+
+        ${value}              Retrieve Counter Sum of Values From Pm Files For Object With Name
+        ...                   ${log_path_pm}     NRCELL         ${counter}
+
+        ${pdsch_transmissions_rank1}     Evaluate        ${pdsch_transmissions_rank1} + ${value}
+    END
+
+    # Sum-up PDSCH with rank 2 transmission
+    ${pdsch_transmissions_rank2}              Set Variable                    0
+    FOR    ${counter}    IN    @{counter_list_1248_M_for_rank2}
+
+        ${value}              Retrieve Counter Sum of Values From Pm Files For Object With Name
+        ...                   ${log_path_pm}     NRCELL         ${counter}
+
+        ${pdsch_transmissions_rank2}     Evaluate        ${pdsch_transmissions_rank2} + ${value}
+    END
+
+
+    ${tc_kpi_dict}                  Get From Dictionary     ${dict_kpis_all_tc}     ${TC_name}
+
+    ${min_max}        Get From Dictionary     ${tc_kpi_dict}     PDSCH_RANK_1
+    ${min_rk1}        Get From List     ${min_max}        0
+    ${max_rk1}        Get From List     ${min_max}        1
+
+    ${min_max}        Get From Dictionary     ${tc_kpi_dict}     PDSCH_RANK_2
+    ${min_rk2}        Get From List     ${min_max}        0
+    ${max_rk2}        Get From List     ${min_max}        1
+
+    Log To Console  Min: ${min_rk1} - Num of PDSCH rank 1: ${pdsch_transmissions_rank1} - Max: ${max_rk1}
+    Log To Console  Min: ${min_rk2} - Num of PDSCH rank 2: ${pdsch_transmissions_rank2} - Max: ${max_rk2}
+
+    Should Be True      ${pdsch_transmissions_rank1}>=${min_rk1}
+    Should Be True      ${pdsch_transmissions_rank1}<=${max_rk1}
+
+    Should Be True      ${pdsch_transmissions_rank2}>=${min_rk2}
+    Should Be True      ${pdsch_transmissions_rank2}<=${max_rk2}
+
+
+Check Bearer CU
+    [Documentation]      KW used to check CU bearer configuration inside PDML file
+    [Arguments]                     ${pdmlFile}
+    ...                             ${fc_mode}
+    ...                             ${initial_dl}
+
+
+   # Checks related to f1UFlowControlParams
+   analyzer.check_exists_once      pdmlFile=${pdmlFile}
+   ...                             packetName=itf_l2_hi_cu_user_BearerSetupReq
+   ...                             path=itf_l2_hi_cu_user_FlowControlParams.dddsPeriod$
+   ...                             value=5
+   analyzer.check_list             pdmlFile=${pdmlFile}
+   ...                             packetName=itf_l2_hi_cu_user_BearerSetupReq
+   ...                             path=itf_l2_hi_cu_user_FlowControlParams.maxRLCQueueingDelay_item$
+   ...                             value=20
+
+   # Checks related to CU/X2 side (flowControlParams)
+   analyzer.check_exists_once      pdmlFile=${pdmlFile}
+   ...                             packetName=itf_l2_hi_cu_user_BearerSetupReq
+   ...                             path=itf_l2_hi_cu_user_FlowControlParams.dddsPeriod$
+   ...                             value=10
+   analyzer.check_list             pdmlFile=${pdmlFile}
+   ...                             packetName=itf_l2_hi_cu_user_BearerSetupReq
+   ...                             path=itf_l2_hi_cu_user_SplitBearerParams.initialDLTrafficRouting$
+   ...                             value=${initial_dl}
+
+   # Common checks related to f1UFlowControlParams and CU/X2 side (flowControlParams)
+   analyzer.check_exists_once      pdmlFile=${pdmlFile}
+   ...                             packetName=itf_l2_hi_cu_user_BearerSetupReq
+   ...                             path=itf_l2_hi_cu_user_FlowControlParams.minThFlowCtrl$
+   ...                             value=1
+   analyzer.check_exists_once      pdmlFile=${pdmlFile}
+   ...                             packetName=itf_l2_hi_cu_user_BearerSetupReq
+   ...                             path=itf_l2_hi_cu_user_FlowControlParams.maxTransferDelay$
+   ...                             value=20
+
+
+Check Bearer DU
+    [Documentation]      KW used to check DU bearer configuration inside PDML file
+    [Arguments]                     ${pdmlFile}
+    ...                             ${fc_mode}
+
+   analyzer.check_list             pdmlFile=${pdmlFile}
+   ...                             packetName=itf_l2_hi_du_user_BearerSetupReq
+   ...                             path=itf_l2_hi_du_user_SFlowControlParams.dddsPeriod$
+   ...                             value=5
+   analyzer.check_list             pdmlFile=${pdmlFile}
+   ...                             packetName=itf_l2_hi_du_user_BearerSetupReq
+   ...                             path=itf_l2_hi_du_user_SFlowControlParams.minThFlowCtrl$
+   ...                             value=1
+   analyzer.check_list             pdmlFile=${pdmlFile}
+   ...                             packetName=itf_l2_hi_du_user_BearerSetupReq
+   ...                             path=itf_l2_hi_du_user_SFlowControlParams.maxRLCQueueingDelay$
+   ...                             value=20
+   analyzer.check_list             pdmlFile=${pdmlFile}
+   ...                             packetName=itf_l2_hi_du_user_BearerSetupReq
+   ...                             path=itf_l2_hi_du_user_SFlowControlParams.dlFlowControlAlgo$
+   ...                             value=${fc_mode}
+
+Test Teardown for 1248
+    [Documentation]    Perform needed actions at the end of a test case
+    Dated log                       Test teardown : start
+    Run Keyword If                  ${enable_sherpa}==${True} and not ${isAic}    Sherpa.Deactivate Sherpa and Stop Collect
+    Set Global variable             ${save_debug_data}                      ${False}
+    # RDH: The following lines of code are removed as unnecessary: the Setup.robot "Test Teardown" only creates the SOS report if the test is FAIL.
+    # Run Keyword If Test Failed      Set Global Variable                     ${save_debug_data}     ${True}
+    # Run Keyword If                  ${AutoSaveDebugData} == ${True}         Set Global Variable    ${save_debug_data}    ${True}
+    # "Test Teardown" KW from Setup.robot
+    # Run Keyword If                  ${save_debug_data} == ${True}           Test Teardown
+
+    # RDH: Reactivation of the "Test Teardown" and therefore execution of the SCOUT procedure regardless of the result of the test.
+    Test Teardown
+    Dated log                       Test teardown : end
+ 

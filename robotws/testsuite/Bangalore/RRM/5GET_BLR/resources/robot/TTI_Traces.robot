@@ -1,0 +1,170 @@
+*** Settings ***
+Documentation  Author: Ding Binmei
+...            Contact Mail:   binmei.ding@nokia-sbell.com
+...            Description: TTI trace log capturing for L2-PS
+Library     ../python/TTI_Traces.py    WITH NAME    tti
+Library    String
+Library    Collections
+Resource   Setup_Env.robot
+
+
+*** Variables ***
+${ASIK}                 ASIK Master
+${ABIL_MASTER_ALIAS}    ABIL Master
+${ABIL_SLAVE_ALIAS}     ABIL Slave
+
+
+*** Keywords ***
+Create default connection
+    [Documentation]  Author: Ding Binmei 5G_PZ_MMW_HZ_1_SG
+    ...    Description: Create default connection for event trace log capturing
+    ...                 If 1514 feature is enabled and HW type for base band is not ABIO, then event trace will be captured on ABIL slave,
+    ...                 otherwise on ABIL master
+    [Arguments]  ${hw_slot}=${1}
+    Setup_Env.Connect to Common Unit Master    alias=${ASIK}
+    Setup_Env.Connect to Capacity Unit Master    alias=${ABIL_MASTER_ALIAS}    asik_alias=${ASIK}    hw_slot=${hw_slot}
+    ${base_band_type}    Setup_Env.Get hardware type    alias=${ABIL_MASTER_ALIAS}
+    ${ABIL_ALIAS}    Set variable if     '${base_band_type}'!='ABIO'    ${ABIL_SLAVE_ALIAS}    ${ABIL_MASTER_ALIAS}
+    Set suite variable    ${ABIL_ALIAS}
+    Run keyword if    '${base_band_type}'!='ABIO'
+    ...    Setup_Env.Connect to Capacity Unit Slave    hw_slot=${hw_slot}    alias=${ABIL_ALIAS}
+
+Create default connection for ASOE
+    [Documentation]  Author: Ding Binmei 5G_PZ_MMW_HZ_1_SG
+    ...    Description: Create default connection for event trace log capturing
+    ...                 If 1514 feature is enabled and HW type for base band is not ABIO, then event trace will be captured on ABIL slave,
+    ...                 otherwise on ABIL master
+    [Arguments]  ${hw_slot}=${1}
+    Setup_Env.Connect to DU
+
+Start TTI trace log capturing
+    [Documentation]    Author: Ding Binmei 5G_PZ_MMW_HZ_1_SG
+    ...                Description: 1. Clear the log folder /var/eventsTrace
+    ...                             2. Start TTI trace process
+    ...               2020/1/15 Ren Biyao: add ${hw_slot} to extend for both left and right AMIA configurantion.
+    ...               In left of AMIA support slot 1, 2, 3. In right of AMIA support slot 5, 6, 7.
+    ...               2020/3/12 Ding Binmei: Extend keyword to support log capturing on user provided ABIL, if user would
+    ...               like to capturing event trace log from other ABIL, then can set connection alias for ${connection_for_abil},
+    ...               It will capturing on ABIL master by default
+    [Arguments]  ${hw_slot}=${1}    ${connection_for_abil}=${None}
+    Run keyword if    '${connection_for_abil}'=='${None}'
+    ...    Create default connection    hw_slot=${hw_slot}
+    ${connection_for_abil}    Set variable if    '${connection_for_abil}'=='${None}'    ${ABIL_ALIAS}    ${connection_for_abil}
+    tti.prepare_for_tti_trace_log_capturing    connection=${connection_for_abil}
+    tti.start_tti_trace    connection=${connection_for_abil}
+
+Start TTI trace log capturing for ASOE
+    [Documentation]    Author: Ding Binmei 5G_PZ_MMW_HZ_1_SG
+    ...                Description: 1. Clear the log folder /var/eventsTrace
+    ...                             2. Start TTI trace process
+    ...               2020/1/15 Ren Biyao: add ${hw_slot} to extend for both left and right AMIA configurantion.
+    ...               In left of AMIA support slot 1, 2, 3. In right of AMIA support slot 5, 6, 7.
+    ...               2020/3/12 Ding Binmei: Extend keyword to support log capturing on user provided ABIL, if user would
+    ...               like to capturing event trace log from other ABIL, then can set connection alias for ${connection_for_abil},
+    ...               It will capturing on ABIL master by default
+    [Arguments]  ${hw_slot}=${1}
+    Create default connection for ASOE    hw_slot=${hw_slot}
+    tti.prepare_for_tti_trace_log_capturing    connection=DU_conn
+    tti.start_tti_trace    connection=DU_conn
+
+Stop TTI trace log capturing
+    [Documentation]    Author: Ding Binmei 5G_PZ_MMW_HZ_1_SG
+    ...                Description: Kill TTI trace process
+    ...               2020/3/12 Ding Binmei: Extend keyword to support log capturing on user provided ABIL, if user would
+    ...               like to capturing event trace log from other ABIL, then can set connection alias for ${connection_for_abil},
+    ...               It will capturing on ABIL master by default
+    [Arguments]    ${connection_for_abil}=${None}
+    ${connection_for_abil}    Set variable if    '${connection_for_abil}'=='${None}'    ${ABIL_ALIAS}    ${connection_for_abil}
+    tti.stop_tti_trace    connection=${connection_for_abil}
+
+Stop TTI trace log capturing for ASOE
+    [Documentation]    Author: Ding Binmei 5G_PZ_MMW_HZ_1_SG
+    ...                Description: Kill TTI trace process
+    ...               2020/3/12 Ding Binmei: Extend keyword to support log capturing on user provided ABIL, if user would
+    ...               like to capturing event trace log from other ABIL, then can set connection alias for ${connection_for_abil},
+    ...               It will capturing on ABIL master by default
+    tti.stop_tti_trace    connection=DU_conn
+
+Convert TTI trace log and download combined csv logs to test pc
+    [Documentation]    Author: Ding Binmei  5G_PZ_MMW_HZ_1_SG
+    ...                Description:
+    ...                             1. ${local_path} Refers to the test case log path in test pc
+    ...                             2. Convert bin files to csv files
+    ...                             3. Combine multiple CSV files to one csv file for UL and DL direction
+    ...                             4. Will return the local file path as a dict with UL and DL csv file paths in test pc.
+    ...                                Example output: {'UL':'XXXX', 'DL':'XXXX'}
+    ...                2020-3-12 Ding Binmei: Added ${is_need_to_close_connection} to let user decide whether need to disconnect ssh connection
+    ...                         Add ${connection_for_abil} and ${connection_for_asik} to extend keyword to support for log capturing on other ABIL
+    ...                         It will support log capturing on ABIL master by default
+
+    [Arguments]    ${local_path}=${TS_CASE_LOG_PATH}    ${is_need_to_close_connection}=${False}    ${connection_for_abil}=${None}
+    ...    ${connection_for_asik}=${None}
+    ${connection_for_abil}    Set variable if    '${connection_for_abil}'=='${None}'    ${ABIL_ALIAS}    ${connection_for_abil}
+    ${connection_for_asik}    Set variable if    '${connection_for_asik}'=='${None}'    ${ASIK}    ${connection_for_asik}
+    ${csv_path}    tti.convert_tti_trace_to_csv    connection=${connection_for_abil}
+    ${csv_file_path_ul}    tti.combine_csv_files_to_one    csv_log_path=${csv_path}    direction=ul    connection=${connection_for_abil}
+    ${csv_file_path_dl}    tti.combine_csv_files_to_one    csv_log_path=${csv_path}    direction=dl    connection=${connection_for_abil}
+    ${remote_files}    Create list    ${csv_file_path_ul}     ${csv_file_path_dl}
+    ssh.download file    remote_path=${remote_files}    local_path=${local_path}    connection=${connection_for_abil}
+    Run keyword if    ${is_need_to_close_connection}
+    ...    Run keyword and ignore error    Run keywords    ssh.disconnect    connection=${connection_for_abil}    AND
+    ...                    ssh.disconnect    connection=${connection_for_asik}
+
+    @{csv_file_name_ul}    Split string    ${csv_file_path_ul}    /
+    @{csv_file_name_dl}    Split string    ${csv_file_path_dl}    /
+    &{local_csv_file_path}    create dictionary
+    Set to dictionary    ${local_csv_file_path}    UL    ${local_path}/@{csv_file_name_ul}[-1]
+    Set to dictionary    ${local_csv_file_path}    DL    ${local_path}/@{csv_file_name_dl}[-1]
+    [Return]    ${local_csv_file_path}
+
+
+Download captured TTI Traces to test pc
+    [Arguments]    ${local_path}=${TS_CASE_LOG_PATH}    ${is_need_to_close_connection}=${False}    ${connection_for_abil}=${None}
+    ...    ${connection_for_asik}=${None}
+    ${connection_for_abil}    Set variable if    '${connection_for_abil}'=='${None}'    ${ABIL_ALIAS}    ${connection_for_abil}
+    ${connection_for_asik}    Set variable if    '${connection_for_asik}'=='${None}'    ${ASIK}    ${connection_for_asik}
+    ${tti_files}    tti.get_generated_tti_traces    connection=${connection_for_abil}
+#    ${remote_files}    Create list    ${tti_files}
+    ssh.download file    remote_path=${tti_files}    local_path=${local_path}    connection=${connection_for_abil}
+    Run keyword if    ${is_need_to_close_connection}
+    ...    Run keyword and ignore error    Run keywords    ssh.disconnect    connection=${connection_for_abil}    AND
+    ...                    ssh.disconnect    connection=${connection_for_asik}
+
+Convert ASOE TTI trace log and download combined csv logs to test pc
+    [Documentation]    Author: Ding Binmei  5G_PZ_MMW_HZ_1_SG
+    ...                Description:
+    ...                             1. ${local_path} Refers to the test case log path in test pc
+    ...                             2. Convert bin files to csv files
+    ...                             3. Combine multiple CSV files to one csv file for UL and DL direction
+    ...                             4. Will return the local file path as a dict with UL and DL csv file paths in test pc.
+    ...                                Example output: {'UL':'XXXX', 'DL':'XXXX'}
+    ...                2020-3-12 Ding Binmei: Added ${is_need_to_close_connection} to let user decide whether need to disconnect ssh connection
+    ...                         Add ${connection_for_abil} and ${connection_for_asik} to extend keyword to support for log capturing on other ABIL
+    ...                         It will support log capturing on ABIL master by default
+
+    [Arguments]    ${local_path}=${TS_CASE_LOG_PATH}    ${is_need_to_close_connection}=${False}
+    ${csv_path}    tti.convert_tti_trace_to_csv    connection=DU_conn
+    ${csv_file_path_ul}    tti.combine_csv_files_to_one    csv_log_path=${csv_path}    direction=ul    connection=DU_conn
+    ${csv_file_path_dl}    tti.combine_csv_files_to_one    csv_log_path=${csv_path}    direction=dl    connection=DU_conn
+    ${remote_files}    Create list    ${csv_file_path_ul}     ${csv_file_path_dl}
+    ssh.download file    remote_path=${remote_files}    local_path=${local_path}    connection=DU_conn
+    Run keyword if    ${is_need_to_close_connection}
+    ...    Run keyword and ignore error    Run keywords    ssh.disconnect    connection=DU_conn    AND
+    ...                    ssh.disconnect    connection=DU_conn
+
+    @{csv_file_name_ul}    Split string    ${csv_file_path_ul}    /
+    @{csv_file_name_dl}    Split string    ${csv_file_path_dl}    /
+    &{local_csv_file_path}    create dictionary
+    Set to dictionary    ${local_csv_file_path}    UL    ${local_path}/@{csv_file_name_ul}[-1]
+    Set to dictionary    ${local_csv_file_path}    DL    ${local_path}/@{csv_file_name_dl}[-1]
+    [Return]    ${local_csv_file_path}
+
+
+Download captured ASOE TTI Traces to test pc
+    [Arguments]    ${local_path}=${TS_CASE_LOG_PATH}    ${is_need_to_close_connection}=${False}
+    ${tti_files}    tti.get_generated_tti_traces    connection=DU_conn
+#    ${remote_files}    Create list    ${tti_files}
+    ssh.download file    remote_path=${tti_files}    local_path=${local_path}    connection=DU_conn
+    Run keyword if    ${is_need_to_close_connection}
+    ...    Run keyword and ignore error    Run keywords    ssh.disconnect    connection=DU_conn    AND
+    ...                    ssh.disconnect    connection=DU_conn

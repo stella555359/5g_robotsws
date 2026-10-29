@@ -1,0 +1,102 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE] CB010850_IWK_UL-PRB_Blanking_and_PRB_pooling_CB009158_SANSA 3 cells 10Mhz n25
+...               Cell 1 & 2: 26 high edge blanked prbs
+...               Cell 3    : 21 Low edge blanked prbs
+...               Test Case Scenario author   : ilakcoumi.pareemanen@nokia.com
+...               Test Case Scenario contact  : ilakcoumi.pareemanen@nokia.com
+...               Creation Date               : 08-Aug-2023
+...               Modification                : 25-Sep-2024 - richard.duthu@nokia.com - Produce Scout data through Test Teardown + some RF50 fixes
+
+
+Library           OperatingSystem
+Resource          ./resources/robot/CB010850_AB_keywords.robot
+Resource          ../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../resources/SWENG/robot/Setup.robot
+
+Force Tags                          CA_5G_SW_FR-Villarceaux    RRM
+...                                 PY36
+...                                 CLOUD_5G_I_LO_AP_LOOO, VARIANT_SANSA_FS_CPRI_CMWV_FDD
+...                                 master_classicalbts_all    SBTS00       SBTS24R1    SBTS23R4
+...                                 CONFIGURED    5G_RAN    RAN_5G    CRT
+
+Suite Setup                         Suite Setup from scratch            listBackupFiles=${FD_ALL}
+Suite Teardown                      Suite Teardown
+Test Teardown                       Test Teardown
+
+
+*** Variables ***
+
+&{param}                          nbCell=3
+...                               duration=30
+...                               deviation=20
+
+${pooling_delta_file}             testsuite/Paris/RRM/ET/CB010850/config/Delta_scf_CB010850_AB_config_pooling.json
+
+#ue's settings
+
+${UE_capa_10Mhz}                                                   SEPARATOR=
+...                                                                E1A01000014F5E0302C0020840009041B38987C284804D8041FF9863CA160704C06
+...                                                                0188A0300A63000A0F831AC31B47498A823F96524CA0D00416C9824060C78C7FE618F28581C0E1
+...                                                                E026761D86761D8020018000000003830000000008418031C9A1F00E41000000A41000002A4100
+...                                                                0004A494000069805C0DBC8DADD200A0800004B29282000032CA4A0800014B29282000072CA4A0
+...                                                                800024B292920000AA5949404D03ABA475742AA69554576A05801E006804020000000000080100210
+
+&{dict_settings_ue_1}                                               originalCell=1
+...                                                                 throughput=100
+...                                                                 ue_nr_capa=${UE_capa_10Mhz}
+
+
+&{dict_settings_ue_2}                                               originalCell=1
+...                                                                 throughput=100
+...                                                                 ue_nr_capa=${UE_capa_10Mhz}
+
+
+&{dict_settings_ue_3}                                               originalCell=2
+...                                                                 throughput=100
+...                                                                 ue_nr_capa=${UE_capa_10Mhz}
+
+&{dict_settings_ue_4}                                               originalCell=2
+...                                                                 throughput=100
+...                                                                 ue_nr_capa=${UE_capa_10Mhz}
+
+&{dict_settings_ue_5}                                               originalCell=3
+...                                                                 throughput=100
+...                                                                 ue_nr_capa=${UE_capa_10Mhz}
+
+&{dict_settings_ue_6}                                               originalCell=3
+...                                                                 throughput=100
+...                                                                 ue_nr_capa=${UE_capa_10Mhz}
+
+
+@{dict_settings_all_ues}                                            ${dict_settings_ue_1}
+...                                                                 ${dict_settings_ue_2}
+...                                                                 ${dict_settings_ue_3}
+...                                                                 ${dict_settings_ue_4}
+...                                                                 ${dict_settings_ue_5}
+...                                                                 ${dict_settings_ue_6}
+
+*** Test Cases ***
+[1]CB010850-AB_1_Interworking_UL-PRB_Blanking_at one carrier_edge_10MHz_and_PRB_pooling_CB009158_SANSA_basic
+    [Tags]                      CLOUD_5G_I_LO_AP_LOOO,VARIANT_SANSA_FS_CPRI_CMWV_FDD
+    CB010850_AB_IWK_Pooling     dict_ues=${dict_settings_all_ues}       param=${param}
+
+
+*** Keywords ***
+
+CB010850_AB_IWK_Pooling
+    [Documentation]        Test to check that interaction of PRB pooling with Prb Blanking UL only
+    ...                    Check Counter M55308C10006
+    [Arguments]            ${dict_ues}      ${param}
+
+    Init Sequence        ${param}
+    STEP                 CB010850_Configuration               ${pooling_delta_file}            ${gnb_alias}
+    Critical Step        Restart TL
+    ${listOfUes}         Build UEs list SA Multi UEs          dict_ues=${dict_ues}
+    STEP                 Set UE_Capa Context_WTS CFG          listOfUes=${listOfUes}
+    STEP                 Multi Cells Setup for 10850          listOfUes=${listOfUes}     nbCell=${param.nbCell}
+    STEP                 SA Start Traffic Multi UEs NonGBR    listOfUes=${listOfUes}
+#   STEP                 Activate Sherpa
+    STEP                 Traced Sleep                               duration=10s
+#   STEP                 Deactivate Sherpa and Stop Collect
+    STEP                 Check 10850 PM Counters
+    [Teardown]           GenericTest.Display diagnosis

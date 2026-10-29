@@ -1,0 +1,11 @@
+dbgrrc mirror sport 3 dport 2 e b
+dbgrrc mirror sport 4 dport 2 e b
+dbgrrc mirror sport 5 dport 2 e b
+dbgrrc mirror sport 6 dport 2 e b
+dbgrrc mirror sport 7 dport 2 e b
+dbgrrc mirror sport 14 dport 2 e b
+dbgrrc mirror sport 15 dport 2 e b
+dbgrrc mirror sport 20 dport 2 e b
+dbgrrc mirror sport 21 dport 2 e b
+dbgrrc mirror sport 22 dport 2 e b
+dbgrrc mirror sport 25 dport 2 e b

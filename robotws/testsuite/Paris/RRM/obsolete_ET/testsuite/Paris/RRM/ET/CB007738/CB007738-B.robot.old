@@ -1,0 +1,128 @@
+*** Settings ***
+
+Documentation     [SUITE PURPOSE]  tests for DSS feature 7738-B CellSetup / Ue call and Traffic for 10Mhz
+...               Test Case Scenario author   : franck.ngoune_ngoune@nokia.com
+...               Test Case Scenario contact  : franck.ngoune_messi@nokia.com
+...               Test Case automation author :
+...               Test Case automation contact:
+...               Creation Date               : June 07 2021
+...               Modified Date               : 02 February 2022
+...               Last Modified by            : denis.taupin@nokia.com
+#-------------------------------------------------------------------------------------------------------[150 characters]
+
+
+Library           taf.sbts.oam.coam.admin            WITH NAME               coam
+Library           ute_wtssim                        WITH NAME               wts
+Library           ../resources/python/luashark_tools.py
+Library           ../../../resources/SWENG/python/StringTool.py
+Library           resources/python/Constants.py                     WITH NAME    MyConstants
+Library           ../resources/DSS/python/dss_tools.py              WITH NAME    nps_dss_tools
+Library           resources/python/tools.py                         WITH NAME    nps_7738_tools
+Library           ../resources/common/TtiTrace/python/ttitrace.py   WITH NAME    nps_ttitraces_tools
+
+# SWENG resources
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+
+# DSS common
+Resource          ../resources/DSS/robot/common_Dss_Keywords.robot
+Resource          ../resources/DSS/robot/common_Dss_command.robot
+Resource          ../resources/DSS/robot/common_Dss_SA_NSA.robot
+
+# 7738 specific
+Resource            resources/robot/CB007738_Kw_TestSetup.robot
+Resource            resources/robot/CB007738_keywords.robot
+Resource            resources/robot/CB007738-B_keywords.robot
+
+Variables           resources/python/Constants.py
+
+
+# Tags for QC mapping
+Force Tags                          CA_5G_SW_FR-Villarceaux   RRM
+...                                 PY36
+...                                 master_classicalbts_all
+...                                 CONFIGURED    5G_RAN    RAN_5G
+
+
+Suite Setup         Run keywords
+...                                MyConstants.hello           AND
+...                                Test Suite Setup for 7738   AND
+...                                Get gNB cell 5g On air      AND
+...                                Prepare TL for TTITraces
+Suite Teardown      Test suite teardown for 7738
+
+
+
+*** Variables ***
+
+${PATTERN_DL_70_SA_OK}      0011100010-0111101110-0011100010-0111101110-0011100010-0111101110-0011100010-0111101110
+${PATTERN_DL_100_SA_OK}     1011110011-1111111111-1011110011-1111111111-1011110011-1111111111-1011110011-1111111111
+
+# &{UE_PROFILE}      ue=1                profile=1
+# ...                bearer=2            testMode=False
+# ...                trf_id=1            target_gnb=2
+# ...                burst=${None}       target_cells=1
+
+#.................................
+
+*** Test Cases ***
+
+TestLine_preparation
+   [Tags]    FULL_RUN    Cellsetup     10MHZ
+   ...       CRT
+   CB007738_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_7738_A1}
+
+TestLine_7738_Test_setup
+   [Tags]    FULL_RUN    Cellsetup   FULL_CALL  10MHZ
+   ...       CRT
+   [Setup]   Run Keywords    set Suite Variable    ${testCaseDir}    None      AND
+   ...                       common_Dss_Keywords.Get testcase log directory
+   CB007738_Kw_TestSetup.Test Setup 7738    ${TestDSS10Mhz_7738_A1}
+
+[1][1.0] CB007738_5G_B_TC_03_Check_DldatacsisendReq_sent_in_MSG2_Slot_According_to_PrachConfigIndex_with_Traffic_NSA_Mode
+   [Tags]    FULL_RUN     10MHZ    7738   7738_A4
+   ...       CRT
+   [Documentation]     Cellsetup Dss phase 3, BW= 10MHz, DL RATIO = 100%, Fast UL Allocation, NSA 5g Call , DL/UL Tput
+   [Setup]   Run Keywords    set Suite Variable    ${testCaseDir}    None                                 AND
+   ...       set Suite Variable    ${dl_expect_tput_value}           90                                   AND
+   ...       set Suite Variable    ${ul_expect_tput_value}           30                                   AND
+   #         deviation need to take into account crm ul settings
+   ...       set Suite Variable    ${deviation}                      5                                    AND
+   ...       common_Dss_Keywords.Get testcase log directory                                               AND
+   ...       Set global variable    ${CELLSETUP_SHOULD_BE_CHECK}   0                                      AND
+   ...       depends   TestLine_7738_Test_setup
+   [Teardown]     Run Keywords       Teardown 7738     alias=egate_TCB03           AND
+   ...                               set Suite Variable  ${testCaseDir}  None
+   ${tc_name}        Set variable    TestLine_preparation
+   ${tc_status}      getTcStatusByName    name=${tc_name}
+   Run keyword if    '${tc_status}'!='PASS'
+   ...               CB007738_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_7738_A1}
+   ${tc_name}        Set variable    TestLine_7738_Test_setup
+   ${tc_status}      getTcStatusByName    name=${tc_name}
+   Run keyword if    '${tc_status}'!='PASS'
+   ...           CB007738_Kw_TestSetup.Test Setup 7738    ${TestDSS10Mhz_7738_A1}
+
+   #mandatoy to set up CB007738-B
+   Set 7738 Specifc Scf Param actRateMatchedCsiIm     ${TestDSS10Mhz_7738_A1}    #Specific Setting for this test
+
+   # modification DL Ratio into the test param Ctx
+   Update DSS DL pattern with     ${TestDSS10Mhz_7738_A1}     ${PATTERN_DL_100_SA_OK}
+   Dated log       DL pattern into TestParam is ${TestDSS10Mhz_7738_A1.seq.dl_allocated_normal_subframes}
+   # Update DSS qos load meas timer with     ${TestDSS10Mhz_7738_A3}    ${dl_qos_load_meas_timer}=10    ${ul_qos_load_meas_timer}=30
+   Update DSS dl qos load meas timer "${10}" ms and ul qos load meas timer "${30}" ms into "${TestDSS10Mhz_7738_A1}"
+   Dated log       DL qos_load_meas_timer into TestParam is ${TestDSS10Mhz_7738_A1.seq.dl_qos_load_meas_timer} ms
+   Dated log       UL qos_load_meas_timer into TestParam is ${TestDSS10Mhz_7738_A1.seq.ul_qos_load_meas_timer} ms
+
+   # 5GC001745_Keywords.TC 1745 CellSetup            ${TestDSS10Mhz_7738_A1}    egate_TCB03
+   TC 7738 NSA CellSetup                             ${TestDSS10Mhz_7738_A1}    egate_TCB03
+   # add here the DL Pattern list to add to CRMSim and active it ....
+   # => nothing
+
+   TC 7738 NSA Call                                  ${TestDSS10Mhz_7738_A1}    egate_TCB03
+
+   # CB007738_keywords.DSS_5g_SA_UL_DL_Traffic        ${TestDSS10Mhz_7738_A1}
+   # ...                                              ul_rate=${ul_expect_tput_value}
+   # ...                                              dl_rate=${dl_expect_tput_value}
+   # ...                                              alias=egate_TCB03
+   # Traced Sleep    15s      msg=Waiting for UL/DL Tput
+
+   CheckInEgateConsoleLog_DldatacsisendReq_sent_in_MSG2_Slot

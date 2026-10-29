@@ -1,0 +1,409 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   CB008940-Q Test suite ...
+...               Prerequisite : gNB configured with x Cells & RU detected. Physical cells id are 50, 51, etc.
+...               Scope : call setup - nGBR and GBR traffic several Ues
+...               Test Case Scenario author   : christophe.samson@nokia.com
+...               Creation Date               : 03-04-2023
+...               Modified Date               : 03-04-2023
+...               Last Modified by            : christophe.samson@nokia.com
+...               Version   Date          Author                                   Notes
+...               0.1       03-04-2023    christophe.samson@nokia.com              Creation
+...               0.2       26-04-2023    tony.huynh-quang@nokia.com               Modifications for TC06 of 8940-Q
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Tags
+Force Tags        CA_5G_SW_FR-Villarceaux    RRM
+...               CLOUD_5G_I_LO_AP_LOOO_SANSA_FS_ECPRI_CMWV_TDD
+...               master_classicalbts_all    SBTS00
+...               CONFIGURED    5G_RAN    RAN_5G
+
+# Libraries
+Library      taf.transport.ssh                                   WITH NAME          ssh
+Library      taf.sbts.oam.coam.admin.interface
+Library      taf.sbts.oam.coam.admin                             WITH NAME          coam
+Library      taf.collectors.tcpdump                              WITH NAME          tcpdump
+Library      taf.collectors.core                                 WITH NAME          core
+Library      ute_wtssim
+Library      taf.config.wts                                      WITH NAME          wts
+
+# Libraries SWENG
+Library      ../../../resources/SWENG/python/StringTool.py
+
+# Libraries ET
+Library      ../resources/python/linux_cmds.py
+Library      ../resources/common/TtiTrace/python/ttitrace.py                  WITH NAME          nps_ttitraces_tools
+Library      ../resources/DSS/python/robot_extension.py                       WITH NAME          robot_extension
+
+# Libraries CB008940
+Library      resources/python/Constants-CB008940-Q-L.py                       WITH NAME          MyConstants
+Library      resources/python/avg_dl_data.py
+Library      resources/python/avg_ul_data.py
+Library      resources/python/tools.py                                        WITH NAME          nps_8940_tools
+Library      resources/python/CB008940-lib.py
+Library      resources/python/tti_analyzer_framework/tti_dataframe.py         WITH NAME          tti_dataframe
+
+# Resources
+Resource     ../../../resources/SWENG/robot/Tools.robot
+Resource     ../../../resources/SWENG/robot/Setup.robot
+Resource     ../resources/common/TtiTrace/ttitrace.robot
+
+# Resources CB008940
+Resource     ./resources/robot/btslog.robot
+Resource     ./resources/robot/CB008940-Common-Keywords.robot
+Resource     ./resources/robot/CB008940-B-Keywords.robot
+Resource     ./resources/robot/CB008940-C-Keywords.robot
+Resource     ./resources/robot/CB008940-Q-L-Common-Keywords.robot
+
+Variables    ./resources/python/Constants-CB008940-Q-L.py
+
+Variables    ./resources/python/Constants-CB008940-H.py
+
+# Suites and Tests setup and teardown
+Suite Setup       Suite Setup CB008940-Q-L-Common    test_dictParam=${dictParam}
+Suite Teardown    Suite Teardown CB008940-Q-L-Common
+Test Setup        Test Setup for CB008940-Common
+Test Teardown     Test Teardown for CB008940-Common
+
+*** Variables ***
+
+${TestSharkTool}                                                    MC_SHARK
+
+&{dictParam}                                                        w_Basic_Call_to_Setup_Wtsemu=${True}
+...                                                                 w_enable_sherpa_Traces=False
+...                                                                 w_check_8940_using_sherpa=False
+...                                                                 w_GetTtiTrace=True
+...                                                                 w_convert_TtiPcap_to_excelCsv=False
+...                                                                 w_GetL1L2Bip=False
+...                                                                 w_generic_capture=True
+...                                                                 w_CaptureCORE=${False}
+...                                                                 w_CaptureL1L2=${False}
+...                                                                 w_CaptureCPRT=${True}
+...                                                                 w_ue_detach=False
+...                                                                 w_GetBtsLog=True
+...                                                                 w_DISPLAY_ue_stats_nr_15min=False
+...                                                                 w_CB007113_Check=True
+
+# Parameters for TC 06 of 8940-Q
+&{params_Q06}                                                       nbCell=1
+...                                                                 duration=30
+...                                                                 deviation=40    # High deviation on purpose
+...                                                                 DlMinPRB=48
+...                                                                 DlMaxPRB=273
+...                                                                 DlMimoMaxPRB=546
+...                                                                 UlMinPRB=50
+...                                                                 UlMaxPRB=273
+...                                                                 streamPrbDeviation=2
+...                                                                 PrbDeviation=12
+...                                                                 thresDlMuMimo=50
+
+# capture Time setting
+&{CAPTURE}                                                          GetTtiTraceTime=1s
+...                                                                 Getl1l2TraceTime=1s
+...                                                                 GetSherpaTraceTime=1s
+...                                                                 GetTtiTraceNumOfEvent=5000
+
+&{dictExpectedValues}                                               expected_avg_total_prbs_spool1=446
+...                                                                 expected_avg_total_prbs_spool2=100
+...                                                                 expected_avg_total_prbsstream_spool1=1968
+...                                                                 expected_avg_total_prbsstream_spool2=432
+
+# tests settings
+&{C_Cell}                                                           dir=DL
+...                                                                 totalNbOfUe=1                 # total number of ue's to configure
+...                                                                 totalNbOfCell=3               # total number of cell used for ue's dispatching
+...                                                                 targetGnb=2                   # gnb target id
+...                                                                 captureDuration=0             # capture duration during traffic starting phase
+...                                                                 duration=3                    # traffic duration during declaration phase
+...                                                                 deviation=10                  # allowed deviation for throughput
+
+# ue's settings
+&{dict_settings_ue_1}                                               originalCell=1                # original cell for call establishment
+...                                                                 DL_throughput=1200            # throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 DL_throughput_GBR=0           # throughput GBR is not supported
+...                                                                 UL_throughput=150             # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 packet_size=1350
+
+
+&{dict_settings_ue_2}                                               originalCell=2
+...                                                                 DL_throughput=175
+...                                                                 DL_throughput_GBR=0
+...                                                                 UL_throughput=40             # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 packet_size=1350
+
+
+&{dict_settings_ue_3}                                               originalCell=3
+...                                                                 DL_throughput=1200
+...                                                                 DL_throughput_GBR=0
+...                                                                 UL_throughput=150             # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 packet_size=1350
+
+&{dict_settings_ue_default}                                         originalCell=1
+...                                                                 DL_throughput=100
+...                                                                 DL_throughput_GBR=0           # throughput GBR is not supported
+...                                                                 UL_throughput=0
+...                                                                 packet_size=1350
+
+
+@{dict_settings_all_ues}                                            ${dict_settings_ue_1}
+...                                                                 ${dict_settings_ue_2}
+...                                                                 ${dict_settings_ue_3}
+
+@{dict_settings_all_ues_8940_Q_CB007113}                            ${dict_settings_ue_1}
+...                                                                 ${dict_settings_ue_2}
+...                                                                 ${dict_settings_ue_3}
+
+# Parameters for TC 06 of 8940-Q
+&{dict_settings_Q06_ue_1}                                           originalCell=1
+...                                                                 DL_throughput=700
+...                                                                 UL_throughput=75
+...                                                                 ue_nr_capa=${SA_TDD_RANK4}
+
+&{dict_settings_Q06_ue_2}                                           originalCell=1
+...                                                                 DL_throughput=700
+...                                                                 UL_throughput=75
+...                                                                 ue_nr_capa=${SA_TDD_RANK4}
+
+&{dict_settings_Q06_ue_3}                                           originalCell=2
+...                                                                 DL_throughput=175
+...                                                                 UL_throughput=150
+...                                                                 ue_nr_capa=${SA_TDD_RANK4}
+
+&{dict_settings_Q06_ue_4}                                           originalCell=3
+...                                                                 DL_throughput=175
+...                                                                 UL_throughput=75
+...                                                                 ue_nr_capa=${SA_TDD_RANK4}
+
+@{dict_settings_Q06_all_ues}                                        ${dict_settings_Q06_ue_1}
+...                                                                 ${dict_settings_Q06_ue_2}
+...                                                                 ${dict_settings_Q06_ue_3}
+...                                                                 ${dict_settings_Q06_ue_4}
+
+# vendor's setting
+
+# BB pool mode : Load-metric based
+# bbL1SpPrbInitCapacity settings :
+#	        <item>
+#	          <p name="bbHwVariant">ABIO</p>
+#	          <p name="csSize">48</p>
+#	          <p name="direction">DL</p>
+#	          <p name="l1PoolType">NR_L1_Loki_TDD_FR1_eCPRI_IQF_Asymm</p>
+#	          <p name="maxNumLayerPrbL1Sp">1200</p>
+#	          <p name="maxNumStreamPrbL1Sp">1200</p>
+#	          <p name="maxNumWbStreamPrbL1Sp">600</p>
+#	        </item>
+
+####################################
+# bbL1SpPrbInitCapacity for Run TC3
+# NRBTS-bbL1SpPrbInitCapacity
+# csSize = 64
+# hwVariant = ABIO/ASOE
+# confDuplexMode = TDD
+# maxNumLayerPrbUlL1Sp = 1092  -->  820
+# maxNumStreamPrbUlL1Sp=2184  -->  1640             25% reduction
+
+# Small L1SP
+# NRBTS-bbL1SpPrbInitCapacity
+# csSize = 32
+# hwVariant = ABIO/ASOE
+# confDuplexMode = TDD
+# maxNumLayerPrbUlL1Sp = 546  -->  410
+# maxNumStreamPrbUlL1Sp=1092  -->  820              25% reduction
+####################################
+
+&{Vendor_IWK_CB8940-Q_CB7113}                                       bbHwVariant=ABIO
+...                                                                 maxNumLayerPrbL1Sp=1200
+...                                                                 maxNumStreamPrbL1Sp=1200
+...                                                                 maxNumWbStreamPrbL1Sp=600
+...                                                                 maxNumScheUePdschL1Pool=None
+...                                                                 maxNumScheUePdschL1Sp=None
+...                                                                 ul_maxNumLayerPrbL1Sp_csSize32=410
+...                                                                 ul_maxNumStreamPrbL1Sp_csSize32=820
+...                                                                 ul_maxNumWbStreamPrbL1Sp_csSize32=None
+...                                                                 ul_maxNumLayerPrbL1Sp_csSize64=820
+...                                                                 ul_maxNumStreamPrbL1Sp_csSize64=1640
+...                                                                 ul_maxNumWbStreamPrbL1Sp_csSize64=None
+
+# Vendor parameters for TC06 of 8940-Q
+&{Vendor_Q06}                                                       bbHwVariant=ABIO
+...                                                                 maxNumLayerPrbL1Sp=1200
+...                                                                 maxNumStreamPrbL1Sp=1200
+...                                                                 maxNumWbStreamPrbL1Sp=600
+...                                                                 maxNumScheUePdschL1Pool=None
+...                                                                 maxNumScheUePdschL1Sp=None
+...                                                                 ul_maxNumLayerPrbL1Sp_csSize32=546
+...                                                                 ul_maxNumStreamPrbL1Sp_csSize32=1092
+...                                                                 ul_maxNumWbStreamPrbL1Sp_csSize32=None
+...                                                                 ul_maxNumLayerPrbL1Sp_csSize64=600
+...                                                                 ul_maxNumStreamPrbL1Sp_csSize64=1200
+...                                                                 ul_maxNumWbStreamPrbL1Sp_csSize64=600
+
+*** Test Cases ***
+### SA
+
+[1]CB008940-Q_3_Interaction_with_CB007113_UL_DL_traffic_1x8DL8UL_2x8DL4UL
+    [Documentation]
+    ...     Conditions:     it is based on the configuration ${C_Cell}
+    ...                         actDlSrsBm is activated
+    ...                         srsForBeamMgmt at Cell level
+    ...                              <list name="srsForBeamMgmt">
+    ...                                   <item>
+    ...                                   <p name="bSRS">2</p>
+    ...                                   <p name="cSRS">63</p>
+    ...                                   <p name="srsPowerThresholdForDlBm">-1200</p>
+    ...                                   <p name="srsTypeAllocForDlBm">antenna switching or codebook</p>
+    ...                                   <p name="srsUePeriodicity">slots40</p>
+    ...                                   </item>
+    ...                              </list>
+    ...                        actUeCsirsCoexistCellCsirs = TRUE
+    ...                    In egate, you need to activate the Srs mode : cfg file modified by KW
+    ...                                                       "Update Basic Configuration File for actDlSrsBm Test Mode"
+    ...                      cell_srs_beam_pos_nr profile_id=1 num_of_ue_positions=4 azimuth=-40,-13,13,40
+    ...                      cell_testmode_set_nr cell_id=1 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate
+    ...                      cell_testmode_set_nr cell_id=2 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate
+    ...                      cell_testmode_set_nr cell_id=3 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate
+    ...     Actions:        it performs the call setup for multi-ues on different cells with DL traffic
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        calls for multi ues and PRB pooling are passed
+    [Tags]   CRT
+    TC CB008940  ${C_Cell}    ${dictParam}    ${Vendor_IWK_CB8940-Q_CB7113}    ${dict_settings_all_ues_8940_Q_CB007113}    nrCell=3
+    ...          kw Set RAD Params=Set RAD Params for 8940-Q
+    ...          kw NIDD Set=Set CB008940-Q NIDD PARAMETERS
+    ...          kw NIDD Check=Check CB008940-Q NIDD PARAMETERS
+    ...          kw Set TestMode=Update Basic Configuration File for actDlSrsBm Test Mode
+    ...          NIDD_8940_PARAMS=${NIDD_8940_Q_W_CB007113_PARAMS}
+    # ...          Kw TestLine Preparation=TL_Preparation_CB008940_Q_TC3_SCF
+    ...          Kw TestLine Preparation=TL_Preparation_CB008940_Q_TC3_SCF_TRY
+
+[1]CB008940-Q_6_Parity with 1cell_8DL8UL and 2 cells_8DL4UL_DL_MU_MIMO_4layers_CB008305
+    TL_Preparation_CB008940_Q_TC3_SCF    output_scf=${test_scf_file}
+    TC_8940-Q_06    paramsQ06=${params_Q06}       vendor_param=${Vendor_Q06}        dict_ues=${dict_settings_Q06_all_ues}
+    [Teardown]     Run Keywords       Set global variable    ${EXCLUDE_LOGS_IF_FAIL}   1
+    ...               AND             Test Teardown for CB008940-Common
+    ...               AND             Run Keyword If Test Failed          Setup.Test Teardown
+
+
+*** Keywords ***
+
+TL_Preparation_CB008940_Q_TC3_SCF
+    [Arguments]    ${output_scf}
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   DL CL MIMO 8x8 1Cell 8x4 2Cells BeamSet_6
+    ${FullbtsName}=      set Variable   CB008940 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB008940.xml
+    ${scf_update_8940}    SCF Enable CB008940 Q TC3   input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                               btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB008940_Q_TC3_SCF Kw : SCF To commit ${scf_update_8940}
+    set suite variable     ${test_scf_file}   ${scf_update_8940}
+    [Return]     ${scf_update_8940}
+
+SCF Enable CB008940 Q TC3
+    [Arguments]    ${input_scf}    ${output_scf}   ${btsName}=${Host Name}
+    ${ret}    ${testline_name}=    OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    ${PartOfBtsName}=          set Variable   DL CL MIMO 8x8 1Cell 8x4 2Cells BeamSet_6
+    ${FullbtsName}=            set Variable   CB008940 - ${testline_name} - ${PartOfBtsName}
+    set global Variable    ${SCF_btsName}   ${FullbtsName[0:78]}
+    import variables    ${CURDIR}/resources/python/CB008940_nidd_modify.py
+    scf.load scf    ${input_scf}
+    FOR    ${item}    IN    @{Beamset_LIST_NAME_PARAMS_TO_Remove}
+        ${list_exist}=            scf.is_list_in_object     dist_name=&{item}[dist_name]         list_name=&{item}[list_name]
+        Run Keyword IF            ${list_exist}
+        ...                       scf.remove list from scf    dist_name=&{item}[dist_name]    list_name=&{item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB008940_ELEMENT_PARAMS_TO_ADD}
+        Set Element     dist_name=&{item}[dist_name]    p_name=&{item}[p_name]    value=&{item}[value]
+    END
+    FOR    ${item}    IN    @{CB008940_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=&{item}[dist_name]    list_name=&{item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB008940_LIST_ITEMS_PARAMS_TO_ADD}
+        Set Item To List      dist_name=&{item}[dist_name]    list_name=&{item}[list_name]    elements=&{item}[elements]
+    END
+    FOR    ${item}    IN    @{CB008940_LIST_ELEMENTS_PARAMS_TO_ADD}
+         Set Element To List      dist_name=&{item}[dist_name]    list_name=&{item}[list_name]    elements=&{item}[elements]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_8940_BASE}
+        Set Element    dist_name=&{item}[dist_name]    p_name=&{item}[p_name]    value=&{item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_BF_BASE}
+        Set Element    dist_name=&{item}[dist_name]    p_name=&{item}[p_name]    value=&{item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_4_BASE}
+        Set Element    dist_name=&{item}[dist_name]    p_name=&{item}[p_name]    value=&{item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_8_BASE}
+        Set Element    dist_name=&{item}[dist_name]    p_name=&{item}[p_name]    value=&{item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_PAGING_BASE}
+        Set Element    dist_name=&{item}[dist_name]    p_name=&{item}[p_name]    value=&{item}[value]
+    END
+    Modify Channels to support 8DL8UL nrCellType    CellId=1
+    Modify Channels to support 8DL4UL nrCellType    CellId=2
+    Modify Channels to support 8DL4UL nrCellType    CellId=3
+    scf.save scf    ${output_scf}
+    [Return]     ${output_scf}
+
+TL_Preparation_CB008940_Q_TC3_SCF_TRY
+    [Arguments]    ${output_scf}
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   DL CL MIMO 8x8 1Cell 8x4 2Cells BeamSet_6
+    ${FullbtsName}=      set Variable   CB008940 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB008940.xml
+    ${scf_update_8940}    SCF Enable CB008940 Q TC3 TRY   input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                               btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB008940_Q_TC3_SCF_TRY Kw : SCF To commit ${scf_update_8940}
+    set suite variable     ${test_scf_file}   ${scf_update_8940}
+    [Return]     ${scf_update_8940}
+
+SCF Enable CB008940 Q TC3 TRY
+    [Arguments]    ${input_scf}    ${output_scf}   ${btsName}=${Host Name}
+    ${ret}    ${testline_name}=    OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    ${PartOfBtsName}=          set Variable   DL CL MIMO 8x8 3Cells BeamSet_6
+    ${FullbtsName}=            set Variable   CB008940 - ${testline_name} - ${PartOfBtsName}
+    set global Variable    ${SCF_btsName}   ${FullbtsName[0:78]}
+    import variables    ${CURDIR}/resources/python/CB008940_nidd_modify.py
+    scf.load scf    ${input_scf}
+    FOR    ${item}    IN    @{Beamset_LIST_NAME_PARAMS_TO_Remove}
+        ${list_exist}=            scf.is_list_in_object     dist_name=&{item}[dist_name]         list_name=&{item}[list_name]
+        Run Keyword IF            ${list_exist}
+        ...                       scf.remove list from scf    dist_name=&{item}[dist_name]    list_name=&{item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB008940_ELEMENT_PARAMS_TO_ADD}
+        Set Element     dist_name=&{item}[dist_name]    p_name=&{item}[p_name]    value=&{item}[value]
+    END
+    FOR    ${item}    IN    @{CB008940_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=&{item}[dist_name]    list_name=&{item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB008940_LIST_ITEMS_PARAMS_TO_ADD}
+        Set Item To List      dist_name=&{item}[dist_name]    list_name=&{item}[list_name]    elements=&{item}[elements]
+    END
+    FOR    ${item}    IN    @{CB008940_LIST_ELEMENTS_PARAMS_TO_ADD}
+         Set Element To List      dist_name=&{item}[dist_name]    list_name=&{item}[list_name]    elements=&{item}[elements]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_8940_BASE}
+        Set Element    dist_name=&{item}[dist_name]    p_name=&{item}[p_name]    value=&{item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_BF_BASE}
+        Set Element    dist_name=&{item}[dist_name]    p_name=&{item}[p_name]    value=&{item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_4_BASE}
+        Set Element    dist_name=&{item}[dist_name]    p_name=&{item}[p_name]    value=&{item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_8_TRY_BASE}
+        Set Element    dist_name=&{item}[dist_name]    p_name=&{item}[p_name]    value=&{item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_PAGING_BASE}
+        Set Element    dist_name=&{item}[dist_name]    p_name=&{item}[p_name]    value=&{item}[value]
+    END
+    Modify Channels to support 8DL8UL nrCellType    CellId=1
+    Modify Channels to support 8DL8UL nrCellType    CellId=2
+    Modify Channels to support 8DL8UL nrCellType    CellId=3
+    scf.save scf    ${output_scf}
+    [Return]     ${output_scf}

@@ -1,0 +1,62 @@
+# ; first value after semicolon means sleep after action command
+# ; parameter 'o' after semicolon means, that output of the command is required
+
+# CB008126-A-B34 Successful 5QI modification with additional NAS-PDU
+# Test verifies that gNB forwards to UE both NAS-PDU messages in scenario:
+# UE has configured 2 PDU sessions. GNB receives NGAP:PDUSessionResourceModifyRequest with simultaneous
+# 5QI modification for PDU=1 and other modification (not leading to RRCReconfiguration) containing NAS-PDU IE for PDU=2.
+
+# use lua SA_TDD_2c_1gNBSim.lua
+
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/5QI_1_2_3_4_71_72_76_128_170_212_254.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/vonr_gbr_activation.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/disable_ciphering.yaml
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/CB008126_enable.yaml
+pause
+
+!python /home/ute/MN/UTE/robotws/testsuite/Krakow/RRM/resources/Python/pdu_session_qosflow_modification.py save
+pause
+
+# attach UE1 with PDU=1 with 5QI9
+qosflow_modify qos_flow=15 ue=all default=true
+ue_change_location id=1 enb=2 cell=1
+ue_register id=1;2
+set_pdu_param ue=1 pdu=1 trf_type=internal
+ue_pdu_session_setup pdu=1 ue=1 gw=1 nwslice=1;2
+trf_data_start ue=1 pdu=1 qfi=1 dir=dl mbps=30 trf_id=1
+trf_data_start ue=1 pdu=1 qfi=1 dir=ul mbps=10 trf_id=1;10
+pause
+
+# add to UE1 PDU=2 with 5QI7
+qosflow_modify qos_flow=13 ue=all default=true
+set_pdu_param ue=1 pdu=2 trf_type=internal
+ue_pdu_session_setup pdu=2 ue=1 gw=2 nwslice=1;2
+trf_data_start ue=1 pdu=2 qfi=1 dir=dl mbps=30 trf_id=1
+trf_data_start ue=1 pdu=2 qfi=1 dir=ul mbps=10 trf_id=1
+pause
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;o
+bearer_stats ue=1 pdu=2 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=2 qfi=1 dir=ul;o
+pause
+
+# Modify PDU=1 5QI2->5QI6, PDU=2 modify ARP for 5QI7
+!python /home/ute/MN/UTE/robotws/testsuite/Krakow/RRM/resources/Python/pdu_session_qosflow_modification.py m "15(5QI9->5QI6)";1
+qosflow_modify qos_flow=13 priority=8;1
+ue_pdu_session_modify ue=1 pdu=1 qosflows_to_modify=15 pdu=2 qosflows_to_modify=13 by=amf
+# For that in NGAP:PDUSessionResourceModifyRequest AMF sends NAS-PDU for both PDUs
+# Verify in RRCConnectionReconfiguration that 1 DRB is released, 1 DRB is setup, 2 NAS-PDU IE are forwarded to UE
+# Verify, that gNB sent PDUSessionResourceModifyResponse with PDUSessionResourceModifyListModRes with 2 PDUs to AMF
+pause
+
+# Verify there is no traffic drop
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;o
+bearer_stats ue=1 pdu=2 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=2 qfi=1 dir=ul;o
+pause
+
+#cleanup after test
+!python /home/ute/MN/UTE/robotws/testsuite/Krakow/RRM/resources/Python/pdu_session_qosflow_modification.py restore
+ue_kill id=1;5
+exit

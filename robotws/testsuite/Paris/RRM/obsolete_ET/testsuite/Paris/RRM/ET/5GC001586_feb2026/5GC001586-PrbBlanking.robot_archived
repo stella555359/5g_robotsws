@@ -1,0 +1,1003 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  tests for DSS feature 1586-M2
+...               Test Case Scenario author   : riyad.ferrag@nokia.com
+...               Test Case Scenario contact  : riyad.ferrag@nokia.com
+...               Test Case automation author :
+...               Test Case automation contact:
+...               Creation Date               : November 17 2020
+...               Modified Date               :
+...               Last Modified by            :
+#------------------------------------------------------------------------------------------------------------------------------------[150 characters]
+
+Library         ute_wtssim           WITH NAME    wts
+Library         taf.rfrl.common_resources.python.SWConfig
+Library           ../resources/python/luashark_tools.py
+Library         ../../../resources/SWENG/python/StringTool.py
+Library         resources/python/Constants.py     WITH NAME   MyConstants
+Library         taf.epcsim
+Library         luashark_tools.analyzer       WITH NAME       analyzer
+# taf.config.scf is replaced by resources/SWENG/python/MultiScf.py
+# Library         taf.config.scf                WITH NAME       scf
+Library         taf.gnb.oam.commissioning     WITH NAME       commissioning
+Library         taf.sbts.oam.coam.admin        WITH NAME       coam
+Library         taf.ul.oam.selenium_coam      WITH NAME       selenium_coam
+Library         taf.collectors.pmcounters      WITH NAME     tafpmcounters
+Library         DateTime
+Library         OperatingSystem
+Library         resources/python/luashark_analyzer.py            WITH NAME    nps_1586_luashark_analyzer
+Library         ../resources/DSS/python/robot_extension.py       WITH NAME    robot_extension
+
+Resource        ../../../resources/SWENG/robot/Setup.robot
+Resource        ../../../resources/SWENG/robot/CallSetup.robot
+Resource        ../../../resources/SWENG/robot/GenericTest.robot
+Resource        ../../../resources/SWENG/robot/SetConfig.robot
+Resource        ../../../resources/SWENG/robot/Tools.robot
+Resource        ../../../resources/SWENG/robot/Traffic.robot
+Resource        ../../../resources/SWENG/robot/Counters.robot
+Resource        ../../../resources/SWENG/robot/CaptureFilter.robot
+
+# DSS specific
+Resource            ../resources/DSS/robot/btslog.robot
+Resource            ../resources/DSS/robot/apUDPlog.robot
+Resource            ../resources/DSS/robot/common_Dss_Keywords.robot
+Resource            ../resources/DSS/robot/common_Dss_CellSetup.robot
+Resource            ../resources/DSS/robot/common_Dss_command.robot
+
+# 5GC001586 specific
+Resource        resources/robot/5GC001586_Kw_TestSetup.robot
+Resource        resources/robot/5GC001586_Keywords.robot
+Resource        resources/robot/pcap.robot
+
+Variables       ../../../resources/SWENG/python/ReadConfig.py
+Variables       resources/python/Constants.py
+Variables       resources/python/dss_scf_params.py
+Variables       resources/python/dss_SA_scf_params.py
+Variables       resources/python/NSA_scf_params.py
+
+# Tags for QC mapping
+Force Tags                          CA_5G_SW_FR-Villarceaux   RRM
+...                                 PY36
+...                                 master_classicalbts_all
+...                                 CONFIGURED    5G_RAN    RAN_5G
+
+Suite Setup         Run keywords   Test Suite Setup for 1586   AND
+...                                Get gNB cell 5g On air
+Suite Teardown      Test suite teardown for 1586
+
+*** Variables ***
+# Table describing list of field we want to collect for each packet
+@{FIELDS_PUCCH_REQ}                 slot        sfn         rnti        pucchFormat     startPrb
+...                                 numOfBitsOfUciInformation           nANPucch        numOfSymbols
+...                                 firstSymbol
+@{FIELDS_PUCCH_RESP}                slot        sfn         rnti        pucchFormat     startPrb
+...                                 dtx         ackNack     crc
+#@{FIELDS_PDSCHSendReq}              rat0Bitmap        rbgSize         numOfPrb
+@{FIELDS_PDSCHSendReq}              rbgSize      numOfPrb       startPrb
+@{FIELDS_PUCCHreceivereq}           pucchFormat          startPrb         nANPucch
+@{FIELDS_PUSCHreceivereq}           numOfPrb       startPrb
+@{FILELDS_CsiRsSendReq}             numOfPrb       startPrb     startSymbol
+@{FILELDS_PdcchSendReq}             pdcchDciTransmitPower
+
+# Global counters to build status when parsing pucchResp packets
+${NbReq}                            0           # Number of pucchReq packets found
+${NbNone}                           0           # Number of pucchReq with no pucchResp found
+${NbOK}                             0           # Number of pucchReq/resp where numOfBitsOfUci is OK
+${NbKO}                             0           # Number of pucchReq/resp where numOfBitsOfUci is KO
+
+# UL/DL throughput
+${UL_THROUGHPUT}     200M
+${DL_THROUGHPUT}    600M
+@{UL_THROUGHPUT_LIST}
+@{DL_THROUGHPUT_LIST}
+${UL_EXPECT}        30M
+${DL_EXPECT}        30M
+
+${filter XPAP}          ether[0x1c:2]==0x84
+
+*** Test Cases ***
+
+#----------------------------------------------------------------------------------------------------------------------
+#                                                    10MHz TCs
+#----------------------------------------------------------------------------------------------------------------------
+
+# prepare the test line
+TestLine_preparation
+    [Tags]    FULL_RUN   10MHZ
+	...       CRT
+    5GC001586_Kw_TestSetup.Test Line Preparation for NSA Only    ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    5GC001586_Kw_TestSetup.Test Line Preparation                 ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+
+[1][1.0] 5GC001586_E_TC_8_10Mhz_PRB_Blanking_HigherEdge_11xPRBs_AL2
+    [Tags]    FULL_RUN   10MHZ   TC8
+	...       CRT
+    [setup]    Run Keywords     set Suite Variable    ${testCaseDir}    None      AND
+    ...                         common_Dss_Keywords.Get testcase log directory    AND
+    ...                         5GC001586_Keywords.Clean Up Env                   AND
+    ...                         common_Dss_Keywords.Prepare Test Name             AND
+    ...                         set test variable    ${collector_name}    FDD_DSS_scenario_TC8      AND
+    ...                         5GC001586_Keywords.Create Header Csv Test result  AND
+    ...                         common_Dss_Keywords.Start Tcpdump on TestPc    interface=eth3    option=-s0 sctp or icmp    AND
+    ...                         robot_extension.Run Keyword And Warn On Failure   apUDPlog.Start To Capture Iphy Udplog
+    ...                                                                                    target_dir=${testCaseDir}/ap_udpsyslogs
+    ${tc_name}    Set variable    TestLine_preparation
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    Run keyword if    '${tc_status}'!='PASS'   Run Keywords
+    ...           5GC001586_Kw_TestSetup.Test Line Preparation for NSA Only    ${TestDSS10Mhz_1586M2_BLE_3PRBs}    AND
+    ...           5GC001586_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    5GC001586_Kw_TestSetup.Test Setup 1586 M2       ${TestDSS10Mhz_1586M2_BHE_7PRBs}
+    # 5GC001586_Kw_TestSetup.Set SCF 1586 M2          ${TestDSS10Mhz_1586M2_BHE_7PRBs}
+    # 5GC001586_Kw_TestSetup.Modify 1586 searchSpaceDedicated related Parameters  ${TestDSS10Mhz_1586M2_BHE_7PRBs}
+    robot_extension.Run Keyword And Warn On Failure     btslog.Start Btslog
+    Check Blanking Higher Edge                      ${TestDSS10Mhz_1586M2_BHE_7PRBs}        TC8_10MHz
+    [Teardown]     Run Keywords
+    ...        robot_extension.Run Keyword And Warn On Failure   Extract L2-PS/src/sgnl/psCell/CellSetupLogger from Syslogs    AND
+    ...        robot_extension.Run Keyword And Warn On Failure   btslog.Stop Btslog    target_dir=${testCaseDir}  AND
+    ...        robot_extension.Run Keyword And Warn On Failure   apUDPlog.Stop Capture Iphy Udplog           AND
+    ...        common_Dss_Keywords.Stop Tcpdump on TestPc    interface=eth3    target_dir=${testCaseDir}     AND
+    ...        Teardown 1586      alias=TC8_10MHz
+
+
+#----------------------------------------------------------------------------------------------------------------------
+#                                                    15MHz TCs
+#----------------------------------------------------------------------------------------------------------------------
+
+[1][1.0] 5GC001586_E_TC_4_15Mhz_PRB_Blanking_LowerEdge_7xPRBS_AL2
+    [Tags]    FULL_RUN   15MHZ    TC4
+	...       CRT
+    [setup]    Run Keywords     set Suite Variable    ${testCaseDir}    None      AND
+    ...                         common_Dss_Keywords.Get testcase log directory    AND
+    ...                         5GC001586_Keywords.Clean Up Env                   AND
+    ...                         common_Dss_Keywords.Prepare Test Name             AND
+    ...                         set test variable    ${collector_name}    FDD_DSS_scenario_TC4      AND
+    ...                         5GC001586_Keywords.Create Header Csv Test result  AND
+    ...                         common_Dss_Keywords.Start Tcpdump on TestPc    interface=eth3    option=-s0 sctp or icmp    AND
+    ...                         robot_extension.Run Keyword And Warn On Failure   apUDPlog.Start To Capture Iphy Udplog
+    ...                                                                                    target_dir=${testCaseDir}/ap_udpsyslogs
+    ${tc_name}    Set variable    TestLine_preparation
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    # ${1586_swconfig_gnb}=      Set 1586 Specific RAD     ${TestDSS15Mhz_1586M2_BLE_7PRBs}
+    Run keyword if    '${tc_status}'!='PASS'     run Keywords
+    ...                                5GC001586_Kw_TestSetup.Test Line Preparation for NSA Only    ${TestDSS10Mhz_1586M2_BLE_3PRBs}    AND
+    ...                                5GC001586_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    # AND
+    # ...                                5GC001586_Kw_TestSetup.Set Specific RAD & scf parameters  ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    # ...                                                                                          swconfig_gnb=${1586_swconfig_gnb}
+    5GC001586_Kw_TestSetup.Test Setup 1586 M2       ${TestDSS15Mhz_1586M2_BLE_7PRBs}
+    robot_extension.Run Keyword And Warn On Failure     btslog.Start Btslog
+    Check Blanking Lower Edge                       ${TestDSS15Mhz_1586M2_BLE_7PRBs}        TC4_15MHz
+    [Teardown]     Run Keywords
+    ...        robot_extension.Run Keyword And Warn On Failure   Extract L2-PS/src/sgnl/psCell/CellSetupLogger from Syslogs    AND
+    ...        robot_extension.Run Keyword And Warn On Failure   btslog.Stop Btslog    target_dir=${testCaseDir}  AND
+    ...        robot_extension.Run Keyword And Warn On Failure   apUDPlog.Stop Capture Iphy Udplog           AND
+    ...        common_Dss_Keywords.Stop Tcpdump on TestPc    interface=eth3    target_dir=${testCaseDir}     AND
+    ...        Teardown 1586 M2      alias=TC4_15MHz
+
+#----------------------------------------------------------------------------------------------------------------------
+#                                                    20MHz TCs
+#----------------------------------------------------------------------------------------------------------------------
+
+
+[1][1.0] 5GC001586_E_TC_12_20Mhz_PRB_Blanking_HigherEdge_11xPRBs_AL2
+    [Tags]    FULL_RUN   20MHZ     TC12
+	...       CRT
+    [setup]    Run Keywords     set Suite Variable    ${testCaseDir}    None      AND
+    ...                         common_Dss_Keywords.Get testcase log directory    AND
+    ...                         5GC001586_Keywords.Clean Up Env                   AND
+    ...                         common_Dss_Keywords.Prepare Test Name             AND
+    ...                         set test variable    ${collector_name}    FDD_DSS_scenario_TC12      AND
+    ...                         common_Dss_Keywords.Start Tcpdump on TestPc    interface=eth3    option=-s0 sctp or icmp    AND
+    ...                         robot_extension.Run Keyword And Warn On Failure   apUDPlog.Start To Capture Iphy Udplog
+    ...                                                                                    target_dir=${testCaseDir}/ap_udpsyslogs
+    ${tc_name}    Set variable    TestLine_preparation
+    ${1586_swconfig_gnb}=      Set 1586 Specific RAD     ${TestDSS20Mhz_1586M2_BHE_11PRBs}
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    Run keyword if    '${tc_status}'!='PASS'     run Keywords
+    ...                                5GC001586_Kw_TestSetup.Test Line Preparation for NSA Only    ${TestDSS10Mhz_1586M2_BLE_3PRBs}    AND
+    ...                                5GC001586_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    # AND
+    # ...                                5GC001586_Kw_TestSetup.Set Specific RAD & scf parameters  ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    # ...                                                                                          swconfig_gnb=${1586_swconfig_gnb}
+    5GC001586_Kw_TestSetup.Test Setup 1586 M2       ${TestDSS20Mhz_1586M2_BHE_11PRBs}
+    # 5GC001586_Kw_TestSetup.Set SCF 1586 M2          ${TestDSS20Mhz_1586M2_BHE_11PRBs}
+    # 5GC001586_Kw_TestSetup.Modify 1586 searchSpaceDedicated related Parameters  ${TestDSS20Mhz_1586M2_BHE_11PRBs}
+    robot_extension.Run Keyword And Warn On Failure     btslog.Start Btslog
+    Check Blanking Higher Edge                      ${TestDSS20Mhz_1586M2_BHE_11PRBs}       TC12_20MHz
+    [Teardown]     Run Keywords
+    ...        robot_extension.Run Keyword And Warn On Failure   btslog.Stop Btslog    target_dir=${testCaseDir}  AND
+    ...        robot_extension.Run Keyword And Warn On Failure   apUDPlog.Stop Capture Iphy Udplog           AND
+    ...        common_Dss_Keywords.Stop Tcpdump on TestPc    interface=eth3    target_dir=${testCaseDir}     AND
+    ...        Teardown 1586         alias=TC12_20MHz
+
+
+*** Keywords ***
+# robocop: off=unused-argument
+# robocop: off=possible-variable-overwriting
+
+[1][1.0] 5GC001586_E_TC_6_20Mhz_PRB_Blanking_LowerEdge_7xPRBs_AL2
+    [Tags]    FULL_RUN   20MHZ    TC6
+	...       CRT
+    # [setup]    Run Keywords     set Suite Variable    ${testCaseDir}    None      AND
+    # ...                         common_Dss_Keywords.Get testcase log directory    AND
+    # ...                         5GC001586_Keywords.Clean Up Env                   AND
+    # ...                         common_Dss_Keywords.Prepare Test Name             AND
+    # ...                         set test variable    ${collector_name}    FDD_DSS_scenario_TC6      AND
+    # ...                         common_Dss_Keywords.Start Tcpdump on TestPc    interface=eth3    option=-s0 sctp or icmp    AND
+    # ...                         robot_extension.Run Keyword And Warn On Failure   apUDPlog.Start To Capture Iphy Udplog
+    # ...                                                                                    target_dir=${testCaseDir}/ap_udpsyslogs
+    ${tc_name}    Set variable    TestLine_preparation
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    # ${1586_swconfig_gnb}=      Set 1586 Specific RAD     ${TestDSS20Mhz_1586M2_BLE_7PRBs}
+    Run keyword if    '${tc_status}'!='PASS'     run Keywords
+    ...                                5GC001586_Kw_TestSetup.Test Line Preparation for NSA Only    ${TestDSS10Mhz_1586M2_BLE_3PRBs}    AND
+    ...                                5GC001586_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    #    AND
+    # ...                                5GC001586_Kw_TestSetup.Set Specific RAD & scf parameters  ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    # ...                                                                                          swconfig_gnb=${1586_swconfig_gnb}
+    5GC001586_Kw_TestSetup.Test Setup 1586 M2       ${TestDSS20Mhz_1586M2_BLE_7PRBs}
+    robot_extension.Run Keyword And Warn On Failure     btslog.Start Btslog
+    Check Blanking Lower Edge                       ${TestDSS20Mhz_1586M2_BLE_7PRBs}        TC6_20MHz
+    [Teardown]     Run Keywords
+    ...        robot_extension.Run Keyword And Warn On Failure   btslog.Stop Btslog    target_dir=${testCaseDir}  AND
+    ...        robot_extension.Run Keyword And Warn On Failure   apUDPlog.Stop Capture Iphy Udplog           AND
+    ...        common_Dss_Keywords.Stop Tcpdump on TestPc    interface=eth3    target_dir=${testCaseDir}     AND
+    ...        Teardown 1586 M2      alias=TC6_20MHz
+
+[1][1.0] 5GC001586_E_TC_10_15Mhz_PRB_Blanking_HigherEdge_8xPRBs_AL2
+    [Tags]    FULL_RUN   15MHZ    TC10
+	...       CRT
+    # [setup]    Run Keywords     set Suite Variable    ${testCaseDir}    None      AND
+    # ...                         common_Dss_Keywords.Get testcase log directory    AND
+    # ...                         5GC001586_Keywords.Clean Up Env                   AND
+    # ...                         common_Dss_Keywords.Prepare Test Name             AND
+    # ...                         set test variable    ${collector_name}    FDD_DSS_scenario_TC10      AND
+    # ...                         5GC001586_Keywords.Create Header Csv Test result  AND
+    # ...                         common_Dss_Keywords.Start Tcpdump on TestPc    interface=eth3    option=-s0 sctp or icmp    AND
+    # ...                         robot_extension.Run Keyword And Warn On Failure   apUDPlog.Start To Capture Iphy Udplog
+    # ...                                                                                    target_dir=${testCaseDir}/ap_udpsyslogs
+    ${tc_name}    Set variable    TestLine_preparation
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    # ${1586_swconfig_gnb}=      Set 1586 Specific RAD     ${TestDSS15Mhz_1586M2_BHE_8PRBs}
+    Run keyword if    '${tc_status}'!='PASS'     run Keywords
+    ...                                5GC001586_Kw_TestSetup.Test Line Preparation for NSA Only    ${TestDSS10Mhz_1586M2_BLE_3PRBs}    AND
+    ...                                5GC001586_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    # AND
+    # ...                                5GC001586_Kw_TestSetup.Set Specific RAD & scf parameters  ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    # ...                                                                                          swconfig_gnb=${1586_swconfig_gnb}
+    5GC001586_Kw_TestSetup.Test Setup 1586 M2       ${TestDSS15Mhz_1586M2_BHE_8PRBs}
+    # 5GC001586_Kw_TestSetup.Set SCF 1586 M2          ${TestDSS15Mhz_1586M2_BHE_8PRBs}
+    # 5GC001586_Kw_TestSetup.Modify 1586 searchSpaceDedicated related Parameters  ${TestDSS15Mhz_1586M2_BHE_8PRBs}
+    robot_extension.Run Keyword And Warn On Failure     btslog.Start Btslog
+    Check Blanking Higher Edge                      ${TestDSS15Mhz_1586M2_BHE_8PRBs}        TC10_15MHz
+    [Teardown]     Run Keywords
+    ...        robot_extension.Run Keyword And Warn On Failure   Extract L2-PS/src/sgnl/psCell/CellSetupLogger from Syslogs    AND
+    ...        robot_extension.Run Keyword And Warn On Failure   btslog.Stop Btslog    target_dir=${testCaseDir}  AND
+    ...        robot_extension.Run Keyword And Warn On Failure   apUDPlog.Stop Capture Iphy Udplog           AND
+    ...        common_Dss_Keywords.Stop Tcpdump on TestPc    interface=eth3    target_dir=${testCaseDir}     AND
+    ...        Teardown 1586         alias=TC10_15MHz
+
+
+[1][1.0] 5GC001586_E_TC_2_10Mhz_PRB_Blanking_LowerEdge_3xPRBs_AL2
+    [Tags]    FULL_RUN   10MHZ   TC2
+	...       CRT   AP_REG
+    # [setup]    Run Keywords     set Suite Variable    ${testCaseDir}    None      AND
+    # ...                         common_Dss_Keywords.Get testcase log directory    AND
+    # ...                         5GC001586_Keywords.Clean Up Env                   AND
+    # ...                         common_Dss_Keywords.Prepare Test Name             AND
+    # ...                         set test variable    ${collector_name}    FDD_DSS_scenario_TC2      AND
+    # ...                         common_Dss_Keywords.Start Tcpdump on TestPc    interface=eth3    option=-s0 sctp or icmp    AND
+    # ...                         robot_extension.Run Keyword And Warn On Failure   apUDPlog.Start To Capture Iphy Udplog
+    # ...                                                                                    target_dir=${testCaseDir}/ap_udpsyslogs
+    ${tc_name}    Set variable    TestLine_preparation
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    Run keyword if    '${tc_status}'!='PASS'    Run Keywords
+    ...           5GC001586_Kw_TestSetup.Test Line Preparation for NSA Only    ${TestDSS10Mhz_1586M2_BLE_3PRBs}    AND
+    ...           5GC001586_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    5GC001586_Kw_TestSetup.Test Setup 1586 M2       ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    robot_extension.Run Keyword And Warn On Failure     btslog.Start Btslog
+    Check Blanking Lower Edge                       ${TestDSS10Mhz_1586M2_BLE_3PRBs}        TC2_10MHz
+    [Teardown]     Run Keywords
+    ...        robot_extension.Run Keyword And Warn On Failure   btslog.Stop Btslog    target_dir=${testCaseDir}  AND
+    ...        robot_extension.Run Keyword And Warn On Failure   apUDPlog.Stop Capture Iphy Udplog           AND
+    ...        common_Dss_Keywords.Stop Tcpdump on TestPc    interface=eth3    target_dir=${testCaseDir}     AND
+    ...        Teardown 1586      alias=TC2_10MHz
+
+[1][1.0] 5GC001586_E_TC_18_10Mhz_PRB_Blanking_HigherLowerEdge_PDCCH_PowerBoost
+    [Tags]    FULL_RUN   10MHZ    TC18
+	...       CRT
+    # [setup]    Run Keywords     set Suite Variable    ${testCaseDir}    None      AND
+    # ...                         common_Dss_Keywords.Get testcase log directory    AND
+    # ...                         5GC001586_Keywords.Clean Up Env                   AND
+    # ...                         common_Dss_Keywords.Prepare Test Name             AND
+    # ...                         set test variable    ${collector_name}    FDD_DSS_scenario_TC18      AND
+    # ...                         common_Dss_Keywords.Start Tcpdump on TestPc    interface=eth3    option=-s0 sctp or icmp    AND
+    # ...                         robot_extension.Run Keyword And Warn On Failure   apUDPlog.Start To Capture Iphy Udplog
+    # ...                                                                                    target_dir=${testCaseDir}/ap_udpsyslogs
+    ${tc_name}    Set variable    TestLine_preparation
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    Run keyword if    '${tc_status}'!='PASS'    Run Keywords
+    ...           5GC001586_Kw_TestSetup.Test Line Preparation for NSA Only    ${TestDSS10Mhz_1586M2_BLE_3PRBs}    AND
+    ...           5GC001586_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    5GC001586_Kw_TestSetup.Test Setup 1586 M2       ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    robot_extension.Run Keyword And Warn On Failure     btslog.Start Btslog
+    Check PDCCH Power Boost                         ${TestDSS10Mhz_1586M2_BLE_3PRBs}       TC3_10MHz
+    [Teardown]     Run Keywords
+    ...        robot_extension.Run Keyword And Warn On Failure   btslog.Stop Btslog    target_dir=${testCaseDir}  AND
+    ...        robot_extension.Run Keyword And Warn On Failure   apUDPlog.Stop Capture Iphy Udplog           AND
+    ...        common_Dss_Keywords.Stop Tcpdump on TestPc    interface=eth3    target_dir=${testCaseDir}     AND
+    ...        Teardown 1586      alias=TC3_10MHz
+
+[1][1.0] 5GC001586_E_TC_15_10Mhz_PRB_Blanking_LowerEdge_TRS_muting
+    [Tags]    FULL_RUN   10MHZ    TC15
+	...       CRT
+    # [setup]    Run Keywords     set Suite Variable    ${testCaseDir}    None      AND
+    # ...                         common_Dss_Keywords.Get testcase log directory    AND
+    # ...                         5GC001586_Keywords.Clean Up Env                   AND
+    # ...                         common_Dss_Keywords.Prepare Test Name             AND
+    # ...                         set test variable    ${collector_name}    FDD_DSS_scenario_TC15      AND
+    # ...                         5GC001586_Keywords.Create Header Csv Test result  AND
+    # ...                         common_Dss_Keywords.Start Tcpdump on TestPc    interface=eth3    option=-s0 sctp or icmp    AND
+    # ...                         robot_extension.Run Keyword And Warn On Failure   apUDPlog.Start To Capture Iphy Udplog
+    # ...                                                                                    target_dir=${testCaseDir}/ap_udpsyslogs
+    # [Setup]     depends   [1]5GC001586_E_TC_2_10Mhz_PRB_Blanking_LowerEdge_3xPRBs_AL2
+    ${tc_name}    Set variable    TestLine_preparation
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    Run keyword if    '${tc_status}'!='PASS'    Run Keywords
+    ...           5GC001586_Kw_TestSetup.Test Line Preparation for NSA Only    ${TestDSS10Mhz_1586M2_BLE_3PRBs}    AND
+    ...           5GC001586_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    5GC001586_Kw_TestSetup.Test Setup 1586 M2       ${TestDSS10Mhz_1586M2_BLE_3PRBs}
+    robot_extension.Run Keyword And Warn On Failure     btslog.Start Btslog
+    Check TRS Muting Blanking Lower Edge            ${TestDSS10Mhz_1586M2_BLE_3PRBs}        TC15_10MHz
+    [Teardown]     Run Keywords
+    ...        robot_extension.Run Keyword And Warn On Failure   Extract L2-PS/src/sgnl/psCell/CellSetupLogger from Syslogs    AND
+    ...        robot_extension.Run Keyword And Warn On Failure   btslog.Stop Btslog    target_dir=${testCaseDir}  AND
+    ...        robot_extension.Run Keyword And Warn On Failure   apUDPlog.Stop Capture Iphy Udplog           AND
+    ...        common_Dss_Keywords.Stop Tcpdump on TestPc    interface=eth3    target_dir=${testCaseDir}     AND
+    ...        Teardown 1586      alias=TC15_10MHz
+
+#------------------------------------------------------------------------------------------------------------
+#   PDCCH Power Boost
+#------------------------------------------------------------------------------------------------------------
+Check PDCCH Power Boost
+    [Documentation]                Generic test for 1586-M2 to Check PDCCH Power is Boosted by 3dB while
+    ...                             PRB Blanking is used
+    [Arguments]                    ${param}        ${alias}
+    Point AF_PATH to current sw package
+    Point ENB_BUILD to luashark sw package
+    5GC001586_Keywords.TC 1586M2-5gCall     ${param}        ${alias}
+    Capture BIP UL DL
+    # ${branch} is a test suite variable intialized during test suite setup Kw
+    # dldata_pdcchsendreql1sw and dldata_pdcchsendreq are a namedtuple defined into Constants.py
+    ${l1l2ItfVersion}=   Run Keyword And Return Status   Should Match Regexp     ${branch}     ^SBTS25R[2-9]|SBTS00$
+    ${message}=    Run Keyword If    ${l1l2ItfVersion}   set variable     dldata_pdcchsendreql1sw
+    ...               ELSE                               set variable     dldata_pdcchsendreq
+    Dated log          pcap.Convert pcap to pdml file [PdcchSendReq filtered]...
+    ${pdmlFileBIP}       pcap.Convert pcap to pdml file       ${CaptureBIP.path}         message=${message}
+    Dated log          Checking PDCCH Power Boost on DlData_PdcchSendReq...
+    step               Check PDCCH Power Boost on DlData_PdcchSendReq        argument=${pdmlFileBIP}
+    [Teardown]                      GenericTest.Display diagnosis
+#------------------------------------------------------------------------------------------------------------------------------------[150 characters]
+#------------------------------------------------------------------------------------------------------------
+Check PDCCH Power Boost on DlData_PdcchSendReq
+    [Documentation]                 Retrieve from pdml value of pdcchDciTransmitPower
+    ...                            from message DlData_PdcchSendReq and check Pdcch is boosted by 3dB
+    ...                             in case of PRB Blanking
+    [Arguments]                     ${pdmlFile}
+
+    ${NbOK}                  Evaluate    0
+    ${NbKO}                  Evaluate    0
+    Set Suite Variable              ${NbOK}
+    Set Suite Variable              ${NbKO}
+
+    ${refPower}      set variable        ${param.seq.refPower}
+    ${DeltaPowerToBeChecked}      evaluate    30
+    Set Suite Variable            ${DeltaPowerToBeChecked}
+    # ${branch} is a test suite variable intialized during test suite setup Kw
+    ${l1l2ItfVersion}=   Run Keyword And Return Status   Should Match Regexp     ${branch}     ^SBTS25R[2-9]|SBTS00$
+    ${message}=    Run Keyword If    ${l1l2ItfVersion}   set variable     dldata_pdcchsendreql1sw
+    ...               ELSE                               set variable     dldata_pdcchsendreq
+
+    # 1 - Retrieve from pdml all PdcchSendReq
+    Dated log                       \tGetting all DlData_PdcchSendReq
+    @{listAllPdcchSendReq}          analyzer.get_match_from_paths
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=${message}
+    ...                             pathList=${FILELDS_PdcchSendReq}
+    ${lenPdcchSendReq}              get length               ${listAllPdcchSendReq}
+    Dated log                       \tNB of DlData_PdcchSendReq:${lenPdcchSendReq}
+    # 2 - For each CsiRsSendReq, find corresponding startSymbol
+    FOR    ${packet}       IN      @{listAllPdcchSendReq}
+
+    #       Retrieve startSymbol  for current CsiRsSendReq
+            ${pdcchDciTransmitPower}          Get Value In Packet Match
+            ...                               packetMatch=${packet}
+            ...                               field=pdcchDciTransmitPower
+            ${DeltaPower}       evaluate         ${pdcchDciTransmitPower}-${refPower}
+            Should Be True     ${DeltaPower}==${DeltaPowerToBeChecked}
+    END
+
+#------------------------------------------------------------------------------------------------------------
+#     Check Blanking Lower Edge
+#------------------------------------------------------------------------------------------------------------
+
+# Check Blanking Lower Edge on uldata_pushreceivereq
+# Check Blanking Lower Edge on dldata_pdschsendreq
+Check Blanking Lower Edge
+    [Documentation]                Generic test for 1586-M2 to Check PRB Blanking Higher Edge
+    [Arguments]                    ${param}      ${alias}
+    Point AF_PATH to current sw package
+    Point ENB_BUILD to luashark sw package
+    5GC001586_Keywords.TC 1586M2-5gCall         ${param}      ${alias}
+    Capture BIP UL DL
+    step                Check Blanking Lower Edge on uldata_pushreceivereq        argument=${CaptureBIP}
+    step                Check Blanking Lower Edge on dldata_pdschsendreq         argument=${CaptureBIP}
+
+#------------------------------------------------------------------------------------------------------------
+
+# Blanking Lower Edge condition to check on uldata_pushreceivereq : startPrb should be > nbrOfBlankedPRBs - 1
+# Comment:
+# In case of (N+1) Prbs blanked in lower edge the
+# index of blanked Prbs in NR grid: 0, 1, 2 ..., N-1
+# nbrOfBlankedPRBs = N
+# startPrb should be > N-1 with N = nbrOfBlankedPRBs
+# then the condition is startPrb >= nbrOfBlankedPRBs
+
+Check Blanking Lower Edge on uldata_pushreceivereq
+
+    [Documentation]                 Retrieve from pdml value of startPrb
+    ...                            from message uldata_puschreceivereq and check prb allocation conditions.
+    [Arguments]                     ${captureBip}
+    # ${branch} is a test suite variable intialized during test suite setup Kw
+    ${l1l2ItfVersion}=   Run Keyword And Return Status   Should Match Regexp     ${branch}     ^SBTS25R[2-9]|SBTS00$
+    ${message}=    Run Keyword If    ${l1l2ItfVersion}   set variable     uldata_puschreceivereq
+    ...               ELSE                               set variable     uldata_puschreceivereq
+    Dated log           pcap.Convert pcap to pdml file [${message} filtered]...
+    ${pdmlFile}         pcap.Convert pcap to pdml file       ${captureBip.path}         message=${message}
+    Dated log           Checking Blanking Higher Edge conditions on ${message}...
+
+    ${NbOK}                  Evaluate    0
+    ${NbKO}                  Evaluate    0
+    Set Suite Variable              ${NbOK}
+    Set Suite Variable              ${NbKO}
+
+    ${numOfBlankedPrb}      set variable        ${param.scfFile.BlankedPRBs.nbrOfBlankedPRBsLowEdgeDL}
+    ${numOfBlankedPrb}      Convert To Integer     ${numOfBlankedPrb}
+
+    # 1 - Retrieve from pdml all puschreceivereq
+    Dated log                       \tGetting all ${message}
+    @{listAllPuschReq}              analyzer.get_match_from_paths
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=${message}
+    ...                             pathList=${FIELDS_PUSCHreceivereq}
+    ${lenPuschReq}                  get length                          ${listAllPuschReq}
+    Dated log                       \tNB of ${message}:${lenPuschReq}
+    # 2 - For each puschreceivereq, find corresponding startPrb
+    FOR    ${packet}       IN          @{listAllPuschReq}
+
+    #       Retrieve startPrb  for current pucchReq
+            ${startPrb}            Get Value In Packet Match
+            ...                    packetMatch=${packet}
+            ...                    field=startPrb
+            ${startPrb}            Convert To Integer      ${startPrb}
+            ${comp}         Evaluate        ${startPrb} >= ${numOfBlankedPrb}
+            Run Keyword If      ('${comp}'!='True')
+            ...   New Case KO
+    END
+    ${PASSED}       Evaluate        (round(${NbKO})*100)/round(${lenPuschReq})
+    ${PASSED}             Convert to Number        ${PASSED}      2
+    Dated log              \t%nrOf_KO [startPrb inside the blanked area]:${PASSED}%
+    ${PASSED_TO_CHECK}             Convert To Integer    ${PASSED}
+    Should Be Equal    ${PASSED_TO_CHECK}          ${0}
+
+#------------------------------------------------------------------------------------------------------------
+
+# rbgSize = 4 for 10MHz
+#         = 8 for 15MHz and 20MHz
+# startPrb from pdschsendreq should be nonzero multiple of rbgSize
+# --> startPrb modulo rbgSize = 0
+
+Check Blanking Lower Edge on dldata_pdschsendreq
+
+    [Documentation]                 Retrieve from pdml value of startPrb
+    ...                            from message dldata_pdschsendreq and check Blanking Lower Edge conditions on dldata_pdschsendreq.
+    [Arguments]                     ${captureBip}
+
+    # lower Edge blanking: startPrb from pdschsendreq should be nonzero multiple of rbgSize
+    # ${branch} is a test suite variable intialized during test suite setup Kw
+    ${l1l2ItfVersion}=   Run Keyword And Return Status   Should Match Regexp     ${branch}     ^SBTS25R[2-9]|SBTS00$
+    ${message}=    Run Keyword If    ${l1l2ItfVersion}   set variable     dldata_pdschsendreql1sw
+    ...               ELSE                               set variable     dldata_pdschsendreq
+    Dated log           pcap.Convert pcap to pdml file [${message} filtered]...
+    ${pdmlFile}       pcap.Convert pcap to pdml file       ${captureBip.path}         message=${message}
+    Dated log           Checking Blanking Higher Edge conditions on ${message}...
+
+    ${NbOK}                  Evaluate    0
+    ${NbKO}                  Evaluate    0
+    Set Suite Variable              ${NbOK}
+    Set Suite Variable              ${NbKO}
+
+    ${rbgSizePdsch}     set variable            ${param.seq.rbgSize}
+    ${rbgSizePdsch}     Convert To Integer      ${rbgSizePdsch}
+
+    # 1 - Retrieve from pdml all pdschsendreq
+    Dated log                       \tGetting all ${message}
+    @{listAllPdschReq}              analyzer.get_match_from_paths
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=${message}
+    ...                             pathList=${FIELDS_PDSCHSendReq}
+    ${lenPdschReq}                  get length                          ${listAllPdschReq}
+    Dated log                       \tNB of ${message}:${lenPdschReq}
+    # 2 - For each pdschsendreq, find corresponding startPrb
+    FOR    ${packet}       IN          @{listAllPdschReq}
+
+    #       Retrieve startPrb  for current pdschsendreq
+            ${startPrb}            Get Value In Packet Match
+            ...                    packetMatch=${packet}
+            ...                    field=startPrb
+            ${startPrb}             Convert To Integer    ${startPrb}
+            ${startPrb_mod_rbgSize}      Evaluate        ${startPrb} % ${rbgSizePdsch}
+            Run Keyword If    (${startPrb} == ${0} or ${startPrb_mod_rbgSize} != ${0})
+            ...   New Case KO
+    END
+    ${PASSED}    Evaluate        (round(${NbKO})*100)/round(${lenPdschReq})
+    ${PASSED}             Convert to Number        ${PASSED}      2
+    Dated log              \t%nrOf_KO [startPrb inside the blanked area]:${PASSED}%
+    ${PASSED_TO_CHECK}             Convert To Integer    ${PASSED}
+    Should Be Equal       ${PASSED_TO_CHECK}          ${0}
+#------------------------------------------------------------------------------------------------------------------------------------[150 characters]
+
+#-------------------------------------------------------------------------------------------------------------
+#   BIP Capture init and traffic UL DL
+#-------------------------------------------------------------------------------------------------------------
+Capture BIP UL DL
+    [Documentation]                Purpose is to capture BIP L1L2 trace for UL DL Traffic
+
+    # Capture L1L2 Set Upon Config  => means that gnbMirroring.sh will be use
+    ${CaptureBIP}                   Capture L1L2 Set Upon Config             airscale=${GNB_DU}
+    # set a specific name to keep the trace
+    ${CaptureBIP.prefix}   set Variable   L1L2_BIP_GNB_FS
+    ${CaptureBIP.withTN}   set Variable   True
+    Point ENB_BUILD to luashark sw package
+    Point AF_PATH to current sw package
+    # nps_1586_luashark_analyzer.Initiate luashark analyzer    ${AF_PATH}
+    # filtering by msgId is not used anymore when using taf library
+    # ${CaptureBIP.filter}        Get msgId from lua package      ${param.seq.filtermsg}
+    # Dated log          CaptureBIP.filter = ${CaptureBIP.filter}
+    Set Suite Variable       ${CaptureBIP}
+
+    Capture Init             ${CaptureBIP}
+    Traffic UE UL DL                ueSetting=${UE_SIMPLE_CellDSS}
+    ...                             throughput=${param.seq.throughput}
+    ...                             captureCallback=Callback Capture L1L2
+    ...                             capture=${CaptureBIP}
+    ...                             captureDuration=3000ms
+    ...                             duration=${param.seq.timeDuration}
+    ...                             deviation=15
+    ...                             shouldBeCheck=False
+    [Teardown]       Run Keywords        Run Keyword And Ignore Error    Stop Capture if needed   ${CaptureBIP}     AND
+    ...                                  Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CaptureBIP.path}     AND
+    ...                                  Run Keyword And Ignore Error    OperatingSystem.Copy File    ${CaptureBIP.path}    ${testCaseDir}
+    [Return]        ${CaptureBIP}
+
+#------------------------------------------------------------------------------------------------------------
+#   TRS Muting
+#------------------------------------------------------------------------------------------------------------
+
+Check TRS Muting Blanking Lower Edge on DlData_CsiRsSendReq
+
+    [Documentation]                 Retrieve from pdml value of startPrb
+    ...                            from message dldata_csirssendreq and check TRS Muting conditions
+    [Arguments]                     ${pdmlFile}
+
+    ${NbOK}                  Evaluate    0
+    ${NbKO}                  Evaluate    0
+    Set Suite Variable              ${NbOK}
+    Set Suite Variable              ${NbKO}
+
+    ${numOfBlankedPrb}      set variable        ${param.scfFile.BlankedPRBs.nbrOfBlankedPRBsLowEdgeDL}
+    ${numOfBlankedPrb}      Convert To Integer     ${numOfBlankedPrb}
+    Set suite variable      ${numOfBlankedPrb}
+    # ${branch} is a test suite variable intialized during test suite setup Kw
+    ${l1l2ItfVersion}=   Run Keyword And Return Status   Should Match Regexp     ${branch}     ^SBTS25R[2-9]|SBTS00$
+    ${message}=    Run Keyword If    ${l1l2ItfVersion}   set variable     dldata_csirssendreql1sw
+    ...               ELSE                               set variable     dldata_csirssendreq
+
+    # 1 - Retrieve from pdml all CsiRsSendReq
+    Dated log                       \tGetting all DlData_CsiRsSendReq
+    @{listAllCsiRsSendReq}          analyzer.get_match_from_paths
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=${message}
+    ...                             pathList=${FILELDS_CsiRsSendReq}
+    ${lenCsiRsSendReq}              get length                          ${listAllCsiRsSendReq}
+    Dated log                       \tNB of ${message}:${lenCsiRsSendReq}
+    # 2 - For each CsiRsSendReq, find corresponding startSymbol
+    FOR    ${packet}       IN          @{listAllCsiRsSendReq}
+
+    #       Retrieve startSymbol  for current CsiRsSendReq
+            ${startSymbol}          Get Value In Packet Match
+            ...                     packetMatch=${packet}
+            ...                     field=startSymbol
+            ${startSymbol}          Convert To Integer      ${startSymbol}
+            Run Keyword If       ${startSymbol} == ${6} or ${startSymbol} == ${10}
+            ...                     Check TRS Allocation  ${packet}
+    END
+    ${PASSED}    Evaluate        (round(${NbKO})*100)/round(${lenCsiRsSendReq})
+    ${PASSED}             Convert to Number        ${PASSED}      2
+    Dated log              \t%nrOf_KO [TRS transmitted in the blanked PRBs]:${PASSED}%
+    ${PASSED_TO_CHECK}    Convert To Integer    ${PASSED}
+    Should Be Equal    ${PASSED_TO_CHECK}          ${0}
+
+#------------------------------------------------------------------------------------------------------------
+
+Check TRS Muting Blanking Higher Edge on DlData_CsiRsSendReq
+
+    [Documentation]                 Retrieve from pdml value of startPrb
+    ...                            from message dldata_csirssendreq and check TRS Muting conditions
+    [Arguments]                     ${pdmlFile}
+
+    ${NbOK}                  Evaluate    0
+    ${NbKO}                  Evaluate    0
+    Set Suite Variable              ${NbOK}
+    Set Suite Variable              ${NbKO}
+
+    ${numOfBlankedPrb}          set variable        ${param.scfFile.BlankedPRBs.nbrOfBlankedPRBsHighEdgeDL}
+    ${ChannelBandwidthPRBs}     set variable        ${param.seq.chBwPRB}
+    ${numOfavailablePRBs}      Evaluate     ${ChannelBandwidthPRBs}-${numOfBlankedPrb}
+    ${numOfavailablePRBs}      Convert To Integer     ${numOfavailablePRBs}
+    # ${branch} is a test suite variable intialized during test suite setup Kw
+    ${l1l2ItfVersion}=   Run Keyword And Return Status   Should Match Regexp     ${branch}     ^SBTS25R[2-9]|SBTS00$
+    ${message}=    Run Keyword If    ${l1l2ItfVersion}   set variable     dldata_csirssendreql1sw
+    ...               ELSE                               set variable     dldata_csirssendreq
+
+    Set suite variable      ${numOfavailablePRBs}
+
+    # 1 - Retrieve from pdml all CsiRsSendReq
+    Dated log                       \tGetting all DlData_CsiRsSendReq
+    @{listAllCsiRsSendReq}          analyzer.get_match_from_paths
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=${message}
+    ...                             pathList=${FILELDS_CsiRsSendReq}
+    ${lenCsiRsSendReq}              get length                          ${listAllCsiRsSendReq}
+    Dated log                       \tNB of ${message}:${lenCsiRsSendReq}
+    # 2 - For each CsiRsSendReq, find corresponding startSymbol
+    FOR    ${packet}       IN          @{listAllCsiRsSendReq}
+
+    #       Retrieve startSymbol  for current CsiRsSendReq
+            ${startSymbol}          Get Value In Packet Match
+            ...                     packetMatch=${packet}
+            ...                     field=startSymbol
+            ${startSymbol}          Convert To Integer      ${startSymbol}
+            Run Keyword If       ${startSymbol} == ${6} or ${startSymbol} == ${10}
+            ...                     Check TRS Allocation Higher Edge  ${packet}
+
+    END
+    ${PASSED}    Evaluate        (round(${NbKO})*100)/round(${lenCsiRsSendReq})
+    ${PASSED}             Convert to Number        ${PASSED}      2
+
+    Dated log              \t%nrOf_KO [TRS transmitted in the blanked PRBs]:${PASSED}%
+    ${PASSED_TO_CHECK}    Convert To Integer    ${PASSED}
+    Should Be Equal    ${PASSED_TO_CHECK}          ${0}
+
+
+
+#------------------------------------------------------------------------------------------------------------
+Check TRS Allocation
+    [Arguments]         ${packet}
+    ${startPrb}          Get Value In Packet Match
+    ...                  packetMatch=${packet}
+    ...                  field=startPrb
+    ${startPrb}          Convert To Integer      ${startPrb}
+    ${comp}         evaluate        ${startPrb} >= ${numOfBlankedPrb}
+    Run Keyword If      ('${comp}'!='True')       New Case KO
+
+#------------------------------------------------------------------------------------------------------------
+Check TRS Allocation Higher Edge
+   [Arguments]         ${packet}
+    ${numOfPrb}          Get Value In Packet Match
+    ...                  packetMatch=${packet}
+    ...                  field=numOfPrb
+    ${numOfPrb}          Convert To Integer      ${numOfPrb}
+    ${comp}         compareInDecimal     ${numOfPrb}    ${numOfavailablePRBs}
+    Run Keyword If      ('${comp}'!='True')       New Case KO
+
+#------------------------------------------------------------------------------------------------------------
+Check TRS Muting Blanking Lower Edge
+    [Documentation]                Generic test for 1586-M2 to Check TRS Muting Conditions with
+    ...                             Blanking Lower Edge
+    [Arguments]                    ${param}     ${alias}
+
+    Dated log          Enable TRS Muting on Blanked PRBs...
+    Activate TRS Muting     TRSMute=true
+    # Restart TL performed with Keyword 5GC001586_Keywords.TC 1586M2-5gCall
+    Point AF_PATH to current sw package
+    Point ENB_BUILD to luashark sw package
+    5GC001586_Keywords.TC 1586M2-5gCall     ${param}     ${alias}
+    # CaptureBIP generation that will be used also for pdcch power boost check
+    Capture BIP UL DL
+    # ${branch} is a test suite variable intialized during test suite setup Kw
+    # dldata_csirssendreql1sw and dldata_csirssendreq are a namedtuple defined into Constants.py
+    ${l1l2ItfVersion}=   Run Keyword And Return Status   Should Match Regexp     ${branch}     ^SBTS25R[2-9]|SBTS00$
+    ${message}=    Run Keyword If    ${l1l2ItfVersion}   set variable     dldata_csirssendreql1sw
+    ...               ELSE                               set variable     dldata_csirssendreq
+    Dated log          pcap.Convert pcap to pdml file [${${message}.filter_name} filtered]...
+    ${pdmlFileBIP}       pcap.Convert pcap to pdml file       ${CaptureBIP.path}         message=${message}
+    Dated log          Checking TRS Muting Conditions with Blanking Lower Edge on dldata_csirssendreq...
+    step                Check TRS Muting Blanking Lower Edge on DlData_CsiRsSendReq     argument=${pdmlFileBIP}
+
+    [Teardown]                      GenericTest.Display diagnosis
+
+#------------------------------------------------------------------------------------------------------------
+Check TRS Muting Blanking Higher Edge
+    [Documentation]                Generic test for 1586-M2 to Check TRS Muting Conditions with
+    ...                             Blanking Higher Edge
+    [Arguments]                    ${param}     ${alias}
+
+    Dated log          Enable TRS Muting on Blanked PRBs...
+    Activate TRS Muting     TRSMute=true
+    # Restart TL performed with Keyword 5GC001586_Keywords.TC 1586M2-5gCall
+    5GC001586_Keywords.TC 1586M2-5gCall     ${param}     ${alias}
+    # CaptureBIP generation that will be used also for pdcch power boost check
+    Capture BIP UL DL
+
+    pcap.Point to luashark scripts via AF_PATH variable
+    Point ENB_BUILD to luashark sw package
+    # ${branch} is a test suite variable intialized during test suite setup Kw
+    # dldata_csirssendreql1sw and dldata_csirssendreq are a namedtuple defined into Constants.py
+    ${l1l2ItfVersion}=   Run Keyword And Return Status   Should Match Regexp     ${branch}     ^SBTS25R[2-9]|SBTS00$
+    ${message}=    Run Keyword If    ${l1l2ItfVersion}   set variable     dldata_csirssendreql1sw
+    ...               ELSE                               set variable     dldata_csirssendreq
+    Dated log          pcap.Convert pcap to pdml file [${${message}.filter_name} filtered]...
+    ${pdmlFileBIP}       pcap.Convert pcap to pdml file       ${CaptureBIP.path}         message=${message}
+
+    Dated log          Checking TRS Muting Conditions with Blanking Higher Edge on dldata_csirssendreq...
+    step                Check TRS Muting Blanking Higher Edge on DlData_CsiRsSendReq     argument=${pdmlFileBIP}
+
+    [Teardown]                      GenericTest.Display diagnosis
+
+#------------------------------------------------------------------------------------------------------------
+Activate TRS Muting
+    [Arguments]          ${TRSMute}
+    Dated log New Line                       NRCELL_DIST_NAME=${NRCELL_DIST_NAME}
+#      TestParam is ${testParam}
+# MRBTS-69/NRBTS-2/NRCELL-1/NRDSSLTE-1
+
+    &{modify_param}    Create Dictionary
+    ...    parameter=trsMutingInBlankedPRBsEnabled
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${TRSMute}
+
+    @{modify_param}    Create List    ${modify_param}
+
+    BuiltIn.Log      \nParameters to modify:\n @{modify_param}   console=yes
+    OAM Set Params    modify_param=@{modify_param}
+
+#------------------------------------------------------------------------------------------------------------
+#     Check Blanking Higher Edge
+#------------------------------------------------------------------------------------------------------------
+# Check Blanking High Edge on uldata_pushreceivereq
+# Check Blanking High Edge on dldata_pdschsendreq
+
+# Blanking Higher Edge condition to check : startPrb + numOfPrb < totalPrbs - nbrOfBlankedPRBs
+#     -UL condition : startPrb + numOfPrb <= totalPrbs - nbrOfBlankedPRBs
+#     -DL condition : numOfPrb <= totalPrbs - nbrOfBlankedPRBs
+
+
+Check Blanking Higher Edge
+    [Documentation]                Generic test for 1586-M2 to Check PRB Blanking Higher Edge
+    [Arguments]                    ${param}      ${alias}
+    Init Sequence                  ${param}
+    Point AF_PATH to current sw package
+    Point ENB_BUILD to luashark sw package
+    5GC001586_Keywords.TC 1586M2-5gCall         ${param}      ${alias}
+    Capture BIP UL DL
+    step                Check Blanking Higher Edge on uldata_pushreceivereq        argument=${CaptureBIP}
+    step                Check Blanking Higher Edge on dldata_pdschsendreq         argument=${CaptureBIP}
+    [Teardown]                     GenericTest.Display diagnosis
+
+#------------------------------------------------------------------------------------------------------------
+#Example case 10MHz:
+# blanking Higher edge N Prbs
+# totalPrbs = 52 (10MHz); 79 (15MHz); 106 (20MHz)
+# index of blanked Prbs in NR grid : 51, 50, ..., 51-(N-1)
+# Condition : UL/DL traffic should not use blanked Prbs from 51-(N-1) to 51
+# startPrb + numOfPrbs - 1 < 51-(N-1) (startPrb and numOfPrb from UlData_PuschReceiveReq/)
+# startPrb + numOfPrbs - 1 < CHBwPrb - numOfBlankedPrbs
+# --> startPrb + numOfPrb < ChBwPrb - nbrOfBlankedPRBs + 1
+# --> startPrb + numOfPrb <= ChBwPrb - nbrOfBlankedPRBs
+
+Check Blanking Higher Edge on uldata_pushreceivereq
+
+    [Documentation]                 Retrieve from pdml value of startPrb and numOfPrb
+    ...                            from message uldata_puschreceivereq and check Blanking High Edge conditions on uldata_pushreceivereq.
+    [Arguments]                     ${captureBip}
+    # ${branch} is a test suite variable intialized during test suite setup Kw
+    # uldata_puschreceivereql1sw and uldata_puschreceivereq are a namedtuple defined into Constants.py
+    ${l1l2ItfVersion}=   Run Keyword And Return Status   Should Match Regexp     ${branch}     ^SBTS25R[2-9]|SBTS00$
+    ${message}=    Run Keyword If    ${l1l2ItfVersion}   set variable     uldata_puschreceivereql1sw
+    ...               ELSE                               set variable     uldata_puschreceivereq
+    Dated log           pcap.Convert pcap to pdml file [${${message}.filter_name} filtered]...
+    ${pdmlFile}         pcap.Convert pcap to pdml file       ${captureBip.path}         message=${message}
+    Dated log           Checking Blanking Higher Edge conditions on ${${message}.filter_expression}...
+
+    ${NbOK}                  Evaluate    0
+    ${NbKO}                  Evaluate    0
+    Set Suite Variable              ${NbOK}
+    Set Suite Variable              ${NbKO}
+
+    ${numOfBlankedPrb}      set variable        ${param.scfFile.BlankedPRBs.nbrOfBlankedPRBsHighEdgeDL}
+    ${totalPrbs}            set variable        ${param.seq.chBwPRB}
+
+    ${nbrOfavailablePRBs}    Evaluate   ${totalPrbs}-${numOfBlankedPrb}
+    ${nbrOfavailablePRBs}    Convert To Integer    ${nbrOfavailablePRBs}
+    Dated log           \tnbrOfavailablePRBs = ${nbrOfavailablePRBs}
+
+    # 1 - Retrieve from pdml all uldata_pushreceivereq
+    Dated log                       \tGetting all ${message}
+    @{listAllPuschReq}              analyzer.get_match_from_paths
+    ...                             pdmlFile=${pdmlFile}
+    # ...                             packetName=${message}
+    ...                             packetName=${${message}.filter_expression}
+    ...                             pathList=${FIELDS_PUSCHreceivereq}
+    ${lenPuschReq}                  get length                          ${listAllPuschReq}
+    Dated log                       \tNB ${${message}.filter_expression}:${lenPuschReq}
+    # 2 - For each puschReq, find corresponding puschResp (same startPrb)
+    FOR    ${packet}       IN          @{listAllPuschReq}
+
+    #       Retrieve startPrb and numOfPrb for current puschreceiveReq
+            ${startPrb}            Get Value In Packet Match
+            ...                    packetMatch=${packet}
+            ...                    field=startPrb
+            ${startPrb}   Convert To Integer    ${startPrb}
+            ${numOfPrb}            Get Value In Packet Match
+            ...                    packetMatch=${packet}
+            ...                    field=numOfPrb
+            ${numOfPrb}   Convert To Integer    ${numOfPrb}
+            ${val}        Evaluate     ${startPrb}+${numOfPrb}
+            ${comp}         Evaluate        ${val} <= ${nbrOfavailablePRBs}
+            Run Keyword If      ('${comp}'!='True')
+            ...   New Case KO
+    END
+    ${PASSED}       Evaluate        (round(${NbKO})*100)/round(${lenPuschReq})
+    ${PASSED}             Convert to Number        ${PASSED}      2
+    Dated log              \t%nrOf_KO [Blanking High Edge conditions not met]:${PASSED}%
+    ${PASSED_TO_CHECK}    Convert To Integer    ${PASSED}
+    Should Be Equal    ${PASSED_TO_CHECK}          ${0}
+
+
+#------------------------------------------------------------------------------------------------------------
+# number of available DL PRBs depends on number of blanked PRBs in High Edge
+# Blanked PRBs should not be used for DL Traffic. This can be traduced by the following formula:
+# startPrb + numOfPrb - 1 (in pdschsendreq) should be < totalPrbs - numOfBlankedPrb
+# equivalent to startPrb + numOfPrb <= nbrOfavailablePRBs
+
+Check Blanking Higher Edge on dldata_pdschsendreq
+
+    [Documentation]                 Retrieve from pdml value of numOfPrb
+    ...                            from message dldata_pdschsendreq and check Blanking High Edge conditions.
+    [Arguments]                     ${captureBip}
+    # ${branch} is a test suite variable intialized during test suite setup Kw
+    # uldata_puschreceivereql1sw and uldata_puschreceivereq are a namedtuple defined into Constants.py
+    ${l1l2ItfVersion}=   Run Keyword And Return Status   Should Match Regexp     ${branch}     ^SBTS25R[2-9]|SBTS00$
+    ${message}=    Run Keyword If    ${l1l2ItfVersion}   set variable     dldata_pdschsendreql1sw
+    ...               ELSE                               set variable     dldata_pdschsendreq
+    Dated log           pcap.Convert pcap to pdml file [pdschsendreq filtered]...
+    ${pdmlFile}       pcap.Convert pcap to pdml file       ${captureBip.path}         message=${message}
+    Dated log           Checking Blanking Higher Edge conditions on dldata_pdschsendreq...
+
+    ${NbOK}                    Evaluate     0
+    ${NbKO}                    Evaluate     0
+    Set Suite Variable              ${NbOK}
+    Set Suite Variable              ${NbKO}
+
+    ${numOfBlankedPrb}      set variable        ${param.scfFile.BlankedPRBs.nbrOfBlankedPRBsHighEdgeDL}
+    ${totalPrbs}            set variable        ${param.seq.chBwPRB}
+
+    ${nbrOfavailablePRBs}         Evaluate     ${totalPrbs}-${numOfBlankedPrb}
+    ${nbrOfavailablePRBs}     Convert to Integer   ${nbrOfavailablePRBs}
+    # ${branch} is a test suite variable intialized during test suite setup Kw
+    ${l1l2ItfVersion}=   Run Keyword And Return Status   Should Match Regexp     ${branch}     ^SBTS25R[2-9]|SBTS00$
+    ${message}=    Run Keyword If    ${l1l2ItfVersion}   set variable     dldata_pdschsendreql1sw
+    ...               ELSE                               set variable     dldata_pdschsendreq
+
+    # 1 - Retrieve from pdml all pdschsendreq
+    Dated log                       \tGetting all ${message}
+    @{listAllPdschReq}              analyzer.get_match_from_paths
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=${message}
+    ...                             pathList=${FIELDS_PDSCHSendReq}
+    ${lenPdschReq}                  get length                          ${listAllPdschReq}
+    Dated log                       \tNB of ${message}:${lenPdschReq}
+    # 2 - For each pdschsendreq find corresponding startPrb and numOfPrb
+    FOR    ${packet}       IN          @{listAllPdschReq}
+
+    #       Retrieve startPrb & numOfPrb  for current pdschsendreq
+            ${startPrb}            Get Value In Packet Match
+            ...                    packetMatch=${packet}
+            ...                    field=startPrb
+            ${startPrb}   Convert To Integer    ${startPrb}
+            ${numOfPrb}            Get Value In Packet Match
+            ...                    packetMatch=${packet}
+            ...                    field=numOfPrb
+            ${numOfPrb}    Convert to Integer    ${numOfPrb}
+            ${val}         Evaluate         ${startPrb}+${numOfPrb}
+            ${comp}        Evaluate         ${val} <= ${nbrOfavailablePRBs}
+            Run Keyword If    ('${comp}'!='True')
+            ...   New Case KO
+    END
+    ${PASSED}    Evaluate        (round(${NbKO})*100)/round(${lenPdschReq})
+
+    ${PASSED}             Convert to Number        ${PASSED}      2
+    Dated log              \t%nrOf_KO [numOfPrb exceeds nbrOfavailablePRBs=${nbrOfavailablePRBs}]:${PASSED}%
+    ${PASSED_TO_CHECK}    Convert To Integer    ${PASSED}
+    Should Be Equal    ${PASSED_TO_CHECK}          ${0}
+
+
+
+#------------------------------------------------------------------------------------------------------------
+
+Check BTS status in WEM for cOAM
+    [Documentation]   This keyword is used to Check BTS status in WEM for cOAM.
+    ...    author: Ch SAMSON
+    [Arguments]     ${cell_id}=0
+    BuiltIn.log    cell_id is ${cell_id}
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+    ${bts_status}=    coam.get_bts_statuses    timeout=30    connection=${GNB_DU.oam.httpAlias}
+    Dated log      =======> Current bts status is ${bts_status}
+    should Contain Any    ${bts_status['operationalState']}   Enabled   Disabled      ignore_case=true
+    should Contain Any     ${bts_status['proceduralState']}   configured    OnAir     msg=ENB is not on air, Current status is ${bts_status}
+    ...                                                                               ignore_case=true
+    should be equal    ${bts_status['blockingState']}       Unblocked            ignore_case=true
+
+    ${cell_info}=    coam.get_cells_info    cell_type=nr    timeout=30    connection=${GNB_DU.oam.httpAlias}
+    Dated log      =======> Current cell(s) info is ${cell_info}
+    FOR    ${elem}    IN    @{cell_info}
+#    ${cell_info}=    set variable   ${cell_info[${cell_id}]['status']}
+        Should be equal    ${elem['status']['operationalState']}    Enabled    ignore_case=true
+        Should be equal    ${elem['status']['proceduralStatus']}    configured    ignore_case=true
+        Should be equal    ${elem['status']['administrativeState']}    Unlocked    ignore_case=true
+    END
+
+    OAM Disconnect                  ${GNB_DU.oam}
+
+
+Restart TL wo WTS clear
+    [Documentation]                 Entry point for the restart of a TL, Classical only , without WTS clear
+    [Arguments]                     ${GNBCallback}=None                     ${APCallback}=None
+    ...                             ${isOAMRebooted}=False
+    Dated Log                       Start Restart TL ${TLConfig.configName}. Is GNB Cloud: ${TLConfig.isGnbCloud}
+    ...                             first=True
+    Private Restart Gnb Classical           GNBCallback=${GNBCallback}          APCallback=${APCallback}
+    ...                             isOAMRebooted=${isOAMRebooted}
+
+
+reset TL if BTS not OnAir
+    [Arguments]  ${connection}=${GNB_DU.oam}
+    ${aliasGNB}                     OAM Connect                             ${connection}
+    ${bts_status}=  coam.get_bts_statuses   connection=${connection.httpAlias}
+    OAM Disconnect                  ${GNB_DU.oam}
+    Dated log     BTS procedural state is now: ${bts_status["proceduralState"]}
+    ${gnb_status}=     evaluate    '${bts_status["proceduralState"]}'.lower()
+    Run Keyword If  '${gnb_status}'!='OnAir'.lower() and '${gnb_status}'!='Configured'.lower()
+    ...          Run Keywords       Log To Console  \n BTS procedural state is now: ${bts_status["proceduralState"]} ==> Reset TL     AND
+    ...                             Restart TL wo WTS clear      AND
+    ...                             run keyword and ignore error        5GC001586_Kw_TestSetup.Upload 1586 Configuration          AND
+    ...                             run keyword and ignore error        common_Dss_Keywords.Start WTS        egate_alias_default   AND
+    ...                             run keyword and ignore error        common_Dss_command.X2Ap link Setup     egate_alias_default
+
+
+Get gNB cell 5g On air
+    [Documentation]       get gNB 5g cell On air
+    Return From Keyword If    "${WAIT_5G_CELL_ONAIR}" == "0"
+    common_Dss_Keywords.Log to Console like Next Step     0     Get gNB 5g cell OnAir
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+    ${bts_status}=  coam.get_bts_statuses   connection=${GNB_DU.oam.httpAlias}
+    OAM Disconnect                  ${GNB_DU.oam}
+    Log To Console  \n BTS procedural state is now: ${bts_status["proceduralState"]}
+    ${gnb_status}=     evaluate    '${bts_status["proceduralState"]}'.lower()
+    Return From Keyword If    '${gnb_status}'=='OnAir'.lower() or '${gnb_status}'=='Configured'.lower()
+    run keyword and ignore error        5GC001586_Kw_TestSetup.Upload 1586 Configuration
+    run keyword and ignore error        common_Dss_Keywords.Start WTS        egate_alias_default
+    run keyword and ignore error        common_Dss_command.X2Ap link Setup     egate_alias_default
+    run keyword and ignore error        wait until keyword succeeds    2min    30s      Check BTS status in WEM for cOAM
+    Dated log new line         =======> Restart TL if needed to get Cell Is OnAir/Configured
+    run keyword and ignore error        reset TL if BTS not OnAir
+    run keyword and ignore error        wait until keyword succeeds    5min    30s      Check BTS status in WEM for cOAM

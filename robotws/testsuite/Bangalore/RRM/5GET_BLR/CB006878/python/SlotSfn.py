@@ -1,0 +1,141 @@
+import StringTool
+import luashark_tools
+
+
+def getFirstPathFromField(packet, fieldName):
+    for path in packet.fields.keys():
+        if path.endswith(fieldName):
+            return path
+    return None
+
+
+def getFieldValue(packet, fieldName):
+    return packet.fields['{}'.format(getFirstPathFromField(packet, fieldName))].show
+
+# ======================================================================================
+
+
+class BitMap:
+    def __init__(self, len):
+        self.len = len
+        self.map = list("{}".format("0" * len))
+        self.errors = []
+
+    def __str__(self):
+        return "".join(self.map)
+
+    def setBit(self, index):
+        if index >= self.len:
+            self.errors.append("Unable to set bit {} since len is {}".format(index, self.len))
+        else:
+            val = int(self.map[index])
+            self.map[index] = "{}".format(val+1)
+            if val != 0:
+                self.errors.append("Overlap of bit {}".format(index))
+
+    def setRange(self, start=0, len=1):
+        for index in range(start, start+len):
+            self.setBit(index)
+
+    def isOK(self):
+        return len(self.errors) == 0
+
+    def getErrors(self):
+        str = ""
+        for error in self.errors:
+            str = str + "{}\n".format(error)
+        return str
+
+# =======================================================================================
+
+
+class SlotSfnRec:
+    SlotSfnList = []
+
+    def __init__(self, packet, prbMax):
+        self.slot = getFieldValue(packet, "slot")
+        self.sfn = getFieldValue(packet, "sfn")
+        self.rntiList = []
+        self.bitMap = BitMap(prbMax)
+
+    def addRnti(self, packet):
+        rnti = RntiPrb(packet)
+        if rnti.isValid():
+            self.rntiList.append(rnti)
+            self.bitMap.setRange(start=rnti.startPrb, len=rnti.numOfPrb)
+
+    def __eq__(self, record):
+        return self.slot == record.slot and self.sfn == record.sfn
+
+    def __str__(self):
+        return "SLOT={} SFN={} RNTI:{} Check:{}".\
+            format(self.slot, self.sfn, len(self.rntiList), self.bitMap.isOK())
+
+    def isMatchingLastRec(rec):
+        if len(SlotSfnRec.SlotSfnList) == 0:
+            return None
+        lastRec = SlotSfnRec.SlotSfnList[-1]
+        if rec == lastRec:
+            return lastRec
+        return None
+
+    def printRec(self, onlyKO):
+        if not self.bitMap.isOK() or not onlyKO:
+            StringTool.datedConsole(self)
+            for idx, rnti in enumerate(self.rntiList):
+                StringTool.datedConsole("   {}:{}".format(idx+1, rnti))
+
+
+# =======================================================================================
+
+
+class RntiPrb(object):
+    def __init__(self, packet):
+        self.packet = packet
+        self.rnti = getFieldValue(packet, "rnti")
+        self.startPrb = int(StringTool.toDecimalStr(getFieldValue(packet, "startPrb")))
+        self.numOfPrb = int(StringTool.toDecimalStr(getFieldValue(packet, "numOfPrb")))
+
+#    def isValid(self):
+#        return self.rnti != "0x0000ffff"
+    def isValid(self):
+        return StringTool.toDecimalStr(self.rnti) != StringTool.toDecimalStr("0xFFFF")
+
+    def __str__(self):
+        str = "{}".format(self.packet.namedPacket)
+        return "PCK:{:30} RNTI:{} StartPRB:{:3} NumOfPrb:{:3}"\
+            .format(str, self.rnti, self.startPrb, self.numOfPrb)
+
+# =======================================================================================
+
+
+def createSlotSfnRecords(pdmlFile, packetName, pathList, prbMax, verbose=True):
+    analyzer = luashark_tools.analyzer()
+    packetList = analyzer.get_match_from_paths(
+        pdmlFile=pdmlFile, packetName=packetName, pathList=pathList, verbose=verbose)
+    SlotSfnRec.SlotSfnList = []
+    for packet in packetList:
+        rec = SlotSfnRec(packet, prbMax)
+        lastRec = SlotSfnRec.isMatchingLastRec(rec)
+        if lastRec is not None:
+            lastRec.addRnti(packet)
+        else:
+            rec.addRnti(packet)
+            SlotSfnRec.SlotSfnList.append(rec)
+
+
+def countSlotSfnRecord():
+    return len(SlotSfnRec.SlotSfnList)
+
+
+def countPrbInconsistency():
+    nbError = 0
+    for rec in SlotSfnRec.SlotSfnList:
+        if not rec.bitMap.isOK():
+            nbError = nbError + 1
+    return nbError
+
+
+def printSlotSfnRec(onlyKO):
+    for rec in SlotSfnRec.SlotSfnList:
+        rec.printRec(onlyKO)

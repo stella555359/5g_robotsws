@@ -1,0 +1,301 @@
+import logging
+import math
+
+from datetime import datetime
+from datetime import timedelta
+
+from testsuite.Paris.resources.SWENG.python.StringTool import datedConsole, getHeaderLine
+
+from testsuite.Paris.RRM.ET.CB009890.resources.python.tti_analysis.helper_functions import display_df_as_html
+from testsuite.Paris.RRM.ET.CB009890.resources.python.tti_analyzer_framework import pandas_gate
+from testsuite.Paris.RRM.ET.CB009890.resources.python.tti_analysis import numpi as numpy
+
+# Robot Framework Libraries:
+from robot.libraries.BuiltIn import BuiltIn
+
+rbi = BuiltIn()
+pd = None
+np = None
+
+
+def log_begin_end_func_name(fn):
+    def inner(*args, **kwargs):
+        logging.info("============================== Begin Function {0}".format(fn.__name__))
+        func_return = fn(*args, **kwargs)
+        logging.info("============================== End Function {0}".format(fn.__name__))
+        return func_return
+    return inner
+
+
+""" Functions to be used """
+
+
+@log_begin_end_func_name
+def drop_head_tail_entries(df, num=1000):
+    """Function drops num entries from the beginning and the end of the dataframe to compensate for the
+    abnormalities seen in trace during start and stop of traffic"""
+    df = df[num:-num]
+    return df
+
+
+@log_begin_end_func_name
+def filter_valid_events_and_check_CB009890_UL(path_to_pickle, target_pkl_path):
+    """ This function filters needed rows for CB009890 Check and
+        saves it into a new pickle to be used by other functions
+
+        :param path_to_pickle: Path of input pickle file
+        :param target_pkl_path: Path of new target pickle file
+
+        :returns: target_pkl_path
+    """
+    global pd
+    is_Conf_Cell50_correct = True
+    is_Conf_Cell51_correct = True
+    is_Conf_Cell52_correct = True
+    pd = pandas_gate.install_and_import_pandas()
+    df = pd.read_pickle(path_to_pickle)
+    # df = drop_head_tail_entries(df, num=200)
+    df = drop_head_tail_entries(df, num=1000)
+    pd.reset_option('^display.')
+
+    # TTI Trace Events
+    numAllocCellPrbUl_event = 'ulAllocatedPooledResourcesData.numAllocCellPrbUl'
+    activeUlSubcellCount_event = 'ulAllocatedPooledResourcesData.activeUlSubcellCount'
+    activeUlSubcellCountARM_event = 'ulAllocatedPooledResourcesData.activeUlSubcellCountARM'
+    ulAllocatedPooledResourcesData_activeUlSubcellsList = 'ulAllocatedPooledResourcesData.activeUlSubcellsList'
+    ulFdSchedData_numOfPrb_event = 'ulFdSchedData.numOfPrb'
+    isValidWhatIsProposed = 'ulFdSchedData.isValidWhatIsProposed'
+    ulMetricIndData_gbrPrbDemand_event = 'ulMetricIndData.metricIndData.gbrPrbDemand'
+    ulMetricIndData_nonGbrPrbDemand_event = 'ulMetricIndData.metricIndData.nonGbrPrbDemand'
+
+    filtered_df = (
+        df.loc[((df[isValidWhatIsProposed] != 0) & (df['rnti'] != 65535)),
+               ['timeStamp', 'sfn', 'slot', 'rnti', 'lcrId', 'physCellId',
+                numAllocCellPrbUl_event, activeUlSubcellCount_event,
+                activeUlSubcellCountARM_event,
+                ulAllocatedPooledResourcesData_activeUlSubcellsList,
+                ulFdSchedData_numOfPrb_event,
+                ulMetricIndData_gbrPrbDemand_event,
+                ulMetricIndData_nonGbrPrbDemand_event]]).dropna(
+        subset=[
+            numAllocCellPrbUl_event,
+            activeUlSubcellCount_event,
+            activeUlSubcellCountARM_event,
+            ulAllocatedPooledResourcesData_activeUlSubcellsList,
+            ulFdSchedData_numOfPrb_event,
+            ulMetricIndData_gbrPrbDemand_event,
+            ulMetricIndData_nonGbrPrbDemand_event
+        ], how='all').reset_index(drop=True)
+
+    rows = \
+        filtered_df[(filtered_df['physCellId'] == 50) &
+                    (filtered_df[ulAllocatedPooledResourcesData_activeUlSubcellsList].notnull())].index
+    rbi.log(
+        'ulAllocatedPooledResourcesData.activeUlSubcellsList Cell50 Columns used: {} Number of rows: {}'.format(
+            rows, len(rows)),
+        'INFO')
+    data_activeUlSubcellsList_cell50 =\
+        filtered_df.loc[rows, ulAllocatedPooledResourcesData_activeUlSubcellsList]
+    rbi.log(data_activeUlSubcellsList_cell50, 'INFO')
+
+    rows =\
+        filtered_df[(filtered_df['physCellId'] == 51) &
+                    (filtered_df[ulAllocatedPooledResourcesData_activeUlSubcellsList].notnull())].index
+    rbi.log(
+        'ulAllocatedPooledResourcesData.activeUlSubcellsList Cell51 Columns used: {} Number of rows: {}'.format(
+            rows, len(rows)),
+        'INFO')
+    data_activeUlSubcellsList_cell51 =\
+        filtered_df.loc[rows, ulAllocatedPooledResourcesData_activeUlSubcellsList]
+    rbi.log(data_activeUlSubcellsList_cell51, 'INFO')
+
+    rows = \
+        filtered_df[(filtered_df['physCellId'] == 52) &
+                    (filtered_df[ulAllocatedPooledResourcesData_activeUlSubcellsList].notnull())].index
+    rbi.log(
+        'ulAllocatedPooledResourcesData.activeUlSubcellsList Cell52 Columns used: {} Number of rows: {}'.format(
+            rows, len(rows)), 'INFO')
+    data_activeUlSubcellsList_cell52 =\
+        filtered_df.loc[rows, ulAllocatedPooledResourcesData_activeUlSubcellsList]
+    rbi.log(data_activeUlSubcellsList_cell52, 'INFO')
+
+    rbi.log('DF successfully filtered!', 'INFO')
+    rbi.log(filtered_df)
+
+    # Save back to pickle
+    filtered_df.to_pickle(target_pkl_path)
+
+    msg = 'filter_valid_events_and_check_CB009890_UL: activeUlSubcellsList'
+    datedConsole(getHeaderLine(msg + ' cell50', data_activeUlSubcellsList_cell50))
+    datedConsole(getHeaderLine(msg + ' cell51', data_activeUlSubcellsList_cell51))
+    datedConsole(getHeaderLine(msg + ' cell52', data_activeUlSubcellsList_cell52))
+
+    rbi.log('General Verdict : is_Conf_Cell50_correct: {}'.format(is_Conf_Cell50_correct),
+            'INFO')
+    rbi.log('General Verdict : is_Conf_Cell51_correct: {}'.format(is_Conf_Cell51_correct),
+            'INFO')
+    rbi.log('General Verdict : is_Conf_Cell52_correct: {}'.format(is_Conf_Cell52_correct),
+            'INFO')
+    rbi.should_be_true(is_Conf_Cell50_correct and is_Conf_Cell51_correct and is_Conf_Cell52_correct)
+
+    return [target_pkl_path, data_activeUlSubcellsList_cell50,
+            data_activeUlSubcellsList_cell51, data_activeUlSubcellsList_cell52]
+
+
+@log_begin_end_func_name
+def check_CB009890_UL(path_to_pickle, maxNumUlSubcellL1Pool=6, maxNumUlSubcellL1Sp=4):
+
+    global pd
+    global verdict
+    verdict = False
+    pd = pandas_gate.install_and_import_pandas()
+    global tti_df
+    tti_df = pd.read_pickle(path_to_pickle)
+
+    df_cell1 = tti_df[tti_df['physCellId'] == 50]
+    df_cell2 = tti_df[tti_df['physCellId'] == 51]
+    df_cell3 = tti_df[tti_df['physCellId'] == 52]
+    # rbi.log(df_cell1, 'INFO')
+    direction = 'ul'
+    direction_2 = 'Ul'
+
+    global tti_df_activeUlSubcellsList_cell1
+    tti_df_activeUlSubcellsList_cell1 = df_cell1.dropna(
+        subset=['{dir}AllocatedPooledResourcesData.active{dir_2}SubcellsList'.format(dir=direction, dir_2=direction_2)])
+    global tti_df_activeUlSubcellsList_cell1_serie
+    tti_df_activeUlSubcellsList_cell1_serie =\
+        tti_df_activeUlSubcellsList_cell1['{dir}AllocatedPooledResourcesData.active{dir_2}SubcellsList'.format(
+            dir=direction, dir_2=direction_2)]
+    rbi.log(tti_df_activeUlSubcellsList_cell1_serie, 'INFO')
+    global tti_df_activeUlSubcellsList_cell2
+    tti_df_activeUlSubcellsList_cell2 = df_cell2.dropna(
+        subset=['{dir}AllocatedPooledResourcesData.active{dir_2}SubcellsList'.format(dir=direction,
+                                                                                     dir_2=direction_2)])
+    global tti_df_activeUlSubcellsList_cell2_serie
+    tti_df_activeUlSubcellsList_cell2_serie =\
+        tti_df_activeUlSubcellsList_cell2['{dir}AllocatedPooledResourcesData.active{dir_2}SubcellsList'.format(
+            dir=direction, dir_2=direction_2)]
+    rbi.log(tti_df_activeUlSubcellsList_cell2_serie, 'INFO')
+
+    global tti_df_activeUlSubcellsList_cell3
+    tti_df_activeUlSubcellsList_cell3 = df_cell3.dropna(
+        subset=['{dir}AllocatedPooledResourcesData.active{dir_2}SubcellsList'.format(dir=direction, dir_2=direction_2)])
+    global tti_df_activeUlSubcellsList_cell3_serie
+    tti_df_activeUlSubcellsList_cell3_serie =\
+        tti_df_activeUlSubcellsList_cell3['{dir}AllocatedPooledResourcesData.active{dir_2}SubcellsList'.format(
+            dir=direction, dir_2=direction_2)]
+    rbi.log(tti_df_activeUlSubcellsList_cell3_serie, 'INFO')
+
+    len_tti_df_activeUlSubcellsList_cell1_serie = len(list(tti_df_activeUlSubcellsList_cell1_serie))
+    rbi.log('len of tti_df_activeUlSubcellsList_cell1_serie: {}'.format(len_tti_df_activeUlSubcellsList_cell1_serie),
+            'INFO')
+    len_tti_df_activeUlSubcellsList_cell2_serie = len(list(tti_df_activeUlSubcellsList_cell2_serie))
+    rbi.log('len of tti_df_activeUlSubcellsList_cell2_serie: {}'.format(len_tti_df_activeUlSubcellsList_cell2_serie),
+            'INFO')
+    len_tti_df_activeUlSubcellsList_cell3_serie = len(list(tti_df_activeUlSubcellsList_cell3_serie))
+    rbi.log('len of tti_df_activeUlSubcellsList_cell3_serie: {}'.format(len_tti_df_activeUlSubcellsList_cell3_serie),
+            'INFO')
+
+    index = 0
+    for k in (list(tti_df_activeUlSubcellsList_cell1_serie)):
+        # rbi.log('index {} '.format(index), 'INFO')
+        # rbi.log('k {} '.format(k), 'INFO')
+        len_tti_df_activeUlSubcellsList_cell1_index = len(k)
+        # rbi.log('{} with len {}'.format(k,len_tti_df_activeDlSubcellsList_cell1_index), 'INFO')
+        len_tti_df_activeUlSubcellsList_cell2_index = len((list(tti_df_activeUlSubcellsList_cell2_serie))[index])
+        len_tti_df_activeUlSubcellsList_cell3_index = len((list(tti_df_activeUlSubcellsList_cell3_serie))[index])
+        # rbi.log('len cell2 {} and len cell3 {}'.format(len_tti_df_activeDlSubcellsList_cell2_index,
+        #                                                len_tti_df_activeDlSubcellsList_cell3_index),
+        #         'INFO')
+        sumAllUlSubCell = len_tti_df_activeUlSubcellsList_cell1_index + len_tti_df_activeUlSubcellsList_cell2_index
+        sumAllUlSubCell = sumAllUlSubCell + len_tti_df_activeUlSubcellsList_cell3_index
+        sumAllUlSubCell_spool0 = len_tti_df_activeUlSubcellsList_cell1_index
+        sumAllUlSubCell_spool0 = sumAllUlSubCell_spool0 + len_tti_df_activeUlSubcellsList_cell3_index
+        sumAllUlSubCell_spool1 = len_tti_df_activeUlSubcellsList_cell2_index
+        # rbi.log('sumAllDlSubCell for {} is {}'.format(index, sumAllDlSubCell), 'INFO')
+        verdict = (sumAllUlSubCell == int(maxNumUlSubcellL1Pool))
+        verdict_spool0 = (sumAllUlSubCell_spool0 <= int(maxNumUlSubcellL1Sp))
+        verdict_spool1 = (sumAllUlSubCell_spool1 <= int(maxNumUlSubcellL1Sp))
+        if not verdict:
+            msg = 'maxNumUlSubcellL1Pool'
+            datedConsole(getHeaderLine(msg, maxNumUlSubcellL1Pool))
+            msg = 'check CB009890 Verdict_maxNumUlSubcellL1Pool'
+            datedConsole(getHeaderLine(msg, verdict))
+            rbi.log('check_CB009890_UL: verdict is {}'.format(verdict), 'INFO')
+            msg = 'maxNumUlSubcellL1Sp'
+            datedConsole(getHeaderLine(msg, maxNumUlSubcellL1Sp))
+            msg = 'check CB009890 verdict_spool0_maxNumUlSubcellL1Sp'
+            datedConsole(getHeaderLine(msg, verdict_spool0))
+            rbi.log('check_CB009890_UL: verdict_spool0 is {}'.format(verdict_spool0), 'INFO')
+            msg = 'check CB009890 verdict_spool1_maxNumUlSubcellL1Sp'
+            datedConsole(getHeaderLine(msg, verdict_spool1))
+            rbi.log('verdict_sumAllUlSubCell is failed for index {} with sumAllUlSubCell = {}'.format(index,
+                                                                                                      sumAllUlSubCell),
+                    'INFO')
+            rbi.fail('[ERR] verdict is failed on {} rows [maxNumUlSubcellL1Pool={}]'.format(index,
+                                                                                            maxNumUlSubcellL1Pool))
+            # break
+        if not verdict_spool0:
+            msg = 'maxNumUlSubcellL1Pool'
+            datedConsole(getHeaderLine(msg, maxNumUlSubcellL1Pool))
+            msg = 'check CB009890 Verdict_maxNumUlSubcellL1Pool'
+            datedConsole(getHeaderLine(msg, verdict))
+            rbi.log('check_CB009890_UL: verdict is {}'.format(verdict), 'INFO')
+            msg = 'maxNumUlSubcellL1Sp'
+            datedConsole(getHeaderLine(msg, maxNumUlSubcellL1Sp))
+            msg = 'check CB009890 verdict_spool0_maxNumUlSubcellL1Sp'
+            datedConsole(getHeaderLine(msg, verdict_spool0))
+            rbi.log('check_CB009890_UL: verdict_spool0 is {}'.format(verdict_spool0), 'INFO')
+            msg = 'check CB009890 verdict_spool1_maxNumUlSubcellL1Sp'
+            datedConsole(getHeaderLine(msg, verdict_spool1))
+            rbi.log('check_CB009890_UL: verdict_spool1 is {}'.format(verdict_spool1), 'INFO')
+            rbi.should_be_true(verdict)
+            rbi.should_be_true(verdict_spool0)
+            rbi.should_be_true(verdict_spool1)
+            msg = 'verdict_spool0 is failed for index {} with sumAllUlSubCell spool0 = {}'
+            rbi.log(msg.format(index, sumAllUlSubCell_spool0), 'INFO')
+            rbi.fail('[ERR] verdict is failed on {} rows [maxNumUlSubcellL1Pool={}]'.format(index,
+                                                                                            maxNumUlSubcellL1Pool))
+            # break
+        if not verdict_spool1:
+            msg = 'maxNumUlSubcellL1Pool'
+            datedConsole(getHeaderLine(msg, maxNumUlSubcellL1Pool))
+            msg = 'check CB009890 Verdict_maxNumUlSubcellL1Pool'
+            datedConsole(getHeaderLine(msg, verdict))
+            rbi.log('check_CB009890_UL: verdict is {}'.format(verdict), 'INFO')
+            msg = 'maxNumUlSubcellL1Sp'
+            datedConsole(getHeaderLine(msg, maxNumUlSubcellL1Sp))
+            msg = 'check CB009890 verdict_spool0_maxNumUlSubcellL1Sp'
+            datedConsole(getHeaderLine(msg, verdict_spool0))
+            rbi.log('check_CB009890_UL: verdict_spool0 is {}'.format(verdict_spool0), 'INFO')
+            msg = 'check CB009890 verdict_spool1_maxNumUlSubcellL1Sp'
+            datedConsole(getHeaderLine(msg, verdict_spool1))
+            rbi.log('check_CB009890_UL: verdict_spool1 is {}'.format(verdict_spool1), 'INFO')
+            rbi.should_be_true(verdict)
+            rbi.should_be_true(verdict_spool0)
+            rbi.should_be_true(verdict_spool1)
+            msg = 'verdict_spool1 is failed for index {} with sumAllUlSubCell spool1= {}'
+            rbi.log(msg.format(index, sumAllUlSubCell_spool1), 'INFO')
+            rbi.fail('[ERR] verdict is failed on {} rows [maxNumUlSubcellL1Pool={}]'.format(index,
+                                                                                            maxNumUlSubcellL1Pool))
+            # break
+        if not verdict or not verdict_spool0 or not verdict_spool1:
+            break
+        index = index + 1
+
+    msg = 'maxNumUlSubcellL1Pool'
+    datedConsole(getHeaderLine(msg, maxNumUlSubcellL1Pool))
+    msg = 'check CB009890 Verdict_maxNumUlSubcellL1Pool'
+    datedConsole(getHeaderLine(msg, verdict))
+    rbi.log('check_CB009890_UL: verdict is {}'.format(verdict), 'INFO')
+    msg = 'maxNumUlSubcellL1Sp'
+    datedConsole(getHeaderLine(msg, maxNumUlSubcellL1Sp))
+    msg = 'check CB009890 verdict_spool0_maxNumUlSubcellL1Sp'
+    datedConsole(getHeaderLine(msg, verdict_spool0))
+    rbi.log('check_CB009890_UL: verdict_spool0 is {}'.format(verdict_spool0), 'INFO')
+    msg = 'check CB009890 verdict_spool1_maxNumUlSubcellL1Sp'
+    datedConsole(getHeaderLine(msg, verdict_spool1))
+    rbi.log('check_CB009890_UL: verdict_spool1 is {}'.format(verdict_spool1), 'INFO')
+    rbi.should_be_true(verdict)
+    rbi.should_be_true(verdict_spool0)
+    rbi.should_be_true(verdict_spool1)

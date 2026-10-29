@@ -1,0 +1,242 @@
+heat_template_version: 2016-04-08
+description: Template to instantiate non-redundant management node instance
+
+parameters:
+  name:
+    description: Name to be used as the host name for the instance
+    type: string
+    default: OAM-0
+  oam_net:
+    description: Public network from which to allocate external OAM IP
+    type: json
+  internal_networks:
+    description: Internal networks
+    type: json
+  external_networks:
+    type: json
+    description: External networks
+  service_ip_meta:
+    type: json
+    description: internal-service-ip-pool metadata parameters
+    default: {}
+  key_name:
+    type: string
+    description: Name of key pair to assign to servers
+    default: rcpkey
+    constraints:
+      - custom_constraint: nova.keypair
+  timezone:
+    type: string
+    constraints:
+      - custom_constraint: timezone
+  dpdk_type:
+    type: string
+    default: none
+  ntp_servers:
+    type: comma_delimited_list
+    constraints:
+      - length: {min: 1, max: 3}
+  ntp_prefer:
+    type: string
+    default: ""
+  cluster_id:
+    type: string
+    description: Cluster identity
+    constraints:
+      - allowed_pattern: "[a-zA-Z0-9_-]+"
+  dns_forwarders:
+    description: Comma separated list of servers to forward queries to
+    type: comma_delimited_list
+    constraints:
+      - length: {min: 0, max: 3}
+    default: []
+  nfs_volumes:
+    type: json
+    description: Volumes to ba attached an shared via NFS
+    default:
+      count: 0
+      vol_list: []
+  local_volumes:
+    type: json
+    description: Local volumes to be attached
+    default:
+      count: 0
+      volumes: []
+  ha_cluster:
+    description: HA nodes acting as etcd member instances and quorate voter
+    type: string
+    default: OAM-0
+  instance_params:
+    type: json
+  roles:
+    description: Deployment roles associated
+    type: comma_delimited_list
+    default: [management, storage, 5gbts_oam]
+  password:
+    description: password to use for RCP account
+    type: json
+  vif_model:
+    type: string
+    description: virtual interface model
+    default: avp
+  availability-zone:
+    description: availability zone region
+    type: string
+  extra_cloud_config_data:
+    type: json
+    description: custom cloud init configuration
+    default: {}
+  number_of_nodes:
+    type: json
+    description: node count information
+    default: {}
+  config_external_ip:
+    description: configure external ip and roles if set true
+    type: string
+  cloudplatform_mapping:
+    type: json
+    default:
+      enabled: NCIR
+      disabled: ~
+
+resources:
+## Networking
+  ports:
+    type: 5GBTS::Networks::OAM
+    properties:
+      oam_network: {get_param: oam_net}
+      internal_networks: {get_param: internal_networks}
+      external_networks: {get_param: external_networks}
+      vif_model: {get_param: vif_model}
+      name_prefix: {get_param: name}
+
+# Shared disks
+  nfs_vol:
+    type: RCP::VolumeGroup::NFS
+    properties:
+      nfs_host:
+        str_replace:
+          template: $vm.local
+          params:
+            $vm: {get_param: name}
+      volumes: {get_param: [nfs_volumes]}
+  nfs_vol_attach:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: {get_param: [nfs_volumes, count]}
+      resource_def:
+        type: RCP::Volume::Attachment
+        properties:
+          index: "%index%"
+          server: {get_resource: server}
+          volumes: {get_attr: [nfs_vol, volume_id]}
+# Local disks
+  local_vol:
+    type: RCP::VolumeGroup::Local
+    properties:
+      volumes: {get_param: [local_volumes]}
+  local_vol_attach:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: {get_param: [local_volumes, count]}
+      resource_def:
+        type: RCP::Volume::Attachment
+        properties:
+          index: "%index%"
+          server: {get_resource: server}
+          volumes: {get_attr: [local_vol, volume_id]}
+
+## Native cloud-init parametes
+  cloud_config:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        fetch_public_key:
+          - {path: /run/authorized_keys, permissions: '0600'}
+        timezone: {get_param: timezone}
+
+  extra_cloud_config:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        {get_param: extra_cloud_config_data}
+
+  cloud_init:
+    type: OS::Heat::MultipartMime
+    properties:
+      parts:
+        - config: {get_resource: cloud_config}
+          subtype: cloud-config
+        - config: {get_resource: extra_cloud_config}
+          subtype: cloud-config
+
+### OAM Instance
+  server:
+    type: OS::Nova::Server
+    properties:
+      name: {get_param: name}
+      image: {get_param: [instance_params, server, image]}
+      flavor: {get_param: [instance_params, server, flavor]}
+      key_name: {get_param: key_name}
+      availability_zone: {get_param: availability-zone}
+      networks: {get_attr: [ports, ports]}
+      user_data_format: RAW
+      user_data: {get_resource: cloud_init}
+      metadata:
+        map_merge:
+          -
+            database: {get_attr: [ports, internal_ip]}
+            dpdk-conf-type: {get_param: dpdk_type}
+            ntp-servers: {get_param: ntp_servers}
+            ntp-server-prefer: {get_param: ntp_prefer}
+            dns-forwarders: {get_param: dns_forwarders}
+            ha_db_backend: memory
+            ha_db_memory_size: 256
+            roles: {get_param: roles}
+            cluster-id: {get_param: cluster_id}
+            etcd-instances: [get_param: ha_cluster]
+            quorate-monitor-voter-nodes: [get_param: ha_cluster]
+            storage.install: True
+            password: {get_param: password}
+            enable_internal_dhcp: false
+          -
+            get_attr: [ports, ip-info]
+          -
+            get_attr: [ports, oam-info]
+          -
+            get_param: service_ip_meta
+          -
+            get_attr: [local_vol, provider_map]
+          -
+            get_attr: [nfs_vol, provider_map]
+          -
+            get_param: number_of_nodes
+          -
+            ext-ip-config-physical: {get_attr: [ports, ext-ip-config]}
+            cloudplatform:
+              get_param:
+              - cloudplatform_mapping
+              - get_param: config_external_ip
+      config_drive: true
+
+outputs:
+  oam_ip:
+    description: OAM IP address allocated to access the system
+    value: {get_attr: [ports, oam_ip]}
+  internal_ip:
+    description: Internal IP address allocated to access the node
+    value: {get_attr: [ports, internal_ip]}
+  volume_map:
+    description: Storage user metadata map for shared NFS disks
+    value: {get_attr: [nfs_vol, user_map]}
+  ports:
+    value: {get_attr: [ports, ports]}
+  ip-info:
+    value: {get_attr: [ports, ip-info]}
+
+  int_ports:
+    value: {get_attr: [ports, int_ports]}
+  ext_ports:
+    value: {get_attr: [ports, ext_ports]}
+  oam_port:
+    value: {get_attr: [ports, oam_port]}

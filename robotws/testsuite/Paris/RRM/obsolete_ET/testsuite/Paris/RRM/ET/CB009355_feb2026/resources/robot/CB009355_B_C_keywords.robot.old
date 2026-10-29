@@ -1,0 +1,204 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB009355 step B & C
+...
+...               Test Case Scenario author   : yann.ah.herve@nokia.com / jing.tian@nokia.com
+...               Test Case Scenario contact  : yann.ah.herve@nokia.com / jing.tian@nokia.com
+...               Test Case automation author : yann.ah.herve@nokia.com / jing.tian@nokia.com
+...               Test Case automation contact: yann.ah.herve@nokia.com / jing.tian@nokia.com
+...               Creation Date               : 10-January-2024
+...               Last Modified by            :
+...               Modification:
+...                       10-January-2024     | Creation
+
+Library           ../python/getti_events.py
+
+Resource          ./CB009355_common_keywords.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/KPIs.robot
+
+*** Variables ***
+
+# DL and UL throughputs in Mbps
+${DL_15MHz_max_tput}               200
+${UL_15MHz_max_tput}               20
+${nb_UEs}                          10
+${nb_UEs_robustness}               5
+
+${nb_loops}                        6
+
+${delta_scf_B_B2_TC3}              testsuite/Paris/RRM/ET/CB009355/resources/config/Delta_Configuration_scf_B_B2_TC3.json
+${delta_scf_C_B1_TC1}              testsuite/Paris/RRM/ET/CB009355/resources/config/Delta_Configuration_scf_C_B1_TC1.json
+${delta_scf_C_Robustness}          testsuite/Paris/RRM/ET/CB009355/resources/config/Delta_Configuration_scf_C_Robustness.json
+${TC_B_B2_TC3_PM_constraints}      testsuite/Paris/RRM/ET/CB009355/resources/config/TC_B_B2_TC3_PM_Constraints.csv
+${TC_C_B1_TC1_PM_constraints}      testsuite/Paris/RRM/ET/CB009355/resources/config/TC_C_B1_TC1_PM_Constraints.csv
+${TC_C_Robustness_PM_constraints}  testsuite/Paris/RRM/ET/CB009355/resources/config/TC_C_Robustness_PM_Constraints.csv
+
+&{ABIO_config}                      ru_name=AZHL
+...                                 pm_target=${TC_B_B2_TC3_PM_constraints}
+...                                 delta_scf=${delta_scf_B_B2_TC3}
+...                                 wts_model=WTS_CFG_MODEL1
+
+&{ABIP_config}                      ru_name=AEHC
+...                                 pm_target=${TC_C_B1_TC1_PM_constraints}
+...                                 delta_scf=${delta_scf_C_B1_TC1}
+...                                 wts_model=WTS_CFG_MODEL3
+
+&{bb_board_configs}                 ABIO=${ABIO_config}
+...                                 ABIP=${ABIP_config}
+
+@{SA_UE_List}
+
+*** Keywords ***
+
+CB9355_B_C Build UE List
+    [Arguments]                        ${numb_UEs}=10
+
+    # Build UE list
+    FOR        ${ue_id}      IN RANGE        1        ${numb_UEs} + 1
+        &{ue_in_list}=                  Copy dictionary     ${BASIC_UE_SA}
+        Set To Dictionary               ${ue_in_list}       ue          ${ue_id}
+        Set To Dictionary               ${ue_in_list}       pdu         1
+        Append To List                  ${SA_UE_List}       ${ue_in_list}
+    END
+
+CB9355_B_C Attach_all_UEs
+    FOR        ${current_ue}            IN         @{SA_UE_List}
+        UE Register                     ue=${current_ue.ue}
+        Launch PDU Session              ue=${current_ue.ue}    pdu=${current_ue.pdu}    gw=${current_ue.ue}
+    END
+
+CB9355_B_C Detach_all_UEs
+    FOR        ${current_ue}            IN         @{SA_UE_List}
+        UE Deregister                   id=${current_ue.ue}
+    END
+
+CB009355-B_C_Multi_UEs_attachment_and_traffic
+    [Documentation]     This test aims to check the multiple UEs attach/data transfer with
+    ...                 setup of TDD cell in 15MHz bandwidth followed by system information transmission.
+    ...                 -B is targetting ABIO BB boards
+    ...                 The test is done in SA mode on ABIO or ABIP, AZHL or AEHC depending on input parameter.
+
+    [Arguments]         ${bb_board}
+
+    ${test_config}      Get From Dictionary     ${bb_board_configs}     ${bb_board}
+    ${test_ru}          Get From Dictionary     ${test_config}          ru_name
+    ${test_pm_target}   Get From Dictionary     ${test_config}          pm_target
+    ${test_delta_scf}   Get From Dictionary     ${test_config}          delta_scf
+    ${wts_model}        Get From Dictionary     ${test_config}          wts_model
+
+    Init Sequence   "CB009355_B_C_Multi_UEs"
+    Dated Log New Line                  ---> Starting gNB commissioning
+
+    # Update SCF file, move 2 first TDD cells to 15 MHz (change band, BW, PDCCH configuration, ...)
+    Critical Step   CB009355_Update_SCF                 ${test_delta_scf}
+    Critical Step   CB009355_Update_iPHY_RU_model       ${test_ru}
+    Critical Step   CB009355_Update_Wts_config_file     ${wts_model}      1
+
+    Dated Log New Line                                  ---> Restart TL
+    Critical Step   Restart TL
+    Dated Log New Line                                  ---> WTS setup SA
+
+    # This KW is common to both ABIP and ABIO TLs. However, sytnax of cfg files are not the same
+    # between the twos...
+    # For ABIO, it's the new configuration with 20 SA UEs by default.
+    Run Keyword If  "${bb_board}" == "ABIP"
+    ...             WTS Setup                           nbUe=${nb_UEs}
+    ...                                                 nbSaUe=${nb_UEs}
+    ...                                                 shouldUseLua=${True}
+    ...             ELSE
+    ...             WTS Setup                           shouldUseLua=${False}
+
+    Step            CB9355_B_C Build UE List            numb_UEs=${nb_UEs}
+
+    Critical Step   CB9355_B_C Attach_all_UEs
+    ${DL_tput_15MHz_per_UE}                 Evaluate        int(${DL_15MHz_max_tput} / ${nb_UEs}) + 1
+    Critical Step   Traffic UEs DL          ueSettingList=${SA_UE_List}
+    ...                                     duration=10s        shouldBeStop=False      shouldBeCheck=False
+    ...                                     throughput=${DL_tput_15MHz_per_UE}
+
+    ${UL_tput_15MHz_per_UE}                 Evaluate        int(${UL_15MHz_max_tput} / ${nb_UEs}) + 1
+    Critical Step   Traffic UEs UL          ueSettingList=${SA_UE_List}
+    ...                                     duration=10s        shouldBeStop=False      shouldBeCheck=False
+    ...                                     throughput=${UL_tput_15MHz_per_UE}
+
+    ${zoi}          ZOI Start
+    ZOI Wait End    zoi=${zoi}
+
+    Step            Traffic Stop UEs                ueSettingList=${SA_UE_List}     dir=dl
+    Step            Traffic Stop UEs                ueSettingList=${SA_UE_List}     dir=ul
+
+    Step            CB9355_B_C Detach_all_UEs
+
+    # KPIs and counters checks
+    ${pm_path}      Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+    KPI Evaluate    pmFile=${pm_path}
+    ...             constraintsFile=${test_pm_target}
+    ...             failOnError=${True}
+
+CB009355-C_TC5_ET_Robustness_Scenario
+
+    [Documentation]     This user scenario aims at checking TDD cell with 15MHz bandwidth robustness.
+    ...                 It attaches / detaches several UEs and sent max DL/UL traffic
+    ...                 in loops over a long duration (~30 mn) with AEHC.
+
+    Init Sequence   "CB009355_C_TC5_ET_Robustness_Scenario"
+    Dated Log New Line                  ---> Starting gNB commissioning
+
+    # Update SCF file, move the first TDD cells to 15 MHz (change band, BW, PDCCH configuration, W...)
+    Critical Step   CB009355_Update_SCF                 ${delta_scf_C_Robustness}
+    Critical Step   CB009355_Update_iPHY_RU_model       AEHC
+    Critical Step   CB009355_Update_Wts_config_file     WTS_CFG_MODEL1      1
+
+    Dated Log New Line                                  ---> Restart TL
+    Critical Step   Restart TL
+    Dated Log New Line                                  ---> WTS setup SA
+    Critical Step   WTS Setup                           shouldUseLua=${False}
+
+    Step            CB9355_B_C Build UE List            numb_UEs=${nb_UEs_robustness}
+
+    FOR        ${loop}      IN RANGE        ${nb_loops}
+        Dated Log New Line              ---> Starting loop ${loop}
+
+        Critical Step   CB9355_B_C Attach_all_UEs
+        ${DL_tput_15MHz_per_UE}                 Evaluate        int(${DL_15MHz_max_tput} / ${nb_UEs_robustness}) + 1
+        Critical Step   Traffic UEs DL          ueSettingList=${SA_UE_List}
+        ...                                     duration=10s        shouldBeStop=False      shouldBeCheck=False
+        ...                                     throughput=${DL_tput_15MHz_per_UE}
+
+        ${UL_tput_15MHz_per_UE}                 Evaluate        int(${UL_15MHz_max_tput} / ${nb_UEs_robustness}) + 1
+        Critical Step   Traffic UEs UL          ueSettingList=${SA_UE_List}
+        ...                                     duration=10s        shouldBeStop=False      shouldBeCheck=False
+        ...                                     throughput=${UL_tput_15MHz_per_UE}
+
+        ${zoi}                          ZOI Start
+        ${zoi_end_remain}=              ZOI Remaining Sec           ${zoi}
+        ${start_loop_remaining}=        Evaluate                    ${zoi_end_remain} - ${GP_DEF}
+        # To be sure to have a GP fully filled with the same events inside every loop and avoid changing KPIs/counters:
+        # If ZOI start is T0, ZOI end is T0 + ${GUARD_DELAY_DEF} + ${GP_DEF} + ${PM_AVAIL_DELAY_DEF}
+        # So, test is started at the beginning of the GP before ZOI end, so:
+        # ZOI End - ${GP_DEF}
+        # Ex. 1: ZOI start is 10h02 => ZOI End is 10h02 + 40s (GUARD_DELAY_DEF) + 1 GP + 1 mn (PM_AVAIL_DELAY_DEF)
+        #        => Time for next GP for ZOI End is 10h11, so test is started at 10h06 and KPIs retrieved at 10h11
+        # Ex. 2: ZOI start is 10h14:40s => ZOI End is 10h14:40 + 40s (GUARD_DELAY_DEF) + 1 GP + 1 mn (PM_AVAIL_DELAY_DEF)
+        #        => Time for next GP for ZOI End is 10h26 as gaurd delay excedd thenext GP frontier,
+        #        so test is started at 10h21 and KPIs retrieved at 10h26
+        # And, test duration must not exceed 1 GP - 1 mn per loop
+        Traced Sleep                    ${start_loop_remaining} seconds
+        ...                             msg=before starting scenario
+
+        Dated Log New Line               ---> Waiting for end of ZOI
+        ZOI Wait End                     zoi=${zoi}
+
+        Step            Traffic Stop UEs                ueSettingList=${SA_UE_List}     dir=dl
+        Step            Traffic Stop UEs                ueSettingList=${SA_UE_List}     dir=ul
+
+        Step            CB9355_B_C Detach_all_UEs
+
+        # KPIs and counters checks
+        ${pm_path}                      Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+        KPI Evaluate                    pmFile=${pm_path}
+        ...                             constraintsFile=${TC_C_Robustness_PM_constraints}
+        ...                             failOnError=${True}
+
+    END

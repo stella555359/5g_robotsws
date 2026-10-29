@@ -1,0 +1,257 @@
+import csv
+import logging
+from robot.libraries.BuiltIn import BuiltIn
+
+
+def _create_list_from_tti_trace_csv(direction, directory=None):
+    direction = direction.lower()
+    if directory is None:
+        directory = BuiltIn().get_variable_value("${parent_directory}")
+    csv_path = "/".join([BuiltIn().get_variable_value("${OUTPUTDIR}"),
+                         BuiltIn().get_variable_value("${SUITENAME}"),
+                         BuiltIn().get_variable_value("${TESTNAME}"),
+                         directory,
+                         "output_{}.csv".format(direction)])
+    logging.info("csv path is {}".format(csv_path))
+    tti_trace_ul = open(csv_path)
+    csv_list = list(csv.reader(tti_trace_ul))
+    return csv_list
+
+
+def _create_list_from_column(tti_trace_list, column_name):
+    try:
+        sr_column_index = tti_trace_list[0].index(column_name)
+    except ValueError:
+        raise ValueError("No such column {} in tti traces. Available columns are {}".format(column_name,
+                                                                                            tti_trace_list[0]))
+    list_from_single_column = [row[sr_column_index] for row in tti_trace_list[1:]]
+    return list_from_single_column
+
+
+def _filter_tti_traces_by_column_and_value(tti_data, column, value):
+    column_index = tti_data[0].index(column)
+    header = tti_data[0]
+    content = tti_data[1:]
+    tti_traces_filtered = [header] + [row for row in content if row[column_index] == value]
+    return tti_traces_filtered
+
+
+def _filter_out_tti_traces_with_value(tti_data, column, value):
+    column_index = tti_data[0].index(column)
+    header = tti_data[0]
+    content = tti_data[1:]
+    tti_traces_filtered = [header] + [row for row in content if row[column_index] != value]
+    return tti_traces_filtered
+
+
+def _filter_out_tti_traces_with_different_values_than(tti_data, column, values):
+    column_index = tti_data[0].index(column)
+    header = tti_data[0]
+    content = tti_data[1:]
+    tti_traces_filtered = [header] + [row for row in content if row[column_index] in values]
+    return tti_traces_filtered
+
+
+def _get_csi_report_dtx_ratio(tti_data):
+    column_index = tti_data[0].index('csiSrReportData.dtx')
+    content = tti_data[1:]
+    tti_traces_filtered = [row for row in content if row[column_index] == 'DTX']
+    dtx_ratio = round(float(len(tti_traces_filtered)) * 100 / len(content), 2)
+    logging.debug("{} CSI reports. {} reports with DTX".format(len(content), len(tti_traces_filtered)))
+    logging.debug("DTX ratio is {}".format(dtx_ratio))
+    return dtx_ratio
+
+
+def verify_if_mcs_calculation_is_applied():
+    """
+    Verifies if mcs calculation is applied
+    """
+    cell_id = '55'
+    expected_mcs = '5.0'
+    tti_data = _create_list_from_tti_trace_csv('dl')
+    scell_tti_traces = _filter_tti_traces_by_column_and_value(tti_data, column='physCellId', value=cell_id)
+    dl_used_mcs_values = _create_list_from_column(scell_tti_traces, column_name='dlFdSchedData.rrmDlUsedMcs')
+    logging.debug("All used mcs values: {}".format(dl_used_mcs_values))
+    assert expected_mcs in dl_used_mcs_values, \
+        "There was no {} mcs. Found only {}".format(expected_mcs, dl_used_mcs_values)
+
+
+def verify_if_ul_transmission_is_done_via_pcell_only():
+    """
+    Verifies if UL tranmission was done only via PCell
+    """
+    pcell_id = '50'
+    tti_data = _create_list_from_tti_trace_csv('ul')
+    traffic_tti_traces = _filter_out_tti_traces_with_value(tti_data,
+                                                           column='ulFdSchedData.rrmBufferedDataUlTotal_bytes',
+                                                           value="")
+    column_values = _create_list_from_column(traffic_tti_traces, column_name='physCellId')
+    cells_with_transmission = set(column_values)
+    assert set(column_values) == {pcell_id}, \
+        "Transmission is done on cell(s) {} instead of {}".format(cells_with_transmission, pcell_id)
+
+
+def verify_csi_reports_dtx_ratio(phys_cells_ids, accepted_ratio):
+    """
+    Verifies if there is not too many DTX while sending CSI reports
+    :param phys_cells_ids: physical id of cells, separated by comma, like: 51,52,53
+    :param accepted_ratio: dtx ratio that is acceptable
+    :return:
+    """
+    accepted_ratio = float(accepted_ratio)
+    cells = phys_cells_ids.split(',')
+    tti_data = _create_list_from_tti_trace_csv('dl')
+    csi_tti_traces = _filter_tti_traces_by_column_and_value(tti_data,
+                                                            column='csiSrReportData.reportType',
+                                                            value='PERIODIC_CSI')
+    for cell in cells:
+        csi_reports_on_cell = _filter_tti_traces_by_column_and_value(csi_tti_traces, column='physCellId', value=cell)
+        dtx_ratio = _get_csi_report_dtx_ratio(csi_reports_on_cell)
+        assert dtx_ratio <= accepted_ratio, \
+            "DTX ratio on cell {} for CSI reports is to high. Expected below {}, got {}".format(cell,
+                                                                                                accepted_ratio,
+                                                                                                dtx_ratio)
+
+
+def verify_if_ue_performs_csi_measurement_reports_on_all_carriers(phys_cells_ids):
+    """
+    Verifies if UE performs CSI measurement reports on all carriers
+    :param phys_cells_ids: physical id of cells
+    """
+    cells_ids = set(phys_cells_ids.split(','))
+    tti_data = _create_list_from_tti_trace_csv('dl')
+    csi_tti_traces = _filter_tti_traces_by_column_and_value(tti_data,
+                                                            column='csiSrReportData.reportType',
+                                                            value='PERIODIC_CSI')
+    column_values = _create_list_from_column(csi_tti_traces, column_name='physCellId')
+    csi_reports_cells = set(column_values)
+    assert csi_reports_cells.intersection(cells_ids), \
+        "Reports are sent for cells {} instead of {}".format(csi_reports_cells, cells_ids)
+
+
+def verify_if_csi_measurement_reports_are_done_via_dedicated_pucch_format3(pcell, scells=None):
+    """
+    Verifies if CSI measurements reports are done via dedicated PUCCH Format3 on PCell for all cells
+    :param pcell: id of primary cell
+    :param scells: id of SCells, separated by comma like: 51,53, if not provided than omits SCells verification
+    :return:
+    """
+    tti_data = _create_list_from_tti_trace_csv('dl')
+    csi_tti_traces = _filter_tti_traces_by_column_and_value(tti_data,
+                                                            column='csiSrReportData.reportType',
+                                                            value='PERIODIC_CSI')
+    pcell_csi_tti_traces = _filter_tti_traces_by_column_and_value(csi_tti_traces, column='physCellId', value=pcell)
+    pcell_pucch_format_values = _create_list_from_column(pcell_csi_tti_traces,
+                                                         column_name='csiSrReportData.pucchFormat')
+    logging.debug("All PCell reports have formats: {}".format(pcell_pucch_format_values))
+    assert set(pcell_pucch_format_values) == {'FORMAT_3'}
+    if scells is not None:
+        scells = scells.split(',')
+        scells_csi_tti_traces = _filter_out_tti_traces_with_different_values_than(csi_tti_traces,
+                                                                                  column='physCellId',
+                                                                                  values=scells)
+        scells_csi_tti_traces = _filter_out_tti_traces_with_value(scells_csi_tti_traces,
+                                                                  column='csiSrReportData.pucchFormat',
+                                                                  value='FORMAT_3')
+        scell_pucch_format_values = _create_list_from_column(scells_csi_tti_traces,
+                                                             column_name='csiSrReportData.pucchFormat')
+        logging.debug("All SCells reports have formats: {}".format(scell_pucch_format_values))
+        assert set(scell_pucch_format_values) == {'FOR_SCELL'}, \
+            "PUCCH format on scells is {} instead of FOR_SCELL only".format(scell_pucch_format_values)
+
+
+def verify_if_ssb_beam_reports_are_done_via_dedicated_pucch_format3():
+    """
+    Verifies if SSB beam reports are done via dedicated PUCCH Format3
+    """
+    tti_data = _create_list_from_tti_trace_csv('dl')
+    beam_reports_tti_traces = _filter_out_tti_traces_with_value(tti_data,
+                                                                column='dlBeamData.currentBestBeamId',
+                                                                value="")
+    beam_reports_pucch_format = _create_list_from_column(beam_reports_tti_traces,
+                                                         column_name='csiSrReportData.pucchFormat')
+    assert set(beam_reports_pucch_format) == {'FORMAT_3'}, \
+        "Beam report PUCCH format is {} instead of FORMAT_3 only".format(beam_reports_pucch_format)
+
+
+def verify_if_beam_has_changed():
+    """
+    Verify if beam has changed. Default best beam id is 0.0 so this method checks if it has changed to 1.0
+    """
+    selected_best_beam_id = {'1.0'}
+    tti_data = _create_list_from_tti_trace_csv('dl')
+    traffic_tti_traces = _filter_out_tti_traces_with_value(tti_data,
+                                                           column='dlBeamData.selectedBestBeamId',
+                                                           value='')
+    selected_best_beam_id_values = set(_create_list_from_column(traffic_tti_traces,
+                                                                column_name='dlBeamData.selectedBestBeamId'))
+    assert selected_best_beam_id_values == selected_best_beam_id, \
+        "Beam has not changed. Expected {}, got {}".format(selected_best_beam_id, selected_best_beam_id_values)
+
+
+def verify_if_csi_rs_is_present_after_scell_activation(expected_csi_rs_config, cell_id):
+    """
+    Verify CSI-RS are present after Scell activation
+    :param expected_csi_rs_config: expected value of csiRsConfig for SCell
+    :param cell_id: physical id of SCell
+    """
+    tti_data = _create_list_from_tti_trace_csv('dl')
+    tti_for_cell = _filter_tti_traces_by_column_and_value(tti_data, column='physCellId', value=cell_id)
+    tti_for_cell_without_blanks = _filter_out_tti_traces_with_value(tti_for_cell,
+                                                                    column='csiRsSchedData.csiRsConfig',
+                                                                    value="")
+    csi_rs_values = _create_list_from_column(tti_for_cell_without_blanks, column_name='csiRsSchedData.csiRsConfig')
+    logging.debug("final list")
+    logging.debug("All used selectedBestBeamId values: {}".format(csi_rs_values))
+    assert set(csi_rs_values) == {expected_csi_rs_config}
+
+
+def verify_that_beam_reports_are_not_sent_for_specific_cell(cell_id):
+    """
+    Verify that beam reports are not sent for cell ( only works when they do appear on other )
+    :param cell_id: physical id of SCell
+    """
+    tti_data = _create_list_from_tti_trace_csv('dl')
+    tti_for_cell = _filter_tti_traces_by_column_and_value(tti_data, column='physCellId', value=cell_id)
+    list_of_beam_reports = _create_list_from_column(tti_for_cell, column_name='dlBeamData.subCellId')
+    assert list(set(list_of_beam_reports))[0] == ""
+
+
+def _verify_correct_currentbestbeamid_was_selected(tti_data, expected_currentbetbeamid_value, cell_id):
+    tti_for_cell = _filter_tti_traces_by_column_and_value(tti_data, column='physCellId', value=cell_id)
+    tti_with_beam_data_for_cell = _filter_out_tti_traces_with_value(tti_for_cell,
+                                                                    column='dlBeamData.currentBestBeamId',
+                                                                    value="")
+    list_of_beam_reports = _create_list_from_column(tti_with_beam_data_for_cell,
+                                                    column_name='dlBeamData.currentBestBeamId')
+    logging.debug("Measured value is : {}".format(set(list_of_beam_reports)))
+    assert set(list_of_beam_reports) == {expected_currentbetbeamid_value}
+
+
+def verify_that_beam_reports_are_sent_for_cell(cell_id):
+    """
+    Verify that beam reports are sent for cell
+    :param cell_id: physical id of SCell
+    """
+    expected_best_beam_id = "0.0"
+    tti_data = _create_list_from_tti_trace_csv('dl')
+    _verify_correct_currentbestbeamid_was_selected(tti_data, expected_best_beam_id, cell_id)
+
+
+def verify_that_beam_reports_with_beam_refinement_are_sent_for_cell(cell_id):
+    """
+    Verify that beam reports are sent for cell
+    :param cell_id: physical id of SCell
+    """
+    expected_best_beam_id = "8.0"
+    tti_data = _create_list_from_tti_trace_csv('dl')
+    _verify_correct_currentbestbeamid_was_selected(tti_data, expected_best_beam_id, cell_id)
+
+
+def verify_that_beam_reports_are_not_send():
+    """
+    Verify that beam no reports are visible in tti
+    """
+    tti_data = _create_list_from_tti_trace_csv('dl')
+    header = tti_data[0]
+    assert "dlBeamData.subCellId" not in header

@@ -1,0 +1,357 @@
+*** Settings ***
+Documentation       [SUITE PURPOSE] CB009915-B-10-robustness cases
+...                 Robustness test for CB009915 - based on robustness for 10850:
+...                 - Configured gNB to blank 33 PRBs in high edge
+...                 - Attach 2 UEs and send mex UL throughput
+...                 - When for the end of the current GP and check counter to ensure all PRB except the blanked
+...                 PRB are used, check there is not call drop and BLER level
+...                 - Detach UE
+...                 - Online update gNB configuration to 33 PRBs blanked in low edge
+...                 - Repeates above steps several times
+...                 Test Case Scenario author   : axel.gouilly-frossard@nokia.com
+...                 Test Case Scenario contact  : axel.gouilly-frossard@nokia.com
+...                 Creation Date               : 04/10/2023
+...                 Last Modification           : 24/09/2024 - richard.duthu@nokia.com - Produce Scout data + some RF50 fixes
+
+# Resources
+Resource                                        ./resources/robot/CB009915-A-Keywords.robot
+Resource                                        ../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource                                        ../../../resources/SWENG/robot/Syslogs.robot
+Resource                                        ../../../resources/SWENG/robot/Hardening.robot
+#Library                                         Dialogs
+
+# Tags
+Force Tags                                      CA_5G_SW_FR-Villarceaux    RRM    PY36
+...                                             CLOUD_5G_I_LO_AP_LO VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AEQE
+...                                             master_classicalbts_all    SBTS00
+...                                             CONFIGURED    5G_RAN    RAN_5G    CRT
+
+# Suites
+#Suite Setup                                     CB009915-Common-Keywords.Suite Setup CB009915-Common    keep_all_data_in_file=${True}
+Suite Setup                         Suite Setup from scratch            listBackupFiles=${FD_ALL}
+...                                                                     keepAllUeDataInCfgFile=${True}
+#Suite Teardown                                  CB009915-Common-Keywords.Suite Teardown CB009915-Common
+Suite Teardown                                  Suite Teardown
+
+
+*** Variables ***
+
+# capture setting
+&{CAPTURE_OFF}                                  is_capture_core=${False}
+...                                             is_capture_cprt=${False}
+...                                             is_capture_l1l2=${False}
+
+&{CAPTURE_INVES}                                is_capture_core=${False}
+...                                             is_capture_cprt=${False}
+...                                             is_capture_l1l2=${False}
+
+&{CAPTURE_L1L2}                                 is_capture_core=${False}
+...                                             is_capture_cprt=${False}
+...                                             is_capture_l1l2=${True}
+
+# tests settings
+&{CB009915-A}                                   capture_duration=0                      # capture duration during traffic starting phase
+...                                             deviation=10                            # default deviation for throughput and double for uplink
+...                                             dir=UL+DL
+...                                             duration=3                              # traffic duration during declaration phase
+...                                             pm_waiting_period=2                     # number of waiting periods added for observation
+...                                             target_gnb=2                            # gnb target id
+...                                             total_nb_cell=2                         # total number of cell used for ue's dispatching
+...                                             total_nb_ue=0                           # total number of ue's to configure
+
+&{dict_settings_ue_1}                           nsa_bearer=2
+...                                             original_cell=1                         # original cell for call establishment
+...                                             throughput=600                          # dl throughput nonGBR max for ue in chBW=100Hz wo/ blanking
+...                                             throughput_gbr=${NO_THROUGHPUT}         # dl throughput GBR for ue or ${NO_THROUGHPUT}
+...                                             throughput_ul=150                       # ul throughput nonGBR max for ue in chBW=100MHz wo/ blanking
+
+&{dict_settings_ue_2}                           nsa_bearer=2
+...                                             original_cell=1
+...                                             throughput=600
+...                                             throughput_gbr=${NO_THROUGHPUT}
+...                                             throughput_ul=150
+
+@{dict_settings_single_ue}                      ${dict_settings_ue_1}
+
+# configuration chBW=100MHz wo/ PRB blanking:
+#    throughput - Direction L1 Values - Downlink 1337 Mbps - Uplink 196.0 Mbps #vbo#X Y and PRBs PUSCH#
+#    number of PRBs in DL: 273
+#    number of PRBs in UL: 273
+#    RBG Size: 16 & number of RBGs: 18
+#    size for RBG 0 : 16
+#    size for RBG 1 : 16
+#    size for RBG 2 : 16
+#    size for RBG n : 16
+#    size for RBG 17: 1
+#    PRB Pooling: PRB reduction dataDLnumberOfPrbs=273, dataULnumberOfPrbs=273
+# for chBW=100MHz + frameStructureType=semiStatic + ulDlDataSlotRatio=1/4 + basicBeamSet=beamSet_6 + ssBurstSetPeriod=20 + csirsTrackingPeriod=80ms
+#    + actPdschAtSsbSlots=false
+#    DL: every 8 SFNs <=> every 160 slots: DL= 12 SIB1 + 32 Specific + 70 DL= 114 slots and 114* 273= 31122 PRBs for PDSCH
+#        every 5 min (pm counter interval) coeff.= (5*60*1000*2)/160=3750 <=> 31122* 3750= 116707500 PRBs for PDSCH  => M55308C10003= 116707500
+#    UL: every 8 SFNs <=> every 160 slots <=> 26 UL + 6 RA slots w/ PRBs for PUSCH
+#        every 5 min <=> ((26* X)+ (6* Y))* coeff.= ??? PRBs for PUSCH                       => M55308C10004= 30000000      #vbo#X Y and PRBs PUSCH#
+
+${REQ_MIN_NUM_PUSCH_PRB_100MHZ_MAXI}            253    # limitation on NRCELL.reqMinNumPuschPrb for chBW=100MHz
+${REQ_MIN_NUM_PUSCH_PRB_100MHZ_DEFAULT}         213    # default value defined into MIND for our configuration or maxi as not well defined
+# configuration chBW=100MHz with PRB blanking:
+&{CONFIG_BLANKING_A_100MHZ_default}             chBW=100MHz
+...                                             type0CoresetConfigIndex=10
+...                                             reqMinNumPuschPrb_maxi=${REQ_MIN_NUM_PUSCH_PRB_100MHZ_MAXI}
+...                                             reqMinNumPuschPrb_default=${REQ_MIN_NUM_PUSCH_PRB_100MHZ_DEFAULT}
+### nbBlankedPRBsHighEdge=0 and nbBlankedPRBsLowEdge=5:
+${THROUGHPUT_DL_LOW5_BLANKED_100MHZ}            500    #vbo#throughput not maxi but used for A-9 testing#
+${THROUGHPUT_UL_LOW5_BLANKED_100MHZ}            190    #vbo#throughput not maxi but used for A-9 testing#
+### nbBlankedPRBsHighEdge=22 and nbBlankedPRBsLowEdge=0:
+${THROUGHPUT_DL_HIGH22_BLANKED_100MHZ}          500    #vbo#throughput not maxi but used for A-9 testing#
+${THROUGHPUT_UL_HIGH22_BLANKED_100MHZ}          190    #vbo#throughput not maxi but used for A-9 testing#
+### nbBlankedPRBsHighEdge=13 and nbBlankedPRBsLowEdge=14:
+${THROUGHPUT_DL_HIGH13_LOW14_BLANKED_100MHZ}    500    #vbo#throughput not maxi but used for A-9 testing#
+${THROUGHPUT_UL_HIGH13_LOW14_BLANKED_100MHZ}    190    #vbo#throughput not maxi but used for A-9 testing#
+
+
+${nb_loops}                                 10
+# In Mbps
+${ul_tput_per_ue}                           100
+${dl_tput_per_ue}                           100
+
+# First UE id for FDD cell (cell3) with variant SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AEQE
+${ue_id_base_cell}                         1
+
+${traffic_duration}                         10s
+
+${scf_delta_config_9915_robustness}         testsuite/Paris/RRM/ET/CB009915/resources/config/Delta_scf_CB009915_AA_Robustness.json
+${delta_config_high_edge}                   testsuite/Paris/RRM/ET/CB009915/resources/config/Delta_scf_High_Edge_CB009915_AA_Robustness.json
+${delta_config_low_edge}                    testsuite/Paris/RRM/ET/CB009915/resources/config/Delta_scf_Low_Edge_CB009915_AA_Robustness.json
+${cb009915_Robustness_constraints}          testsuite/Paris/RRM/ET/CB009915/resources/config/CB009915_Robustness_constraints.csv
+
+${nbRobustnessUEs}                          1
+@{SA_UE_List}
+
+${trcColor}                                 Evaluate    "${CYAN}"
+${defColor}                                 Evaluate    "${NORMAL}"
+${OkColor}                                  Evaluate    "${GREEN}"
+
+${gnb_alias}                      gnb_under_test
+
+*** Keywords ***
+
+CB009915 Robustness Test Setup
+    [Documentation]             Perform needed actions at the begining of a test case
+    Init Trace color
+
+CB009915 Robustness Test Teardown
+    [Documentation]             Perform needed actions at the end of a test case
+    # "Test Teardown" KW from Setup.robot
+    Test Teardown
+    #dialogs.Execute Manual Step       wait keyboard
+    Restore Files               listFileDesc=${FD_ALL}
+
+Init Trace color
+    ${trcColor}                 Evaluate    "${CYAN}"
+    ${defColor}                 Evaluate    "${NORMAL}"
+    ${OkColor}                  Evaluate    "${GREEN}"
+    Set Suite Variable          ${trcColor}
+    Set Suite Variable          ${defColor}
+    Set Suite Variable          ${OkColor}
+
+CB009915_Robustness_Configuration
+    [Documentation]               Dedicated KW to add use a delta commissioning file
+    ...                           2 cells in TDD 100 MHz (cell1/cell2)
+
+    [Arguments]                   ${pooling_delta_file}     ${gnb_alias}
+
+    # Open connection towards cOAM
+    sbts_coam.connect_to          name=${gnb_alias}
+
+    Dated Log New Line          delta_file=${scf_delta_config_9915_robustness}
+    # Apply delta scf
+    coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${scf_delta_config_9915_robustness}
+    ...                           connection=${gnb_alias}
+
+    #dialogs.Execute Manual Step       wait keyboard
+    OAM wait available
+
+    sbts_coam.teardown            connection=${gnb_alias}
+
+    # GnbXmlTools.Get Data From Gnb TargetBD File        card_name=AHFII
+
+    # # Update IPHY GSCN to new value
+    # WtsXmlConfig.startSession           file=iphy
+    # WtsXmlConfig.setTextUsingIndex      //cardName                      AHFII           3
+    # WtsXmlConfig.setTextUsingIndex      //resourceBuildKey              LTX_AHFII       3
+    # WtsXmlConfig.setTextUsingIndex      //GSCN                          4907            3
+
+    # # update iphy.xml with swVersion and swFileKey values taken fomr GNB TargetBD_*.xml
+    # WtsXmlConfig.setTextUsingIndex      //version                        ${g_resource_swVersion}    3
+    # WtsXmlConfig.setTextUsingIndex      //bldVersion                     ${g_resource_swVersion}    3
+    # WtsXmlConfig.setTextUsingIndex      //buildversion                   ${g_resource_swVersion}    3
+    # WtsXmlConfig.setTextUsingIndex      //software/file/name             ${g_resource_swFileKey}    3
+    # WtsXmlConfig.stopSession            file=iphy
+
+    # #Update gscn & nrarfcn and add PTRS support inside UE capabilities
+    # WtsCfgConfig.startSession
+    # #set tdd_cell =off
+    # ${oldValue}          getParam           prefix=set_ue id=2         param=cell
+    # replaceValue         prefix=set_ue id=2
+    # ...                  param=cell
+    # ...                  oldValue=${oldValue}
+    # ...                  newValue=1
+
+    # WtsCfgConfig.stopSession
+    Run                   sed -i '/^set_ue simulated id=2/s/cell=2$/cell=1/' ${tl.core.dir_path}/${tl.core.cfg_filename}
+
+CB009915_Robustness_Scenario_Init
+    [Documentation]                 KW used to initialise context for CB010850 robustness TC execution:
+    ...                             Update SCF with suitable parameters by using a delta JSON file.
+
+    Dated Log New Line                  ${trcColor}---> Starting gNB commissioning ${defColor}
+
+    # Update SCF file and move to n25 band (TMO usage)
+    CB009915_Robustness_Configuration   ${scf_delta_config_9915_robustness}            ${gnb_alias}
+
+    Dated Log New Line                  ${trcColor}---> Restart TL ${defColor}
+    Restart TL
+    Dated Log New Line                  ${trcColor}---> WTS setup SA ${defColor}
+    WTS Setup                           shouldUseLua=${False}
+    # Cellsetup is now done, Sherpa can be enabled if needed
+    # Run Keyword If                      ${enable_sherpa} == ${True}           Activate Sherpa
+
+    # Build UE list
+    FOR        ${ue_id}      IN RANGE        0        ${nbRobustnessUEs}
+        &{ue_in_list}=                  Copy dictionary     ${BASIC_UE_SA}
+        ${ue_absolute_id}=              Evaluate            ${ue_id} + ${ue_id_base_cell}
+        Set To Dictionary               ${ue_in_list}       ue          ${ue_absolute_id}
+        Set To Dictionary               ${ue_in_list}       pdu         1
+        Append To List                  ${SA_UE_List}       ${ue_in_list}
+    END
+
+CB009915_Attach_All_UEs
+    Dated Log New Line       ${trcColor}---> Attaching UEs ${defColor}
+    FOR        ${current_ue}            IN         @{SA_UE_List}
+        UE Register                     ue=${current_ue.ue}
+        Launch PDU Session              ue=${current_ue.ue}    pdu=${current_ue.pdu}    gw=${current_ue.ue}
+    END
+    Dated Log New Line       ${trcColor}---> All needed UEs are now attached${defColor}
+
+CB009915_Detach_All_UEs
+    Dated Log New Line       ${trcColor}---> Detaching all UEs ${defColor}
+    FOR        ${current_ue}             IN         @{SA_UE_List}
+        UE Deregister           id=${current_ue.ue}
+    END
+
+CB009915_Update_Online_SCF
+    [Documentation]               KW used to update blanking configuration online by using a delta SCF file.
+    [Arguments]                   ${delta_scf}
+    Dated Log New Line            Updating SCF parameters with file ${delta_scf}
+    # Open connection towards cOAM
+    sbts_coam.connect_to          name=${gnb_alias}
+    Run Keywords                  coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${delta_scf}
+    ...                           connection=${gnb_alias}
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+    sbts_coam.teardown            connection=${gnb_alias}
+
+check_syslog
+    [Arguments]            ${test_name}       ${test_type}    ${syslog}    ${max_syslog_rate}=400
+    Dated Log              check_syslog started
+    @{errors}              SYSLOG Evaluate    syslog=${syslog}
+    ...                                       exclusion=CB009915.${test_type}.csv
+    ...                                       maxRate=${max_syslog_rate}
+    should be empty        ${errors}
+    Dated Log              check_syslog ended
+
+check_resource_usage
+    [Arguments]            ${initial_resource_usage}
+    Dated Log              check_resource_usage started
+    ${resource_usage}      Hardening.Get Resources
+    ${resource_diff}       Hardening.Compare Resources With Tolerance    ${initial_resource_usage}    ${resource_usage}
+    ...                    ${CURDIR}/config/resource_usage/tolerance.csv
+    should be empty        ${resource_diff}
+    Dated Log              check_resource_usage ended
+
+CB010850_Check_RRC
+    # Flush egate console and backup of egate_console.log file:
+    ${current_date}=                    DateTime.Get Current Date       result_format=%Y%m%d-%H%M%S
+    ${filename}                         set variable                    ${current_date}_egate_console_Check_RRC_UL_Blanking.log
+    ${cmd}                              Catenate
+    ...                                 cd ${tl.core.dir_path};
+    ...                                 cp ${tl.core.dir_path}/egate_console.log ${LOG_PATH}/${filename}
+    ${output}                           SSH Wait For Connect and Cmd
+    ...                                 command=${cmd}
+    ...                                 host=${HOST_EPCSIM}
+    # Check egate_console.log file:
+    ${rrc_status}                       checkBlankingRRC                    ${LOG_PATH}/${filename}
+    Should Be True                      ${rrc_status} == True
+
+*** Test Cases ***
+
+[1][1.0] CB009915-B4-12-robustness cases
+    [Documentation]               Main entry. Perform gNB initialisation, endurance loop and KPIs/counters checks
+
+    # Verifier manuellement le contenu du RRC pour voir si tout est ok
+    # Verifier capture Sherpa, rajouter les checks sur le syslog
+    # Customise SCF, restart TL and perform cell setup
+    #
+    ${test_name}           set variable    PRB_Blanking_Robustness
+    CB009915_Robustness_Scenario_Init
+
+    FOR        ${loop}      IN RANGE        ${nb_loops}
+        Dated Log New Line              ${trcColor}---> Starting loop ${loop} ${defColor}
+        ${syslog}               SYSLOG Start    host=${GNB_DU.sys[0].M}    name=${test_name}
+        # Online update of UL blanking cconfiguration.
+        Run Keyword If                  ${loop%2} == 1
+        ...                             CB009915_Update_Online_SCF       ${delta_config_low_edge}
+        ...                             ELSE
+        ...                             CB009915_Update_Online_SCF       ${delta_config_high_edge}
+
+        ${zoi}                          ZOI Start
+        ${zoi_end_remain}=              ZOI Remaining Sec           ${zoi}
+        ${start_loop_remaining}=        Evaluate                    ${zoi_end_remain} - ${GP_DEF}
+
+
+        # To be sure to have a GP fully filled with the same events inside every loop and avoid changing KPIs/counters:
+        # If ZOI start is T0, ZOI end is T0 + ${GUARD_DELAY_DEF} + ${GP_DEF} + ${PM_AVAIL_DELAY_DEF}
+        # So, test is started at the beginning of the GP before ZOI end, so:
+        # ZOI End - ${GP_DEF}
+        # Ex. 1: ZOI start is 10h02 => ZOI End is 10h02 + 40s (GUARD_DELAY_DEF) + 1 GP + 1 mn (PM_AVAIL_DELAY_DEF)
+        #        => Time for next GP for ZOI End is 10h11, so test is started at 10h06 and KPIs retrieved at 10h11
+        # Ex. 2: ZOI start is 10h14:40s => ZOI End is 10h14:40 + 40s (GUARD_DELAY_DEF) + 1 GP + 1 mn (PM_AVAIL_DELAY_DEF)
+        #        => Time for next GP for ZOI End is 10h26 as gaurd delay excedd thenext GP frontier,
+        #        so test is started at 10h21 and KPIs retrieved at 10h26
+        # And, test duration must not exceed 1 GP - 1 mn per loop
+
+        Traced Sleep                    ${start_loop_remaining} seconds
+        ...                             msg=before starting scenario
+
+        CB009915_Attach_All_UEs
+
+        # Start UL traffic over all UEs
+        Traffic UEs UL                  ueSettingList=${SA_UE_List}
+        ...                             duration=${traffic_duration}        shouldBeStop=False      shouldBeCheck=True
+        ...                             throughput=${ul_tput_per_ue}
+
+        # Start UL traffic over all UEs
+        Traffic UEs DL                  ueSettingList=${SA_UE_List}
+        ...                             duration=${traffic_duration}        shouldBeStop=False      shouldBeCheck=True
+        ...                             throughput=${dl_tput_per_ue}
+
+
+        CB009915_Detach_All_UEs
+
+        Dated Log New Line               ${trcColor}=== Waiting for end of ZOI ${defColor}
+        ZOI Wait End                     zoi=${zoi}
+
+        # KPIs and counters checks
+        ${pm_path}                      Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+        KPI Evaluate                    pmFile=${pm_path}
+        ...                             constraintsFile=${cb009915_Robustness_constraints}
+        ...                             failOnError=${True}
+        ${initial_resource_usage}    Run Keyword If    ${loop} == 0    Hardening.Get Resources
+        ...                 ELSE    Set Variable    ${initial_resource_usage}
+        check_resource_usage    ${initial_resource_usage}
+        SYSLOG Stop             syslog=${syslog}
+        check_syslog    ${test_name}    ChangeBlanking    ${syslog}    max_syslog_rate=2000
+    END

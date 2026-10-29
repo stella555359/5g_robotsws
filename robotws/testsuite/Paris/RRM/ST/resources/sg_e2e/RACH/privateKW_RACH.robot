@@ -1,0 +1,786 @@
+*** Settings ***
+Documentation   description
+
+
+*** Keywords ***
+Teardown With All Traces AIO
+    [Documentation]
+    [Arguments]     ${get_full_logs}=1  ${ext_mirroring}=0
+
+    Append To File   ${suite_dir}/result.txt   \n\n------------------------------------------
+    configuration.create SSH
+    configuration.create Connections
+    run keyword if  ${ue_available}  run keyword and continue on failure      metascripts.UE Close
+
+    #Get Snapshot
+    run keyword if   ${get_full_logs} == 1  run keywords
+    ...  Append To File   ${suite_dir}/result.txt  \n\nGet Snapshot  AND
+    ...  run keyword and continue on failure   logs.Get Full Logs
+
+    #Clean Syscom Mirorring
+    Append To File   ${suite_dir}/result.txt  \n\nClean Syscom Mirorring
+    run keyword and continue on failure      logs.Clean Syscom Mirroring
+
+    #Clean L1L2 Mirorring
+    run keyword if   ${ext_mirroring} == 1   run keywords
+    ...  Append To File   ${suite_dir}/result.txt  \n\nClean L1L2 Mirorring  AND
+    ...  run keyword and continue on failure   logs.Clean L1L2 Mirroring
+
+    #Clean X2 Mirorring
+    Append To File   ${suite_dir}/result.txt  \n\nClean X2 Mirorring
+    run keyword and continue on failure      logs.Clean X2 Mirroring
+
+    run keyword if   ${ext_mirroring} == 1   run keyword and continue on failure   configuration.Mirroring Close SSH
+    run keyword and continue on failure      configuration.Close Connections SSH
+    run keyword and continue on failure      run keyword and continue on failure   metascripts.UE Close
+    Append To File   ${suite_dir}/result.txt  \n\n
+
+Move logs
+    [Arguments]     ${rootPath}     ${testName}
+    #move directory          ${rootPath}/scf    ${rootPath}/${testName}/scf
+    create directory         ${rootPath}/${testName}/scf
+    run keyword and continue on failure
+    ...  move File   ${rootPath}/scf/current_scf_for_check.xml   ${rootPath}/${testName}/scf/current_scf_for_check.xml
+    run keyword and continue on failure
+    ...  move File   ${rootPath}/scf/scf_to_apply.xml   ${rootPath}/${testName}/scf/scf_to_apply.xml
+    move directory          ${rootPath}/logs    ${rootPath}/${testName}/logs
+    move directory          ${rootPath}/save    ${rootPath}/${testName}/save
+    #create directory        ${rootPath}/scf
+    create directory        ${rootPath}/logs
+    create directory        ${rootPath}/save
+
+Grep in prachConfiguration file
+    [Arguments]     ${prachConfigIdx}
+    ${expectedPrachStartSymbol}  set variable  None
+    ${expectedPrachFormat}  set variable  None
+    ${extract}   OperatingSystem.grep file   ${CURDIR}/prachConfigurationIndex_Table_${frameStructure_name}.txt  ${prachConfigIdx}:
+    run keyword if  len($extract)==0
+    ...   Append To File   ${suite_dir}/result.txt    \n\tWARNING: prachConfigIndex NOT FOUND in table\n
+    ${expectedPrachStartSymbol}  ${expectedPrachFormat}  run keyword if  len($extract)!=0    Grep in prachConfiguration file sub  ${extract}
+    [Return]  ${expectedPrachStartSymbol}  ${expectedPrachFormat}
+
+Grep in prachConfiguration file sub
+    [Arguments]  ${extract}
+    ${list}  get regexp matches    ${extract}    \\d+:(,?\\d+)+:(,?\\d+)+:(\\d+):(\\d+)  3   4
+    ${list}  convert to list  @{list}[0]
+    ${expectedPrachStartSymbol}  set variable if  len($extract)!=0  @{list}[0]
+    ${expectedPrachFormat}  set variable if  len($extract)!=0  @{list}[1]
+    [Return]  ${expectedPrachStartSymbol}  ${expectedPrachFormat}
+
+Check in syscom L1 for cell setup
+    [Arguments]  ${current_step}  ${expectedPrachConfigurationIndex}=${EMPTY}  ${expectedZeroCorrelationZoneConfig}=${EMPTY}
+    ...  ${expectedPrachRootSequenceIndex}=${EMPTY}  ${expectedPfaTargetPrachId}=${EMPTY}  ${expectedPrachScs}=${EMPTY}
+    ...  ${expectedTotalNumberOfRAPreambles}=${EMPTY}  ${expectedUlBandwidth}=${EMPTY}
+
+    Append To File   ${suite_dir}/result.txt   \n\n------------------------------------------
+    Append To File   ${suite_dir}/result.txt   \nCell Setup: SYSCOM L1 Analysis (ulcell_setupreq)
+
+    set test variable   ${sycomCheckStatus}  ${TRUE}
+
+    ${expectedPrachStartSymbol}  ${expectedPrachFormat}  run keyword if  '${expectedPrachConfigurationIndex}'!='${EMPTY}'
+    ...  Grep in prachConfiguration file      ${expectedPrachConfigurationIndex}
+
+    ${addedfornewrelease}       run keyword if     '${5GRelease}'=='5G19A'        set variable  ${EMPTY}
+    ...     ELSE                set variable       ${SPACE}-e UlCell_SetupReq.SetupReq.pfaTargetPrachId
+
+    ${logs_path_changed}    Replace string using regexp    ${logs_path}    \\[1\\]    \\\\[1\\\\]
+    @{pcap_files}=    List Files in directory    ${logs_path}/tcpdump    ${current_step}_syscomAsik*.pcap*
+
+    :FOR    ${pcap_file}    in    @{pcap_files}
+    \    ${cmd}    catenate
+    ...       tshark -X lua_script:/opt/luashark/luashark.lua
+    ...       -r ${logs_path_changed}/tcpdump/${pcap_file} -T fields
+    ...       -Y "ulcell_setupreq"
+    ...       -e _ws.col.Info
+    ...       -e UlCell_SetupReq.SetupReq.ulBandwidth
+    ...       -e UlCell_SetupReq.SetupReq.prachFormat
+    ...       -e UlCell_SetupReq.SetupReq.prachStartSymbol
+    ...       -e UlCell_SetupReq.SetupReq.prachScs
+    ...       -e UlCell_SetupReq.SetupReq.firstPrachRootSeqIndex
+    ...       -e UlCell_SetupReq.SetupReq.prachZeroCorrelationZoneConfig
+    ...       -e UlCell_SetupReq.SetupReq.totalNumberOfRAPreambles${addedfornewrelease}
+    ...       -E header=y -E separator=';' >> ${logs_path}/tcpdump/${current_step}_syscomAsik_L1.txt
+    \    run       ${cmd}
+
+    #Check in ulcell_setupreq
+    ${extract}   OperatingSystem.grep file        ${logs_path}/tcpdump/${current_step}_syscomAsik_L1.txt  ICOM_5G/UlCell_SetupReq;
+    run keyword if  len($extract)==0        run keywords
+    ...   Append To File   ${suite_dir}/result.txt    \n\tUlCell_SetupReq not found\n  AND
+    ...   fail  UlCell_SetupReq not found
+    ${addedfornewrelease}       run keyword if     '${5GRelease}'=='5G19A'        set variable  ${EMPTY}
+    ...     ELSE                set variable       -e UlCell_SetupReq.SetupReq.pfaTargetPrachId
+
+    #${list}    run keyword if    '${5GRelease}'=='5G19A'      get regexp matches    ${extract}
+    #... (\\d+);(\\d+);(\\d+);(\\d+);(0x\\w+);(0x\\w+);(0x\\w+)  1  2  3  4  5  6  7
+    #...     ELSE    get regexp matches    ${extract}    (\\d+);(\\d+);(\\d+);(\\d+);(0x\\w+);(0x\\w+);(0x\\w+);(0x\\w+)  1  2  3  4  5  6  7  8
+
+    ${list}    run keyword if    '${5GRelease}'=='5G19A'  get regexp matches
+    ...     ${extract}    ;(0?x?\\w+);(0?x?\\w+);(0?x?\\w+);(0?x?\\w+);(0?x?\\w+);(0?x?\\w+);(0?x?\\w+)  1  2  3  4  5  6  7
+    ...     ELSE    get regexp matches
+    ...     ${extract}    ;(0?x?\\w+);(0?x?\\w+);(0?x?\\w+);(0?x?\\w+);(0?x?\\w+);(0?x?\\w+);(0?x?\\w+);(0?x?\\w+)  1  2  3  4  5  6  7  8
+
+    ${list}      convert to list  @{list}[0]
+    run keyword if  '${expectedUlBandwidth}'!='${EMPTY}'
+    ...  run keyword and continue on failure  privateKW_RACH.Check in syscom L1 or L2 compare values
+    ...  list_value=${list}  index=0     param_name=ulBandwidth    expected_value=${expectedUlBandwidth}  mediation_required=${TRUE}
+    run keyword if  '${expectedPrachConfigurationIndex}'!='${EMPTY}'
+    ...  run keyword and continue on failure  privateKW_RACH.Check in syscom L1 or L2 compare values
+    ...  list_value=${list}  index=1     param_name=prachFormat    expected_value=${expectedPrachFormat}
+    run keyword if  '${expectedPrachConfigurationIndex}'!='${EMPTY}'
+    ...  run keyword and continue on failure  privateKW_RACH.Check in syscom L1 or L2 compare values
+    ...  list_value=${list}  index=2     param_name=prachStartSymbol    expected_value=${expectedPrachStartSymbol}
+    run keyword if  '${expectedPrachScs}'!='${EMPTY}'
+    ...  run keyword and continue on failure  privateKW_RACH.Check in syscom L1 or L2 compare values
+    ...  list_value=${list}  index=3     param_name=prachScs    expected_value=${expectedPrachScs}
+    run keyword if  '${expectedPrachRootSequenceIndex}'!='${EMPTY}'
+    ...  run keyword and continue on failure  privateKW_RACH.Check in syscom L1 or L2 compare values
+    ...  list_value=${list}  index=4     param_name=prachRootSequenceIndex    expected_value=${expectedPrachRootSequenceIndex}
+    run keyword if  '${expectedZeroCorrelationZoneConfig}'!='${EMPTY}'
+    ...  run keyword and continue on failure  privateKW_RACH.Check in syscom L1 or L2 compare values
+    ...  list_value=${list}  index=5     param_name=zeroCorrelationZoneConfig    expected_value=${expectedZeroCorrelationZoneConfig}
+    run keyword if  '${expectedTotalNumberOfRAPreambles}'!='${EMPTY}'
+    ...  run keyword and continue on failure  privateKW_RACH.Check in syscom L1 or L2 compare values
+    ...  list_value=${list}  index=6  param_name=totalNumberOfRAPreambles  expected_value=${expectedTotalNumberOfRAPreambles}
+    run keyword if  '${expectedPfaTargetPrachId}'!='${EMPTY}'
+    ...  run keyword and continue on failure  privateKW_RACH.Check in syscom L1 or L2 compare values
+    ...  list_value=${list}  index=7    param_name=pfaTargetPrach    expected_value=${expectedPfaTargetPrachId}  mediation_required=${TRUE}
+
+    #run keyword unless  ${sycomCheckStatus}  run keywords
+    run keyword if  ${sycomCheckStatus} == ${False}  run keywords
+    ...  Append To File      ${suite_dir}/result.txt    \n\n\tCELL SETUP L1 SYSCOM CHECKS: FAILED\n      AND
+    ...  run keyword and continue on failure    fail    CELL SETUP L1 SYSCOM CHECKS: FAILED
+
+
+Check in syscom L2 for cell setup
+    [Arguments]  ${current_step}  ${expectedPrachConfigurationIndex}=${EMPTY}  ${expectedMacContentionResTimer}=${EMPTY}
+    ...  ${expectedRaResponseWindowSizeSize}=${EMPTY}   ${expectedCbraPreamblesPerSsb}=${EMPTY}
+
+    Append To File   ${suite_dir}/result.txt   \n\n------------------------------------------
+    Append To File   ${suite_dir}/result.txt   \nCell Setup: SYSCOM L2 Analysis (l2_ps_cell_CellSetupReq)
+
+    set test variable   ${sycomCheckStatus}  ${TRUE}
+
+    ${logs_path_changed}    Replace string using regexp    ${logs_path}    \\[1\\]    \\\\[1\\\\]
+    @{pcap_files}=    List Files in directory    ${logs_path}/tcpdump    ${current_step}_syscomAsik*.pcap*
+
+    :FOR    ${pcap_file}    in    @{pcap_files}
+    \    ${cmd}    catenate
+    ...       tshark -X lua_script:/opt/luashark/luashark.lua
+    ...       -r ${logs_path_changed}/tcpdump/${pcap_file} -T fields
+    ...       -Y "itf_l2_ps_cell_cellsetupreq"
+    ...       -e _ws.col.Info
+    ...       -e itf_l2_ps_cell_CellSetupReq.rachConfig.prachConfigurationIndex
+    ...       -e itf_l2_ps_cell_CellSetupReq.rachConfig.macContentionResTimer
+    ...       -e itf_l2_ps_cell_CellSetupReq.rachConfig.raResponseWindowSize
+    ...       -e itf_l2_ps_cell_CellSetupReq.rachConfig.cbPreamblesPerSsb
+    ...       -E header=y -E separator=';' >> ${logs_path}/tcpdump/${current_step}_syscomAsik_L2.txt
+    \    run       ${cmd}
+
+    #Check in l2_ps_cell_CellSetupReq
+    ${extract}      OperatingSystem.grep file    ${logs_path}/tcpdump/${current_step}_syscomAsik_L2.txt  ICOM_5G/itf_l2_ps_cell_CellSetupReq;
+    run keyword if  len($extract)==0        run keywords
+    ...   Append To File   ${suite_dir}/result.txt    \n\titf_l2_ps_cell_CellSetupReq not found\n  AND
+    ...   fail  itf_l2_ps_cell_CellSetupReq not found
+    ${list}        get regexp matches    ${extract}    (0?x?\\w+);(0?x?\\d+);(0?x?\\d+);(0?x?\\d+)  1   2  3  4
+    ${list}        get regexp matches    ${extract}    ;(0?x?\\w+);(0?x?\\w+);(0?x?\\w+);(0?x?\\w+)  1   2  3  4
+    ${list}      convert to list  @{list}[0]
+    run keyword if  '${expectedPrachConfigurationIndex}'!='${EMPTY}'
+    ...  run keyword and continue on failure  privateKW_RACH.Check in syscom L1 or L2 compare values
+    ...  list_value=${list}  index=0     param_name=prachConfigurationIndex    expected_value=${expectedPrachConfigurationIndex}
+    run keyword if  '${expectedMacContentionResTimer}'!='${EMPTY}'
+    ...  run keyword and continue on failure  privateKW_RACH.Check in syscom L1 or L2 compare values
+    ...  list_value=${list}  index=1   param_name=raContentionResolutionTmr  expected_value=${expectedMacContentionResTimer}
+    ...  mediation_required=${TRUE}
+    run keyword if  '${expectedRaResponseWindowSizeSize}'!='${EMPTY}'
+    ...  run keyword and continue on failure  privateKW_RACH.Check in syscom L1 or L2 compare values
+    ...  list_value=${list}  index=2  param_name=raResponseWindow  expected_value=${expectedRaResponseWindowSizeSize}  mediation_required=${TRUE}
+    run keyword if  '${expectedCbraPreamblesPerSsb}'!='${EMPTY}'
+    ...  run keyword and continue on failure  privateKW_RACH.Check in syscom L1 or L2 compare values
+    ...  list_value=${list}  index=3  param_name=cbraPreamblesPerSsb    expected_value=${expectedCbraPreamblesPerSsb}  mediation_required=${TRUE}
+
+    #run keyword unless  ${sycomCheckStatus}  run keywords
+    run keyword if  ${sycomCheckStatus} == ${False}  run keywords
+    ...  Append To File      ${suite_dir}/result.txt    \n\n\tCELL SETUP L2 SYSCOM CHECKS: FAILED\n      AND
+    ...  run keyword and continue on failure    fail    CELL SETUP L2 SYSCOM CHECKS: FAILED
+
+
+Check in syscom L2 for cell reconfiguration
+    [Arguments]  ${current_step}  ${expectedMacContentionResTimer}=${EMPTY}  ${expectedRaResponseWindowSizeSize}=${EMPTY}
+
+    Append To File   ${suite_dir}/result.txt   \n\n------------------------------------------
+    Append To File   ${suite_dir}/result.txt   \nCELL RECONFIGURATION: SYSCOM L2 Analysis (l2_ps_cell_cellreconfigurationreq)\n
+
+    set test variable   ${sycomCheckStatus}  ${TRUE}
+
+    ${logs_path_changed}    Replace string using regexp    ${logs_path}    \\[1\\]    \\\\[1\\\\]
+    @{pcap_files}=    List Files in directory    ${logs_path}/tcpdump    ${current_step}_syscomAsik*.pcap*
+
+    :FOR    ${pcap_file}    in    @{pcap_files}
+    \    ${cmd}    catenate
+    ...       tshark -X lua_script:/opt/luashark/luashark.lua
+    ...       -r ${logs_path_changed}/tcpdump/${pcap_file} -T fields
+    ...       -Y "itf_l2_ps_cell_cellreconfigurationreq"
+    ...       -e _ws.col.Info
+    ...       -e itf_l2_ps_cell_CellReconfigurationReq.raConfiguration.raResponseWindowSize
+    ...       -e itf_l2_ps_cell_CellReconfigurationReq.raConfiguration.macContentionResTimer
+    ...       -E header=y -E separator=';' >> ${logs_path}/tcpdump/${current_step}_syscomAsik_L2.txt
+    \    run       ${cmd}
+
+    #Check in itf_l2_ps_cell_CellReconfigurationReq
+    ${extract}  OperatingSystem.grep file  ${logs_path}/tcpdump/${current_step}_syscomAsik_L2.txt  ICOM_5G/itf_l2_ps_cell_CellReconfigurationReq;
+    run keyword if  len($extract)==0        run keywords
+    ...   Append To File   ${suite_dir}/result.txt    \n\titf_l2_ps_cell_CellReconfigurationReq not found  AND
+    ...   fail  itf_l2_ps_cell_CellReconfigurationReq not found
+    ${list}     get regexp matches    ${extract}    ;(0?x?\\w+);(0?x?\\w+)  1   2
+    ${list}     convert to list  @{list}[0]
+    run keyword if  '${expectedRaResponseWindowSizeSize}'!='${EMPTY}'
+    ...  run keyword and continue on failure  privateKW_RACH.Check in syscom L1 or L2 compare values
+    ...  list_value=${list}  index=0  param_name=raResponseWindow  expected_value=${expectedRaResponseWindowSizeSize}  mediation_required=${TRUE}
+    run keyword if  '${expectedMacContentionResTimer}'!='${EMPTY}'
+    ...  run keyword and continue on failure  privateKW_RACH.Check in syscom L1 or L2 compare values
+    ...  list_value=${list}  index=1   param_name=raContentionResolutionTmr  expected_value=${expectedMacContentionResTimer}
+    ...  mediation_required=${TRUE}
+
+    #run keyword unless  ${sycomCheckStatus}  run keywords
+    run keyword if  ${sycomCheckStatus} == ${False}  run keywords
+    ...  Append To File      ${suite_dir}/result.txt    \n\n\tCELL RECONFIGURATION L2 SYSCOM CHECKS: FAILED\n      AND
+    ...  run keyword and continue on failure    fail    CELL RECONFIGURATION L2 SYSCOM CHECKS: FAILED
+
+
+Check in syscom L1 or L2 compare values
+    [Documentation]
+    ...  value is the param value in the msg
+    ...  expected_value is the param value set at the OAM. Convertion can be required
+    [Arguments]    ${list_value}   ${index}  ${param_name}  ${expected_value}   ${mediation_required}=${FALSE}
+    ${value}    convert to integer      @{list_value}[${index}]
+    ${expected_value_2}=   set variable if
+    ...   '${mediation_required}'=='${TRUE}'    ${mediationOAMtoL1L2['${param_name}']['${expected_value}']}
+    ...   '${mediation_required}'=='${FALSE}'    ${expected_value}
+    ${status}=  run keyword and return status
+    ...     should be equal as integers   ${value}  ${expected_value_2}      ${param_name} not expected
+    ${value}=   set variable if
+    ...   '${mediation_required}'=='${TRUE}'    ${mediationL1L2toOAM['${param_name}'][${value}]}
+    ...   '${mediation_required}'=='${FALSE}'    ${value}
+    run keyword if     ${status}   run keywords
+    ...  Append To File   ${suite_dir}/result.txt   \n\t${param_name}: OK (${value})  AND
+    ...  Update parameterUpdated  ${param_name}  syscom
+
+    #run keyword unless  ${status}   run keywords
+    run keyword if  ${status} == ${False}   run keywords
+    ...  set test variable   ${sycomCheckStatus}   ${FALSE}    AND
+    ...  Append To File   ${suite_dir}/result.txt  \n\t${param_name}: not OK (current=${value}, expected=${expected_value})
+
+
+Convert L1L2 for RACH
+    [Arguments]     ${current_step}
+    run keyword if      '${5GRelease}' == '5G19B'    Convert L1L2 for RACH 5G19B  ${current_step}
+    ...  ELSE IF        '${5GRelease}' == 'Trunk'    Convert L1L2 for RACH Trunk  ${current_step}
+    ...  ELSE           fail    Convert L1L2: Unknown Release
+
+Convert L1L2 for RACH 5G19B
+    [Arguments]     ${current_step}
+    Append To File      ${suite_dir}/result.txt     \n\n------------------------------------------
+    Append To File      ${suite_dir}/result.txt     \nConvert L1L2 pcap to txt
+    ${logs_path_changed}    Replace string using regexp    ${logs_path}    \\[1\\]    \\\\[1\\\\]
+    @{pcap_files}=    List Files in directory    ${logs_path}/tcpdump    ${current_step}_L1L2*.pcap*
+
+    :FOR    ${pcap_file}    in    @{pcap_files}
+    \    ${cmd}    catenate
+    ...       tshark -X lua_script:/opt/luashark/luashark.lua
+    ...       -r ${logs_path_changed}/tcpdump/${pcap_file} -T fields
+    ...       -Y "uldata_prachreceivereq||uldata_prachreceiveind||dldata_pdcchsendreq"
+    ...       -e _ws.col.Info
+    ...       -e UlData_PrachReceiveReq.PrachReceiveReq.sfn
+    ...       -e UlData_PrachReceiveReq.PrachReceiveReq.slot
+    ...       -e UlData_PrachReceiveReq.prachOccasions.prachOccasions_item_0
+    ...       -e UlData_PrachReceiveInd.PrachReceiveInd.sfn
+    ...       -e UlData_PrachReceiveInd.PrachReceiveInd.slot
+    ...       -e UlData_PrachReceiveInd.subcells_item_3.noisePower
+    ...       -e UlData_PrachReceiveInd.detectedPrachPreambles-Length
+    ...       -e UlData_PrachReceiveInd.detectedPrachPreambles_item_63.prachPreambleIndex
+    ...       -e UlData_PrachReceiveInd.detectedPrachPreambles_item_63.prachPreambleTimeOccasion
+    ...       -e UlData_PrachReceiveInd.detectedPrachPreambles_item_63.initialTa
+    ...       -e UlData_PrachReceiveInd.detectedPrachPreambles_item_63.peakMetric
+    ...       -e DlData_PdcchSendReq.PdcchSendReq.sfn
+    ...       -e DlData_PdcchSendReq.PdcchSendReq.slot
+    ...       -e DlData_PdcchSendReq.PdcchSendReq.beamId
+    ...       -E header=y -E separator=';' >> ${logs_path}/tcpdump/${current_step}_L1L2_pcapprocessed.txt
+    \    run       ${cmd}
+
+Convert L1L2 for RACH Trunk
+    [Arguments]     ${current_step}
+    Append To File      ${suite_dir}/result.txt     \n\n------------------------------------------
+    Append To File      ${suite_dir}/result.txt     \nConvert L1L2 pcap to txt
+    ${logs_path_changed}    Replace string using regexp    ${logs_path}    \\[1\\]    \\\\[1\\\\]
+    @{pcap_files}=    List Files in directory    ${logs_path}/tcpdump    ${current_step}_L1L2*.pcap*
+
+    :FOR    ${pcap_file}    in    @{pcap_files}
+    \    ${cmd}    catenate
+    ...       tshark -X lua_script:/opt/luashark/luashark.lua
+    ...       -r ${logs_path_changed}/tcpdump/${pcap_file} -T fields
+    ...       -Y "uldata_prachreceivereq||uldata_prachreceiveind||dldata_pdcchsendreq"
+    ...       -e _ws.col.Info
+    ...       -e UlData_PrachReceiveReq.PrachReceiveReq.sfn
+    ...       -e UlData_PrachReceiveReq.PrachReceiveReq.slot
+    ...       -e UlData_PrachReceiveReq.prachOccasions.prachOccasions_item_0
+    ...       -e UlData_PrachReceiveInd.PrachReceiveInd.sfn
+    ...       -e UlData_PrachReceiveInd.PrachReceiveInd.slot
+    ...       -e UlData_PrachReceiveInd.subcells_item_3.noisePower
+    ...       -e UlData_PrachReceiveInd.detectedPrachPreambles-Length
+    ...       -e UlData_PrachReceiveInd.detectedPrachPreambles_item_63.prachPreambleIndex
+    ...       -e UlData_PrachReceiveInd.detectedPrachPreambles_item_63.prachPreambleTimeOccasion
+    ...       -e UlData_PrachReceiveInd.detectedPrachPreambles_item_63.initialTa
+    ...       -e UlData_PrachReceiveInd.detectedPrachPreambles_item_63.peakMetric
+    ...       -e DlData_PdcchSendReq.PdcchSendReq.sfn
+    ...       -e DlData_PdcchSendReq.PdcchSendReq.slot
+    ...       -e DlData_PdcchSendReq.PdcchSendReq.beamId
+    ...       -E header=y -E separator=';' >> ${logs_path}/tcpdump/${current_step}_L1L2_pcapprocessed.txt
+    \    run       ${cmd}
+
+Check in L1L2 for prachRecReq
+    [Arguments]     ${current_step}    ${prachConfigurationIndex}
+    ${result}   run keyword     checkPrachRecReqIE
+    ...         ${logs_path}/tcpdump/${current_step}_L1L2_pcapprocessed.txt
+    ...         ${CURDIR}/prachConfigurationIndex_Table_${frameStructure_name}.txt
+    ...         ${suite_dir}/result.txt
+    ...         ${prachConfigurationIndex}
+
+    run keyword if  '${result}'!='PASSED'   run keywords
+    ...  Append To File      ${suite_dir}/result.txt     \n\tPRACH RECEIVE REQUEST checks: FAILED\n     AND
+    ...  run keyword and continue on failure   fail    PRACH RECEIVE REQUEST checks: FAILED
+
+
+Check in L1L2 for prachRecInd
+    [Arguments]     ${current_step}    ${prachConfigurationIndex}
+    ${result}   run keyword     checkPrachRecInd
+    ...         ${logs_path}/tcpdump/${current_step}_L1L2_pcapprocessed.txt
+    ...         ${CURDIR}/prachConfigurationIndex_Table_${frameStructure_name}.txt
+    ...         ${suite_dir}/result.txt
+    ...         ${prachConfigurationIndex}
+    run keyword if  '${result}'!='PASSED'   run keywords
+    ...  Append To File      ${suite_dir}/result.txt     \n\tPRACH RECEIVE INDICATION checks: FAILED\n     AND
+    ...  run keyword and continue on failure   fail    PRACH RECEIVE INDICATION checks: FAILED
+
+
+Check in X2 for call setup
+    [Arguments]  ${current_step}  ${expectedRsrpThresholdSSB}=${EMPTY}  ${expectedPowerRampingStep}=${EMPTY}
+    ...  ${expectedInitialPreambleReceivedTargetPower}=${EMPTY}  ${expectedPreambleTransMax}=${EMPTY}
+    ...  ${expectedMacContentionResTimer}=${EMPTY}  ${expectedRaResponseWindowSize}=${EMPTY}
+    ...  ${expectedZeroCorrelationZoneConfig}=${EMPTY}  ${expectedPrachConfigurationIndex}=${EMPTY}
+    ...  ${expectedPrachRootSequenceIndex}=${EMPTY}  ${expectedCbraPreamblesPerSsb}=${EMPTY}  ${expectedMsg1FrequencyStart}=${EMPTY}
+    ...  ${expectedMsg3DeltaPreamble}=${EMPTY}
+
+    Append To File   ${suite_dir}/result.txt   \n------------------------------------------
+    Append To File   ${suite_dir}/result.txt   \nCall Setup: X2 Analysis (SgNBAdditionRequestAcknowledge - RRC Reconfiguration)\n
+
+    set test variable   ${x2CallSetupCheckStatus}          ${TRUE}
+
+    ${logs_path_changed}    Replace string using regexp    ${logs_path}    \\[1\\]    \\\\[1\\\\]
+    @{pcap_files}=    List Files in directory    ${logs_path}/tcpdump    ${current_step}_X2*.pcap*
+
+    :FOR    ${pcap_file}    in    @{pcap_files}
+    \    ${cmd}    catenate
+    ...       tshark -X lua_script:/opt/luashark/luashark.lua
+    ...       -r ${logs_path_changed}/tcpdump/${pcap_file} -T fields
+    ...       -Y "x2ap.X2AP_PDU"
+    ...       -e _ws.col.Info
+    ...       -e nr-rrc.rsrp_ThresholdSSB
+    ...       -e nr-rrc.powerRampingStep
+    ...       -e nr-rrc.preambleReceivedTargetPower
+    ...       -e nr-rrc.preambleTransMax
+    ...       -e nr-rrc.ra_ContentionResolutionTimer
+    ...       -e nr-rrc.ra_ResponseWindow
+    ...       -e nr-rrc.zeroCorrelationZoneConfig
+    ...       -e nr-rrc.prach_ConfigurationIndex
+    ...       -e nr-rrc.l139
+    ...       -e nr-rrc.one
+    ...       -e nr-rrc.msg1_FrequencyStart
+    ...       -e nr-rrc.msg3_DeltaPreamble
+    ...       -E header=y -E separator=';' >> ${logs_path}/tcpdump/${current_step}_X2_pcapprocessed.txt
+    \    run       ${cmd}
+
+    ${extract}   OperatingSystem.grep file      ${logs_path}/tcpdump/${current_step}_X2_pcapprocessed.txt  RRC Reconfiguration;
+    run keyword if  len($extract)==0        run keywords
+    ...   Append To File   ${suite_dir}/result.txt    \n\tSgNBAdditionReqAck not found\n  AND
+    ...   fail  tSgNBAdditionReqAck not found
+    #SgNBAdditionRequestAcknowledge, RRC Reconfiguration;11,11;2,2;-202,-202;9,9;7,7;7,7;0,0;196,196;0,0;15,15;0,0
+    ${list}      get regexp matches    ${extract}    (-?\\d+,?-?\\d*)|(0x\\w+,?0x\\w*)
+
+    run keyword if  '${expectedRsrpThresholdSSB}'!='${EMPTY}'
+    ...  run keyword and continue on failure  Check in X2 for call setup compare values
+    ...  list_value=${list}  index=0     param_name=rsrpThresholdSSB    expected_value=${expectedRsrpThresholdSSB}
+    run keyword if  '${expectedPowerRampingStep}'!='${EMPTY}'
+    ...  run keyword and continue on failure  Check in X2 for call setup compare values
+    ...  list_value=${list}  index=1     param_name=powerRampingStep    expected_value=${expectedPowerRampingStep}  mediation_required=${TRUE}
+    run keyword if  '${expectedInitialPreambleReceivedTargetPower}'!='${EMPTY}'
+    ...  run keyword and continue on failure  Check in X2 for call setup compare values
+    ...  list_value=${list}  index=2     param_name=initialPreambleReceivedTargetPower  expected_value=${expectedInitialPreambleReceivedTargetPower}
+    run keyword if  '${expectedPreambleTransMax}'!='${EMPTY}'
+    ...  run keyword and continue on failure  Check in X2 for call setup compare values
+    ...  list_value=${list}  index=3     param_name=preambleTransMax    expected_value=${expectedPreambleTransMax}  mediation_required=${TRUE}
+    run keyword if  '${expectedMacContentionResTimer}'!='${EMPTY}'
+    ...  run keyword and continue on failure  Check in X2 for call setup compare values
+    ...  list_value=${list}  index=4  param_name=raContentionResolutionTmr
+    ...  expected_value=${expectedMacContentionResTimer}  mediation_required=${TRUE}
+    run keyword if  '${expectedRaResponseWindowSize}'!='${EMPTY}'
+    ...  run keyword and continue on failure  Check in X2 for call setup compare values
+    ...  list_value=${list}  index=5     param_name=raResponseWindow  expected_value=${expectedRaResponseWindowSize}  mediation_required=${TRUE}
+    run keyword if  '${expectedZeroCorrelationZoneConfig}'!='${EMPTY}'
+    ...  run keyword and continue on failure  Check in X2 for call setup compare values
+    ...  list_value=${list}  index=6     param_name=zeroCorrelationZoneConfig    expected_value=${expectedZeroCorrelationZoneConfig}
+    run keyword if  '${expectedPrachConfigurationIndex}'!='${EMPTY}'
+    ...  run keyword and continue on failure  Check in X2 for call setup compare values
+    ...  list_value=${list}  index=7     param_name=prachConfigurationIndex    expected_value=${expectedPrachConfigurationIndex}
+    run keyword if  '${expectedPrachRootSequenceIndex}'!='${EMPTY}'
+    ...  run keyword and continue on failure  Check in X2 for call setup compare values
+    ...  list_value=${list}  index=8     param_name=prachRootSequenceIndex    expected_value=${expectedPrachRootSequenceIndex}
+    run keyword if  '${expectedCbraPreamblesPerSsb}'!='${EMPTY}'
+    ...  run keyword and continue on failure  Check in X2 for call setup compare values
+    ...  list_value=${list}  index=9     param_name=cbraPreamblesPerSsb    expected_value=${expectedCbraPreamblesPerSsb}  mediation_required=${TRUE}
+    run keyword if  '${expectedMsg1FrequencyStart}'!='${EMPTY}'
+    ...  run keyword and continue on failure  Check in X2 for call setup compare values
+    ...  list_value=${list}  index=10     param_name=msg1FrequencyStart    expected_value=${expectedMsg1FrequencyStart}
+    run keyword if  '${expectedMsg3DeltaPreamble}'!='${EMPTY}'
+    ...  run keyword and continue on failure  Check in X2 for call setup compare values
+    ...  list_value=${list}  index=11     param_name=msg3DeltaPreamble    expected_value=${expectedMsg3DeltaPreamble}
+
+
+    #run keyword unless  ${x2CallSetupCheckStatus}  run keywords
+    run keyword if  ${x2CallSetupCheckStatus} == ${FALSE}  run keywords
+    ...  Append To File      ${suite_dir}/result.txt     \n\t\n\tCALL SETUP X2 CHECKS: FAILED      AND
+    ...  run keyword and continue on failure    fail    CALL SETUP X2 CHECKS: FAILED
+
+Check in X2 for call setup compare values
+    [Arguments]    ${list_value}   ${index}  ${param_name}  ${expected_value}   ${mediation_required}=${FALSE}
+    ${list}        get regexp matches    @{list_value}[${index}]    (-?\\d+)|(0x\\w+)
+    ${value}       convert to integer      @{list}[0]
+    ${expected_value_2}=   set variable if
+    ...   '${mediation_required}'=='${TRUE}'    ${mediationOAMtoX2['${param_name}']['${expected_value}']}
+    ...   '${mediation_required}'=='${FALSE}'    ${expected_value}
+    ${status}=  run keyword and return status
+    ...     should be equal as integers  ${value}  ${expected_value_2}      ${param_name} not expected
+    ${value}=   set variable if
+    ...   '${mediation_required}'=='${TRUE}'    ${mediationX2toOAM['${param_name}'][${value}]}
+    ...   '${mediation_required}'=='${FALSE}'    ${value}
+    run keyword if     ${status}    run keywords
+    ...  Append To File   ${suite_dir}/result.txt   \n\t${param_name}: OK (${value})  AND
+    ...  Update parameterUpdated  ${param_name}  x2
+
+    #run keyword unless  ${status}   run keywords
+    run keyword if  ${status} == ${False}   run keywords
+    ...  set test variable   ${x2CallSetupCheckStatus}   ${FALSE}    AND
+    ...  Append To File   ${suite_dir}/result.txt  \n\t${param_name}: not OK (current=${value}, expected=${expected_value})
+
+
+Check not equal with current value
+    [Arguments]  ${xml_root}  ${param_name}  ${param_value}    ${list}=${EMPTY}
+    ${status}=   Compare parameter value with current configuration   ${xml_root}  ${param_name}  ${param_value}  ${list}
+    run keyword if  ${status}
+    ...  set test variable   ${currentValueStatus}   ${FALSE}
+    ...  ELSE  Update parameterToBeUpdated  ${param_name}
+
+
+Compare parameter value with current configuration
+    #[Arguments]  ${xml_root}  ${param_name}  ${param_value}    ${list}=${EMPTY}
+    [Arguments]  ${xml_root}  ${param_name}  ${param_value}    ${list}
+    ${dist_name}=    set variable     MRBTS-${mr_bts}/NRBTS-${GNB_nr_bts}/NRCELL-1
+    ${xpath}=  set variable if
+    ...  '${list}'=='${EMPTY}'  //managedObject[@distName="${dist_name}"]/p[@name="${param_name}"]
+    ...  '${list}'!='${EMPTY}'  //managedObject[@distName="${dist_name}"]/list[@name="${list}"]//p[@name="${param_name}"]
+    ${value}=  XML.Get Element Text  ${xml_root}  ${xpath}
+    Append To File   ${suite_dir}/result.txt   \n\t${param_name}: current=${value}, expected=${param_value}
+    ${status}=  run keyword and return status
+        ...     should be equal    ${param_value}   ${value}
+    [Return]  ${status}
+
+
+Perform call with all traces
+    [Arguments]  ${current_step}  ${filter}=${EMPTY}
+
+    Append To File      ${suite_dir}/result.txt     \n\n------------------------------------------
+    Append To File      ${suite_dir}/result.txt     \nCall Setup
+
+    run keyword if  '${UE_Architecture}' == 'PRISMA'    Run keywords
+    ...             prismaUE.Update prisma sid    ${test_sid_file}    AND
+    ...             prismaUE.Update prisma attach sce    ${TargetScenario}
+
+    run keyword if  ${ue_available}   run keyword and continue on failure  metascripts.UE Setup    forceReset=0
+
+    #Mirroring Configuration
+    configuration.Mirroring Create SSH
+    set test variable  ${ext_mirroring}  1
+
+    ${connectionContentionLog}    Set variable if
+    ...    '${system_module_type}' == 'ASIK'    abilXeonACnx
+    ...    '${system_module_type}' == 'ASOD'    asikFhCnx
+    run keyword and continue on failure     logs.Check For Contention In ABIL - Step 1    connection=${connectionContentionLog}
+
+    ${connectionLonerLog}    Set variable if
+    ...    '${system_module_type}' == 'ASIK'    abilLonerCnx
+    ...    '${system_module_type}' == 'ASOD'    asodLonerCnx
+    ssh.send command    journalctl -f > /tmp/lonerCallSetup_${current_step}.txt    connection=${connectionLonerLog}
+
+    # Start all traces
+    run keyword and continue on failure     logs.Start X2 Traces       ${current_step}
+    run keyword and continue on failure      privateKW_RACH.Start L1L2 on mirroring   ${current_step}    ${filter}
+
+    #Launch call
+    run keyword if  ${ue_available}  run keywords
+    ...  run keyword and continue on failure     metascripts.UE Scenario  AND
+    ...  sleep   5   AND
+    ...  run keyword and continue on failure     metascripts.UE Detach
+    #...  run keyword and continue on failure     metascripts.UE Detach  AND
+    #...  run keyword and continue on failure     privateKW_RACH.Stop L1L2 on mirroring
+    run keyword if  ${ue_available} == ${False}  sleep  5
+
+    # Stop all traces
+    #ssh.execute      kill -9 `ps -ef | grep 'journalctl -f' | awk '{print $2}'`         connection=${connectionLonerLog}
+    #ssh.download file   /tmp/lonerCallSetup_${current_step}.txt  ${logs_path}/lonerCallSetup_${current_step}.txt   connection=${connectionLonerLog}
+
+    run keyword and continue on failure     privateKW_RACH.Stop L1L2 on mirroring
+    run keyword and continue on failure     logs.Stop X2 Traces
+
+
+    # Commenter en attendant de savoir comment mettre le bon niveau de trace
+    #Check contention in ABIL logs. Need a timer to get log
+    sleep   30
+    run keyword and continue on failure     logs.Check For Contention In ABIL - Step 2    connection=${connectionContentionLog}
+
+
+Perform call with no trace
+
+	Append To File      ${suite_dir}/result.txt     \n\n------------------------------------------
+    Append To File      ${suite_dir}/result.txt     \nCall Setup
+
+    run keyword if  '${UE_Architecture}' == 'PRISMA'    Run keywords
+    ...             prismaUE.Update prisma sid    ${test_sid_file}    AND
+    ...             prismaUE.Update prisma attach sce    ${TargetScenario}
+
+    run keyword if  ${ue_available}   run keyword and continue on failure  metascripts.UE Setup    forceReset=0
+    ${connectionContentionLog}    Set variable if
+    ...    '${system_module_type}' == 'ASIK'    abilXeonACnx
+    ...    '${system_module_type}' == 'ASOD'    asikFhCnx
+    run keyword and continue on failure     logs.Check For Contention In ABIL - Step 1    connection=${connectionContentionLog}
+
+    #Launch call
+    run keyword if  ${ue_available}  run keywords
+    ...  run keyword and continue on failure     metascripts.UE Scenario  AND
+    ...  sleep   10   AND
+    ...  run keyword and continue on failure     metascripts.UE Detach
+    run keyword if  ${ue_available} == ${False}  sleep  5
+
+    # Commenter en attendant de savoir comment mettre le bon niveau de trace
+    #Check contention in ABIL logs. Need a timer to
+    sleep   30
+    run keyword and continue on failure     logs.Check For Contention In ABIL - Step 2    connection=${connectionContentionLog}
+
+
+Reset and wait for cell setup
+    [Arguments]           ${current_step}
+    configuration.site reset
+    configuration.create SSH
+    configuration.create Connections
+
+    # Start SYSCOM traces for cell setup
+    configuration.Mirroring Create SSH
+    set test variable  ${ext_mirroring}  1
+    run keyword and continue on failure     logs.Start X2 Traces       ${current_step}
+
+    ${connectionLonerLog}    Set variable if
+    ...    '${system_module_type}' == 'ASIK'    abilLonerCnx
+    ...    '${system_module_type}' == 'ASOD'    asodLonerCnx
+    #${filter}=  catenate  ether[24:2]!=0x012b && ether[24:2]!=0x0122 && ether[24:2]!=0x0127 && ether[24:2]!=0x0131 && ether[24:2]!=0x0240
+    ${filter}=  catenate  ether[24:2]!=0xe101 && ether[24:2]!=0x0122 && ether[24:2]!=0x0127 && ether[24:2]!=0x0131 && ether[24:2]!=0x0240
+    run keyword and continue on failure     privateKW_RACH.Start Syscom on mirroring        ${current_step}   ${filter}
+    #ssh.send command    journalctl -f > /tmp/lonerLogForPrachDtxThresh.txt    connection=${connectionLonerLog}
+
+    # Wait for cell to be online
+    wait until keyword succeeds    20 min     30 sec      gnbStatus.Check Cell Availability Status V2
+    Append To File      ${suite_dir}/result.txt     \n\nCell Setup Done
+
+    # Stop and collect SYSCOM for cell setup
+    sleep   10
+    run keyword and continue on failure     logs.Stop X2 Traces
+    run keyword and continue on failure     privateKW_RACH.Stop Syscom on mirroring
+    #ssh.execute      kill -9 `ps -ef | grep 'journalctl -f' | awk '{print $2}'`         connection=${connectionLonerLog}
+    #ssh.download file   /tmp/lonerLogForPrachDtxThresh.txt  ${logs_path}/lonerLogForPrachDtxThresh.txt   connection=${connectionLonerLog}
+
+
+
+Commission and wait for cell setup
+    [Arguments]      ${new_scf}     ${current_step}=
+    configuration.SCF Commission      ${new_scf}
+    configuration.create SSH
+    configuration.create Connections
+
+    # Start traces for cell setup
+
+    configuration.Mirroring Create SSH
+
+    run keyword and continue on failure     logs.Start X2 Traces       ${current_step}
+
+    set test variable  ${ext_mirroring}  1
+    # filtre 19B
+    #${filter}=  catenate  ether[24:2]!=0x012b && ether[24:2]!=0x0122 && ether[24:2]!=0x0127 && ether[24:2]!=0x0131 && ether[24:2]!=0x0240
+    # filtre 20B
+    ${filter}=  catenate  ether[24:2]!=0xe101 && ether[24:2]!=0x0122 && ether[24:2]!=0x0127 && ether[24:2]!=0x0131 && ether[24:2]!=0x0240
+
+    Run keyword if    '${system_module_type}' == 'ASIK'
+    ...          logs.Start Mirroring manual or remote on Asik     asikFhCnx    ${gnb_mirroring_script_path}
+    Run keyword if    '${system_module_type}' == 'ASOD'
+    ...          logs.Start Mirroring on Asod    asikFhCnx    ${gnb_mirroring_script_path}
+    run keyword and continue on failure     privateKW_RACH.Start Syscom on mirroring        ${current_step}   ${filter}
+
+
+    # Wait for cell to be online
+    wait until keyword succeeds    20 min     30 sec      gnbStatus.Check Cell Availability Status V2
+    Append To File      ${suite_dir}/result.txt     \n\nCell Setup Done
+
+    # Stop and collect traces
+    sleep   10
+    run keyword and continue on failure     logs.Stop X2 Traces
+
+    run keyword and continue on failure     privateKW_RACH.Stop Syscom on mirroring
+
+
+Commission and wait for cell setup without traces
+    [Arguments]      ${new_scf}
+
+    configuration.SCF Commission      ${new_scf}
+    configuration.create SSH
+    configuration.create Connections
+
+    # Wait for cell to be online
+    wait until keyword succeeds    20 min     30 sec      gnbStatus.Check Cell Availability Status V2
+    Append To File      ${suite_dir}/result.txt     \n\n\tCell Setup Done
+
+Start Syscom on mirroring
+    [Documentation]    This keyword starts tcpdump for syscom traces.
+    [Arguments]        ${procedure}   ${filter}
+    ${interface}    Set variable if
+    ...    '${system_module_type}' == 'ASIK'    ethbp1
+    ...    '${system_module_type}' == 'ASOD'    etha01
+
+    ${connnection_tcp}    Set variable if
+    ...    '${system_module_type}' == 'ASIK'    abilXeonACnx
+    ...    '${system_module_type}' == 'ASOD'    asikFhCnx
+    #...    '${system_module_type}' == 'ASOD'    asodSlaveCnx
+
+    ${traceNameSyscom}=    run keyword     logs.Tcpdump Start
+    ...     ${interface}
+    ...     ${connnection_tcp}
+    ...     ${procedure}_syscomAsik_${GNB_Friendly_TL_Name}
+    ...     filter=${filter}
+    set test variable   ${traceNameSyscom}    ${traceNameSyscom}
+
+Stop Syscom on mirroring
+    [Documentation]    This keyword stops tcpdump for syscom traces.
+    ${interface}    Set variable if
+    ...    '${system_module_type}' == 'ASIK'    ethbp1
+    ...    '${system_module_type}' == 'ASOD'    etha01
+
+    ${connnection_tcp}    Set variable if
+    ...    '${system_module_type}' == 'ASIK'    abilXeonACnx
+    ...    '${system_module_type}' == 'ASOD'    asikFhCnx
+    #...    '${system_module_type}' == 'ASOD'    asodSlaveCnx
+
+    logs.Tcpdump Stop And Collect
+    ...     ${interface}
+    ...     ${connnection_tcp}
+    ...     ${traceNameSyscom}
+    ...     logs/tcpdump/
+
+Start L1L2 on mirroring
+    [Documentation]    This keyword stops tcpdump for L1L2 traces.
+    [Arguments]        ${procedure}   ${filter}
+    ${interface}    Set variable if
+    ...    '${system_module_type}' == 'ASIK'    ethbp1
+    ...    '${system_module_type}' == 'ASOD'    pepbp1
+
+    ${connnection_tcp}    Set variable if
+    ...    '${system_module_type}' == 'ASIK'    abilXeonACnx
+    ...    '${system_module_type}' == 'ASOD'    asikFhCnx
+
+    ${traceNameL1L2}=    run keyword     logs.Tcpdump Start
+    ...     ${interface}
+    ...     ${connnection_tcp}
+    ...     ${procedure}_L1L2_${GNB_Friendly_TL_Name}
+    ...     filter=${filter}
+    set test variable   ${traceNameL1L2}    ${traceNameL1L2}
+
+Stop L1L2 on mirroring
+    [Documentation]    This keyword stops tcpdump for L1L2 traces.
+    ${interface}    Set variable if
+    ...    '${system_module_type}' == 'ASIK'    ethbp1
+    ...    '${system_module_type}' == 'ASOD'    pepbp1
+
+    ${connnection_tcp}    Set variable if
+    ...    '${system_module_type}' == 'ASIK'    abilXeonACnx
+    ...    '${system_module_type}' == 'ASOD'    asikFhCnx
+
+    logs.Tcpdump Stop And Collect
+    ...     ${interface}
+    ...     ${connnection_tcp}
+    ...     ${traceNameL1L2}
+    ...     logs/tcpdump/
+
+
+Update parameterToBeUpdated
+    [Arguments]  ${param_name}
+    ${status1}  evaluate    '5GC000511' in """${SUITE_NAME}"""
+    return from keyword if  not ${status1}
+    ${parameterToBeUpdated}  set variable  ${parameterToBeUpdated};${param_name}
+    set test variable   ${parameterToBeUpdated}  ${parameterToBeUpdated}
+
+Update parameterUpdated
+    [Arguments]  ${param_name}  ${suffixe}
+    ${status1}  evaluate    '5GC000511' in """${SUITE_NAME}"""
+    return from keyword if  not ${status1}
+    ${status}  evaluate    '${param_name}' in """${parameterToBeUpdated}"""
+    run keyword if  ${status}  Update parameterUpdated_step2   ${param_name}  ${suffixe}
+
+Update parameterUpdated_step2
+    [Arguments]  ${param_name}  ${suffixe}
+    ${parameterUpdated}  set variable  ${parameterUpdated};${param_name}_${suffixe}
+    set test variable   ${parameterUpdated}  ${parameterUpdated}
+
+Display call setup IE
+    [Arguments]  ${current_step}
+
+    Append To File   ${suite_dir}/result.txt   \n------------------------------------------
+    Append To File   ${suite_dir}/result.txt   \nCall Setup: X2 Analysis (SgNBAdditionRequestAcknowledge - RRC Reconfiguration)\n
+
+    set test variable   ${x2CallSetupCheckStatus}          ${TRUE}
+
+    ${logs_path_changed}    Replace string using regexp    ${logs_path}    \\[1\\]    \\\\[1\\\\]
+    @{pcap_files}=    List Files in directory    ${logs_path}/tcpdump    ${current_step}_X2*.pcap*
+
+    :FOR    ${pcap_file}    in    @{pcap_files}
+    \    ${cmd}    catenate
+    ...       tshark -X lua_script:/opt/luashark/luashark.lua
+    ...       -r ${logs_path_changed}/tcpdump/${pcap_file} -T fields
+    ...       -Y "x2ap.X2AP_PDU"
+    ...       -e _ws.col.Info
+    ...       -e nr-rrc.mediumBitmap
+    ...       -e nr-rrc.ssb_periodicityServingCell
+    ...       -e nr-rrc.dl_UL_TransmissionPeriodicity
+    ...       -e nr-rrc.nrofDownlinkSlots
+    ...       -e nr-rrc.nrofDownlinkSymbols
+    ...       -e nr-rrc.nrofUplinkSlots
+    ...       -e nr-rrc.nrofUplinkSymbols
+    ...       -E header=y -E separator=';' >> ${logs_path}/tcpdump/${current_step}_X2_pcapprocessed.txt
+    \    run       ${cmd}
+
+    ${extract}   OperatingSystem.grep file      ${logs_path}/tcpdump/${current_step}_X2_pcapprocessed.txt  RRC Reconfiguration;
+    run keyword if  len($extract)==0        run keywords
+    ...   Append To File   ${suite_dir}/result.txt    \n\tSgNBAdditionReqAck not found\n  AND
+    ...   fail  tSgNBAdditionReqAck not found
+
+Prepare Mirroring ASIK
+    ${gnb_mirroring_script_path}=    logs.Prepare Mirroring script on Asik    connection=asikFhCnx
+    set test variable    ${gnb_mirroring_script_path}    ${gnb_mirroring_script_path}
+
+Prepare Mirroring ASOD
+    ${gnb_mirroring_script_path}=    logs.Prepare Mirroring script on ASOD    connection=asikFhCnx
+    set test variable    ${gnb_mirroring_script_path}    ${gnb_mirroring_script_path}
+

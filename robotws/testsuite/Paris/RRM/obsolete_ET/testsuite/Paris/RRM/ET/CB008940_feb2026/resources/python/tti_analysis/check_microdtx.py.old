@@ -1,0 +1,257 @@
+import logging
+import math
+
+from datetime import datetime
+from datetime import timedelta
+
+from testsuite.Paris.RRM.ET.CB008940.resources.python.tti_analysis.helper_functions import display_df_as_html
+from testsuite.Paris.RRM.ET.CB008940.resources.python.tti_analyzer_framework import pandas_gate
+
+# Robot Framework Libraries:
+from robot.libraries.BuiltIn import BuiltIn
+
+rbi = BuiltIn()
+pd = None
+
+
+def log_begin_end_func_name(fn):
+    def inner(*args, **kwargs):
+        logging.info("============================== Begin Function {0}".format(fn.__name__))
+        func_return = fn(*args, **kwargs)
+        logging.info("============================== End Function {0}".format(fn.__name__))
+        return func_return
+    return inner
+
+
+""" Functions to be used """
+
+
+@log_begin_end_func_name
+def filter_valid_events_and_check_microdtx(path_to_pickle, target_pkl_path):
+    """ This function filters needed rows for MicroDtx Check and
+        saves it into a new pickle to be used by other functions
+
+        :param path_to_pickle: Path of input pickle file
+        :param target_pkl_path: Path of new target pickle file
+
+        :returns: target_pkl_path
+    """
+    global pd
+    is_Conf_Cell50_correct = True
+    is_Conf_Cell51_correct = True
+    is_Conf_Cell52_correct = True
+    pd = pandas_gate.install_and_import_pandas()
+    df = pd.read_pickle(path_to_pickle)
+    pd.reset_option('^display.')
+
+    # TTI Trace Events
+    numAllocCellPrbDl_event = 'dlAllocatedPooledResourcesData.numAllocCellPrbDl'
+    hasZabPrivilege_event = 'dlAllocatedPooledResourcesData.hasZabPrivilege'
+    dlDtxOptimData_numAllocCellPrbDl = 'dlDtxOptimData.prbAvailableInfo.largeBwpPrbs'
+    dlFdSchedData_numOfPrb_event = 'dlFdSchedData.numOfPrb'
+    isValidWhatIsProposed = 'dlFdSchedData.isValidWhatIsProposed'
+    dlDtxOptimEvent = 'dlDtxOptimData.dlDtxOptimEvent'
+
+    filtered_df = (
+        df.loc[((df[isValidWhatIsProposed] != 0) & (df['rnti'] != 65535)),
+               ['timeStamp', 'sfn', 'slot', 'rnti', 'lcrId', 'physCellId',
+                numAllocCellPrbDl_event, hasZabPrivilege_event,
+                dlDtxOptimEvent, dlDtxOptimData_numAllocCellPrbDl, dlFdSchedData_numOfPrb_event]]).dropna(
+        subset=[
+            numAllocCellPrbDl_event,
+            hasZabPrivilege_event,
+            dlDtxOptimData_numAllocCellPrbDl,
+            dlFdSchedData_numOfPrb_event,
+            dlDtxOptimEvent
+        ], how='all').reset_index(drop=True)
+
+    rows =\
+        filtered_df[(filtered_df['physCellId'] == 51) &
+                    (filtered_df['dlAllocatedPooledResourcesData.numAllocCellPrbDl'].notnull())].index
+    rbi.log(
+        'dlAllocatedPooledResourcesData.numAllocCellPrbDl Columns used: {} Number of rows: {}'.format(rows, len(rows)),
+        'INFO')
+    data_numAllocCellPrbDl = filtered_df.loc[rows, 'dlAllocatedPooledResourcesData.numAllocCellPrbDl']
+    rbi.log(data_numAllocCellPrbDl, 'INFO')
+
+    row_dlDtxOptimData = \
+        filtered_df[(filtered_df['physCellId'] == 51) &
+                    (filtered_df['dlDtxOptimData.dlDtxOptimEvent'] == 'DTXPRBTHRES')].index
+    rbi.log('Columns used: {} Number of rows: {}'.format(row_dlDtxOptimData, len(row_dlDtxOptimData)),
+            'INFO')
+    data_dlDtxOptimData = filtered_df.loc[row_dlDtxOptimData, 'dlDtxOptimData.prbAvailableInfo.largeBwpPrbs']
+    rbi.log(data_dlDtxOptimData, 'INFO')
+
+    mean_data_dlDtxOptimData = data_dlDtxOptimData.mean()
+    rbi.log('mean_data_dlDtxOptimData Cell 51: {}'.format(mean_data_dlDtxOptimData),
+            'INFO')
+    max_data_dlDtxOptimData = data_dlDtxOptimData.max()
+    rbi.log('max_data_dlDtxOptimData Cell51: {}'.format(max_data_dlDtxOptimData),
+            'INFO')
+    mean_data_numAllocCellPrbDl = data_numAllocCellPrbDl.mean()
+    rbi.log('mean_data_numAllocCellPrbDl Cell51: {}'.format(mean_data_numAllocCellPrbDl),
+            'INFO')
+    max_data_numAllocCellPrbDl = data_numAllocCellPrbDl.max()
+    max_data_numAllocCellPrbDl_cell51 = max_data_numAllocCellPrbDl
+    rbi.log('max_data_numAllocCellPrbDl Cell51: {}'.format(max_data_numAllocCellPrbDl),
+            'INFO')
+    if len(data_dlDtxOptimData) != 0:
+        is_Conf_Cell51_correct = (math.isclose(mean_data_dlDtxOptimData, mean_data_numAllocCellPrbDl, abs_tol=1.0))
+        rbi.log('is_Conf_Cell51_correct: {}'.format(is_Conf_Cell51_correct), 'INFO')
+    else:
+        is_Conf_Cell51_correct = True
+        rbi.log('is_Conf_Cell51_correct: {}'.format(is_Conf_Cell51_correct), 'INFO')
+
+    rows =\
+        filtered_df[(filtered_df['physCellId'] == 50) &
+                    (filtered_df['dlAllocatedPooledResourcesData.numAllocCellPrbDl'].notnull())].index
+    rbi.log(
+        'dlAllocatedPooledResourcesData.numAllocCellPrbDl Columns used: {} Number of rows: {}'.format(rows, len(rows)),
+        'INFO')
+    data_numAllocCellPrbDl = filtered_df.loc[rows, 'dlAllocatedPooledResourcesData.numAllocCellPrbDl']
+    rbi.log(data_numAllocCellPrbDl, 'INFO')
+
+    row_dlDtxOptimData = \
+        filtered_df[(filtered_df['physCellId'] == 50) &
+                    (filtered_df['dlDtxOptimData.dlDtxOptimEvent'] == 'DTXPRBTHRES')].index
+    rbi.log('dlDtxOptimData.dlDtxOptimEvent Columns used: {} Number of rows: {}'.format(row_dlDtxOptimData,
+                                                                                        len(row_dlDtxOptimData)),
+            'INFO')
+    data_dlDtxOptimData = filtered_df.loc[row_dlDtxOptimData, 'dlDtxOptimData.prbAvailableInfo.largeBwpPrbs']
+    rbi.log(data_dlDtxOptimData, 'INFO')
+
+    if len(data_dlDtxOptimData) != 0:
+        mean_data_dlDtxOptimData = data_dlDtxOptimData.mean()
+        rbi.log('mean_data_dlDtxOptimData Cell50: {}'.format(mean_data_dlDtxOptimData),
+                'INFO')
+        max_data_dlDtxOptimData = data_dlDtxOptimData.max()
+        rbi.log('max_data_dlDtxOptimData Cell50: {}'.format(max_data_dlDtxOptimData),
+                'INFO')
+    mean_data_numAllocCellPrbDl = data_numAllocCellPrbDl.mean()
+    rbi.log('mean data_numAllocCellPrbDl Cell50: {}'.format(mean_data_numAllocCellPrbDl),
+            'INFO')
+    max_data_numAllocCellPrbDl = data_numAllocCellPrbDl.max()
+    max_data_numAllocCellPrbDl_cell50 = max_data_numAllocCellPrbDl
+    rbi.log('max data_numAllocCellPrbDl Cell50: {}'.format(max_data_numAllocCellPrbDl),
+            'INFO')
+    if len(data_dlDtxOptimData) != 0:
+        is_Conf_Cell50_correct = (math.isclose(mean_data_dlDtxOptimData, mean_data_numAllocCellPrbDl, abs_tol=30.0))
+        rbi.log('is_Conf_Cell50_correct: {}'.format(is_Conf_Cell50_correct),
+                'INFO')
+    else:
+        is_Conf_Cell50_correct = True
+        rbi.log('is_Conf_Cell50_correct: {}'.format(is_Conf_Cell50_correct),
+                'INFO')
+
+    rows = \
+        filtered_df[(filtered_df['physCellId'] == 52) &
+                    (filtered_df['dlAllocatedPooledResourcesData.numAllocCellPrbDl'].notnull())].index
+    rbi.log('Columns used: {} Number of rows: {}'.format(rows, len(rows)), 'INFO')
+    data_numAllocCellPrbDl = filtered_df.loc[rows, 'dlAllocatedPooledResourcesData.numAllocCellPrbDl']
+    rbi.log(data_numAllocCellPrbDl, 'INFO')
+
+    row_dlDtxOptimData = \
+        filtered_df[(filtered_df['physCellId'] == 52) &
+                    (filtered_df['dlDtxOptimData.dlDtxOptimEvent'] == 'DTXPRBTHRES')].index
+    rbi.log('dlDtxOptimData.dlDtxOptimEvent Columns used: {} Number of rows: {}'.format(row_dlDtxOptimData,
+                                                                                        len(row_dlDtxOptimData)),
+            'INFO')
+    data_dlDtxOptimData = filtered_df.loc[row_dlDtxOptimData, 'dlDtxOptimData.prbAvailableInfo.largeBwpPrbs']
+    rbi.log(data_dlDtxOptimData, 'INFO')
+
+    if len(data_dlDtxOptimData) != 0:
+        mean_data_dlDtxOptimData = data_dlDtxOptimData.mean()
+        rbi.log('mean_data_dlDtxOptimData Cell52: {}'.format(mean_data_dlDtxOptimData),
+                'INFO')
+        max_data_dlDtxOptimData = data_dlDtxOptimData.max()
+        rbi.log('max_data_dlDtxOptimData Cell52: {}'.format(max_data_dlDtxOptimData),
+                'INFO')
+    mean_data_numAllocCellPrbDl = data_numAllocCellPrbDl.mean()
+    rbi.log('mean data_numAllocCellPrbDl Cell52 : {}'.format(mean_data_numAllocCellPrbDl),
+            'INFO')
+    max_data_numAllocCellPrbDl = data_numAllocCellPrbDl.max()
+    max_data_numAllocCellPrbDl_cell52 = max_data_numAllocCellPrbDl
+    rbi.log('max data_numAllocCellPrbDl Cell52 : {}'.format(max_data_numAllocCellPrbDl),
+            'INFO')
+    if len(data_dlDtxOptimData) != 0:
+        is_Conf_Cell52_correct = (math.isclose(mean_data_dlDtxOptimData, mean_data_numAllocCellPrbDl, abs_tol=30.0))
+        rbi.log('is_Conf_Cell52_correct Cell52 : {}'.format(is_Conf_Cell52_correct),
+                'INFO')
+    else:
+        is_Conf_Cell52_correct = True
+        rbi.log('is_Conf_Cell52_correct: {}'.format(is_Conf_Cell52_correct),
+                'INFO')
+
+    rows = \
+        filtered_df[(filtered_df['physCellId'] == 51) &
+                    (filtered_df['dlFdSchedData.numOfPrb'].notnull())].index
+    rbi.log(
+        'dlFdSchedData.numOfPrb Cell51 Columns used: {} Number of rows: {}'.format(rows, len(rows)),
+        'INFO')
+    data_dlFdSchedData_numOfPrb = filtered_df.loc[rows, 'dlFdSchedData.numOfPrb']
+    rbi.log(data_dlFdSchedData_numOfPrb, 'INFO')
+    max_data_dlFdSchedData_numOfPrb = data_dlFdSchedData_numOfPrb.max()
+    rbi.log('max_data_data_dlFdSchedData_numOfPrb Cell51: {}'.format(max_data_dlFdSchedData_numOfPrb),
+            'INFO')
+    rbi.log('max_data_numAllocCellPrbDl_cell51 : {}'.format(max_data_numAllocCellPrbDl_cell51),
+            'INFO')
+    is_Conf_Cell51_correct_2 = (max_data_dlFdSchedData_numOfPrb <= max_data_numAllocCellPrbDl_cell51)
+    rbi.log('is_Conf_Cell51_correct_2: {}'.format(is_Conf_Cell51_correct_2),
+            'INFO')
+
+    rows = \
+        filtered_df[(filtered_df['physCellId'] == 50) &
+                    (filtered_df['dlFdSchedData.numOfPrb'].notnull())].index
+    rbi.log(
+        'dlFdSchedData.numOfPrb cell50 Columns used: {} Number of rows: {}'.format(rows, len(rows)),
+        'INFO')
+    data_dlFdSchedData_numOfPrb = filtered_df.loc[rows, 'dlFdSchedData.numOfPrb']
+    rbi.log(data_dlFdSchedData_numOfPrb, 'INFO')
+    max_data_dlFdSchedData_numOfPrb = data_dlFdSchedData_numOfPrb.max()
+    rbi.log('max_data_data_dlFdSchedData_numOfPrb Cell50: {}'.format(max_data_dlFdSchedData_numOfPrb),
+            'INFO')
+    rbi.log('max_data_numAllocCellPrbDl_cell50 : {}'.format(max_data_numAllocCellPrbDl_cell50),
+            'INFO')
+    is_Conf_Cell50_correct_2 = (max_data_dlFdSchedData_numOfPrb <= max_data_numAllocCellPrbDl_cell50)
+    rbi.log('is_Conf_Cell50_correct_2: {}'.format(is_Conf_Cell50_correct_2),
+            'INFO')
+
+    rows = \
+        filtered_df[(filtered_df['physCellId'] == 52) &
+                    (filtered_df['dlFdSchedData.numOfPrb'].notnull())].index
+    rbi.log(
+        'dlFdSchedData.numOfPrb cell52 Columns used: {} Number of rows: {}'.format(rows, len(rows)),
+        'INFO')
+    data_dlFdSchedData_numOfPrb = filtered_df.loc[rows, 'dlFdSchedData.numOfPrb']
+    rbi.log(data_dlFdSchedData_numOfPrb, 'INFO')
+    max_data_dlFdSchedData_numOfPrb = data_dlFdSchedData_numOfPrb.max()
+    rbi.log('max_data_data_dlFdSchedData_numOfPrb Cell52: {}'.format(max_data_dlFdSchedData_numOfPrb),
+            'INFO')
+    rbi.log('max_data_numAllocCellPrbDl_cell52 : {}'.format(max_data_numAllocCellPrbDl_cell52),
+            'INFO')
+    is_Conf_Cell52_correct_2 = (max_data_dlFdSchedData_numOfPrb <= max_data_numAllocCellPrbDl_cell52)
+    rbi.log('is_Conf_Cell52_correct_2: {}'.format(is_Conf_Cell52_correct_2),
+            'INFO')
+
+    rbi.log('DF successfully filtered!', 'INFO')
+    rbi.log(filtered_df)
+
+    # Save back to pickle
+    filtered_df.to_pickle(target_pkl_path)
+
+    rbi.log('General Verdict : is_Conf_Cell50_correct: {}'.format(is_Conf_Cell50_correct),
+            'INFO')
+    rbi.log('General Verdict : is_Conf_Cell51_correct: {}'.format(is_Conf_Cell51_correct),
+            'INFO')
+    rbi.log('General Verdict : is_Conf_Cell52_correct: {}'.format(is_Conf_Cell52_correct),
+            'INFO')
+    rbi.log('General Verdict : is_Conf_Cell50_correct_2: {}'.format(is_Conf_Cell50_correct_2),
+            'INFO')
+    rbi.log('General Verdict : is_Conf_Cell51_correct_2: {}'.format(is_Conf_Cell51_correct_2),
+            'INFO')
+    rbi.log('General Verdict : is_Conf_Cell52_correct_2: {}'.format(is_Conf_Cell52_correct_2),
+            'INFO')
+    rbi.should_be_true(is_Conf_Cell50_correct and is_Conf_Cell51_correct and is_Conf_Cell52_correct and
+                       is_Conf_Cell50_correct_2 and is_Conf_Cell51_correct_2 and is_Conf_Cell52_correct_2)
+
+    return target_pkl_path

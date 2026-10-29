@@ -1,0 +1,77 @@
+start_UE_Set1=1
+end_UE_Set1=6
+for i = start_UE_Set1, end_UE_Set1 do
+	exec('sim_log_set flush')
+	sleep(5)
+	exec('ue_pdu_session_modify ue='..i..' pdu=1 qosflows_to_add=2 by=amf')
+	exec('trf_data_start ue='..i..' pdu=1 qfi=2 dir=dl kbps=900 protocol=tcp seconds=3600')
+	sleep(1)
+	exec('trf_data_start ue='..i..' pdu=1 qfi=2 dir=ul kbps=900 protocol=tcp seconds=3600')
+	sleep(2)
+	exec('ue_pdu_session_modify ue='..i..' pdu=1 qosflows_to_add=3 by=amf')
+	sleep(5)
+	exec('trf_data_start ue='..i..' pdu=1 qfi=3 dir=dl rtp_codec=g711m seconds=3600')
+	sleep(1)
+	exec('trf_data_start ue='..i..' pdu=1 qfi=3 dir=ul rtp_codec=g711m seconds=3600')
+	sleep(2)
+	exec('trf_data_start ue='..i..' pdu=1 qfi=3 dir=dl kbps=300 protocol=udp seconds=3600')
+	sleep(2)
+	exec('trf_data_start ue='..i..' pdu=1 qfi=3 dir=ul kbps=300 protocol=udp seconds=3600')
+	sleep(2)
+	exec('ue_pdu_session_modify ue='..i..' pdu=1 qosflows_to_add=4 by=amf')
+	sleep(5)
+	exec('trf_data_start ue='..i..' pdu=1 qfi=4 dir=dl kbps=400 protocol=udp')
+	sleep(1)
+	exec('trf_data_start ue='..i..' pdu=1 qfi=4 dir=ul kbps=400 protocol=udp')
+	sleep(2)
+end
+
+start_UE_Set2=7
+end_UE_Set2=12
+for i = start_UE_Set2, end_UE_Set2 do
+    exec('ue_pdu_session_modify ue='..i..' pdu=1 qosflows_to_add=2 by=amf')
+    sleep(5)
+    exec('trf_data_start ue='..i..' pdu=1 qfi=2 dir=dl kbps=500 protocol=tcp seconds=3600')
+    sleep(1)
+    exec('trf_data_start ue='..i..' pdu=1 qfi=2 dir=ul kbps=500 protocol=tcp seconds=3600')
+    sleep(2)
+    exec('ue_pdu_session_modify ue='..i..' pdu=1 qosflows_to_add=4 by=amf')
+    sleep(5)
+    exec('trf_data_start ue='..i..' pdu=1 qfi=3 dir=dl kbps=400 protocol=udp')
+    sleep(1)
+    exec('trf_data_start ue='..i..' pdu=1 qfi=3 dir=ul kbps=400 protocol=udp')
+    sleep(2)
+    exec('ue_pdu_session_modify ue='..i..' pdu=1 qosflows_to_add=5 by=amf')
+    sleep(5)
+    exec('trf_data_start ue='..i..' pdu=1 qfi=4 dir=dl mbps=10 protocol=udp')
+    sleep(1)
+    exec('trf_data_start ue='..i..' pdu=1 qfi=4 dir=ul mbps=5 protocol=udp')
+    sleep(2)
+end
+
+start_UE_Set3=13
+end_UE_Set3=24
+for i = start_UE_Set3, end_UE_Set3 do
+    exec('ue_pdu_session_modify ue='..i..' pdu=1 qosflows_to_add=2 by=amf')
+    sleep(5)
+    exec('trf_data_start ue='..i..' pdu=1 qfi=2 dir=dl kbps=500 protocol=tcp seconds=3600')
+    sleep(1)
+    exec('trf_data_start ue='..i..' pdu=1 qfi=2 dir=ul kbps=500 protocol=tcp seconds=3600')
+    sleep(2)
+    exec('ue_pdu_session_modify ue='..i..' pdu=1 qosflows_to_add=3 by=amf')
+    sleep(5)
+    exec('trf_data_start ue='..i..' pdu=1 qfi=3 dir=dl rtp_codec=g711m seconds=3600')
+    sleep(1)
+    exec('trf_data_start ue='..i..' pdu=1 qfi=3 dir=ul rtp_codec=g711m seconds=3600')
+    sleep(1)
+    exec('trf_data_start ue='..i..' pdu=1 qfi=3 dir=dl kbps=300 protocol=udp seconds=3600')
+    sleep(1)
+    exec('trf_data_start ue='..i..' pdu=1 qfi=3 dir=ul kbps=300 protocol=udp seconds=3600')
+    sleep(2)
+    exec('ue_pdu_session_modify ue='..i..' pdu=1 qosflows_to_add=4 by=amf')
+    sleep(5)
+    exec('trf_data_start ue='..i..' pdu=1 qfi=4 dir=dl kbps=400 protocol=udp')
+    sleep(1)
+    exec('trf_data_start ue='..i..' pdu=1 qfi=4 dir=ul kbps=400 protocol=udp')
+    sleep(2)
+end

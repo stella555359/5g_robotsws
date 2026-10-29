@@ -1,0 +1,83 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for 5GC000679 feature tests cases
+...               To check RRC configuration values of StartPRB, NbOfPrb, StartSymb and startingSymbolIndex
+...               in Format 2
+...               Algorithm TDD or FDD 20Mhz: In format2 and NbOfPrb=16 contains 4 items with startingSymbolIndex=12
+...               and startingSymbolIndex=13. The interval between 2 consecutive startingPRB on each
+...               group of startingSymbolIndex is 16.
+...               Algorithm FDD 10Mhz (obsolete): In format2 and NbOfPrb=16 contains 3 items with startingSymbolIndex=12
+...               and startingSymbolIndex=13. The interval between 2 consecutive startingPRB on each
+...               group of startingSymbolIndex is 16.
+...               Modified Date               : 6-October-2021
+...               Last Modified by            : vincent.boulet@nokia.com
+
+# Import luashark tools library, then create an instance (analyzer), using AF_PATH as input parameter
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Library           Collections
+Library           ../../../resources/python/luashark_tools.py
+Library           luashark_tools.analyzer       WITH NAME       analyzer
+Library           ../python/5GC000679_rrcConfigChecking.py
+
+*** Keywords ***
+Convert and parse pdml TDD
+    [Arguments]                 ${ue}
+    ...                         ${pcapFile}
+    ...                         ${technology}
+    ${pdmlFile}                 analyzer.pcap_to_pdml       ${pcapFile}
+    ${packet}                   set variable                SgNBAdditionRequestAcknowledge
+    ${rootTab}                  set variable                nr-rrc.resourceToAddModList
+    ${startSymbolName}          set variable                nr-rrc.startingSymbolIndex
+    ${nrofPRBsName}             set variable                nr-rrc.nrofPRBs
+    ${startPRBName}             set variable                nr-rrc.startingPRB
+    ${pucchResourcesIdName}     set variable                nr-rrc.pucch_ResourceId
+    ${formatName}               set variable                nr-rrc.format
+    ${nb}                       analyzer.count_path
+    ...                         pdmlFile=${pdmlFile}
+    ...                         packetName=${packet}
+    ...                         path=.*/${rootTab}/_.*/${startSymbolName}$
+    Dated log                   Found ${nb} occurences      first=True
+    ${UeRRC}                    newUErrcConfigChecking      ${ue}
+    FOR  ${i}                  IN RANGE    1    ${nb}+1
+        ${index}                set variable                ${rootTab}/_.${i}.
+        @{listPath}             create list
+        ...                         .*/${index}/.*/${startSymbolName}
+        ...                         .*/${index}/.*/${startPRBName}
+        ...                         .*/${index}/.*/${formatName}$
+        ...                         .*/${index}/.*/${nrofPRBsName}
+        @{listMatchPacket}      analyzer.get_match_from_paths
+        ...                         pdmlFile=${pdmlFile}
+        ...                         packetName=${packet}
+        ...                         pathList=${listPath}
+        ${firstPacket}          set variable          @{listMatchPacket}[0]
+        ${startSymbol}          Get Value In Packet Match
+        ...                         packetMatch=${firstPacket}
+        ...                         field=startingSymbolIndex
+        ${startingPRB}          Get Value In Packet Match
+        ...                         packetMatch=${firstPacket}
+        ...                         field=startingPRB
+        ${nrofPRBs}             Get Value In Packet Match
+        ...                         packetMatch=${firstPacket}
+        ...                         field=nrofPRBs
+        ${format}               Get Value In Packet Match
+        ...                         packetMatch=${firstPacket}
+        ...                         field=format
+        AddStartPrbTddFDM       UErrc=${UeRRC}
+        ...                     format2=${format}
+        ...                     nbOfPrb=${nrofPRBs}
+        ...                     startSymbolIndex=${startSymbol}
+        ...                     startPRB=${startingPRB}
+    END
+    ${result}                   checkStartPrbTddFdmForUE
+    ...                             UErrc=${UeRRC}
+    ...                             technology=TDD
+    Dated log                   ${EMPTY} Check for UE ${ue}: ${result}
+    Should be true              ${result}           Error on checkStartPrbTddFdmForUE (ue=${ue})
+    [Return]                    ${UeRRC}
+
+Check Start Prb Between UEs
+    [Arguments]                 ${UeRrcList}
+    ${status}                   TestStartPrbBetweenUEs
+    ...                         listUeRrc=${UeRrcList}
+    Dated log                   Check Start Prb Between UEs:Status=${status}
+    Should be true              ${status}
+    ...                         Check Start Prb Between UEs is false

@@ -1,0 +1,87 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB008238 step E
+...
+...               Test Case Scenario author   : jing.tian@nokia.com
+...               Test Case Scenario contact  : jing.tian@nokia.com
+...               Test Case automation author : otilia.mihon@nokia.com
+...               Test Case automation contact: otilia.mihon@nokia.com
+...               Creation Date               : 03-May-2022  
+...               Modified Date               : 03-May-2022
+...               Last Modified by            : yann.ah.herve@nokia.com
+...               Modification:
+...                       03-May-2022         | Creation
+...                       19-October-2023     | Move to BOO_LOO topology and include counters related
+...                                           | to CA to improve checks and use KPI framework
+
+
+Resource                         ./CB008238_keywords.robot
+Resource                         ../../../../../resources/SWENG/robot/KPIs.robot
+Variables                        ../../../../../resources/SWENG/python/Colors.py
+
+
+
+*** Variables ***
+
+${DL_duration}                              60s
+${DL_trace_duration}                        2
+
+${TputVolMargin}                            5
+
+${blind_CA_interaction_constraints}         testsuite/Paris/RRM/ET/CB008238/resources/config/cb008238-E_blind_CA_interaction_constraints.csv
+
+# In Mbps
+${DL_troughput_for_CA}                      150
+
+*** Keywords ***
+CB008238_E_02_Single_UE_Micro_DTX_and_blind_CA_interaction
+    CB008238 CellSetup CA        actDtxOptimzedScheduler=true       MaxRetentionDelay=10           dtxPrbThreshold=100    
+	...                          CallType=SA                        nbUe=1                         sCellActivationMethod=blind
+    ...                          actDl256Qam=false
+    ...                          sCellDeactivationTimerGNB=infinity
+
+    CB008238 Get Reporting Interval PM
+
+    ${gp_duration}              Convert Time                ${reportingIntervalPm}[0]
+    ${zoi}                      ZOI Start
+    ${zoi_end_remain}=          ZOI Remaining Sec           ${zoi}
+    ${start_loop_remaining}=    Evaluate                    ${zoi_end_remain} - ${gp_duration}
+    # In order to have a complete GP, the script waits for the beginning of the next GP
+    # before starting the scenario.
+    Traced Sleep                  ${start_loop_remaining} seconds         
+    ...                           msg=Waiting ${start_loop_remaining} seconds before starting scenario
+
+    CB008238 Attach SA           ueSetting=${BASIC_UE_SA}
+
+    # Add a small delay to be sure RRCReconfigurationComplete for SCell addition is fully completelted (I think without it DL traffic
+    # may be started too soon and trigger DTX for a small amount of time until SCell addition is fully completed)
+    Traced Sleep                  3 seconds
+
+    # Send small packet data to see if µ-DTX is not triggered
+    Dated Log New Line            ${trcColor}=== Start packets sending ${defColor}
+	${pktPeriodUE}                Evaluate    8
+    ${pktSizeUE}                  Evaluate    100
+    ${pktBurstUE}                 Evaluate    1
+	Send UE DL packets            ueSetting=${BASIC_UE_SA}
+    ...                           duration=${DL_duration}
+    ...                           period_ms=${pktPeriodUE}
+    ...                           size=${pktSizeUE}
+    ...                           burst=${pktBurstUE}
+    ...                           shouldBeStop=${True}
+    ...                           deviation=${TputVolMargin}
+    
+    Dated Log New Line            ${trcColor}=== Stop packets sending and detach UE ${defColor}
+    ${timeStopTraffic}            Get Current Date
+    Traffic Stop                  ueSetting=${BASIC_UE_SA}             dir=dl
+    UE Deregister                 id=${BASIC_UE_SA.ue}
+
+    Dated log New Line            ${trcColor}=== Starting collecting PM ${defColor}
+    ZOI Wait End                  zoi=${zoi}
+    # KPIs and counters checks
+    ${pm_path}                    Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+    KPI Evaluate                  pmFile=${pm_path}
+    ...                           constraintsFile=${blind_CA_interaction_constraints}
+    ...                           failOnError=${True}
+
+
+    
+

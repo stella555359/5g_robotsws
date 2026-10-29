@@ -1,0 +1,269 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for CB007382
+...
+...               Automation author           : riyad.ferrag@nokia.com
+...               Automation contact          : riyad.ferrag@nokia.com
+...               Creation Date               : April 01 2022
+...               Modified Date               : April 01 2022
+...               Last Modified by            : riyad.ferrag@nokia.com
+
+Resource                            ../../../../../resources/SWENG/robot/Tools.robot
+Resource                            ../../../../../resources/SWENG/robot/PacketSearch.robot
+Resource                            ../../../../../resources/SWENG/robot/Restart.robot
+Resource                            ../../../../../resources/SWENG/robot/Capture.robot
+Resource                            ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource                            ../../../../../resources/SWENG/robot/Traffic.robot
+Resource                            ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource                            ../../../../../resources/SWENG/robot/Setup.robot
+Resource                            ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource                            ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource                            ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+# Library                             ../../../../../resources/python/luashark_tools.py
+Library                             luashark_tools.analyzer       WITH NAME       analyzer
+Library                             taf.config.wts                WITH NAME       wts_cfg
+
+Variables                           ../../../../../resources/SWENG/python/ReadConfig.py
+
+# to use the 2574 Constants.py file (from resources/python dir)
+# Variables                           ../python/Constants.py
+
+*** Variables ***
+
+${ASIK_LMP_IP}              ${tl.gnbs[0].dus[0].airscale.common_units[0].lmp_connection.addr}
+${GNB_IP}                   ${tl.gnbs[0].cu.oam_ssh_connection_details.addr}
+${ASIK_USER}                ${tl.gnbs[0].dus[0].airscale.common_units[0].lmp_connection.username}
+${ASIK_PASSWORD}            ${tl.gnbs[0].dus[0].airscale.common_units[0].lmp_connection.password}
+
+${PB_ASIK_IP}               ${tl.gnbs[0].dus[0].airscale.common_units[0].pdu_port.pdu.addr}
+${PB_ASIK_PORT}             ${tl.gnbs[0].dus[0].airscale.common_units[0].pdu_port.port_no}
+
+${OAM_TYPE}           coam
+
+${WEBUI_IP}                 ${tl.gnbs[0].cu.oam_http_connection_details.addr}
+${WEBUI_USERNAME}           ${tl.gnbs[0].cu.oam_http_connection_details.username}
+${WEBUI_PASSWORD}           ${tl.gnbs[0].cu.oam_http_connection_details.password}
+${WEBUI_URL}                https://${tl.gnbs[0].cu.oam_http_connection_details.addr}
+
+${L1bypass_NodeId_WtsXml}           21066
+${Fullstack_NodeId_WtsXml}          21085
+
+# User Scenarios : CB007382 Test model for power measurement
+# +------+----------------------+------------+----------+----------------------+---------------------+------------+
+# | URSC |      Test Model      | Common SCS |    BW    | SS Block per SSB set | Frequency range     | Priority # |
+# +------+----------------------+------------+----------+----------------------+---------------------+------------+
+# |   1  | NR-FR1-TM1.1 for TDD |   30 KHz   |  100 MHz |           8          | 3 GHz < FR1 < 6 GHz |      1     |
+# +------+----------------------+------------+----------+----------------------+---------------------+------------+
+# |   2  | NR-FR1-TM1.1 for TDD |   30 KHz   |  20 MHz  |           4          |     FR1 < 3 GHz     |      2     |
+# +------+----------------------+------------+----------+----------------------+---------------------+------------+
+# |   3  |     NR-FR2-TM1.1     |   120 KHz  |  100 MHz |          32          |         FR2         |      3     |
+# +------+----------------------+------------+----------+----------------------+---------------------+------------+
+
+# +-----------------------------------------------+---------------------+
+# | Dist Name                                     | Parameter           |
+# +-----------------------------------------------+---------------------+
+# | MRBTS-1/NRBTS-1/NRCELL-1                      | nrarfcn             |
+# | MRBTS-1/NRBTS-1/NRCELL-2                      | chBw                |
+# |                                               | ssbScs              |
+# |                                               | freqBandIndicatorNR |
+# |                                               | gscnOrSsPbchArfcn   |
+# +-----------------------------------------------+---------------------+
+# | MRBTS-1/NRBTS-1/NRCELLGRP-0                   | ssBurstSetPeriod    |
+# | MRBTS-1/NRBTS-1/NRCELLGRP-1                   | scs                 |
+# +-----------------------------------------------+---------------------+
+# | MRBTS-1/NRBTS-1/NRSYSINFO_PROFILE-1/NRIRFIM-1 | freqBandIndicatorNR |
+# |                                               | ssbScs              |
+# +-----------------------------------------------+---------------------+
+
+#http://5gtables.eecloud.dynamic.nsn-net.net/ for nrarfcn and gscn calculation
+
+
+&{NRCELL_FR1-100MHz}        nrarfcn=636666
+...                         gscn=7880
+...                         type0CoresetConfigurationIndex=10
+...                         chBw=100MHz
+...                         ssbScs=30 KHz
+...                         freqBandIndicatorNR=78
+...                         cellName=Cell1 TDD FR1 100MHz
+
+&{NRCELL_FR1-20MHz}         nrarfcn=518598
+...                         gscn=6480
+...                         type0CoresetConfigurationIndex=10
+...                         chBw=20MHz
+...                         ssbScs=30 KHz
+...                         freqBandIndicatorNR=41
+...                         cellName=Cell1 TDD FR1 20MHz
+
+&{NRCELL_FR2-100MHz}        nrarfcn=2077919
+...                         gscn=22468
+...                         type0CoresetConfigurationIndex=0
+...                         chBw=100MHz
+...                         ssbScs=240 KHz
+...                         freqBandIndicatorNR=257
+...                         cellName=Cell1 TDD FR2 100MHz
+
+&{NRCELLGRP_FR1-100MHz}     ssBurstSetPeriod=20         scs=30 KHz
+&{NRCELLGRP_FR1-20MHz}      ssBurstSetPeriod=20         scs=30 KHz
+&{NRCELLGRP_FR2-100MHz}     ssBurstSetPeriod=10         scs=120 KHz
+
+# MRBTS
+&{MRBTS_FR1-100MHz}             btsName=- Nokia Paris-Saclay TL FR1 100MHz - CB007382
+&{MRBTS_FR1-20MHz}              btsName=- Nokia Paris-Saclay TL FR1 20MHZ - CB007382
+&{MRBTS_FR2-100MHz}             btsName=- Nokia Paris-Saclay TL FR2 100MHz - CB007382
+
+# MRBTS-1/NRBTS-1/NRSYSINFO_PROFILE-1/NRIRFIM-1
+&{MRBTS_NRIRFIM_FR1-100MHz}     freqBandIndicatorNR=78          ssbScs=30 KHz
+&{MRBTS_NRIRFIM_FR1-20MHz}      freqBandIndicatorNR=41          ssbScs=30 KHz
+&{MRBTS_NRIRFIM_FR2-100MHz}     freqBandIndicatorNR=257         ssbScs=240 KHz
+
+&{Scf100MHzFR1}         mrbts=${MRBTS_FR1-100MHz}               nrcell=${NRCELL_FR1-100MHz}
+...                     nrcellgrp=${NRCELLGRP_FR1-100MHz}       nrirfim=${MRBTS_NRIRFIM_FR1-100MHz}
+
+&{Scf20MHzFR1}          mrbts=${MRBTS_FR1-20MHz}                nrcell=${NRCELL_FR1-20MHz}
+...                     nrcellgrp=${NRCELLGRP_FR1-20MHz}        nrirfim=${MRBTS_NRIRFIM_FR1-20MHz}
+
+&{Scf100MHzFR2}         mrbts=${MRBTS_FR2-100MHz}               nrcell=${NRCELL_FR2-100MHz}
+...                     nrcellgrp=${NRCELLGRP_FR2-100MHz}       nrirfim=${MRBTS_NRIRFIM_FR2-100MHz}
+
+&{Context}              low_load=low                   medium_load=medium          busy_load=busy           full_load=full
+...                     cellDepType=SANSA            eNBId=1                 gNBId=2                UeId1=1
+
+&{T1}           bandwidth=100MHz        technology=TDD
+
+&{T2}           bandwidth=20MHz         technology=TDD
+
+&{T3}           bandwidth=100MHz        technology=TDD
+
+
+
+@{ssb_beam_pattern_id_list_4}      1    2    3    4
+
+@{ssb_beam_pattern_id_list_8}      1    2    3    4    5    6    7    8
+
+@{ssb_beam_pattern_id_list_32}     1     2     3     4     5     6     7     8     9
+...                               10    11    12    13    14    15    16    17    18
+...                               19    20    21    22    23    24    25    26    27
+...                               28    29    30    31    32
+
+# Subfeature-A
+# 3GHz < f <= 6GHz
+# SSB transmission pattern Case C with 8 SS Blocks per SSB set
+&{flatlow}          load_type=flatLoad
+...                 load_level_flat=low
+...                 num_of_ssb_beam_pattern_id=ssb_8
+...                 ssb_beam_pattern_id=${ssb_beam_pattern_id_list_8}
+
+# Subfeature-B
+# f <= 3GHz
+# SSB transmission pattern Case C with 4 SS Blocks per SSB set
+&{flatlowbelow}     load_type=flatLoad
+...                 load_level_flat=low
+...                 num_of_ssb_beam_pattern_id=ssb_4
+...                 ssb_beam_pattern_id=${ssb_beam_pattern_id_list_4}
+
+# Subfeature-C
+# f > 6GHz
+# SSB transmission pattern Case E with 32 SS Blocks per SSB set
+&{flatlowabove}     load_type=flatLoad
+...                 load_level_flat=low
+...                 num_of_ssb_beam_pattern_id=ssb_32
+...                 ssb_beam_pattern_id=${ssb_beam_pattern_id_list_32}
+
+&{flatmedium}       load_type=flatLoad
+...                 load_level_flat=medium
+...                 num_of_ssb_beam_pattern_id=ssb_8
+...                 ssb_beam_pattern_id=${ssb_beam_pattern_id_list_8}
+
+&{flatfull}         load_type=flatLoad
+...                 load_level_flat=full
+...                 num_of_ssb_beam_pattern_id=ssb_8
+...                 ssb_beam_pattern_id=${ssb_beam_pattern_id_list_8}
+
+&{flatbusy}         load_type=flatLoad
+...                 load_level_flat=busy
+...                 num_of_ssb_beam_pattern_id=ssb_8
+...                 ssb_beam_pattern_id=${ssb_beam_pattern_id_list_8}
+
+&{BurstLevel135}    load_type=burstLoad
+...                 load_level_burst=burst_13_5
+...                 num_of_ssb_beam_pattern_id=ssb_8
+...                 ssb_beam_pattern_id=${ssb_beam_pattern_id_list_8}
+...                 burstlevel=13.5
+...                 NumOfPdschSlots=1
+...                 SumOfDlSymbols=14
+
+&{BurstLevel192}    load_type=burstLoad
+...                 load_level_burst=burst_19_2
+...                 num_of_ssb_beam_pattern_id=ssb_8
+...                 ssb_beam_pattern_id=${ssb_beam_pattern_id_list_8}
+...                 burstlevel=19.2
+...                 NumOfPdschSlots=2
+...                 SumOfDlSymbols=20
+
+&{BurstLevel327}    load_type=burstLoad
+...                 load_level_burst=burst_32_7
+...                 num_of_ssb_beam_pattern_id=ssb_8
+...                 ssb_beam_pattern_id=${ssb_beam_pattern_id_list_8}
+...                 burstlevel=32.7
+...                 NumOfPdschSlots=3
+...                 SumOfDlSymbols=34
+
+&{BurstLevel462}    load_type=burstLoad
+...                 load_level_burst=burst_46_2
+...                 num_of_ssb_beam_pattern_id=ssb_8
+...                 ssb_beam_pattern_id=${ssb_beam_pattern_id_list_8}
+...                 burstlevel=46.2
+...                 NumOfPdschSlots=4
+...                 SumOfDlSymbols=48
+
+&{BurstLevel596}    load_type=burstLoad
+...                 load_level_burst=burst_59_6
+...                 num_of_ssb_beam_pattern_id=ssb_8
+...                 ssb_beam_pattern_id=${ssb_beam_pattern_id_list_8}
+...                 burstlevel=59.6
+...                 NumOfPdschSlots=5
+...                 SumOfDlSymbols=62
+
+&{BurstLevel731}    load_type=burstLoad
+...                 load_level_burst=burst_73_1
+...                 num_of_ssb_beam_pattern_id=ssb_8
+...                 ssb_beam_pattern_id=${ssb_beam_pattern_id_list_8}
+...                 burstlevel=73.1
+...                 NumOfPdschSlots=6
+...                 SumOfDlSymbols=76
+
+&{BurstLevel865}    load_type=burstLoad
+...                 load_level_burst=burst_86_5
+...                 num_of_ssb_beam_pattern_id=ssb_8
+...                 ssb_beam_pattern_id=${ssb_beam_pattern_id_list_8}
+...                 burstlevel=86.5
+...                 NumOfPdschSlots=7
+...                 SumOfDlSymbols=90
+
+&{BurstLevel100}    load_type=burstLoad
+...                 load_level_burst=burst_100
+...                 num_of_ssb_beam_pattern_id=ssb_8
+...                 ssb_beam_pattern_id=${ssb_beam_pattern_id_list_8}
+...                 burstlevel=100
+...                 NumOfPdschSlots=8
+...                 SumOfDlSymbols=104
+
+&{Subfeature}       Subfeature_A=A
+...                 Subfeature_B=B
+...                 Subfeature_C=C
+...                 Subfeature_D=D
+
+&{Freq_Range}       above_3GHz=FR1
+...                 below_3GHz=FR1
+...                 above_6GHz=FR2
+
+&{TM_100MHzFR1}         seq=${T1}           scf=${Scf100MHzFR1}             Context=${Context}
+
+&{TM_20MHzFR1}          seq=${T2}           scf=${Scf20MHzFR1}              Context=${Context}
+
+&{TM_100MHzFR2}         seq=${T3}           scf=${Scf100MHzFR2}             Context=${Context}
+
+
+
+
+
+

@@ -1,0 +1,2010 @@
+# -*- coding: utf-8 -*
+
+"""
+:copyright: Nokia Networks
+:author: Christophe SAMSON
+:contact: christophe.samson@nokia.com
+:maintainer:
+:contact:
+"""
+
+import time
+from decimal import *
+import re
+import os
+import csv
+import math
+
+import linux_cmds as linux
+
+# Robot Framework Libraries:
+from robot.libraries.BuiltIn import BuiltIn
+from robot.libraries.OperatingSystem import OperatingSystem
+
+# TAF & UTE Libraries:
+from taf.transport.ssh import ssh
+from robot.api import logger
+from taf.analyzer.ttitrace import TtitraceReader
+from taf.config.scf import scf
+
+from ta5g_throughput.throughput_measurement import ThroughputMeasurement
+from ta5g_throughput.egate_interface import *
+from ta5g_throughput.table_parser import *
+
+
+class EgateRetryException(Exception):
+    pass
+
+# ====================================================================================================[120 characters]
+#   Global Variables
+# ====================================================================================================[120 characters]
+
+
+logLevel = "INFO"
+RED = '\033[31m'
+GREEN = '\033[32m'
+YELLOW = '\033[33m'
+RESET = '\033[0m'
+BOLD = '\033[1m'
+offlineVerification = ""
+isHarqPuschInfo = False
+wtsObj = None
+rbi = BuiltIn()
+
+ssh = ssh()
+
+
+def calculate_average_of_list_in_file(file_name):
+    data_sum = 0
+    none_zero_cnt = 0
+    with open(file_name, 'r') as f_p:
+        for each_line in f_p:
+            line_data = each_line.rstrip()
+            #  Pipeline modif requested : testsuite/RRM/ECE/DSS/5GC001586/resources/python/tools.py:53:26:
+            #  W605 invalid escape sequence 'antislash d'
+            if re.match("\\d+", line_data):
+                new_data = int(each_line.rstrip())
+                if new_data != 0:
+                    none_zero_cnt += 1
+                    data_sum += new_data
+    if none_zero_cnt == 0:
+        return none_zero_cnt
+    return data_sum/none_zero_cnt
+
+
+def Calculate_UL_throughoutput_old(alias, location=14, size=2000, cellid='', sleep_time=5):
+    ssh.send_command('journalctl -f | grep --line-buffered rlcPdus | grep "{}"'.format(cellid),
+                     connection=alias, timeout=60)
+    time.sleep(sleep_time)
+    output = ssh.read_output(size=size, connection=alias).split('\r\n')
+    ul_output = output[0].split('\n')
+    ul_output.pop()
+    num = 0
+    sum = 0
+    for element in ul_output:
+        data = element.split(' ')[location]
+        traffic_data = data.split('(')[-1]
+        num += 1
+        sum += int(traffic_data)
+        logger.info("Traffic data {} bytes received from UE".format(traffic_data))
+    UL_Throughoutput = round(float(8 * Decimal(sum) / Decimal(num) / 1048576), 3)
+    logger.info("UL_Throughoutput is {}".format(UL_Throughoutput))
+    return UL_Throughoutput
+
+
+def Calculate_UL_throughput(alias, file_name, location=9, size=20000, cellid='', sleep_time=5):
+    # ssh.send_command('grep --line-buffered rlcPduBytes /tmp/ASP-124A_startup.log | grep "{}"'.format(cellid),
+    #                 connection=alias, timeout=60)
+    ssh.send_command('grep --line-buffered rlcPduBytes "{}" | grep "{}"'.format(file_name, cellid),
+                     connection=alias, timeout=60)
+    time.sleep(sleep_time)
+    output = ssh.read_output(size=size, connection=alias).split('\r\n')
+    ul_output = output[0].split('\n')
+    # logger.info("Traffic data 1  {} bytes received from UE".format(output))
+    ul_output.pop()
+    num = 0
+    sum = 0
+    output.pop()
+    # logger.info("Traffic data 2 {} bytes received from UE".format(ul_output))
+    for element in output:
+        data = element.split(' ')[location]
+        traffic_data = data.split('(')[-1]
+        if int(traffic_data) > 0:
+            num += 1
+            sum += int(traffic_data)
+            # logger.info("Traffic data 3 {} bytes received from UE".format(traffic_data))
+    logger.info("Traffic data sum {} bytes received from UE".format(sum))
+    logger.info("Traffic num data {} received from UE".format(num))
+    UL_Throughoutput = round(float(8 * Decimal(sum) / Decimal(num) / 1000000), 3)
+    logger.info("UL_Throughput(Mbps) is {}".format(UL_Throughoutput))
+    return UL_Throughoutput
+
+
+def Calculate_DL_throughput(alias, file_name, location=11, size=20000, cellid=''):
+    ssh.send_command('grep --line-buffered -i SentDataMeasurementCounting "{}" | grep DataPdu | grep "{}"'
+                     .format(file_name, cellid), connection=alias, timeout=60)
+    time.sleep(5)
+    output = ssh.read_output(size=size, connection=alias).split('\r\n')
+    dl_output = output[0].split('\n')
+    dl_output.pop()
+    num = 0
+    sum = 0
+    output.pop()
+    for element in output:
+        data = element.split(' ')[location]
+        # traffic_data = data.split('|')[-1].split(']')[0]
+        traffic_data = data.split('|')[0]
+        if int(traffic_data) > 0:
+            num += 1
+            sum += int(traffic_data)
+            logger.info("Traffic data {} bytes sent to UE".format(traffic_data))
+    logger.info("Traffic data sum {} bytes sent to UE".format(sum))
+    logger.info("Traffic num data {} sent to UE".format(num))
+    DL_Throughoutput = round(float(8 * Decimal(sum) / Decimal(num) / 1024000), 3)
+    logger.info("DL_Throughput(Mbps) is {}".format(DL_Throughoutput))
+    return DL_Throughoutput
+
+
+def Calculate_DL_throughoutput_old(alias, location=17, size=3000, cellid=''):
+    ssh.send_command(r'journalctl -f | grep --line-buffered -i SentDataMeasurementCounting | grep "{}"'.format(cellid),
+                     connection=alias, timeout=60)
+    time.sleep(5)
+    output = ssh.read_output(size=size, connection=alias).split('\r\n')
+    dl_output = output[0].split('\n')
+    dl_output.pop()
+    num = 0
+    sum = 0
+    for element in dl_output:
+        data = element.split(' ')[location]
+        traffic_data = data.split('|')[-1].split(']')[0]
+        num += 1
+        sum += int(traffic_data)
+        logger.info("Traffic data {} bytes sent to UE".format(traffic_data))
+    DL_Throughoutput = round(float(8 * Decimal(sum) / Decimal(num) / 1048576), 3)
+    logger.info("DL_Throughoutput is {}".format(DL_Throughoutput))
+    return DL_Throughoutput
+
+
+def Calculate_DL_throughput2(alias, file_name, size=50000, cellid=''):
+    ssh.send_command('grep --line-buffered -a -i DataPdu "{}" | grep -a "{}"'.format(file_name, cellid),
+                     connection=alias, timeout=60)
+    time.sleep(5)
+    output = ssh.read_output(size=size, connection=alias).split('\r\n')
+    dl_output = output[0].split('\n')
+    dl_output.pop()
+    num = 0
+    sum = 0
+    output.pop()
+    return _get_throughput_result(output, "dl")
+
+
+def Calculate_UL_throughput2(alias, file_name, size=50000, cellid=''):
+    ssh.send_command('grep --line-buffered -a -i rlcPdus "{}" | grep -a "{}"'.format(file_name, cellid),
+                     connection=alias, timeout=60)
+    time.sleep(5)
+    output = ssh.read_output(size=size, connection=alias).split('\r\n')
+    dl_output = output[0].split('\n')
+    dl_output.pop()
+    num = 0
+    sum = 0
+    output.pop()
+    return _get_throughput_result(output, "ul")
+
+
+def _get_throughput_result(output, direct):
+    # l2_putput = output.split('\n')
+    # l2_putput.pop()
+    num = 0
+    sum = 0
+    for i, element in enumerate(output):
+        if i == 0:
+            continue
+        data = element.split(' ')
+        for i, content in enumerate(data):
+            if direct == "dl":
+                if content.count('DataPdu') > 0:
+                    traffic_data = data[i+1].split('|')[-1].split(']')[0]
+                    break
+            elif direct == "ul":
+                if content.count('rlcPduBytes') > 0:
+                    traffic_data = data[i-1].split('(')[-1]
+            else:
+                traffic_data = 0
+        if int(traffic_data) > 0:
+            num += 1
+            sum += int(traffic_data)
+        # logger.info("Traffic data {} bytes received from UE".format(traffic_data))
+    if num == 0:
+        num += 1
+    throughoutput = round((8 * Decimal(sum) / Decimal(num) / 1048000), 3)
+    logger.info("throughput {} is {}".format(direct, throughoutput))
+    return throughoutput
+
+    # ${sw_version}=       pcap.Get Software Version
+
+
+def get_root_path():
+    """
+    computing root path where to deploy Luashark
+    Strategy is :
+        if /home/<user> exists, it will be root path
+        otherwise, retrieve TEMP_PATH robot variable as root path
+    """
+    root = "/home/{}".format(linux.get_user())
+    if os.path.isdir(root):
+        return root
+    output_dir = BuiltIn().get_variable_value("${TEMP_PATH}")
+    assert output_dir is not None, \
+        "${TEMP_PATH} robot variable was not set in robot context"
+    return output_dir
+
+
+def reform_coam_sw_version(version):
+    """reform SW Version from COAM GNB to QC required form:
+    from 5G19_FSMK_0000_018351_001507 to 5G_0.18351.1507
+    from 5G19B_FDD_GNB_0008_001840_000327 to 5G19B_0.1840.327
+    from SBTS21B_ENB_0000_210310_000024 to SBTS21B_ENB_0000_210310_000024
+    from SBTS21B_ENB_9999_210310_000024 to SBTS00_ENB_9999_210310_000024"""
+    subversions = version.split('_')
+    if version.startswith('5G'):
+        version = strip_version(subversions[-3:])
+        if version[0] == '0':
+            result = '_'.join(['5G', version])
+        else:
+            result = '_'.join([subversions[0], version])
+    elif version.startswith('SBTS'):
+        if subversions[2].startswith('9'):
+            subversions[0] = 'SBTS00'
+        result = '_'.join(subversions)
+    return result
+
+
+def strip_version(version):
+    """remove 0 from sw version"""
+    for i in range(len(version)):
+        if version[i].lstrip('0') == '':
+            version[i] = '0'
+        else:
+            version[i] = version[i].lstrip('0')
+    return '.'.join(version)
+
+
+def install_multidynamic_if_needed():
+    # Author : Nikolay Shkulepov
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    # Private Keyword: Install Multidynamic if neeeded
+    # It helps to check whether MULTI is installed and install it if not
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    try:
+        import multi
+    except ImportError:
+        try:
+            if os.getenv("VIRTUAL_ENV"):
+                pip_path = os.path.join(os.getenv("VIRTUAL_ENV"), "bin", "pip")
+            else:
+                pip_path = "pip"
+            cmdStr = "sudo mkdir /opt/tti_dissectors ; sudo chmod 777 /opt/tti_dissectors ; cd /opt/tti_dissectors"
+            rbi.log("install_multidynamic_if_neeeded(): cmdStr = %s" %
+                    cmdStr, "TRACE")
+            swVersion = rbi.run_keyword("Get gNB Software Version")
+            rbi.log("install_multidynamic_if_neeeded(): swVersion = %s" %
+                    swVersion, "TRACE")
+            os.chdir("/opt/tti_dissectors")
+            if swVersion.startswith("SBTS"):
+                cmdStr1 = "wget https://lterel.es-si-s3-z2.eecloud.nsn-net.net/build/SBTS00/"
+                cmdStr2 = "%s_tti-dissectors.zip" % swVersion
+                zipFileName = "%s_tti-dissectors.zip" % swVersion
+            else:
+                swVersion = rbi.run_keyword("Get gNB SW version").split("_")[1]
+                cmdStr1 = "wget https://artifactory-espoo1.ext.net.nokia.com/artifactory/mnp5g-central-public-local/"
+                cmdStr2 = "System_Release/%s/tti-dissectors-%s.zip" % (
+                    swVersion, swVersion)
+                zipFileName = "tti-dissectors-%s.zip" % swVersion
+            try:
+                os.system(cmdStr)
+                cmdStr = cmdStr1 + cmdStr2
+                rbi.log("install_multidynamic_if_neeeded(): cmdStr = %s" %
+                        cmdStr, "TRACE")
+                subprocess.run(cmdStr, timeout=30)
+            except Exception as e:
+                rbi.log(e)
+                rbi.log("tti dissectors are already installed")
+            cmdStr1 = "unzip -n %s ; " % zipFileName
+            cmdStr2 = "chmod 777 * ; " + pip_path + \
+                " install --no-index -f . multidynamic.zip"
+            cmdStr = cmdStr1 + cmdStr2
+            rbi.log("install_multidynamic_if_neeeded(): cmdStr = %s" %
+                    cmdStr, "TRACE")
+            os.system(cmdStr)
+        except Exception as e:
+            rbi.log("install_multidynamic_if_neeeded(): Exception = <%s>" % str(e))
+
+
+def install_multidynamic_if_needed_03092021():
+    # Author : Nikolay Shkulepov
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    # Private Keyword: Install Multidynamic if neeeded
+    # It helps to check whether MULTI is installed and install it if not
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    try:
+        import multi
+    except ImportError:
+        try:
+            if os.getenv("VIRTUAL_ENV"):
+                pip_path = os.path.join(os.getenv("VIRTUAL_ENV"), "bin", "pip")
+            else:
+                pip_path = "pip"
+            cmdStr = "sudo mkdir /opt/tti_dissectors ; sudo chmod 777 /opt/tti_dissectors ; cd /opt/tti_dissectors"
+            rbi.log("install_multidynamic_if_neeeded(): cmdStr = %s" % cmdStr, "TRACE")
+            os.system(cmdStr)
+            swVersion = rbi.run_keyword("Get gNB Software Version")
+            rbi.log("install_multidynamic_if_neeeded(): swVersion = %s" % swVersion, "TRACE")
+            os.chdir("/opt/tti_dissectors")
+            if swVersion.startswith("SBTS"):
+                swVersionSBTS = rbi.run_keyword("Get gNB Software Version")
+                cmdStr1 = "wget https://lterel.es-si-s3-z2.eecloud.nsn-net.net/build/SBTS00/"
+                cmdStr2 = "%s_tti-dissectors.zip" % swVersionSBTS
+                zipFileName = "%s_tti-dissectors.zip" % swVersionSBTS
+            else:
+                swVersion = rbi.run_keyword("Get gNB Software Version").split("_")[1]
+                cmdStr1 = "wget https://artifactory-espoo1.ext.net.nokia.com/artifactory/mnp5g-central-public-local/"
+                cmdStr2 = "System_Release/%s/tti-dissectors-%s.zip" % (swVersion, swVersion)
+                zipFileName = "tti-dissectors-%s.zip" % swVersion
+            cmdStr = cmdStr1 + cmdStr2
+            rbi.log("install_multidynamic_if_neeeded(): cmdStr = %s" % cmdStr, "TRACE")
+            os.system(cmdStr)
+            cmdStr1 = "unzip -n %s ; " % zipFileName
+            cmdStr2 = "chmod 777 * ; " + pip_path + " install --no-index -f . multidynamic.zip"
+            cmdStr = cmdStr1 + cmdStr2
+            rbi.log("install_multidynamic_if_neeeded(): cmdStr = %s" % cmdStr, "TRACE")
+            os.system(cmdStr)
+        except Exception as e:
+            rbi.log("install_multidynamic_if_neeeded(): Exception = <%s>" % str(e))
+
+
+def install_multidynamic_if_needed_old():
+    # Author : Nikolay Shkulepov / Modified by Ch SAMSON
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    # Private Keyword: Install Multidynamic if needed
+    # It helps to check whether MULTI is installed and install it if not
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    try:
+        import multi
+    except ImportError:
+        try:
+            if os.getenv("VIRTUAL_ENV"):
+                pip_path = os.path.join(os.getenv("VIRTUAL_ENV"), "bin", "pip")
+            else:
+                pip_path = "pip3"
+                # pip_path = "pip"
+            root = get_root_path()
+            tti_dissectors_root = "{}/tools/tti_dissectors".format(root)
+            # Create root path to tti_dissectors in case it does not exist
+            linux.execute("mkdir -p {}".format(tti_dissectors_root))
+            cmdStr = "cd {}/tools/tti_dissectors".format(root)
+            rbi.log("install_multidynamic_if_neeeded(): cmdStr = %s" % cmdStr, "TRACE")
+            os.system(cmdStr)
+            swVersion = rbi.run_keyword("Get Software Version")
+            rbi.log("install_multidynamic_if_neeeded(): swVersion = %s" % swVersion, "TRACE")
+            cmdStr3 = "{}/tools/tti_dissectors".format(root)
+            os.chdir(cmdStr3)
+            if swVersion.startswith("SBTS"):
+                swVersionSBTS = rbi.run_keyword("Get gNB Software Version")
+                cmdStr1 = "wget https://lterel.es-si-s3-z2.eecloud.nsn-net.net/build/SBTS00/"
+                cmdStr2 = "%s_tti-dissectors.zip" % swVersionSBTS
+            else:
+                cmdStr1 = "wget https://artifactory-espoo1.ext.net.nokia.com/artifactory/mnp5g-central-public-local/"
+                cmdStr2 = "System_Release/%s/tti-dissectors-%s.zip" % (swVersion, swVersion)
+            cmdStr = cmdStr1 + cmdStr2
+            rbi.log("install_multidynamic_if_neeeded(): cmdStr = %s" % cmdStr, "TRACE")
+            os.system(cmdStr)
+            cmdStr = "unzip * ; chmod 777 * ; " + pip_path + " install --no-index -f . multidynamic.zip"
+            rbi.log("install_multidynamic_if_neeeded(): cmdStr = %s" % cmdStr, "TRACE")
+            os.system(cmdStr)
+        except Exception as e:
+            rbi.log("install_multidynamic_if_neeeded(): Exception = <%s>" % str(e))
+
+
+def logException(functionNameStr, e, silent=False):
+    rbi.log("%s(): Exception = <%s>" % (functionNameStr, str(e)), "TRACE")
+    if not silent:
+        rbi.log_to_console("  %s: exception happened (see log.html)" % functionNameStr)
+
+
+def decode_tti_traces_in_streaming_mode_to_remove(inputStr=""):
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    # No need to comment, as it going to be replaced by TAF Library (see TALIB-559 for details)
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    rbi.log_to_console("TTI Trace decoding .", no_newline=True)
+    root = get_root_path()
+    tti_dissectors_root = "{}/tools/tti_dissectors".format(root)
+    resultDir = rbi.run_keyword("common_Dss_Keywords.Get Testcase Log Directory")
+    pcapPathName = resultDir + "/ttitrace_streaming.pcap"
+    rbi.log("stop_tti_traces_in_streaming_mode(): pcapPathName = %s" % pcapPathName)
+    udpPathName = pcapPathName.replace(".pcap", ".udp")
+    if os.path.exists(pcapPathName) and os.path.getsize(pcapPathName) > 24:
+        try:
+            rbi.log_to_console(".1.", no_newline=True)
+            cmdStr1 = "tshark -r %s --disable-protocol swe --disable-protocol syscom -T fields -e data" % pcapPathName
+            cmdStr2 = " | perl -0ne's/\\n//g;print pack\"H*\",$_' > %s" % udpPathName
+            cmdStr = cmdStr1 + cmdStr2
+            rbi.log("stop_tti_traces_in_streaming_mode(): cmdStr = %s" % cmdStr)
+            stdoutStr = os.system(cmdStr)
+            rbi.log("stop_tti_traces_in_streaming_mode(): stdoutStr = %s" % stdoutStr)
+            rbi.log_to_console(".2.", no_newline=True)
+        except Exception as e:
+            logException("decode_tti_traces_in_streaming_mode [1]", e)
+            rbi.log_to_console(".ERROR")
+            return
+    rbi.log("stop_tti_traces_in_streaming_mode(): udpPathName = %s" % udpPathName)
+    if os.path.exists(udpPathName) and os.path.getsize(udpPathName) > 24:
+        try:
+            # os.system("rm %s >/dev/null 2>&1" % pcapPathName)
+            rbi.log_to_console(".3.", no_newline=True)
+            file_name = udpPathName
+            msgFile_all = open(resultDir + "/msg_all.csv", "w")
+            with open(file_name, 'rb') as file_obj:
+                startTime = int(time.time())
+                msgFile_all.write("-;" * 10 + "\n")
+                for i, event in enumerate(TtitraceReader(multi_base_folder=tti_dissectors_root, file_obj=file_obj)):
+                    if event.type != "ttiStartInd":
+                        outStr = str(event.type) + ";" + repr(event.data) + "\n"
+                        outStr = outStr.replace("{", "").replace("}", "").replace(" ", "")
+                        outStr = outStr.replace("[", "").replace("]", "").replace("'", "")
+                        outStr = outStr.replace(":", ";").replace(",", ";")
+                        msgFile_all.write(outStr)
+            msgFile_all.close()
+            rbi.log_to_console(".4.", no_newline=True)
+            os.system("zip -mj %s/ttiTrace_stream_udp.zip %s >/dev/null 2>&1" % (resultDir, udpPathName))
+        except Exception as e:
+            logException("decode_tti_traces_in_streaming_mode [2]", e)
+            rbi.log_to_console(".ERROR")
+            return
+    rbi.log_to_console(".done")
+
+
+def decode_tti_traces_to_remove(inputStr="", event_nr_max=1000):
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    rbi.log_to_console("TTI Trace decoding .", no_newline=True)
+    resultDir = rbi.run_keyword("common_Dss_Keywords.Get Testcase Log Directory")
+    pcapPathName = resultDir + "/ttitrace_streaming.pcap"
+    rbi.log("decode_tti_traces(): pcapPathName = %s" % pcapPathName)
+    udpPathName = pcapPathName.replace(".pcap", ".udp")
+    if os.path.exists(pcapPathName) and os.path.getsize(pcapPathName) > 24:
+        try:
+            rbi.log_to_console(".1.", no_newline=True)
+            cmdStr1 = "tshark -r %s --disable-protocol swe --disable-protocol syscom -T fields -e data" % pcapPathName
+            cmdStr2 = " | perl -0ne's/\\n//g;print pack\"H*\",$_' > %s" % udpPathName
+            cmdStr = cmdStr1 + cmdStr2
+            rbi.log("decode_tti_traces(): cmdStr = %s" % cmdStr)
+            stdoutStr = os.system(cmdStr)
+            rbi.log("decode_tti_traces(): stdoutStr = %s" % stdoutStr)
+            rbi.log_to_console(".2.", no_newline=True)
+        except Exception as e:
+            logException("decode_tti_traces [1]", e)
+            rbi.log_to_console(".ERROR")
+            return
+    rbi.log("decode_tti_traces(): udpPathName = %s" % udpPathName)
+    if os.path.exists(udpPathName) and os.path.getsize(udpPathName) > 24:
+        try:
+            # os.system("rm %s >/dev/null 2>&1" % pcapPathName)
+            rbi.log_to_console(".3.", no_newline=True)
+            file_name = udpPathName
+            msgFile_all = open(resultDir + "/msg_all.csv", "w")
+            with open(file_name, 'rb') as file_obj:
+                startTime = int(time.time())
+                msgFile_all.write("-;" * 10 + "\n")
+                for i, event in enumerate(TtitraceReader(file_obj=file_obj)):
+                    if i > event_nr_max:
+                        break
+                    if event.type != "ttiStartInd":
+                        outStr = str(event.type) + ";" + repr(event.data) + "\n"
+                        outStr = outStr.replace("{", "").replace("}", "").replace(" ", "")
+                        outStr = outStr.replace("[", "").replace("]", "").replace("'", "")
+                        outStr = outStr.replace(":", ";").replace(",", ";")
+                        msgFile_all.write(outStr)
+            msgFile_all.close()
+            rbi.log_to_console(".4.", no_newline=True)
+            os.system("zip -mj %s/ttiTrace_stream_udp.zip %s >/dev/null 2>&1" % (resultDir, udpPathName))
+        except Exception as e:
+            logException("decode_tti_traces [2]", e)
+            rbi.log_to_console(".ERROR")
+            return
+    rbi.log_to_console(".done")
+
+
+def verify_5GC001586_UL_MCS_NbrPrb(resultDir):
+    # TTITraces Events: dlFdSchedData + csiSrReportData
+    filePathName = resultDir + "/msg_all.csv"
+    BuiltIn().log("verify_qc_test_case(5GC001586): filePathName = %s" % filePathName, logLevel)
+    mcsList = []
+    numOfPrbList = []
+    averageMcs = 0
+    gradiantMcs = 0
+    averageNbrPrb = 0
+    gradiantNbrPrb = 0
+    tcResult = "failed"
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("verify_qc_test_case(5GC001586): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("verify_qc_test_case(5GC001586): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("verify_qc_test_case(5GC001586): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("verify_qc_test_case(5GC001586): line content = %s %s" % (line,lineNumber))
+                    if "ulFdSchedData;" in line and "isValidWhatIsProposed;1" in line:
+                        a = line.find(";rrmUlProposedMcs;") + 18
+                        b = line[a:].find(";") + a
+                        mcs = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC001586): mcs = %s (%s)" % (mcs, lineNumber))
+                        try:
+                            mcsList.append(int(mcs))
+                        except Exception as e:
+                            BuiltIn().log("verify_qc_test_case(5GC001586): MCS exit")
+                            logException("verify_qc_test_case", e, True)
+                        # numOfPrb;35;startPrb;4
+                        a = line.find(";numOfPrb;") + 10
+                        b = line[a:].find(";") + a
+                        numOfPrbs = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC001586): numOfPrb = %s (%s)" % (numOfPrbs, lineNumber))
+                        try:
+                            numOfPrbList.append(int(numOfPrbs))
+                        except Exception as e:
+                            BuiltIn().log("verify_qc_test_case(5GC001586): numOfPrbs exit")
+                            logException("verify_qc_test_case", e, True)
+                    if "csiSrReportData;" in line:
+                        a = line.find(";cqi;") + 5
+                        b = line[a:].find(";") + a
+                        cqi = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC001586): cqi = %s (%s)" % (cqi, lineNumber))
+                        # break
+            BuiltIn().log("verify_qc_test_case(5GC001586): mcsList = %s" % (mcsList))
+            length = len(mcsList)
+            if length > 2:
+                aX = sum(mcsList)/length
+                BuiltIn().log("verify_qc_test_case(5GC001586): aX = %s" % (aX))
+                averageMcs = aX
+                aY = (1+length)/2
+                BuiltIn().log("verify_qc_test_case(5GC001586): aY = %s" % (aY))
+                y, m1, m2, m = 0, 0, 0, 0
+                for mcs in mcsList:
+                    y += 1
+                    m1 += (mcs-aX) * (y-aY)
+                    m2 += (mcs-aX) * (mcs-aX)
+                BuiltIn().log("verify_qc_test_case(5GC001586): m1 = %s" % (m1))
+                BuiltIn().log("verify_qc_test_case(5GC001586): m2 = %s" % (m2))
+                if m2 == 0:
+                    m2 = 1.0
+                m = m1 / m2
+                BuiltIn().log("verify_qc_test_case(5GC001586): m = %s" % (m))
+                gradiantMcs = m
+            BuiltIn().log("verify_qc_test_case(5GC001586): numOfPrbList = %s" % (numOfPrbList))
+            length = len(numOfPrbList)
+            if length > 2:
+                aX = sum(numOfPrbList)/length
+                BuiltIn().log("verify_qc_test_case(5GC001586): numOfPrb aX = %s" % (aX))
+                averagenumOfPrb = aX
+                aY = (1+length)/2
+                BuiltIn().log("verify_qc_test_case(5GC001586): numOfPrb aY = %s" % (aY))
+                y, m1, m2, m = 0, 0, 0, 0
+                for numOfPrb in numOfPrbList:
+                    y += 1
+                    m1 += (numOfPrb-aX) * (y-aY)
+                    m2 += (numOfPrb-aX) * (numOfPrb-aX)
+                BuiltIn().log("verify_qc_test_case(5GC001586): numOfPrb m1 = %s" % (m1))
+                BuiltIn().log("verify_qc_test_case(5GC001586): numOfPrb m2 = %s" % (m2))
+                if m2 == 0:
+                    m2 = 1.0
+                m = m1 / m2
+                BuiltIn().log("verify_qc_test_case(5GC001586): numOfPrb m = %s" % (m))
+                gradiantNbrPrb = m
+        if averagenumOfPrb >= 35 and 35 in numOfPrbList and gradiantNbrPrb >= 0.0:
+            tcResult = "passed"
+        msg = "averageNumOfPrb=" + str(averagenumOfPrb)
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult
+
+
+def verify_5GC001586_UL_MCS_StartPrb(resultDir):
+    # TTITraces Events: dlFdSchedData + csiSrReportData
+    filePathName = resultDir + "/msg_all.csv"
+    BuiltIn().log("verify_qc_test_case(5GC001586): filePathName = %s" % filePathName, logLevel)
+    mcsList = []
+    startPrbList = []
+    averagestartPrb = 0
+    gradiantstartPrb = 0
+    tcResult = "failed"
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("verify_qc_test_case(5GC001586): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("verify_qc_test_case(5GC001586): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("verify_qc_test_case(5GC001586): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("verify_qc_test_case(5GC001586): line content = %s %s" % (line,lineNumber))
+                    if "ulFdSchedData;" in line and "isValidWhatIsProposed;1" in line:
+                        a = line.find(";rrmUlProposedMcs;") + 18
+                        b = line[a:].find(";") + a
+                        mcs = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC001586): mcs = %s (%s)" % (mcs, lineNumber))
+                        try:
+                            mcsList.append(int(mcs))
+                        except Exception as e:
+                            BuiltIn().log("verify_qc_test_case(5GC001586): MCS exit")
+                            logException("verify_qc_test_case", e, True)
+                        # numOfPrb;35;startPrb;4
+                        a = line.find(";startPrb;") + 10
+                        b = line[a:].find(";") + a
+                        startPrb = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC001586): numOfPrb = %s (%s)" % (numOfPrbs, lineNumber))
+                        try:
+                            startPrbList.append(int(startPrb))
+                        except Exception as e:
+                            BuiltIn().log("verify_qc_test_case(5GC001586): startPrb exit")
+                            logException("verify_qc_test_case", e, True)
+                    if "csiSrReportData;" in line:
+                        a = line.find(";cqi;") + 5
+                        b = line[a:].find(";") + a
+                        cqi = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC001586): cqi = %s (%s)" % (cqi, lineNumber))
+                        # break
+            BuiltIn().log("verify_qc_test_case(5GC001586): startPrbList = %s" % (startPrbList))
+            length = len(startPrbList)
+            if length > 2:
+                aX = sum(startPrbList)/length
+                BuiltIn().log("verify_qc_test_case(5GC001586): aX = %s" % (aX))
+                averagestartPrb = aX
+                aY = (1+length)/2
+                BuiltIn().log("verify_qc_test_case(5GC001586): aY = %s" % (aY))
+                y, m1, m2, m = 0, 0, 0, 0
+                for startPrb in startPrbList:
+                    y += 1
+                    m1 += (startPrb-aX) * (y-aY)
+                    m2 += (startPrb-aX) * (startPrb-aX)
+                BuiltIn().log("verify_qc_test_case(5GC001586): m1 = %s" % (m1))
+                BuiltIn().log("verify_qc_test_case(5GC001586): m2 = %s" % (m2))
+                if m2 == 0:
+                    m2 = 1.0
+                m = m1 / m2
+                BuiltIn().log("verify_qc_test_case(5GC001586): m = %s" % (m))
+                gradiantstartPrb = m
+            BuiltIn().log("verify_qc_test_case(5GC001586): startPrbList = %s" % (startPrbList))
+#        if averageMcs > 20 and 28 in mcsList and gradiantMcs >= 0.0:
+#            tcResult = "passed"
+        if startPrb >= 4 and 4 in startPrbList and gradiantstartPrb >= 0.0:
+            tcResult = "passed"
+        msg = "averagesSartPrb=" + str(averagestartPrb)
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult
+
+
+def verify_5GC001586_J2_UL_AL_After_Reception_of_CQI_Report(resultDir, rnti_ue, rdDssUlDciAggregationThreshold=10):
+    # TTITraces Events: ulFdSchedData + csiSrReportData
+    filePathName = resultDir + "/msg_all.csv"
+    print("verify_qc_test_case(5GC001586): filePathName = %s" % filePathName)
+    aggregationLevelList = []
+    cqiList = []
+    averageAl = 0
+    averageCqi = 0
+    gradiantCqi = 0
+    tcResult = "failed"
+    rnti_csiSrReportData_s = 0
+    try:
+        if os.path.isfile(filePathName):
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                for line in csvFile:
+                    lineNumber += 1
+                    if "csiSrReportData;" in line:
+                        a = line.find(";cqi;") + 5
+                        b = line[a:].find(";") + a
+                        cqi = (int)(line[a:b])
+                        a = line.find(";rnti;") + 6
+                        b = line[a:].find(";") + a
+                        rnti_csiSrReportData = (int)(line[a:b])
+                        s = "csiSrReportData : rnti_csiSrReportData = %s (%s) "
+                        BuiltIn().log(s % (rnti_csiSrReportData, rnti_ue))
+                        if rnti_csiSrReportData != rnti_ue:
+                            BuiltIn().log("csiSrReportData : %s discarded => continue..." % rnti_csiSrReportData)
+                            continue
+                        BuiltIn().log("csiSrReportData : rnti %s found (%s)" % (rnti_csiSrReportData, rnti_ue))
+                        rnti_csiSrReportData_s = rnti_csiSrReportData
+                        cqi_csiSrReportData_s = cqi
+                        try:
+                            cqiList.append(int(cqi_csiSrReportData_s))
+                        except Exception as e:
+                            logException("verify_qc_test_case", e, True)
+                        s = "verify_qc_test_case(5GC001586): cqi = %s rnti = %s (%s)"
+                        BuiltIn().log(s % (cqi, rnti_csiSrReportData, lineNumber))
+                    if "ulFdSchedData;" in line and "isValidWhatIsProposed;1" in line and\
+                       "isDefaultMcsProposed;0" in line:
+                        a = line.find(";rnti;") + 6
+                        b = line[a:].find(";") + a
+                        rnti2 = (int)(line[a:b])
+                        if rnti2 != rnti_csiSrReportData_s:
+                            BuiltIn().log("ulFdSchedData: %s discarded => continue..." % rnti2)
+                            continue
+                        a = line.find(";aggregationLevel;") + 18
+                        # b = line[a:].find(";") + a
+                        # AL is the last field
+                        b = a + 1
+                        aggregationLevel = line[a:b]
+                        # BuiltIn().log("ligne = %s" % line)
+                        s = "verify_qc_test_case(5GC001586): ulFdSchedData : aggregationLevel = %s rnti = (%s) (%s) "
+                        BuiltIn().log(s % (aggregationLevel, rnti2, lineNumber))
+                        try:
+                            aggregationLevelList.append(int(aggregationLevel))
+                        except Exception as e:
+                            logException("verify_qc_test_case", e, True)
+            BuiltIn().log("verify_qc_test_case(5GC001586): aggregationLevelList = %s" % (aggregationLevelList))
+            BuiltIn().log("verify_qc_test_case(5GC001586): cqiList = %s" % (cqiList))
+            length = len(aggregationLevelList)
+            if length > 2:
+                averageAl = sum(aggregationLevelList)/length
+                BuiltIn().log("verify_qc_test_case(5GC001586): averageAl = %s" % (averageAl))
+            length = len(cqiList)
+            if length > 2:
+                averageCqi = sum(cqiList)/length
+                aX = averageCqi
+                aY = (1+length)/2
+                BuiltIn().log("verify_qc_test_case(5GC001586): aY = %s" % (aY))
+                y, m1, m2, m = 0, 0, 0, 0
+                for cqi in cqiList:
+                    y += 1
+                    m1 += (cqi-aX) * (y-aY)
+                    m2 += (cqi-aX) * (cqi-aX)
+                BuiltIn().log("verify_qc_test_case(5GC001586): m1 = %s" % (m1))
+                BuiltIn().log("verify_qc_test_case(5GC001586): m2 = %s" % (m2))
+                if m2 == 0:
+                    m2 = 1.0
+                m = m1 / m2
+                BuiltIn().log("verify_qc_test_case(5GC001586): m = %s" % (m))
+                gradiantCqi = m
+                msg = "verify_qc_test_case(5GC001586): averageCqi = %s gradiantCqi=%s "
+                BuiltIn().log(msg % (averageCqi, gradiantCqi))
+        if ((averageCqi >= rdDssUlDciAggregationThreshold and averageAl == 2) or
+           (averageCqi < rdDssUlDciAggregationThreshold and averageAl == 4)):
+            tcResult = "passed"
+        msg = "rnti_ue=" + str(rnti_ue)\
+              + " averageAl=" + str(averageAl)\
+              + " averageCqi=" + str(averageCqi)\
+              + " gradiantCqi=" + str(gradiantCqi)\
+              + " rdDssUlDciAggregationThreshold=" + str(rdDssUlDciAggregationThreshold)
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult
+
+
+def verifyFeatureActivation(resultBaseDir):
+    tcResult = "failed"
+    actFdmScheduling = ""
+    try:
+        scfObj = scf()
+        scfObj.load_scf(BuiltIn().run_keyword("common_Dss_Keywords.Get Testcase Log Directory") + "/SCF.xml")
+        actFdmScheduling = scfObj.get_value_from_scf(p_name="actFdmScheduling")
+        BuiltIn().log("verifyFeatureActivation: actFdmScheduling = %s (SCF)" % actFdmScheduling)
+        if actFdmScheduling.lower() == "true":
+            tcResult = "passed"
+    except Exception as e:
+        logException("verifyFeatureActivation", e)
+    BuiltIn().log("verifyFeatureActivation(5GC001586): tcResult = %s" % tcResult, logLevel)
+    return tcResult
+
+
+def verify2574FeatureActivation(resultBaseDir):
+    tcResult = "failed"
+    actLteNrDssLteCatM = ""
+    actRateMatchedCsiIm = ""
+    try:
+        scfObj = scf()
+        scfFilePath = BuiltIn().run_keyword("common_Dss_Keywords.Get Testcase Log Directory") + "/SCF.xml"
+        scfObj.load_scf(scfFilePath)
+        NRBTS = "NRBTS-1"
+        NRCELL = "NRCELL-1"
+        if os.path.isfile(scfFilePath):
+            # BuiltIn().log("isfile scfFilePath = %s (SCF)" % scfFilePath)
+            with open(scfFilePath, "r") as scfFile:
+                line = scfFile.readline()
+                # BuiltIn().log("readline scfFilePath = %s (line)" % line)
+                while line:
+                    line = scfFile.readline()
+                    # BuiltIn().log("readline scfFilePath = %s (line)" % line)
+                    if "/NRBTS-" in line and "/NRCELL-" in line:
+                        # BuiltIn().log("readline scfFilePath = %s (line)" % line)
+                        rbi.log("getNeededValuesFromScf(): line = %s" %
+                                line, logLevel)
+                        nrbtsIndex = line.find("/NRBTS-") + 1
+                        nrcellIndex = line.find("/NRCELL-") + 1
+                        endIndex = line[nrcellIndex:].find("\" ") + nrcellIndex
+                        NRBTS = line[nrbtsIndex:nrcellIndex - 1]
+                        NRCELL = line[nrcellIndex:endIndex]
+                        break
+        dist_name = NRBTS + "/" + NRCELL + "/" + "NRDSSLTE-1"
+        p_name = "actLteNrDssLteCatM"
+        actLteNrDssLteCatM = scfObj.get_value_from_scf(p_name=p_name, dist_name=dist_name)
+        BuiltIn().log("verify2574FeatureActivation: actLteNrDssLteCatM = %s (SCF)" % actLteNrDssLteCatM)
+        if actLteNrDssLteCatM.lower() == "true":
+            tcResult = "passed"
+        # check also that actRateMatchedCsiIm = True
+        p_name = "actRateMatchedCsiIm"
+        actRateMatchedCsiIm = scfObj.get_value_from_scf(p_name=p_name, dist_name=dist_name)
+        BuiltIn().log("verify2574FeatureActivation: actRateMatchedCsiIm = %s (SCF)" % actRateMatchedCsiIm)
+        if tcResult == "passed" and actRateMatchedCsiIm.lower() == "true":
+            tcResult = "passed"
+        else:
+            tcResult = "failed"
+    except Exception as e:
+        logException("verify2574FeatureActivation", e)
+    BuiltIn().log("verify2574FeatureActivation(5GC002574): tcResult = %s" % tcResult, logLevel)
+    return tcResult
+
+
+def verify_5GC002574_CatM_Info(resultDir):
+    # [PRIVATE] : used for Acceptance criteria of TC [1]5GC002574-A3_TC_10_5gCall_with_Traffic_NSA_Mode
+    # Acceptance criteria  is based on CatMinfo_10MHz_CatMData_CatMPaging_CatMSib1Br_DLRATIO_70 info
+    # pcap Events: DlData_PdschSendReq
+    # Info;sfn;slot;rnti;startSymbol;numOfPdschSymbols;mcs;startPrb;numOfPrb;rbgSize;rbgSizeFirst;rat0Bitmap;
+    # rvIndex;isCsirsRateMatching
+    filePathName = resultDir + "/msg_DlData_PdschSendReq_pcap.csv"
+    BuiltIn().log("verify_qc_test_case(5GC002574): filePathName = %s" %
+                  filePathName, logLevel)
+    tcResult = "failed"
+    rat0BitmapList = []
+    num_of_bits = 32
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("verify_qc_test_case(5GC002574): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("verify_qc_test_case(5GC002574): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s %s" % (line, lineNumber))
+                    if "ICOM_5G/DlData_PdschSendReq;" in line:
+                        tcResult = "passed"
+                        # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s %s" % (line, lineNumber))
+                        string_split = line.split(';')
+                        info = string_split[0]
+                        sfn = int(string_split[1], 16)
+                        slot = int(string_split[2], 16)
+                        rnti = int(string_split[3], 16)
+                        startSymbol = int(string_split[4], 16)
+                        numOfPdschSymbols = int(string_split[5])
+                        mcs = int(string_split[6], 16)
+                        startPrb = int(string_split[7], 16)
+                        numOfPrb = int(string_split[8], 16)
+                        rbgSize = int(string_split[9], 16)
+                        rbgSizeFirst = int(string_split[10], 16)
+                        rat0Bitmap = int(string_split[11], 16)
+                        # s = " slot = %s startPrb %s numOfPrb %s startSymbol %s numOfPdschSymbols %s "
+                        # s = s + "rbgSize %s rat0Bitmap= %s (%s)"
+                        # BuiltIn().log(s % (slot, startPrb, numOfPrb, startSymbol, numOfPdschSymbols, rbgSize,
+                        #                    rat0Bitmap, lineNumber))
+                        if ((((slot == 1) or (slot == 2)) and (startPrb == 0) and (numOfPrb == 44)
+                             and (startSymbol == 3) and (numOfPdschSymbols == 11)
+                             and (rbgSize == 4) and (rat0Bitmap != 3489136640)) or
+                            ((((slot == 1) or (slot == 2)) and (startPrb == 0) and (numOfPrb == 36)
+                             and (startSymbol == 3) and (numOfPdschSymbols == 11)
+                             and (rbgSize == 4) and (rat0Bitmap != 3487563776)))):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) +
+                                                     tcResult + RESET + "", no_newline=False)
+                            break
+                        if ((((slot == 2) or (slot == 3) or (slot == 4) or (slot == 6) or (slot == 8))
+                             and (startPrb == 0) and (numOfPrb == 44)
+                             and (startSymbol == 3) and (numOfPdschSymbols == 11)
+                             and (rbgSize == 4) and (rat0Bitmap != 3489136640))):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                                     + RESET + "", no_newline=False)
+                            break
+                        if ((((slot == 6) or (slot == 7))
+                             and (startPrb == 0) and (numOfPrb == 52)
+                             and (startSymbol == 3) and (numOfPdschSymbols == 11)
+                             and (rbgSize == 4) and (rat0Bitmap != 4294443008))):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                                     + RESET + "", no_newline=False)
+                            break
+                        if ((slot == 7) and (startPrb == 0) and (numOfPrb == 44) and (startSymbol == 3) and
+                                (numOfPdschSymbols == 11) and (rbgSize == 4) and (rat0Bitmap != 3489136640)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                                     + RESET + "", no_newline=False)
+                            break
+                        if (((slot == 9) or (slot == 0)) and (startPrb == 0) and (numOfPrb == 32) and
+                                (startSymbol == 3) and (numOfPdschSymbols == 11) and (rbgSize == 4) and
+                                (rat0Bitmap != 3371696128)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                                     + RESET + "", no_newline=False)
+                            break
+                        if (((slot == 9) or (slot == 0)) and (startPrb == 0) and (numOfPrb == 24) and
+                                (startSymbol == 3) and (numOfPdschSymbols == 11) and (rbgSize == 4) and
+                                (rat0Bitmap != 3370123264)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                                     + RESET + "", no_newline=False)
+                            break
+                        rat0Bitmap_b = bin(rat0Bitmap)[2:].zfill(num_of_bits)
+                        rnti_hex = hex(rnti)
+                        rat0Bitmap_elt = "rnti = " + str(rnti_hex) + " slot = " + str(slot) + " startPrb = " + \
+                                         str(startPrb) + " numOfPrb = " + \
+                                         str(numOfPrb) + " startSymbol = " + str(startSymbol) + \
+                                         " numOfPdschSymbols = " + str(numOfPdschSymbols) + " rbgSize = " + \
+                                         str(rbgSize) + " rat0Bitmap = " + str(rat0Bitmap) + " rat0Bitmap_b = " + \
+                                         str(rat0Bitmap_b)
+                        try:
+                            if rat0Bitmap_elt not in rat0BitmapList:
+                                rat0BitmapList.append(rat0Bitmap_elt)
+                        except Exception as e:
+                            logException("verify_5GC002574_CatM_Info", e, True)
+        msg = "Test 10MHz CatM Info PDSCH Scheduling "
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult, rat0BitmapList
+
+
+def verify_5GC002574_15MHz_CatM_Info(resultDir):
+    # [PRIVATE] : used for Acceptance criteria of
+    # TC [1]5GC002574-A6_TC21_SA_CallSetup_SANSA_15MHz_DL_ratio_max_95
+    # Acceptance criteria  is based on
+    # CatMinfo_15MHz_CatMData_CatMPaging_CatMSib1Br_mPBCH_DLRATIO_100_CatMData_HighEdge info
+    # pcap Events: DlData_PdschSendReq
+    # Info;sfn;slot;rnti;startSymbol;numOfPdschSymbols;mcs;startPrb;numOfPrb;rbgSize;rbgSizeFirst;rat0Bitmap;
+    # rvIndex;isCsirsRateMatching
+    filePathName = resultDir + "/msg_DlData_PdschSendReq_pcap.csv"
+    BuiltIn().log("verify_qc_test_case(5GC002574): filePathName = %s" %
+                  filePathName, logLevel)
+    tcResult = "failed"
+    rat0BitmapList = []
+    num_of_bits = 32
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("verify_qc_test_case(5GC002574): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("verify_qc_test_case(5GC002574): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s %s" % (line, lineNumber))
+                    if "ICOM_5G/DlData_PdschSendReq;" in line:
+                        tcResult = "passed"
+                        # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s %s" % (line, lineNumber))
+                        string_split = line.split(';')
+                        info = string_split[0]
+                        sfn = int(string_split[1], 16)
+                        slot = int(string_split[2], 16)
+                        rnti = int(string_split[3], 16)
+                        startSymbol = int(string_split[4], 16)
+                        numOfPdschSymbols = int(string_split[5])
+                        mcs = int(string_split[6], 16)
+                        startPrb = int(string_split[7], 16)
+                        numOfPrb = int(string_split[8], 16)
+                        rbgSize = int(string_split[9], 16)
+                        rbgSizeFirst = int(string_split[10], 16)
+                        rat0Bitmap = int(string_split[11], 16)
+                        if (((slot == 1) or (slot == 2) or (slot == 3) or (slot == 4) or (slot == 5) or
+                                (slot == 6) or (slot == 7) or (slot == 8)) and (startPrb == 0) and (numOfPrb == 64) and
+                                (startSymbol == 3) and (numOfPdschSymbols == 11) and (rbgSize == 8) and
+                                (rat0Bitmap != 4278190080)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) +
+                                                     tcResult + RESET + "", no_newline=False)
+                            break
+                        if (((slot == 1) or (slot == 2) or (slot == 3)) and (startPrb == 0) and (numOfPrb == 48) and
+                                (startSymbol == 3) and (numOfPdschSymbols == 11) and (rbgSize == 8) and
+                                (rat0Bitmap != 2667577344)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                                     + RESET + "", no_newline=False)
+                            break
+                        if (((slot == 0) or (slot == 9)) and
+                                (startPrb == 0) and (numOfPrb == 48) and (startSymbol == 3) and
+                                (numOfPdschSymbols == 11) and (rbgSize == 8) and (rat0Bitmap != 4076863488)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(
+                                BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                + RESET + "", no_newline=False)
+                            break
+                        if ((slot == 0) and (startPrb == 0) and (numOfPrb == 32) and
+                                (startSymbol == 3) and (numOfPdschSymbols == 11) and (rbgSize == 8) and
+                                (rat0Bitmap != 2466250752)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(
+                                BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                + RESET + "", no_newline=False)
+                            break
+                        if (((slot == 6) or (slot == 7)) and (startPrb == 0) and (numOfPrb == 79) and
+                                (startSymbol == 3) and (numOfPdschSymbols == 11) and (rbgSize == 8) and
+                                (rat0Bitmap != 4290772992)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                                     + RESET + "", no_newline=False)
+                            break
+                        rat0Bitmap_b = bin(rat0Bitmap)[2:].zfill(num_of_bits)
+                        rnti_hex = hex(rnti)
+                        rat0Bitmap_elt = "rnti = " + str(rnti_hex) + " slot = " + str(slot) + " startPrb = " + \
+                                         str(startPrb) + " numOfPrb = " + \
+                                         str(numOfPrb) + " startSymbol = " + str(startSymbol) + \
+                                         " numOfPdschSymbols = " + str(numOfPdschSymbols) + " rbgSize = " + \
+                                         str(rbgSize) + " rat0Bitmap = " + str(rat0Bitmap) + " rat0Bitmap_b = " + \
+                                         str(rat0Bitmap_b)
+                        try:
+                            if rat0Bitmap_elt not in rat0BitmapList:
+                                rat0BitmapList.append(rat0Bitmap_elt)
+                        except Exception as e:
+                            logException("verify_5GC002574_15MHz_CatM_Info", e, True)
+        msg = "Test 15MHz CatM Info PDSCH Scheduling "
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult, rat0BitmapList
+
+
+def verify_5GC002574_20MHz_CatM_Info(resultDir):
+    # [PRIVATE] : used for Acceptance criteria of
+    # TC [1]5GC002574-A5_TC19_NSA_CallSetup_SANSA_20MHz_DL_ratio_max_95_repetead_MPBCH_Fast_Alloc
+    # Acceptance criteria  is based on
+    # CatMinfo_20MHz_CatMData_CatMPaging_CatMSib1Br_mPBCH_DLRATIO_100_CatMData_HighEdge info
+    # pcap Events: DlData_PdschSendReq
+    # Info;sfn;slot;rnti;startSymbol;numOfPdschSymbols;mcs;startPrb;numOfPrb;rbgSize;rbgSizeFirst;rat0Bitmap;
+    # rvIndex;isCsirsRateMatching
+    filePathName = resultDir + "/msg_DlData_PdschSendReq_pcap.csv"
+    BuiltIn().log("verify_qc_test_case(5GC002574): filePathName = %s" %
+                  filePathName, logLevel)
+    tcResult = "failed"
+    rat0BitmapList = []
+    num_of_bits = 32
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("verify_qc_test_case(5GC002574): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("verify_qc_test_case(5GC002574): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s %s" % (line, lineNumber))
+                    if "ICOM_5G/DlData_PdschSendReq;" in line:
+                        # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s %s" % (line, lineNumber))
+                        tcResult = "passed"
+                        string_split = line.split(';')
+                        info = string_split[0]
+                        sfn = int(string_split[1], 16)
+                        slot = int(string_split[2], 16)
+                        rnti = int(string_split[3], 16)
+                        startSymbol = int(string_split[4], 16)
+                        numOfPdschSymbols = int(string_split[5])
+                        mcs = int(string_split[6], 16)
+                        startPrb = int(string_split[7], 16)
+                        numOfPrb = int(string_split[8], 16)
+                        rbgSize = int(string_split[9], 16)
+                        rbgSizeFirst = int(string_split[10], 16)
+                        rat0Bitmap = int(string_split[11], 16)
+                        if (((slot == 1) or (slot == 2) or (slot == 3) or (slot == 4) or (slot == 5) or (slot == 6)
+                             or (slot == 7) or (slot == 8)) and (startPrb == 0) and (numOfPrb == 90) and
+                                (startSymbol == 3) and (numOfPdschSymbols == 11) and (rbgSize == 8) and
+                                (rat0Bitmap != 4293132288)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) +
+                                                     tcResult + RESET + "", no_newline=False)
+                            break
+                        if ((((slot == 9) or (slot == 0)) and (startPrb == 0) and (numOfPrb == 74) and
+                             (startSymbol == 3) and (numOfPdschSymbols == 11) and (rbgSize == 8) and
+                             (rat0Bitmap != 4242800640))):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                                     + RESET + "", no_newline=False)
+                            break
+                        if ((slot == 4) and
+                                (startPrb == 0) and (numOfPrb == 74) and (startSymbol == 3) and
+                                (numOfPdschSymbols == 11) and (rbgSize == 8) and (rat0Bitmap != 3487825920)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                                     + RESET + "", no_newline=False)
+                            break
+                        if ((slot == 4) and
+                                (startPrb == 0) and (numOfPrb == 58) and (startSymbol == 3) and
+                                (numOfPdschSymbols == 11) and (rbgSize == 8) and (rat0Bitmap != 2657353728)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(
+                                BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                + RESET + "", no_newline=False)
+                            break
+                        if (((slot == 6) or (slot == 7)) and (startPrb == 0) and (numOfPrb == 106) and
+                                (startSymbol == 3) and (numOfPdschSymbols == 11) and (rbgSize == 8) and
+                                (rat0Bitmap != 4294705152)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                                     + RESET + "", no_newline=False)
+                            break
+                        rat0Bitmap_b = bin(rat0Bitmap)[2:].zfill(num_of_bits)
+                        rnti_hex = hex(rnti)
+                        rat0Bitmap_elt = "rnti = " + str(rnti_hex) + " slot = " + str(slot) + " startPrb = " + \
+                                         str(startPrb) + " numOfPrb = " + \
+                                         str(numOfPrb) + " startSymbol = " + str(startSymbol) + \
+                                         " numOfPdschSymbols = " + str(numOfPdschSymbols) + " rbgSize = " + \
+                                         str(rbgSize) + " rat0Bitmap = " + str(rat0Bitmap) + " rat0Bitmap_b = " + \
+                                         str(rat0Bitmap_b)
+                        try:
+                            if rat0Bitmap_elt not in rat0BitmapList:
+                                rat0BitmapList.append(rat0Bitmap_elt)
+                        except Exception as e:
+                            logException("verify_5GC002574_20MHz_CatM_Info", e, True)
+        msg = "Test 20MHz CatM Info PDSCH Scheduling "
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult, rat0BitmapList
+
+
+def verify_5GC002574_20MHz_BHE_CatM_Info(resultDir):
+    # [PRIVATE] : used for Acceptance criteria of
+    # TC [1]5GC002574-A5_TC19_NSA_CallSetup_SANSA_20MHz_DL_ratio_max_95_repetead_MPBCH_Fast_Alloc
+    # Acceptance criteria  is based on
+    # CatMinfo_20MHz_CatMData_CatMPaging_CatMSib1Br_mPBCH_DLRATIO_100_CatMData_HighEdge info
+    # pcap Events: DlData_PdschSendReq
+    # Info;sfn;slot;rnti;startSymbol;numOfPdschSymbols;mcs;startPrb;numOfPrb;rbgSize;rbgSizeFirst;rat0Bitmap;
+    # rvIndex;isCsirsRateMatching
+    filePathName = resultDir + "/msg_DlData_PdschSendReq_pcap.csv"
+    BuiltIn().log("verify_qc_test_case(5GC002574): filePathName = %s" %
+                  filePathName, logLevel)
+    tcResult = "failed"
+    rat0BitmapList = []
+    num_of_bits = 32
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("verify_qc_test_case(5GC002574): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("verify_qc_test_case(5GC002574): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s %s" % (line, lineNumber))
+                    if "ICOM_5G/DlData_PdschSendReq;" in line:
+                        # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s %s" % (line, lineNumber))
+                        tcResult = "passed"
+                        string_split = line.split(';')
+                        info = string_split[0]
+                        sfn = int(string_split[1], 16)
+                        slot = int(string_split[2], 16)
+                        rnti = int(string_split[3], 16)
+                        startSymbol = int(string_split[4], 16)
+                        numOfPdschSymbols = int(string_split[5])
+                        mcs = int(string_split[6], 16)
+                        startPrb = int(string_split[7], 16)
+                        numOfPrb = int(string_split[8], 16)
+                        rbgSize = int(string_split[9], 16)
+                        rbgSizeFirst = int(string_split[10], 16)
+                        rat0Bitmap = int(string_split[11], 16)
+                        if (((slot == 1) or (slot == 2) or (slot == 3) or (slot == 4) or (slot == 5) or (slot == 6)
+                             or (slot == 7) or (slot == 8)) and (startPrb == 0) and (numOfPrb == 88) and
+                                (startSymbol == 3) and (numOfPdschSymbols == 11) and (rbgSize == 8) and
+                                (rat0Bitmap != 4292870144)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) +
+                                                     tcResult + RESET + "", no_newline=False)
+                            break
+                        if ((((slot == 9) or (slot == 0)) and (startPrb == 0) and (numOfPrb == 72) and
+                             (startSymbol == 3) and (numOfPdschSymbols == 11) and (rbgSize == 8) and
+                             (rat0Bitmap != 4242538496))):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                                     + RESET + "", no_newline=False)
+                            break
+                        if ((slot == 4) and
+                                (startPrb == 0) and (numOfPrb == 72) and (startSymbol == 3) and
+                                (numOfPdschSymbols == 11) and (rbgSize == 8) and (rat0Bitmap != 3487563776)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                                     + RESET + "", no_newline=False)
+                            break
+                        if ((slot == 4) and
+                                (startPrb == 0) and (numOfPrb == 58) and (startSymbol == 3) and
+                                (numOfPdschSymbols == 11) and (rbgSize == 8) and (rat0Bitmap != 2657091584)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(
+                                BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                + RESET + "", no_newline=False)
+                            break
+                        if (((slot == 6) or (slot == 7)) and (startPrb == 0) and (numOfPrb == 96) and
+                                (startSymbol == 3) and (numOfPdschSymbols == 11) and (rbgSize == 8) and
+                                (rat0Bitmap != 4293918720)):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "slot = %s startPrb = %s numOfPrb = %s rat0Bitmap = %s (%s)"
+                            BuiltIn().log(s % (slot, startPrb, numOfPrb, rat0Bitmap, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + tcResult
+                                                     + RESET + "", no_newline=False)
+                            break
+                        rat0Bitmap_b = bin(rat0Bitmap)[2:].zfill(num_of_bits)
+                        rnti_hex = hex(rnti)
+                        rat0Bitmap_elt = "rnti = " + str(rnti_hex) + " slot = " + str(slot) + " startPrb = " + \
+                                         str(startPrb) + " numOfPrb = " + \
+                                         str(numOfPrb) + " startSymbol = " + str(startSymbol) + \
+                                         " numOfPdschSymbols = " + str(numOfPdschSymbols) + " rbgSize = " + \
+                                         str(rbgSize) + " rat0Bitmap = " + str(rat0Bitmap) + " rat0Bitmap_b = " + \
+                                         str(rat0Bitmap_b)
+                        try:
+                            if rat0Bitmap_elt not in rat0BitmapList:
+                                rat0BitmapList.append(rat0Bitmap_elt)
+                        except Exception as e:
+                            logException("verify_5GC002574_20MHz_BHE_CatM_Info", e, True)
+        msg = "Test 20MHz BHE CatM Info PDSCH Scheduling "
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult, rat0BitmapList
+
+
+def verify_5GC002574_MCS_Special(resultDir):
+    # [PRIVATE] : used for Acceptance criteria of TC
+    #           [1]5GC002574-A4_TC14_NSA_CallSetup_SANSA_10MHz_DL_ratio_max_70_Check_DLReTx_case
+    # Acceptance criteria  is based on CatMinfo_10MHz_CatMData_CatMPaging_CatMSib1Br_DLRATIO_70 info
+    # pcap Events: DlData_PdschSendReq
+    # Info;sfn;slot;rnti;startSymbol;numOfPdschSymbols;mcs;startPrb;numOfPrb;rbgSize;rbgSizeFirst;rat0Bitmap;
+    # rvIndex;isCsirsRateMatching
+    filePathName = resultDir + "/msg_DlData_PdschSendReq_pcap_MCS_Special.csv"
+    BuiltIn().log("verify_qc_test_case(5GC002574): filePathName = %s" %
+                  filePathName, logLevel)
+    tcResult = "failed"
+    rat0BitmapList = []
+    num_of_bits = 32
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("verify_qc_test_case(5GC002574): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("verify_qc_test_case(5GC002574): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s %s" % (line, lineNumber))
+                    if "ICOM_5G/DlData_PdschSendReq;" in line:
+                        # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s %s" % (line, lineNumber))
+                        tcResult = "passed"
+                        string_split = line.split(';')
+                        info = string_split[0]
+                        sfn = int(string_split[1], 16)
+                        slot = int(string_split[2], 16)
+                        rnti = int(string_split[3], 16)
+                        startSymbol = int(string_split[4], 16)
+                        numOfPdschSymbols = int(string_split[5])
+                        mcs = int(string_split[6], 16)
+                        startPrb = int(string_split[7], 16)
+                        numOfPrb = int(string_split[8], 16)
+                        rbgSize = int(string_split[9], 16)
+                        rbgSizeFirst = int(string_split[10], 16)
+                        rat0Bitmap = int(string_split[11], 16)
+                        rvIndex = int(string_split[12], 16)
+                        isCsirsRateMatching = int(string_split[13], 16)
+                        modulationOrder = int(string_split[14], 16)
+                        tbSize_bits = int(string_split[15], 16)
+                        if ((mcs == 28) or (mcs == 29) or (mcs == 30) or (mcs == 31)) and \
+                                ((slot == 1) or (slot == 2) or (slot == 3) or (slot == 4) or (slot == 5) or
+                                 (slot == 7) or (slot == 8) or (slot == 9) or
+                                 ((slot == 6) and (isCsirsRateMatching == 0))):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002574): DlData_PdschSendReq : "
+                            s = s + \
+                                "sfn = %s slot = %s isCsirsRateMatching = %s rvIndex = %s mcs = %s " + \
+                                "modulationOrder = %s numOfPrb = %s tbSize_bits = %s (%s)"
+                            BuiltIn().log(s % (sfn, slot, isCsirsRateMatching, rvIndex, mcs, modulationOrder,
+                                               numOfPrb, tbSize_bits, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) +
+                                                     tcResult + RESET + "", no_newline=False)
+                            break
+                        rat0Bitmap_b = bin(rat0Bitmap)[2:].zfill(num_of_bits)
+                        rnti_hex = hex(rnti)
+                        rat0Bitmap_elt = "rnti = " + str(rnti_hex) + " slot = " + str(slot) + " startPrb = " + \
+                                         str(startPrb) + " numOfPrb = " + \
+                                         str(numOfPrb) + " startSymbol = " + str(startSymbol) + \
+                                         " numOfPdschSymbols = " + str(numOfPdschSymbols) + " rbgSize = " + \
+                                         str(rbgSize) + " rat0Bitmap = " + str(rat0Bitmap) + " rat0Bitmap_b = " + \
+                                         str(rat0Bitmap_b)
+                        try:
+                            if rat0Bitmap_elt not in rat0BitmapList:
+                                rat0BitmapList.append(rat0Bitmap_elt)
+                        except Exception as e:
+                            logException("verify_5GC002574_CatM_Info", e, True)
+        msg = "Test Special MCS PDSCH Scheduling "
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult, rat0BitmapList
+
+
+def verify_qc_test_case(testCaseName, repFlag="without Reporting", rnti_ue=61):
+    """Keyword: Verify QC Test Case"""
+    BuiltIn().log_to_console(BOLD + " Verify QC Test Case(s) of 5GC002574: " + RESET + "~" * 102 + "")
+    BuiltIn().log_to_console(("  "+testCaseName+"   "+repFlag).ljust(133), no_newline=True)
+    tcResult = "failed"
+    elt_to_display = []
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    if offlineVerification:
+        resultBaseDir = offlineVerification[:offlineVerification[:-2].rfind("/")]
+        resultDir = offlineVerification
+    else:
+        resultBaseDir = BuiltIn().run_keyword("common_Dss_Keywords.Get Testcase Log Directory")
+        resultDir = BuiltIn().run_keyword("common_Dss_Keywords.Get Testcase Log Directory")
+    BuiltIn().log("verify_qc_test_case(): resultBaseDir = %s" % resultBaseDir, logLevel)
+    BuiltIn().log("verify_qc_test_case(): resultDir = %s" % resultDir, logLevel)
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    tcResult = "passed" if verify2574FeatureActivation(resultBaseDir) == 'passed' else "failed"
+    if tcResult.lower() == 'failed':
+        BuiltIn().log_to_console(BOLD + RED + "5GC002574 is NOT enabled!" +
+                                 RESET + "", no_newline=True)
+
+    if "verify_5GC002574_activation" == testCaseName:
+        featureList = ["5GC002574"]
+        # do nothing here
+    if "verify_5GC002574_CatM_Info" == testCaseName:
+        featureList = ["5GC002574"]
+        tcResult, elt_to_display = verify_5GC002574_CatM_Info(resultDir)
+    if "verify_5GC002574_MCS_Special" == testCaseName:
+        featureList = ["5GC002574"]
+        tcResult, elt_to_display = verify_5GC002574_MCS_Special(resultDir)
+    if "verify_5GC002574_15MHz_CatM_Info" == testCaseName:
+        featureList = ["5GC002574"]
+        tcResult, elt_to_display = verify_5GC002574_15MHz_CatM_Info(resultDir)
+    if "verify_5GC002574_20MHz_CatM_Info" == testCaseName:
+        featureList = ["5GC002574"]
+        tcResult, elt_to_display = verify_5GC002574_20MHz_CatM_Info(resultDir)
+    if "verify_5GC002574_20MHz_BHE_CatM_Info" == testCaseName:
+        featureList = ["5GC002574"]
+        tcResult, elt_to_display = verify_5GC002574_20MHz_BHE_CatM_Info(resultDir)
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    BuiltIn().log_to_console((GREEN if tcResult.lower() == 'passed' else RED) + tcResult + RESET + "")
+    return tcResult, elt_to_display
+
+
+def verify_5GC002574_csi_ReportingBand(csi_ReportingBand="csi_ReportingBand_subbands13"):
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    # Verification:
+    #   [PRIVATE] : used for Acceptance criteria of TC [1]5GC002574-A3_TC_10_5gCall_with_Traffic_NSA_Mode
+    #   Acceptance criteria  is based on CatMinfo_10MHz_CatMData_CatMPaging_CatMSib1Br_DLRATIO_70 info
+    #   it is expected that .pcap file of X2 IF is captured and stored;
+    #   it is expected that SCF is saved during Robot Test Suite, by means of 'OAM Get SCF File' keyword;
+    #   if configured in SCF values are equaled to the reported ones, then the scenario is passed.
+    #   01c8 => 000111001000
+    #   csi-ReportingBand subbands13 : '00000001 11001'B
+    #   subbands13: 01c8 [bit length 13, 3 LSB pad bits, 0000 0001  1100 1... decimal value 57]
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    BuiltIn().log_to_console(BOLD + " Verify QC Test Case(s) of 5GC002574: " + RESET + "~" * 102 + "")
+    BuiltIn().log_to_console(("  " + "verify_5GC002574_csi_ReportingBand" + "   ").ljust(96),
+                             no_newline=True)
+    # BuiltIn().log_to_console(("  " + "verify_5GC002574_csi_ReportingBand" + "   ").ljust(133),
+    #                          no_newline=True)
+    filePath = rbi.run_keyword("common_Dss_Keywords.Get Testcase Log Directory") + "/"
+    tcResult = "failed"
+    # P = {"csi-ReportingBand subbands13": "01c8"}
+    P = {"csi-ReportingBand subbands13": "0198", "csi-ReportingBand subbands14": "9e00"}
+    filePathName = filePath + "/testpc-eth3-tcpdump/testpc-eth3-tcpdump.pcap"
+    rbi.log("verify_5GC002574_csi_ReportingBand(5GC002574-A): filePathName = %s" % filePathName)
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[120 characters]
+    if os.path.isfile(filePathName):
+        rc, output = OperatingSystem().run_and_return_rc_and_output("tshark -r %s -V -x" % filePathName)
+        for frame in output.split("Arrival Time:"):
+            if "EUTRAN X2 Application Protocol (X2AP)" in frame and "SgNBAdditionRequestAcknowledge" in frame:
+                tcResult = "passed"
+                rbi.log("frame = %s" % frame, logLevel)
+                # if not isParameterInFrame("subbands13: %s" % P["csi-ReportingBand subbands13"], frame):
+                rbi.log("csi_ReportingBand_subbands case is %s " % csi_ReportingBand, logLevel)
+                if "subbands13" in csi_ReportingBand:
+                    rbi.log("csi_ReportingBand_subbands case is % s " % csi_ReportingBand, logLevel)
+                    if not isParameterInFrame("subbands13: %s" % P["csi-ReportingBand subbands13"], frame):
+                        tcResult = "failed"
+                if "subbands14" in csi_ReportingBand:
+                    rbi.log("csi_ReportingBand_subbands case is % s " % csi_ReportingBand, logLevel)
+                    if not isParameterInFrame("subbands14: %s" % P["csi-ReportingBand subbands14"], frame):
+                        tcResult = "failed"
+                break
+        else:
+            rbi.log("verify_qc_test_case(5GC002574-A): 'SgNBAdditionRequestAcknowledge' is not in X2 pcap logs!!!")
+    else:
+        rbi.log("verify_qc_test_case(5GC002574-A): filePathName seems to be wrong!!!", logLevel)
+    num_of_bits = 12
+    if "subbands13" in csi_ReportingBand:
+        rbi.log("csi_ReportingBand_subbands case is % s " % csi_ReportingBand, logLevel)
+        csi_ReportingBand_b = bin(int(P["csi-ReportingBand subbands13"], 16))[2:].zfill(num_of_bits)
+        msg = "csi_ReportingBand: " + P["csi-ReportingBand subbands13"] + " (" + csi_ReportingBand_b + ") "
+        BuiltIn().log_to_console((GREEN if tcResult.lower() == 'passed' else RED) + msg + tcResult + RESET + "")
+    if "subbands14" in csi_ReportingBand:
+        rbi.log("csi_ReportingBand_subbands case is % s " % csi_ReportingBand, logLevel)
+        csi_ReportingBand_b = bin(int(P["csi-ReportingBand subbands14"], 16))[2:].zfill(num_of_bits)
+        msg = "csi_ReportingBand: " + P["csi-ReportingBand subbands14"] + " (" + csi_ReportingBand_b + ") "
+        BuiltIn().log_to_console((GREEN if tcResult.lower() == 'passed' else RED) + msg + tcResult + RESET + "")
+    return tcResult
+
+
+def verify_5GC002574_csi_ReportingBand_20MHz(csi_ReportingBand_subbands14="fe00"):
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    # Verification:
+    #   [PRIVATE] : used for Acceptance criteria of TC [1]5GC002574-A3_TC_10_5gCall_with_Traffic_NSA_Mode
+    #   Acceptance criteria  is based on CatMinfo_10MHz_CatMData_CatMPaging_CatMSib1Br_DLRATIO_70 info
+    #   it is expected that .pcap file of X2 IF is captured and stored;
+    #   it is expected that SCF is saved during Robot Test Suite, by means of 'OAM Get SCF File' keyword;
+    #   if configured in SCF values are equaled to the reported ones, then the scenario is passed.
+    #   01c8 => 000111001000
+    #   csi-ReportingBand subbands13 : '00000001 11001'B
+    #   subbands13: 01c8 [bit length 13, 3 LSB pad bits, 0000 0001  1100 1... decimal value 57]
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    BuiltIn().log_to_console(BOLD + " Verify QC Test Case(s) of 5GC002574: " + RESET + "~" * 102 + "")
+    BuiltIn().log_to_console(("  " + "verify_5GC002574_csi_ReportingBand" + "   ").ljust(96),
+                             no_newline=True)
+    # BuiltIn().log_to_console(("  " + "verify_5GC002574_csi_ReportingBand" + "   ").ljust(133),
+    #                          no_newline=True)
+    filePath = rbi.run_keyword("common_Dss_Keywords.Get Testcase Log Directory") + "/"
+    tcResult = "failed"
+    P = {"csi-ReportingBand subbands14": "fe00"}
+    filePathName = filePath + "/testpc-eth3-tcpdump/testpc-eth3-tcpdump.pcap"
+    rbi.log("verify_5GC002574_csi_ReportingBand(5GC002574-A): filePathName = %s" % filePathName)
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[120 characters]
+    if os.path.isfile(filePathName):
+        rc, output = OperatingSystem().run_and_return_rc_and_output("tshark -r %s -V -x" % filePathName)
+        for frame in output.split("Arrival Time:"):
+            if "EUTRAN X2 Application Protocol (X2AP)" in frame and "SgNBAdditionRequestAcknowledge" in frame:
+                tcResult = "passed"
+                rbi.log("frame = %s" % frame, logLevel)
+                if not isParameterInFrame("subbands14: %s" % P["csi-ReportingBand subbands14"], frame):
+                    tcResult = "failed"
+                break
+        else:
+            rbi.log("verify_qc_test_case(5GC002574-A): 'SgNBAdditionRequestAcknowledge' is not in X2 pcap logs!!!")
+    else:
+        rbi.log("verify_qc_test_case(5GC002574-A): filePathName seems to be wrong!!!", logLevel)
+    num_of_bits = 12
+    csi_ReportingBand_b = bin(int(P["csi-ReportingBand subbands14"], 16))[2:].zfill(num_of_bits)
+    msg = "csi_ReportingBand: " + P["csi-ReportingBand subbands14"] + " (" + csi_ReportingBand_b + ") "
+    BuiltIn().log_to_console((GREEN if tcResult.lower() == 'passed' else RED) + msg + tcResult + RESET + "")
+    return tcResult
+
+
+def isParameterInFrame(parameter, frame):
+    rbi.log("============================== Begin isParameterInFrame()", logLevel)
+    rbi.log("isParameterInFrame(): expected line = %s" % parameter, logLevel)
+    for line in frame.splitlines():
+        if parameter in line:
+            rbi.log("============================== End isParameterInFrame(True)", logLevel)
+            return True
+    rbi.log("============================== End isParameterInFrame(False)", logLevel)
+    return False
+
+
+def SumOfPrb_DlData_PdschSendReq(nbr_dl_prb_allocated_to_nr=52, sum_dl_prb_allocated_to_nr_over_1024_sfn=283904):
+    # [PRIVATE] : used for Acceptance criteria of TC [1]5GC002574-A3_TC_11_5gCall_with_Traffic_NSA_Mode_Check_Counters
+    # Acceptance criteria  is based on CatMinfo_10MHz_CatMData_CatMPaging_CatMSib1Br_DLRATIO_70 info
+    # pcap Events: DlData_PdschSendReq
+    # Info;sfn;slot;rnti;startSymbol;numOfPdschSymbols;mcs;startPrb;numOfPrb;rbgSize;rbgSizeFirst;rat0Bitmap;
+    # rvIndex;isCsirsRateMatching
+    resultDir = BuiltIn().run_keyword("common_Dss_Keywords.Get Testcase Log Directory")
+    filePathName = resultDir + "/msg_nbOfPrb_DlData_PdschSendReq_pcap.csv"
+    BuiltIn().log("verify_qc_test_case(5GC002574): filePathName = %s" %
+                  filePathName, logLevel)
+    sum_prb = 0
+    sum_prb_5min = 0
+    cpt_sfn = 0
+    current_sfn = 0
+    sum_dl_prb_allocated_to_nr = 0
+    rvIndex_KO = 0
+    rvIndex_all = 0
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("verify_qc_test_case(5GC002574): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("verify_qc_test_case(5GC002574): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s %s" % (line, lineNumber))
+                    if "ICOM_5G/DlData_PdschSendReq;" in line and "0x0000ffff" not in line:
+                        # BuiltIn().log("verify_qc_test_case(5GC002574): line content = %s %s" % (line, lineNumber))
+                        string_split = line.split(';')
+                        info = string_split[0]
+                        sfn = int(string_split[1], 16)
+                        slot = int(string_split[2], 16)
+                        rnti = int(string_split[3], 16)
+                        numOfPrb = int(string_split[4], 16)
+                        rvIndex = int(string_split[5], 16)
+                        sum_prb += numOfPrb
+                        sum_dl_prb_allocated_to_nr += nbr_dl_prb_allocated_to_nr
+                        if rvIndex != 0:
+                            rvIndex_KO += 1
+                        rvIndex_all += 1
+                        if sfn != current_sfn:
+                            cpt_sfn += 1
+                            current_sfn = sfn
+                        if cpt_sfn >= 1024:
+                            BuiltIn().log("verify_qc_test_case(5GC002574): cpt_sfn = %s %s" % (cpt_sfn, lineNumber))
+                            # BuiltIn().log("verify_qc_test_case(5GC002574): lineContent = %s %s" % (line, lineNumber))
+                            break
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    sum_prb_5min = round((sum_prb * 5 * 60 * 1000) / (1024 * 10))
+    sum_dl_prb_allocated_to_nr_over_1024_sfn_estimated = sum_dl_prb_allocated_to_nr_over_1024_sfn
+    # dl_ratio = math.floor((sum_prb / sum_dl_prb_allocated_to_nr) * 100)
+    # dl_ratio = math.floor((float(sum_prb) / float(sum_dl_prb_allocated_to_nr_over_1024_sfn_estimated)) * 100)
+    dl_ratio_display = (float(sum_prb) / float(sum_dl_prb_allocated_to_nr_over_1024_sfn_estimated)) * 100
+    dl_ratio = math.ceil((float(sum_prb) / float(sum_dl_prb_allocated_to_nr_over_1024_sfn_estimated)) * 100)
+    dl_bler = round((rvIndex_KO / rvIndex_all) * 100)
+    BuiltIn().log("verify_qc_test_case(5GC002574): dl_ratio = %s " % dl_ratio_display)
+    return sum_prb, cpt_sfn, sum_prb_5min, sum_dl_prb_allocated_to_nr_over_1024_sfn_estimated, dl_ratio, dl_bler
+
+
+def check_dl_MeasuredNgbrNnbrLoad_upper_100(dl_MeasuredNgbrNnbrLoad=[]):
+    dl_measuredngbrnnbrloadupper100_list = []
+    nbr_elt = 0
+    for elt in dl_MeasuredNgbrNnbrLoad:
+        if elt > 100:
+            dl_measuredngbrnnbrloadupper100_list.append(int(elt))
+            nbr_elt += 1
+    return nbr_elt, dl_measuredngbrnnbrloadupper100_list
+
+
+def set_cqi_to(inputStr=""):
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    # Private Keyword: Set CQI to
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    BuiltIn().log_to_console(" Set CQI to %s ." % inputStr, no_newline=True)
+    ueType = BuiltIn().run_keyword("Get UE type")
+    BuiltIn().log("set_cqi_to(): ueType = %s" % ueType, logLevel)
+    wtsObj = BuiltIn().get_variable_value("${wtsObj}")
+    try:
+        if ueType.lower() == "airphone":
+            if inputStr.lower() == "oscillating":
+                cmdStr1 = "ue_cqi_param id=1 on=nr nr_cqi=0 nr_cqi_mode=oscillating"
+                cmdStr2 = " nr_cqi_min=0 nr_cqi_max=15 nr_cqi_step=15 nr_cqi_period=2 scell=5"
+                cmdStr = cmdStr1 + cmdStr2
+            else:
+                cmdStr = "ue_cqi_param id=1 on=nr nr_cqi=%s nr_cqi_mode=fixed scell=5" % inputStr
+            wtsObj.execute_egate_command(cmd=cmdStr, alias="egate")
+        else:
+            BuiltIn().log("set_cqi_to(ERROR): not supported UE Type!")
+            return
+        BuiltIn().sleep("3s")
+        BuiltIn().log_to_console(".done")
+    except Exception as e:
+        logException("set_cqi_to", e)
+        BuiltIn().log_to_console(".ERROR")
+
+
+def get_rntis(resultDir):
+    # TTITraces Events: csiSrReportData
+    filePathName = resultDir + "/msg_all.csv"
+    BuiltIn().log("get_rntis: filePathName = %s" % filePathName)
+    rnti_csiSrReportData_s = 0
+    rntiList = []
+    try:
+        if os.path.isfile(filePathName):
+            with open(filePathName, "r") as csvFile:
+                linenumber = 0
+                for line in csvFile:
+                    linenumber += 1
+                    if "csiSrReportData;" in line:
+                        a = line.find(";rnti;") + 6
+                        b = line[a:].find(";") + a
+                        rnti_csiSrReportData = (int)(line[a:b])
+                        s = "csiSrReportData : rnti_csiSrReportData = %s "
+                        BuiltIn().log(s % rnti_csiSrReportData)
+                        rnti_csiSrReportData_s = (int)(rnti_csiSrReportData)
+                        try:
+                            if rnti_csiSrReportData_s not in rntiList:
+                                rntiList.append(int(rnti_csiSrReportData))
+                        except Exception as e:
+                            logException("get_rntis", e, True)
+                        s = "get_rntis(5GC001586): rnti = %s (%s)"
+                        BuiltIn().log(s % (rnti_csiSrReportData, linenumber))
+            print("get_rntis(5GC001586): rntiList = %s" % (rntiList))
+
+    except Exception as e:
+        logException("get_rntis", e)
+
+    return rntiList
+
+
+def get_rntis_from_ulFdSchedData(resultDir):
+    # TTITraces Events: ulFdSchedData
+    filePathName = resultDir + "/msg_all.csv"
+    BuiltIn().log("get_rntis: filePathName = %s" % filePathName)
+    rnti_csiSrReportData_s = 0
+    rntiList = []
+    try:
+        if os.path.isfile(filePathName):
+            with open(filePathName, "r") as csvFile:
+                linenumber = 0
+                for line in csvFile:
+                    linenumber += 1
+                    if "ulFdSchedData;" in line and "isValidWhatIsProposed;1" in line:
+                        a = line.find(";rnti;") + 6
+                        b = line[a:].find(";") + a
+                        rnti_csiSrReportData = (int)(line[a:b])
+                        s = "ulFdSchedData : ulFdSchedData = %s "
+                        BuiltIn().log(s % rnti_csiSrReportData)
+                        rnti_csiSrReportData_s = (int)(rnti_csiSrReportData)
+                        try:
+                            if rnti_csiSrReportData_s not in rntiList:
+                                rntiList.append(int(rnti_csiSrReportData))
+                        except Exception as e:
+                            logException("get_rntis", e, True)
+                        s = "get_rntis(5GC001586): rnti = %s (%s)"
+                        BuiltIn().log(s % (rnti_csiSrReportData, linenumber))
+            print("get_rntis(5GC001586): rntiList = %s" % (rntiList))
+
+    except Exception as e:
+        logException("get_rntis", e)
+
+    return rntiList
+
+
+def Get_TbSize_Avg(resultDir):
+    # TTITraces Events: dlFdSchedData + csiSrReportData
+    filePathName = resultDir + "/msg_all.csv"
+    BuiltIn().log("Get_TbSize_Avg(5GC001586): filePathName = %s" % filePathName)
+    tbSizeList = []
+    averagetbSize = 0
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("Get_TbSize_Avg(5GC001586): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("Get_TbSize_Avg(5GC001586): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("Get_TbSize_Avg(5GC001586): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("Get_TbSize_Avg(5GC001586): line content = %s %s" % (line,lineNumber))
+                    if "ulFdSchedData;" in line and "isValidWhatIsProposed;1" in line:
+                        a = line.find(";tbSize;") + 8
+                        b = line[a:].find(";") + a
+                        tbSize = line[a:b]
+                        # BuiltIn().log("Get_TbSize_Avg(5GC001586): tbSize = %s (%s)" % (tbSize, lineNumber))
+                        try:
+                            tbSizeList.append(int(tbSize))
+                        except Exception as e:
+                            BuiltIn().log("Get_TbSize_Avg(5GC001586): tbSize exit")
+                            logException("Get_TbSize_Avg", e, True)
+            BuiltIn().log("Get_TbSize_Avg(5GC001586): tbSizeList = %s" % (tbSizeList))
+            length = len(tbSizeList)
+            if length > 2:
+                averagetbSize = sum(tbSizeList)/length
+                BuiltIn().log("Get_TbSize_Avg(5GC001586): averagetbSize = %s" % (averagetbSize))
+    except Exception as e:
+        logException("Get_TbSize_Avg", e)
+    BuiltIn().log("averagetbSize = %s" % averagetbSize)
+    return averagetbSize
+
+
+def get_numOfLayers(resultDir, rnti_ue=61):
+    # TTITraces Events: dlFdSchedData
+    filePathName = resultDir + "/msg_all.csv"
+    BuiltIn().log("Get_TbSize_Avg(5GC001586): filePathName = %s" % filePathName)
+    numOfLayersList = []
+    averagenumOfLayers = 0
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("get_numOfLayers(5GC001586): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("get_numOfLayers(5GC001586): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("get_numOfLayers(5GC001586): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("get_numOfLayers(5GC001586): line content = %s %s" % (line,lineNumber))
+                    if "ulFdSchedData;" in line and "isValidWhatIsProposed;1" in line:
+                        a = line.find(";rnti;") + 6
+                        b = line[a:].find(";") + a
+                        rnti = (int)(line[a:b])
+                        if rnti != rnti_ue:
+                            BuiltIn().log("continue...discard rnti_ue %s " % rnti)
+                            continue
+                        a = line.find(";numOfLayers;") + 13
+                        b = line[a:].find(";") + a
+                        numOfLayers = line[a:b]
+                        msg = "get_numOfLayers(5GC001586): numOfLayers = %s (%s)"
+                        # BuiltIn().log(msg % (numOfLayers, lineNumber))
+                        try:
+                            numOfLayersList.append(int(numOfLayers))
+                        except Exception as e:
+                            BuiltIn().log("get_numOfLayers(5GC001586): tbSize exit")
+                            logException("get_numOfLayers", e, True)
+            BuiltIn().log("get_numOfLayers(5GC001586): numOfLayersList = %s" % (numOfLayersList))
+            length = len(numOfLayersList)
+            if length > 2:
+                averagenumOfLayers = sum(numOfLayersList)/length
+                BuiltIn().log("get_numOfLayers(5GC001586): averagenumOfLayers = %s" % (averagenumOfLayers))
+    except Exception as e:
+        logException("get_numOfLayers", e)
+    BuiltIn().log("averagenumOfLayers = %s" % averagenumOfLayers)
+    return averagenumOfLayers
+
+
+def get_aggregationLevel(resultDir, rnti_ue=61):
+    # TTITraces Events: dlFdSchedData
+    filePathName = resultDir + "/msg_all.csv"
+    BuiltIn().log("get_aggregationLevel(5GC001586): filePathName = %s" % filePathName)
+    aggregationLevelList = []
+    averageaggregationLevel = 0
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("get_aggregationLevel(5GC001586): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("get_aggregationLevel(5GC001586): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("get_aggregationLevel(5GC001586): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("get_aggregationLevel(5GC001586): line content = %s %s" % (line,lineNumber))
+                    if "ulFdSchedData;" in line and "isValidWhatIsProposed;1" in line:
+                        a = line.find(";rnti;") + 6
+                        b = line[a:].find(";") + a
+                        rnti = (int)(line[a:b])
+                        if rnti != rnti_ue:
+                            BuiltIn().log("continue...discard rnti_ue %s " % rnti)
+                            continue
+                        a = line.find(";aggregationLevel;") + 18
+                        b = line[a:].find(";") + a
+                        aggregationLevel = line[a:b]
+                        msg = "get_numOfLayers(5GC001586): aggregationLevel = %s (%s)"
+                        # BuiltIn().log( msg % (aggregationLevel, lineNumber))
+                        try:
+                            aggregationLevelList.append(int(aggregationLevel))
+                        except Exception as e:
+                            BuiltIn().log("get_aggregationLevel(5GC001586): tbSize exit")
+                            logException("get_aggregationLevel", e, True)
+            BuiltIn().log("get_aggregationLevel(5GC001586): aggregationLevelList = %s" % (aggregationLevelList))
+            length = len(aggregationLevelList)
+            if length > 2:
+                averageaggregationLevel = sum(aggregationLevelList)/length
+                msg = "get_aggregationLevel(5GC001586): averageaggregationLevel = %s"
+                BuiltIn().log(msg % (averageaggregationLevel))
+    except Exception as e:
+        logException("get_aggregationLevel", e)
+    BuiltIn().log("get_aggregationLevel = %s" % averageaggregationLevel)
+    return averageaggregationLevel
+
+
+def _get_cell_data_rate(throughput_stats, precision=3):
+    for row in throughput_stats:
+        if row['Parameter'] == 'Average data rate':
+            return round(float(row['Value']) / 1000000, precision)
+
+
+def get_bearer_stats(ue, bearer, direction, retry=0, precision=3, alias="egate"):
+    table_parser = TableParser()
+    raw_throughput_string = _get_bearer_stats(ue, bearer, direction, retry, alias)
+    throughput_stats = table_parser.parse_egate_table(raw_throughput_string)
+    try:
+        return _get_cell_data_rate(throughput_stats, precision)
+    except KeyError:
+        raise ThroughputException()
+
+
+def _get_bearer_stats_SA(ue, pdu, qfi, direction, retry=0, alias="egate"):
+    try:
+        cmd = "bearer_stats ue={} pdu={} qfi={} dir={}".format(ue, pdu, qfi, direction)
+    except KeyError:
+        raise ThroughputException("Wrong direction and/or layer name")
+    return send_cmd_with_retry_2(cmd, retry, alias)
+
+
+def get_bearer_stats_SA(ue, pdu, qfi, direction, retry=0, precision=3, alias="egate"):
+    table_parser = TableParser()
+    raw_throughput_string = _get_bearer_stats_SA(ue, pdu, qfi, direction, retry, alias)
+    throughput_stats = table_parser.parse_egate_table(raw_throughput_string)
+    try:
+        return _get_cell_data_rate(throughput_stats, precision)
+    except KeyError:
+        raise ThroughputException()
+
+
+def _get_bearer_stats(ue, bearer, direction, retry=0, alias="egate"):
+    try:
+        cmd = "bearer_stats ue={} id={} type=l3 dir={}".format(ue, bearer, direction)
+    except KeyError:
+        raise ThroughputException("Wrong direction and/or layer name")
+    return send_cmd_with_retry_2(cmd, retry, alias)
+
+
+def send_cmd_with_retry(cmd, retry):
+    raw_throughput_string = ''
+    egate_interface = EgateInterface()
+    for i in range(0, int(retry) + 1):
+        raw_throughput_string = egate_interface.send_command_check_for_faults(cmd)
+        if '===' in raw_throughput_string:
+            break
+        elif i == int(retry):
+            raise EgateRetryException(
+                'Egate was not able to find valid throughput output in {} retries:\n {}'.format(
+                    retry, raw_throughput_string
+                )
+            )
+    return raw_throughput_string
+
+
+def send_cmd_with_retry_2(inputStr="", retry=0, alias="egate"):
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    # Private Keyword: send_cmd_with_retry
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    # BuiltIn().log_to_console(" send_cmd_with_retry_2 with %s ." % inputStr, no_newline=True)
+    wtsObj = BuiltIn().get_variable_value("${wtsObj}")
+    # BuiltIn().log_to_console(" send_cmd_with_retry_2 : wtsObj = %s ." % wtsObj, no_newline=True)
+    try:
+        result = wtsObj.execute_egate_command_and_wait_for_data(cmd=inputStr, alias=alias)
+        # msg = "send_cmd_with_retry_2 : result = %s ."
+        # BuiltIn().log_to_console(msg % result, no_newline=False)
+        BuiltIn().sleep("3s")
+        # BuiltIn().log_to_console(".done")
+    except Exception as e:
+        logException("send_cmd_with_retry_2", e)
+        BuiltIn().log_to_console(".ERROR")
+    return result
+
+
+def send_cmd_with_retry_old(cmd, retry):
+    raw_throughput_string = ''
+    for i in range(0, int(retry) + 1):
+        raw_throughput_string = egate_interface.send_command_check_for_faults(cmd)
+        if '===' in raw_throughput_string:
+            break
+        elif i == int(retry):
+            raise EgateRetryException(
+                'Egate was not able to find valid throughput output in {} retries:\n {}'.format(
+                    retry, raw_throughput_string
+                )
+            )
+    return raw_throughput_string
+
+
+def parse_mac_address(mac_address):
+    return "0x" + mac_address.replace(":", '').split()[1]
+
+
+def add_File_ending_if_missing(file_path, file_ending):
+    if file_ending not in file_path:
+        file_path += file_ending
+    return file_path
+
+
+def modify_suci_for_ue(old_suci, plmn):
+    """
+    Update PLMN in SUCI.
+    :param old_suci: SUCI code
+    :param plmn: e.g. 510:93
+    :return: new SUCI code
+    """
+    mcc, mnc = plmn.split(":")
+    old_suci_len = len(old_suci)
+    old_suci = old_suci.split(":", 3)
+    new_suci = "0:{}:{}:{}".format(mcc, mnc, old_suci[-1])
+    if old_suci_len > len(new_suci):
+        for i in range(0, old_suci_len - len(new_suci)):
+            new_suci = new_suci + "0"
+    elif old_suci_len < len(new_suci):
+        for i in range(0, len(new_suci) - old_suci_len):
+            new_suci = new_suci[0:-1]
+    return new_suci

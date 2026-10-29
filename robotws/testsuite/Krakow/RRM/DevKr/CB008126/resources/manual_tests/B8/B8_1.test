@@ -1,0 +1,80 @@
+# ; value after semicolon means sleep after acton command
+# ; parameter 'o' after semicolon means, that output of the command is required
+
+# CB008126-SR-A-B8 QoS Flow Modification - Interaction with CB008717
+# UL TNL modification for NRDC
+# USCB008126-SR-A#B5 Alternate scenario:
+# NR-DC is enabled and established with FR2 PSCell as per US CB008717-I#B1, UL NG-U UP TNL Modification shall [CB008126-A-UPD001]trigger NR-DC bearer
+# takeback procedure in PDU Session Modify handling and after modify sucessfully perfomed, A4 measure measurement report trigger PSCell addition
+# procedure according to CB008717-I#B1, Modified UL NG-U UP TNL shall [End CB008126-A-UPD001] apply to SN.
+# Test verifies that:
+# - when NR-DC split bearer is setup and AMF sends UL-TNL, then the gNB should trigger takeback procedure and after that A4 measurements should be
+#   installed and new UL-TNL should be used after another PSCell addition.
+# Test steps:
+# 1. Setup single pdu session with single nongbr (default)
+# 2. Setup NRDC split bearer (mrdc-SecondaryCellGroupConfig setup in NR-RRC message)
+# 3. Send UL-TNL modification from AMF
+# 4. It should trigger takeback procedure (mrdc-SecondaryCellGroupConfig release should be visible in NR-RRC message in which UL-TNL modification
+#    is done). After the modification, A4 measurements should be installed and new UL-TNL should be used.
+# 5. Send A4 measurement to setup NR-DC. Traffic should behave as before modification (on both MN and SN side)
+
+# configure CB008717 (NR-DC) first on TL: CLOUD_5G_I_BOO_AP_LOO, VARIANT_SANSA_FS_ECPRI_CMWV_FDD+TDD by running robot file:
+#   robotws/testsuite/Krakow/RRM/DevKr/CB008126/CB008126_interaction_with_CB8717_setup.robot containing:
+#     lua: robotws/testsuite/Krakow/RRM/DevKr/CB008717/config/M/6c_FDD_n66_n5_FR2_n260_n261_NRDC.lua
+#     scfc: robotws/custom-config/Krakow/CB008717/DE/SCFC_FS_6C_n5_n66_n260_n261.xml
+#     iphy: robotws/custom-config/Krakow/CB008717/DE/iphy_FS_6c_n5_n66_n260_n261.xml
+#
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/CB008126_enable.yaml
+
+% [{'MOC': 'NRCELL', 'a4Fr2SupervisionTimer': '10000'}]
+
+# Attach FWA UE1 to NRCELL-1 - setup single PDU session with nongbr (default) with 5QI-170 during ICS
+ue_change_location id=1 enb=2 cell=1
+amf_ue_ics_param id=1 ue=1 indexToRFSP=87;1
+ue_register id=1;2
+set_pdu_param ue=1 pdu=1 trf_type=internal
+ue_pdu_session_setup pdu=1 ue=1 gw=1 nwslice=1;2
+
+trf_data_start ue=1 pdu=1 qfi=1 dir=dl mbps=30 trf_id=1;1
+trf_data_start ue=1 pdu=1 qfi=1 dir=ul mbps=10 trf_id=1;1
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;1;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;1;o
+
+# Send A4 measurement for UE1 for NR-DC PSCell addition with NRCELL-3 (PCI-52)
+ue_measurement_send_nr id=1 meas_id=1 event=A4 srsrp_nr=19 srsrq_nr=10 phycell_id=52 nrsrp_nr=85 nrsrq_nr=31 index=0 nrs_result=30:30:0;2
+# Verify that for UE1 NR-DC was successfully configured with NRCELL-3
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;1;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;1;o
+
+# Update UL-TNL for current PDU session
+ue_pdu_session_modify ue=1 pdu=1 qosflows_to_modify=1 by=amf;10
+# To wait for AP implementation
+# ue_pdu_session_modify ue=1 pdu=1 qosflows_to_modify=1 switch_ul_tunnel_endpoint=ip_teid by=amf;10
+# Need to sleep longer time, because A4 measurements will be installed after a4RetryTimer
+
+# Send A4 measurement for UE1 for NR-DC PSCell addition with NRCELL-3 (PCI-52)
+ue_measurement_send_nr id=1 meas_id=3 event=A4 srsrp_nr=19 srsrq_nr=10 phycell_id=52 nrsrp_nr=85 nrsrq_nr=31 index=0 nrs_result=30:30:0;2
+# Check that UL-TNL modification triggered NR-DC bearer takeback procedure in PDUSessionModify, and after modify successfully performed,
+# A4 measurement report triggered another PSCell addition and modified UL-TNL has been applied to SN
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;1;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;1;o
+# Verify that traffic remains unchanged: 30MB for DL, 10MB for UL
+pause
+
+ue_kill id=1;2
+exit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

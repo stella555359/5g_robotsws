@@ -1,0 +1,71 @@
+heat_template_version: 2016-04-08
+description: Template for creating network interfaces allocated for an instance
+
+parameters:
+  internal_networks:
+    type: json
+    description: Internal networks
+    default:
+      count: 0
+      net_list: []
+  external_networks:
+    type: json
+    description: External networks
+    default:
+      count: 0
+      net_list: []
+  name_prefix:
+    type: string
+    description: The prefix name of ports
+    default: vbts
+  vif_model:
+    type: string
+    description: virtual interface model
+    default: avp
+
+resources:
+  int_ports:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: {get_param: [internal_networks, count]}
+      resource_def:
+        type: 5GBTS::Network::Interface
+        properties:
+          role: internal
+          index: "%index%"
+          networks: {get_param: [internal_networks, net_list]}
+          name_prefix: {get_param: name_prefix}
+
+  ext_ports:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: {get_param: [external_networks, count]}
+      resource_def:
+        type: 5GBTS::Network::Interface
+        properties:
+          role: external
+          index: "%index%"
+          networks: {get_param: [external_networks, net_list]}
+          name_prefix: {get_param: name_prefix}
+
+outputs:
+  ports:
+    value:
+      repeat:
+        for_each:
+          <%port%>:
+            str_split:
+              - ','
+              - {list_join: [',', get_attr: [int_ports, port], get_attr: [ext_ports, port]]}
+        template:
+          port: <%port%>
+          vif-model: {get_param: vif_model}
+  ip-info:
+    value:
+      map_merge:
+        - {map_merge: {get_attr: [int_ports, ip-info]}}
+        - {map_merge: {get_attr: [ext_ports, ip-ext-info]}}
+  ext-ip-config:
+    value: {get_attr: [ext_ports, ext-ip-config]}
+  internal_ip:
+    value: {get_attr: [int_ports, resource.0, ip_address]}

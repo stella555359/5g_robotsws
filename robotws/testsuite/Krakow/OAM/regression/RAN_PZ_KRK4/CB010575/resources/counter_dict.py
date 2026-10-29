@@ -1,0 +1,30 @@
+counter_dict_19_1 = {
+    "NRCELL-5": {"NCAV": ['M55601C00003', 'M55601C00004', 'M55601C00005']},
+    "NRCELL-6": {"NCAV": ['M55601C00003', 'M55601C00004', 'M55601C00005']},
+}
+
+
+counter_dict_19_2 = {
+    "NRCELL-5": {"NCAV": ['M55601C00003', 'M55601C00004']},
+    "NRCELL-6": {"NCAV": ['M55601C00003', 'M55601C00004']},
+}
+
+counter_dict_19_3 = {
+    "NRCELL-5": {"NCAV": ['M55601C00005']},
+    "NRCELL-6": {"NCAV": ['M55601C00005']},
+}
+
+counter_dict_1 = {
+    "NRCELL-5": {"NCAV": ['M55601C00003', 'M55601C00004']},
+    "NRCELL-6": {"NCAV": ['M55601C00003', 'M55601C00004']},
+}
+
+counter_dict_2 = {
+    "NRCELL-5": {"NCAV": ['M55601C00005']},
+    "NRCELL-6": {"NCAV": ['M55601C00005']},
+}
+
+counter_dict_8 = {
+    "NRCELL-5": {"NCAV": ['M55601C00003', 'M55601C00004', 'M55601C00005']},
+    "NRCELL-6": {"NCAV": ['M55601C00003', 'M55601C00004', 'M55601C00005']},
+}

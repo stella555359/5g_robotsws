@@ -1,0 +1,1017 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  tests for DSS feature 1586-C
+...               Test Case Scenario author   : Christophe.samson@nokia.com
+...               Test Case Scenario contact  : Christophe.samson@nokia.com
+...               Test Case automation author :
+...               Test Case automation contact:
+...               Creation Date               : June 22 2020
+...               Modified Date               : September 30 2020
+...               Last Modified by            : Christophe.samson@nokia.com
+#------------------------------------------------------------------------------------------------------------------------------------[150 characters]
+
+Library         ute_wtssim           WITH NAME    wts
+Library         taf.rfrl.common_resources.python.SWConfig
+Library         ../../../resources/python/luashark_tools.py
+Library         taf.epcsim
+Library         luashark_tools.analyzer       WITH NAME       analyzer
+# Library         taf.config.scf                WITH NAME       scf
+Library         taf.gnb.oam.commissioning     WITH NAME       commissioning
+Library    		taf.sbts.oam.coam.admin        WITH NAME       coam
+Library         taf.ul.oam.selenium_coam      WITH NAME       selenium_coam
+Library         taf.collectors.pmcounters      WITH NAME     tafpmcounters
+Library         DateTime
+Library         OperatingSystem
+Library          ../../../../../resources/SWENG/python/StringTool.py
+
+Resource        ../../../../../resources/SWENG/robot/Setup.robot
+Resource        ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource        ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource        ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource        ../../../../../resources/SWENG/robot/Tools.robot
+Resource        ../../../../../resources/SWENG/robot/Traffic.robot
+Resource        ../../../../../resources/SWENG/robot/Counters.robot
+Resource        ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource        5GC001586_Kw_TestSetup.robot
+Resource        5GC001586_Keywords.robot
+Resource        5GC001586_Ue_command.robot
+Resource        pcap.robot
+
+Variables       ../../../../../resources/SWENG/python/ReadConfig.py
+# Variables       ../python/Constants.py
+
+*** Variables ***
+
+# for testing purpose
+${pdmlFileBIP_ATTACH}       ${EMPTY}
+@{bipMsgfilter}              DlData_PdschSendReq
+@{XpMsgfilter}               xp_xpmessage
+&{UL_CELL_RESOURCE_ALLOCATION_PARAMS}               StartPrb=4                 NbrPrb=35
+
+
+*** Keywords ***
+# robocop: off=unused-argument
+# robocop: off=possible-variable-overwriting
+Test Setup 1586 C and Save scf and swconfig
+    [Documentation]                Generic test for 1586-C: test setup
+    [Arguments]                    ${param}
+
+    #   upload scf file, xml and cfg for DSS
+    #   set specific RAD param for DSS
+    #   set scf for 10Mhz
+    #   set scf for DSS specific parameters
+    5GC001586_Kw_TestSetup.Test Setup 1586 C    ${param}
+
+    # Save current SCF file used during test cases
+    ${current_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF_used_for_1586_Tests.xml
+    Set Suite Variable              ${current_scf_file}
+    Dated Log New Line         Current 1586 SCF file stored to ${current_scf_file}
+
+    # Get swconfig file that will be used during 1586-C tests
+    ${alias_gnb}                    SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${LOG_PATH}/swconfig_used_for_1586_Tests.txt
+    ...                             connection=${alias_gnb}
+    Dated Log                  Current 1586 swconfig file stored to ${LOG_PATH}/swconfig_used_for_1586_Tests.txt
+
+    # Get EPC file configuration that will be used during 1586-M tests
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/basic_wts_used_for_1586_M_${param.seq.bandwidth}_Tests.cfg
+    ...                             connection=${alias_epc}
+
+    # Get AP configuration file that will be used during 1586-M tests
+    ${ap_configfile}                Get XML AirPhoneConfig Path
+    run Keyword if      '${ap_configfile}' != '${empty}'     csn.download_file         remote_path=${tl.core.dir_path}/${ap_configfile}
+    ...                             local_path=${LOG_PATH}/ApOamConfig_used_for_1586_M_${param.seq.bandwidth}_Tests.xml
+    ...                             connection=${alias_epc}
+
+    Dated Log     Current 1586 basic file ${tl.core.cfg_filename} stored to ${LOG_PATH}/basic_wts_used_for_1586_D_${param.seq.bandwidth}_Tests.cfg
+    Dated Log     Current 1586 ApOamConfig file stored to ${LOG_PATH}/ApOamConfig_used_for_1586_D_${param.seq.bandwidth}_Tests.xml
+
+TC 1586-C-CellSetup
+    [Documentation]                Generic test for 1586-C: test purpose is to setup X2, Xp and DSS
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+    #   Critical Step                  WTS Clear
+    5GC001586_Keywords.Restart     OwnTLReset=${False}    GNBCallback=5GC001586_Keywords.Set Reset Loop Counter
+    Step                           Start capture Backhaul for DSS                                      depends=5GC001586_Keywords.Restart
+    Step                           common_Dss_Keywords.Start WTS          argument=default             depends=Start capture Backhaul for DSS
+    Step                           5GC001586_Keywords.Wait Xp link Up     argument=default             depends=common_Dss_Keywords.Start WTS
+    Step                           common_Dss_command.X2Ap link Setup     argument=default             depends=common_Dss_Keywords.Start WTS
+    # DSS_Cell_Setup use ${param} variable initialized into the Init Sequence Kw
+    Step                           5GC001586_Keywords.DSS_Cell_Setup                depends=5GC001586_Keywords.Wait Xp link Up
+    ${pdmlFile}                    Run Keyword if      '${TRACE_SHOULD_BE_STOP_AFTER_CELLSETUP}' == '1'            Stop capture Backhaul for DSS
+    Run Keyword if     ('${TRACE_SHOULD_BE_STOP_AFTER_CELLSETUP}' == '1') and ('${CELLSETUP_SHOULD_BE_CHECK}' == '1')        Check DSS CellSetup
+    ...                                                                                                                       pdmlFile=${pdmlFile}
+    Critical Step                  5GC001586_Ue_command.Verify AP Classical Cell Setup
+    [Teardown]                      GenericTest.Display diagnosis
+
+TC 1586-C-UL_Cell_SubCarrier_Allocation_Failure_case
+    [Documentation]                Test purpose is to test UL_Cell_SubCarrier_Allocation_Failure_case
+    [Arguments]                    ${param}     ${alias}=default
+    Init Sequence                  ${param}
+    Run Keyword if                 ('${TRACE_SHOULD_BE_STOP_AFTER_CELLSETUP}' == '1')       Start capture Backhaul for DSS
+    # 1st Check... => forbiden
+    # 28/07/2020 : PR523247 : no check whether received allocation falls within allocated range
+    # DSS UL Cell Resource Allocation Failure    ${ULNbrOfPrb}=0x00000025   ${msg1FrequencyStart}=${param.scfFile.nrcell.msg1FrequencyStart}
+    # 2nd Check....
+    # check UL Allocation Failure in case of msg1FrequancyStart is not into the Rach static Zone
+    ${StartPrb}                     Evaluate                    ${param.scfFile.nrcell.msg1FrequencyStart}+1
+    ${NbrPrb}                       toDecimalStr                0x00000015
+    ${UL_CELL_RESOURCE_ALLOCATION_PARAMS.StartPrb}  set Variable   ${StartPrb}
+    ${UL_CELL_RESOURCE_ALLOCATION_PARAMS.NbrPrb}  set Variable   ${NbrPrb}
+    ${UL_CELL_RESOURCE_ALLOCATION_PARAMS.alias}  set Variable   ${alias}
+    Step                            DSS UL Cell Resource Allocation Failure          argument=${UL_CELL_RESOURCE_ALLOCATION_PARAMS}
+    # 3nd Check...
+    # before 1586-K, l2ps shall insure that the receiving range includes 6PRB starting from PrachPrbOffset (i.e. msg1FrequencyStart)
+    ${StartPrb}       Evaluate   ${param.scfFile.nrcell.msg1FrequencyStart}
+    ${NbrPrb}         toDecimalStr     0x00000005
+    ${UL_CELL_RESOURCE_ALLOCATION_PARAMS.StartPrb}  set Variable   ${StartPrb}
+    ${UL_CELL_RESOURCE_ALLOCATION_PARAMS.NbrPrb}  set Variable   ${NbrPrb}
+    ${UL_CELL_RESOURCE_ALLOCATION_PARAMS.alias}  set Variable   ${alias}
+    Step                            DSS UL Cell Resource Allocation Failure     argument=${UL_CELL_RESOURCE_ALLOCATION_PARAMS}
+
+    # this case is not checked by L2PS
+    # L2PS check only that the static zone  [Msg1FrqStart , Msg1FrqStart +5]  is included into the UL alloc received by CRM
+    # ${StartPrb}                     Evaluate                    ${param.scfFile.nrcell.msg1FrequencyStart}-1
+    # ${NbrPrb}                       toDecimalStr                0x00000015
+    # ${UL_CELL_RESOURCE_ALLOCATION_PARAMS.StartPrb}  set Variable   ${StartPrb}
+    # ${UL_CELL_RESOURCE_ALLOCATION_PARAMS.NbrPrb}  set Variable   ${NbrPrb}
+    # ${UL_CELL_RESOURCE_ALLOCATION_PARAMS.alias}  set Variable   ${alias}
+    # Step                            DSS UL Cell Resource Allocation Failure          argument=${UL_CELL_RESOURCE_ALLOCATION_PARAMS}
+
+    Run Keyword if                 ('${TRACE_SHOULD_BE_STOP_AFTER_CELLSETUP}' == '1')       Stop capture Backhaul for DSS
+   [Teardown]                      Specific teardown 1586-C    alias=default
+
+Specific teardown 1586-C
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+    Dated Log             Test ${TEST_NAME} 1586-C ending
+    # Run Keyword If        '${get_snapshot}' == '1'           Dated log New Line     Get GNB logs from OAM (snapshot)
+    # Run Keyword If        '${get_snapshot}' == '1'           Run Keyword And Ignore Error           Get GNB Logs from Coam
+    GenericTest.Display diagnosis
+
+
+TC 1586-C-5gCall
+    [Documentation]                Generic test for 1586-C: test purpose is to test 5g DSS Call
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+    5GC001586_Keywords.Restart     OwnTLReset=${False}    GNBCallback=5GC001586_Keywords.Set Reset Loop Counter
+    Step          common_Dss_Keywords.Start WTS and setup X2 link                   depends=5GC001586_Keywords.Restart
+    Step          5GC001586_Keywords.Wait Xp link Up                                depends=common_Dss_Keywords.Start WTS and setup X2 link
+    Step          5GC001586_Keywords.DSS_Cell_Setup                                 depends=5GC001586_Keywords.Wait Xp link Up
+    Step          5GC001586_C_Keywords.Test SgNB Addition PRACH                     depends=5GC001586_Keywords.DSS_Cell_Setup
+    Step          Verify UE Attach                                                  depends=5GC001586_C_Keywords.Test SgNB Addition PRACH
+
+TC 1586-C-5gCall_2
+    [Documentation]                Test purpose is to test 5g DSS Call
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+    Step          5GC001586_C_Keywords.Test SgNB Addition PRACH
+    Step          Verify AP Classical UE attach                depends=5GC001586_C_Keywords.Test SgNB Addition PRACH
+    ${pdmlFile}   Run Keyword if      '${TRACE_SHOULD_BE_STOP_AFTER_CELLSETUP}' == '0'            Stop capture Backhaul for DSS
+    # Run Keyword if                  '${TRACE_SHOULD_BE_STOP_AFTER_CELLSETUP}' == '0'        Check DSS CellSetup   pdmlFile=${pdmlFile}
+    Run Keyword if    ('${TRACE_SHOULD_BE_STOP_AFTER_CELLSETUP}' == '0') and ('${CELLSETUP_SHOULD_BE_CHECK}' == '1')     Check DSS CellSetup
+    ...                                                                                                                       pdmlFile=${pdmlFile}
+    [Teardown]   GenericTest.Display diagnosis
+
+TC 1586-C-ULOnly
+    [Documentation]                Generic test for 1586-C: test purpose is to test UL Tput Only with DSS activated
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+    5GC001586_Keywords.Restart     OwnTLReset=${False}    GNBCallback=5GC001586_Keywords.Set Reset Loop Counter
+    Step          common_Dss_Keywords.Start WTS and setup X2 link               depends=5GC001586_Keywords.Restart
+    Step          5GC001586_Keywords.Wait Xp link Up                            depends=common_Dss_Keywords.Start WTS and setup X2 link
+    Step          5GC001586_Keywords.DSS_Cell_Setup                             depends=5GC001586_Keywords.Wait Xp link Up
+    Step          5GC001586_C_Keywords.Test SgNB Addition PRACH                 depends=5GC001586_Keywords.DSS_Cell_Setup
+    Step          Verify UE Attach                                              depends=5GC001586_C_Keywords.Test SgNB Addition PRACH
+    Traffic UE UL   ueSetting=${UE_SIMPLE_CellDSS}  throughput=15  shouldBeCheck=True
+    [Teardown]   GenericTest.Display diagnosis
+
+TC 1586-C-ULOnly_2
+    [Documentation]                Generic test for 1586-C: test purpose is to test UL Tput Only
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+    # Capture L1L2 Set Upon Config  => means that gnbMirroring.sh will be use
+    ${CaptureBIP}                   Capture L1L2 Set Upon Config             airscale=${GNB_DU}
+    # set a specific name to keep the trace
+    ${CaptureBIP.prefix}   set Variable   L1L2_BIP_GNB_FS
+    ${CaptureBIP.withTN}   set Variable   True
+    # ${CaptureBIP.interface}      set Variable	       etha01
+    # ${CaptureBIP.target.host}           set Variable	       ${GNB_DU.sys[0].M}
+    ${CaptureBIP.filter}        Get msgId from lua package      ${param.seq.filtermsg}
+    Dated log          CaptureBIP.filter = ${CaptureBIP.filter}
+    Set Suite Variable       ${CaptureBIP}
+
+    ${CaptureXP}                Capture L1L2 Set Upon Config             airscale=${GNB_DU}
+    ${CaptureXP.prefix}         set Variable   XP_GNB_FS
+    ${CaptureXP.withTN}         set Variable   True
+    # ${CaptureXP.filter}         set variable      host 10.0.1.111 and udp
+    # not host 4.7.254.1  filter part is to filter GTP traffic because of UL Tput
+    ${CaptureXP.filter}         set variable      host 10.0.1.111 and udp and not host 4.7.254.1
+    Set Suite Variable       ${CaptureXP}
+
+    #define options of gnbMirroring.sh (BIP and BH)
+    # ${OPT_GNB_MIRRORING_DSS}                 Tools.Dictionary Get              ${OPT_GNB_MIRRORING}
+    # ${OPT_GNB_MIRRORING_DSS.mirroring_mode}             set Variable	       'manual'
+    # ${OPT_GNB_MIRRORING_DSS.l2_l1_bip}                 set Variable	       'true'
+    # ${OPT_GNB_MIRRORING_DSS.backhaul_mirroring}        set Variable	       'true'
+    # Set Suite Variable              ${OPT_GNB_MIRRORING_DSS}
+    # Execute Mirror Script with options for DSS      ${CAPTURE_L1L2_GNB_FS_ASIK_DSS.scriptDef}    ${OPT_GNB_MIRRORING_DSS}
+    Capture Init                  ${CaptureBIP}
+
+    # Dated log     SSH on ${GNB_DU.sys[0].M.sshId}
+    ${aliasASIKGNB}      Run Keyword If     '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'      SSH Wait For Connect      ${GNB_DU.sys[0].M}
+    ${tput_log_file_path_gnb}    Run Keyword If  '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'  5GC001586_Keywords.Start tput log capture  gnb_index=0
+    ...                                                                                                                  asik_alias=${aliasASIKGNB}
+
+    Capture Start                  ${CaptureXP}
+    Traffic UE UL    ueSetting=${UE_SIMPLE_CellDSS}  throughput=${param.seq.ul_throughput}
+    ...              duration=${param.seq.timeDuration}  shouldBeStop=True
+    ...              shouldBeCheck=${param.seq.shouldBeCheck}  deviation=10
+    ...              captureCallback=Callback Capture L1L2
+    ...              capture=${CaptureBIP}  captureDuration=10000ms
+    Capture Stop                   ${CaptureXP}
+
+    #define options of gnbMirroring.sh (BIP) - to deactivate
+    # ${OPT_GNB_MIRRORING_DSS}                 Tools.Dictionary Get              ${OPT_GNB_MIRRORING}
+    # ${OPT_GNB_MIRRORING_DSS.mirroring_mode}            set Variable	       'local'
+    # ${OPT_GNB_MIRRORING_DSS.l2_l1_bip}                 set Variable	       'true'
+    # ${OPT_GNB_MIRRORING_DSS.backhaul_mirroring}        set Variable	       'false'
+    # Set Suite Variable              ${OPT_GNB_MIRRORING_DSS}
+    # Execute Mirror Script with options for DSS      ${CAPTURE_L1L2_GNB_FS_ASIK_DSS.scriptDef}    ${OPT_GNB_MIRRORING_DSS}
+
+    ${aliasASIKGNB}       Run Keyword If       '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'       SSH Wait For Connect      ${GNB_DU.sys[0].M}
+    Run Keyword If    ${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'   5GC001586_Keywords.Check Throughput from aasyslog   asik_alias=${aliasASIKGNB}
+    ...                                                                                   tput_log_file_path_gnb_combined=${tput_log_file_path_gnb}
+    Run Keyword If       '${UL_TPUT_SHOULD_BE_CHECK}' == '1'         5GC001586_Keywords.Convert and Check Xp      ${CaptureXP}
+    Run Keyword If       '${UL_TPUT_SHOULD_BE_CHECK}' == '1'         5GC001586_Keywords.Convert and Check Bip     ${CaptureBIP}
+
+    [Teardown]   GenericTest.Display diagnosis
+
+
+TC 1586-C-DL_UL
+    [Documentation]                Generic test for 1586-C: test purpose is to test DL/UL Tput
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+    5GC001586_Keywords.Restart     OwnTLReset=${False}     GNBCallback=5GC001586_Keywords.Set Reset Loop Counter
+    Step                           common_Dss_Keywords.Start WTS and setup X2 link         depends=5GC001586_Keywords.Restart
+    Step                           5GC001586_Keywords.Wait Xp link Up                      depends=common_Dss_Keywords.Start WTS and setup X2 link
+    Step                           5GC001586_Keywords.DSS_Cell_Setup                       depends=5GC001586_Keywords.Wait Xp link Up
+    Step                           5GC001586_C_Keywords.Test SgNB Addition PRACH           depends=5GC001586_Keywords.DSS_Cell_Setup
+    Step                           Verify UE Attach                                        depends=5GC001586_C_Keywords.Test SgNB Addition PRACH
+    ${status}   ${msg}      Run Keyword And Ignore Error     Traffic UE UL DL   ueSetting=${UE_SIMPLE_CellDSS}  throughput=15  shouldBeCheck=False
+    [Teardown]   GenericTest.Display diagnosis
+
+TC 1586-C-DL_UL_2
+    [Documentation]                Generic test for 1586-C: test purpose is to test DL/UL Tput
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+    Dated log             \tPoint AF_PATH to local luashark XP package
+    Point AF_PATH to local luashark XP package
+    Dated log     SSH on ${GNB_DU.sys[0].M.sshId}
+    ${aliasASIKGNB}      Run Keyword If       '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'      SSH Wait For Connect        ${GNB_DU.sys[0].M}
+    ${tput_log_file_path_gnb}   Run Keyword If   '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'  5GC001586_Keywords.Start tput log capture  gnb_index=0
+    ...                                                                                                                 asik_alias=${aliasASIKGNB}
+    ${status}   ${msg}      Run Keyword And Ignore Error    Traffic UE UL DL   ueSetting=${UE_SIMPLE_CellDSS}  throughput=15   shouldBeCheck=False
+    ${aliasASIKGNB}       Run Keyword If       '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'       SSH Wait For Connect       ${GNB_DU.sys[0].M}
+    Run Keyword If   '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'   5GC001586_Keywords.Check Throughput from aasyslog   asik_alias=${aliasASIKGNB}
+    ...                                                                                 tput_log_file_path_gnb_combined=${tput_log_file_path_gnb}
+    [Teardown]   GenericTest.Display diagnosis
+
+Check No DL Cell Subcarrier Resource Coordination Failure
+    [Arguments]    ${pdmlFile}
+    ${cmd}=      Catenate     grep -n -i "enDssDlSubframeResourceAllocationFail" ${pdmlFile} |
+    ...                        wc -l > ${LOG_PATH}/nbr_enDssDlSubframeResourceAllocationFail_parsed_${TEST_NAME}.txt
+    OperatingSystem.Run      ${cmd}
+    ${output}    OperatingSystem.Run     cat ${LOG_PATH}/nbr_enDssDlSubframeResourceAllocationFail_parsed_${TEST_NAME}.txt
+    Should Be True    ${output}==0
+
+# to check UL_Cell_Subcarrier_Resource_Coordination_Update
+Check UL Cell Subcarrier Resource Coordination Update procedure
+    [Arguments]    ${pdmlFile}
+    ${cmd}=     Catenate    grep -n -i "enDssUlCellSubcarrierResourceCoordinationUpdateInd" ${pdmlFile} |
+    ...                      wc -l > ${LOG_PATH}/nbr_enDssUlCellSubcarrierResourceCoordinationUpdateInd_parsed_${TEST_NAME}.txt
+    OperatingSystem.Run      ${cmd}
+    ${output}    OperatingSystem.Run     cat ${LOG_PATH}/nbr_enDssUlCellSubcarrierResourceCoordinationUpdateInd_parsed_${TEST_NAME}.txt
+    Should Be True    ${output}==1
+
+Check UL and DL Qos Load Indication
+   [Arguments]    ${pdmlFile}
+   #  LOG_PATH instea of OUTPUT
+    OperatingSystem.Run      grep -n -i "enDssDlQosLoadInd" ${pdmlFile} | wc -l > ${LOG_PATH}/nbr_enDssDlQosLoadInd_parsed_${TEST_NAME}.txt
+    OperatingSystem.Run      grep -n -i "enDssUlQosLoadInd" ${pdmlFile} | wc -l > ${LOG_PATH}/nbr_enDssUlQosLoadInd_parsed_${TEST_NAME}.txt
+    ${output_dl}    OperatingSystem.Run     cat ${LOG_PATH}/nbr_enDssDlQosLoadInd_parsed_${TEST_NAME}.txt
+    ${output_ul}    OperatingSystem.Run     cat ${LOG_PATH}/nbr_enDssUlQosLoadInd_parsed_${TEST_NAME}.txt
+    Should Be True    (${output_dl}>20)&(${output_ul}>20)
+
+# enDssUlQosLoadInd
+# grep -n -i enDssUlQosLoadInd L1L2_BIP_GNB_FS_UL_TPUT.5GC001586_C_TC_03_5GC001586-C_NSA_Check_UL_Tput.pdml | grep -n -i "value=\"00000000\""
+
+# dssDlQosLoadMeasurement.measuredNgbrNnbrLoad
+# grep -n -i enDssUlQosLoadMeasurement.MeasuredNgbrNnbrLoad
+#        L1L2_BIP_GNB_FS_UL_TPUT.5GC001586_C_TC_03_5GC001586-C_NSA_Check_UL_Tput.pdml | grep value
+Check UL Qos Load Indication MeasuredNgbrNnbrLoad_to_remove
+   [Arguments]    ${pdmlFile}   ${value}=00
+    #  LOG_PATH instea of OUTPUT
+    ${cmd}=   Catenate      grep -n -i enDssUlQosLoadMeasurement.MeasuredNgbrNnbrLoad ${pdmlFile} | grep -n -i 'value="${value}"' |
+    ...                            wc -l > ${LOG_PATH}/nbr_enDssUlQosLoadIndMeasuredNgbrNnbrLoad_parsed.txt
+    # OperatingSystem.Run      grep -n -i enDssUlQosLoadInd ${pdmlFile} | grep -n -i 'value="${value}"' | wc -l ...
+    # ...     > ${LOG_PATH}/nbr_enDssUlQosLoadIndValue_parsed.txt
+    OperatingSystem.Run     ${cmd}
+    ${output_ul}    OperatingSystem.Run     cat ${LOG_PATH}/nbr_enDssUlQosLoadIndMeasuredNgbrNnbrLoad_parsed.txt
+    Should Be True    (${output_ul}>20)
+
+TC 1586-C-UL_Cell_Subcarrier_Resource_Coordination_Update_procedure
+    [Documentation]                1586-C : test purpose is UL_Cell_Subcarrier_Resource_Coordination_Update
+    [Arguments]                    ${param}      ${alias}=default
+    Init Sequence                  ${param}
+    WTS Clear
+    5GC001586_Keywords.Restart       OwnTLReset=${False}     GNBCallback=5GC001586_Keywords.Set Reset Loop Counter
+    Step             common_Dss_Keywords.Start WTS         argument=${alias}              depends=5GC001586_Keywords.Restart
+    Step             5GC001586_Keywords.Wait Xp link Up     argument=${alias}            depends=common_Dss_Keywords.Start WTS
+    Step             common_Dss_command.X2Ap link Setup     argument=${alias}            depends=common_Dss_Keywords.Start WTS
+    Step             Start capture Backhaul for DSS                                      depends=5GC001586_Keywords.Wait Xp link Up
+    Step             UL_Cell_Subcarrier_Resource_Coordination_Update   argument=${alias}     depends=Start capture Backhaul for DSS
+    ${pdmlFile}      Stop capture Backhaul for DSS
+    Step      Check UL Cell Subcarrier Resource Coordination Update procedure   argument=${pdmlFile}
+    ...                                                                         depends=UL_Cell_Subcarrier_Resource_Coordination_Update
+    Step             Check UL and DL Qos Load Indication    argument=${pdmlFile}     depends=UL_Cell_Subcarrier_Resource_Coordination_Update
+    5GC001586_Keywords.Check UL Qos Load Indication MeasuredNgbrNnbrLoad  ${pdmlFile}   value=00    remove_zero_value=False
+    Step             Check No DL Cell Subcarrier Resource Coordination Failure   argument=${pdmlFile}
+    [Teardown]    GenericTest.Display diagnosis
+
+Verify DSS Coordination Failure Phase2
+   [Arguments]                     ${pdmlFile}   ${enDssFailureCause}
+   run Keyword if    '${mcshark_present}'=='${False}'    Verify DSS Coordination Failure   pdmlFile=${pdmlFile}
+   ...                                                                                        enDssFailureCause=${enDssFailureCause}
+   ...  ELSE                                             Verify DSS Coordination Failure using MCShark   pdmlFile=${pdmlFile}
+   ...                                                                                        enDssFailureCause=${enDssFailureCause}
+
+TC 1586-C-Check_EN_DSS_UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_Case1_w_time_to_wait
+    [Documentation]                1586-C : test purpose is UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_Case1_w_time_to_wait
+    [Arguments]                    ${param}      ${alias}=default
+    Init Sequence                  ${param}
+    WTS Clear
+    Step        common_Dss_Keywords.Start WTS         argument=${alias}       # depends=Restart
+    Step        5GC001586_Keywords.Wait Xp link Up     argument=${alias}            depends=common_Dss_Keywords.Start WTS
+    Step        common_Dss_command.X2Ap link Setup     argument=${alias}            depends=common_Dss_Keywords.Start WTS
+    Step        Start capture Backhaul for DSS                            depends=5GC001586_Keywords.Wait Xp link Up
+    Step        UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_Case1_w_time_to_wait   argument=${alias}
+    ...                                                                                           depends=Start capture Backhaul for DSS
+    sleep              4
+    ${pdmlFile}    Stop capture Backhaul for DSS
+    Verify DSS Coordination Failure Phase2   pdmlFile=${pdmlFile}   enDssFailureCause=non_matching_resource_reservation
+    Step                           common_Dss_Keywords.Check DSS Active Alarms     argument=7519
+    sleep             2
+    # to clear the OAM DSS 7519 alarm
+    # UL_Cell_Subcarrier_Resource_Coordination_Normal_case   ${alias}
+    # to check alarm 7519 not present
+    # Check Clear DSS Active Alarms     fault_id=7519
+    [Teardown]      Run Keywords    UL_Cell_Subcarrier_Resource_Coordination_Normal_case   ${alias}
+    ...    AND    common_Dss_Keywords.Check Clear DSS Active Alarms     fault_id=7519
+    ...    AND    GenericTest.Display diagnosis
+#    [Teardown]                      Teardown 1586        alias=${alias}
+
+TC 1586-C-Check_EN_DSS_UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_Case2_w_no_time_to_wait
+    [Documentation]                1586-C : test purpose is UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_Case2_w_no_time_to_wait
+    [Arguments]                    ${param}    ${alias}=default
+    Init Sequence                  ${param}
+    WTS Clear
+    Step       common_Dss_Keywords.Start WTS         argument=${alias}       # depends=Restart
+    Step       5GC001586_Keywords.Wait Xp link Up     argument=${alias}            depends=common_Dss_Keywords.Start WTS
+    Step       common_Dss_command.X2Ap link Setup     argument=${alias}            depends=common_Dss_Keywords.Start WTS
+    Step       Start capture Backhaul for DSS                             depends=5GC001586_Keywords.Wait Xp link Up
+    Step       UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_Case2_w_no_time_to_wait   argument=${alias}
+    ...                                                                                             depends=Start capture Backhaul for DSS
+    sleep          4
+    ${pdmlFile}    Stop capture Backhaul for DSS
+    Verify DSS Coordination Failure Phase2   pdmlFile=${pdmlFile}   enDssFailureCause=resource_conflict
+    Step       common_Dss_Keywords.Check DSS Active Alarms   argument=7518
+    sleep          2
+    # to clear the OAM DSS 7518 alarm
+    # UL_Cell_Subcarrier_Resource_Coordination_Normal_case   ${alias}
+    # to check alarm 7518 not present
+    # Check Clear DSS Active Alarms     fault_id=7518
+    [Teardown]      Run Keywords    UL_Cell_Subcarrier_Resource_Coordination_Normal_case   ${alias}
+    ...    AND    common_Dss_Keywords.Check Clear DSS Active Alarms     fault_id=7518
+    ...    AND    GenericTest.Display diagnosis
+#    [Teardown]                      Teardown 1586        alias=${alias}
+
+# to check that we have a lot of enDssDlCellSubframeResourceCoordinationReq without rsp
+Check Nbr enDssUlCellSubcarrierResourceCoordinationReq
+    [Arguments]    ${pdmlFile}
+    ${cmd}=      Catenate    egrep -n -i enDssUlCellSubcarrierResourceCoordinationReq ${pdmlFile} | wc -l
+    ...                          > ${LOG_PATH}/nbr_enDssUlCellSubcarrierResourceCoordinationReq_parsed.txt
+    OperatingSystem.Run     ${cmd}
+    ${output}    OperatingSystem.Run     cat ${LOG_PATH}/nbr_enDssUlCellSubcarrierResourceCoordinationReq_parsed.txt
+    Should Be True    ${output}>5
+
+# [1]5GC001586_C_TC_11_5GC001586-C_NSA_Check_EN_DSS_UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_timeout
+TC 1586-C-Check_EN_DSS_UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_timeout
+    [Documentation]                1586-C : test purpose is Check_EN_DSS_UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_timeout
+    [Arguments]                    ${param}    ${alias}=default
+    Init Sequence                  ${param}
+    WTS Clear
+    Step           common_Dss_Keywords.Start WTS          argument=${alias}
+    Step           5GC001586_Keywords.Wait Xp link Up     argument=${alias}            depends=common_Dss_Keywords.Start WTS
+    Step           common_Dss_command.X2Ap link Setup     argument=${alias}            depends=common_Dss_Keywords.Start WTS
+    Step           Start capture Backhaul for DSS                            depends=5GC001586_Keywords.Wait Xp link Up
+    Step           UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_timeout   argument=${alias}   depends=Start capture Backhaul for DSS
+    sleep          2
+    ${pdmlFile}      Stop capture Backhaul for DSS
+    # Verify DSS Coordination Failure   pdmlFile=${pdmlFile}   enDssFailureCause=resource_conflict
+    Step                           Check Nbr enDssUlCellSubcarrierResourceCoordinationReq      argument=${pdmlFile}
+    # BuiltIn.Log    \n Nbr enDssUlCellSubcarrierResourceCoordinationReq > 5 \n    console=yes
+    Dated log     \tNbr enDssUlCellSubcarrierResourceCoordinationReq > 5
+    Step                           common_Dss_Keywords.Check DSS Active Alarms   argument=7520
+    sleep             2
+    # to clear the OAM DSS 7520 alarm
+    # UL_Cell_Subcarrier_Resource_Coordination_Normal_case   ${alias}
+    # to check alarm 7520 not present
+    # Check Clear DSS Active Alarms     fault_id=7520
+    [Teardown]      Run Keywords    UL_Cell_Subcarrier_Resource_Coordination_Normal_case   ${alias}
+    ...    AND    common_Dss_Keywords.Check Clear DSS Active Alarms     fault_id=7520
+    ...    AND    GenericTest.Display diagnosis
+#    [Teardown]                      Teardown 1586      alias=${alias}
+
+# [ session 2]: enb_xp_param id=1 ignore_xp=off xp_listening_socket=on
+# [session 2]: enb_xp_param id=1 xp_peers=2
+# [session 2]: enb_xp_link_up enb=1 target=2
+# [session 2]: enb_x2_link_up enb=1 target=2
+# [session 2]: enb_dss_param id=1 feature_flag=on message_sets=V1,DMS2
+# [session 2]: enb_cell_param enb=1 id=1 lte_nr_dss_mode=DL_CRS_TDM_UL_FDM
+# [session 2]: enb_dss_configure_partnership enb=1 cell=1 dss_peer=2:1
+# [session 2]: enb_crm_cell_resource_reservation enb=1 cell=1 tgt_enb=2 tgt_cell=1 ...
+# ...            assigned_ul_minimum_share_to_nr=20 assigned_ul_maximum_share_to_nr=40
+# [session 2]: enb_crm_param id=1 cell_resource_coordination_failure_ttw=1
+# [session 2]: crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=no_rsp
+# [session 2]: enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1
+
+# to check the removal procedure
+Check removal procedure
+    [Arguments]    ${pdmlFile}
+    # 0x12 is the msg Id the DSS Removal msg
+    ${cmd}=     Catenate     grep -n -i "XpDssMessage-Discriminator (Uint32): 0x00000012" ${pdmlFile} | wc -l
+    ...                                                        > ${LOG_PATH}/nbr_removal_procedure_parsed.txt
+    OperatingSystem.Run        ${cmd}
+    ${output}    OperatingSystem.Run     cat ${LOG_PATH}/nbr_removal_procedure_parsed.txt
+    Should Be True    ${output}==1
+
+Check removal procedure Using MCShark
+    [Arguments]    ${pdmlFile}
+    # 0x12 is the msg Id the DSS Removal msg
+    # with MCShark : xp_dss_messages_XpDssMessage_t.discriminator" showname="discriminator (Uint32): 18
+    ${cmd}=     Catenate     grep -n -i "xp_dss_messages_XpDssMessage_t.discriminator" ${pdmlFile} | grep -i "discriminator (Uint32): 18" | wc -l
+    ...                                                        > ${LOG_PATH}/nbr_removal_procedure_parsed.txt
+    OperatingSystem.Run        ${cmd}
+    ${output}    OperatingSystem.Run     cat ${LOG_PATH}/nbr_removal_procedure_parsed.txt
+    Should Be True    ${output}==1
+
+Check removal procedure Phase2
+   [Arguments]                     ${pdmlFile}
+   run Keyword if    '${mcshark_present}'=='${False}'    Check removal procedure   pdmlFile=${pdmlFile}
+   ...  ELSE                                             Check removal procedure using MCShark   pdmlFile=${pdmlFile}
+
+TC 1586-C_NSA_CRM_connection_lost_during_EN_DSS_UL_Cell_Subcarrier_Resource_Coordination_Procedure
+    [Documentation]                1586-C : test purpose is Check_EN_DSS_UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_timeout
+    [Arguments]                    ${param}     ${alias}=default
+    Init Sequence                  ${param}
+    WTS Clear
+    Step            common_Dss_Keywords.Start WTS          argument=${alias}
+    Step            5GC001586_Keywords.Wait Xp link Up     argument=${alias}            depends=common_Dss_Keywords.Start WTS
+    Step            common_Dss_command.X2Ap link Setup     argument=${alias}            depends=common_Dss_Keywords.Start WTS
+    Step            Start capture Backhaul for DSS                            depends=5GC001586_Keywords.Wait Xp link Up
+    Step            CRM_connection_lost_during_EN_DSS_UL_Cell_Subcarrier_Resource_Coordination    argument=${alias}
+    ...                                                                                           depends=Start capture Backhaul for DSS
+    ${pdmlFile}          Stop capture Backhaul for DSS         # depends=Start capture Backhaul for DSS
+    Step                 Check removal procedure Phase2      argument=${pdmlFile}
+    Dated log     \tenDssRemovalInfo is present inside Pdml file
+    [Teardown]     GenericTest.Display diagnosis
+#    [Teardown]                      Teardown 1586      alias=${alias}
+
+
+# PM Cpt Test case
+TC 1586-C_NSA_Check DSS DL And UL PM counters
+    [Documentation]                1586-C : test purpose is to test PM 1586-C counters
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+    5GC001586_Keywords.Restart     OwnTLReset=${False}     GNBCallback=5GC001586_Keywords.Set Reset Loop Counter
+    Step                           Start capture Backhaul for DSS                      depends=5GC001586_Keywords.Restart
+    Step                           common_Dss_Keywords.Start WTS                  argument=tc_counters     depends=5GC001586_Keywords.Restart
+    Step                           5GC001586_Keywords.Check wts in active state   argument=tc_counters     depends=common_Dss_Keywords.Start WTS
+    Step                           5GC001586_Keywords.Wait Xp link Up             argument=tc_counters     depends=common_Dss_Keywords.Start WTS
+    Step                           common_Dss_command.X2Ap link Setup             argument=tc_counters     depends=common_Dss_Keywords.Start WTS
+    #  parameter ${param} for DSS_Cell_Setup is initialized by Init Sequence KW
+    Step                           5GC001586_Keywords.DSS_Cell_Setup      argument=tc_counters        depends=5GC001586_Keywords.Wait Xp link Up
+    Step                           Stop capture Backhaul for DSS                                      depends=Start capture Backhaul for DSS
+    # Wait gNB cell 5g On air with globalCellId=1
+    Critical Step                  common_Dss_CellSetup.Wait gNB cell 5g On air     globalCellId=1
+    Critical Step                  5GC001586_Ue_command.Verify AP Classical Cell Setup
+    5GC001586_Keywords.Start/Stop BIP/backaul Traces  call_location=before_attach  collector_name=${collector_name}_attach
+    Critical Step                  5GC001586_C_Keywords.Test SgNB Addition PRACH
+    5GC001586_Keywords.Start/Stop BIP/backaul Traces  call_location=after_attach  collector_name=${collector_name}_attach
+    Traffic UE UL      ueSetting=${UE_SIMPLE_CellDSS}  throughput=${param.seq.ul_throughput}
+    ...                duration=10s  shouldBeStop=False    shouldBeCheck=False
+    # ...                duration=${param.seq.timeDuration}  shouldBeStop=False    shouldBeCheck=False
+    # Sleep 15 mn in case of GP overlap - Traffic is still ongoing
+    dated log    Wait 15 minutes for counters GP overlap
+    ${status}  ${msg}=        robot_extension.Run Keyword And Warn On Failure        robot_extension.Run Specific Custom KW
+    ...                                  5GC001586_Ue_command.Display PDSCH and PUSCH ue_stats_nr
+    ...                                              ue_id=${UE_SIMPLE_CellDSS.ue}
+    ...                                              CallType=NSA
+    ...                                              DlTput=0
+    ...                                              UlTput=${param.seq.ul_throughput}
+    ...                                              alias=tc_counters
+    dated log    End of Wait 15 minutes for counters GP overlap
+    # Traced Sleep  15 minutes      msg=counters GP overlap
+
+    # Collect PM
+    Run Keyword If        '${check_counters}' == '1'    Step        5GC001586_Keywords.Collect PM Counters File     depends=Traffic UE UL
+    Run Keyword If        '${check_counters}' == '1'    Step        5GC001586_Keywords.Check 1586 Counters          depends=Collect PM Counters File
+
+    Run Keyword If        '${check_counters}' == '1'    common_Dss_Keywords.Check Tput over GP period    nb_cell=1
+    ...                                                                                                  dl_expected_tput=0
+    ...                                                                                                  ul_expected_tput=17.7
+
+    # Traffic Stop                    ueSetting=${UE_SIMPLE_CellDSS}  dir=ul
+    [Teardown]         Run Keywords    GenericTest.Display diagnosis     AND
+    ...                                5GC001586_Keywords.Collect PM Counters file coam    TEST_LOG_PATH=${testCaseDir}
+    # the global Teardown Kw is managed in the TEST_CASE !!!
+    # ...                                Teardown 1586 Get PM Cpt    ${param}    alias=tc_counters
+
+
+Teardown 1586 Get PM Cpt
+    [Arguments]             ${testParam}        ${alias}=${HOST_EPCSIM.alias}
+
+    BuiltIn.Log      \nTest 1586-C/-D ending   console=yes
+
+    # get Alarm at the end of the test and store it into a file
+    Dated log New Line  OAM Get Active Alarms to Save into file
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+
+    ${active_alarms}     OAM Get Active Alarms                   oam=${GNB_DU.oam}    textFormat=${False}
+
+    ${len}    Get Length    ${active_alarms}
+    ${alarm_id_list}    Create List
+    ${alarm_name_list}    Create List
+    ${faultId}=     set variable if    ${isAiC}        fault_id
+    ...                                                faultId
+    ${faultName}=     set variable if    ${isAiC}      fault_name
+    ...                                                faultName
+    FOR    ${i}    IN RANGE    ${len}
+          ${tmp_id}    Get From Dictionary    ${active_alarms[${i}]}    ${faultId}
+          ${tmp_name_id}    Get From Dictionary    ${active_alarms[${i}]}    ${faultName}
+          Append To List    ${alarm_id_list}    ${tmp_id}
+          Append To List    ${alarm_name_list}    ${tmp_name_id}
+    # Dated log     Active alarms: alarm_id_list=${alarm_id_list}
+    # Dated log     Active alarms: alarm_name_list=${alarm_name_list}
+    END
+    Append To File    ${testCaseDir}/OAM_Alarms_After_${TEST_NAME}.txt     Active Alarms Id List:\n${alarm_id_list}\n\n
+    Append To File    ${testCaseDir}/OAM_Alarms_After_${TEST_NAME}.txt     Active Alarms Name List:\n${alarm_name_list}\n\n
+
+    OAM Disconnect                          ${GNB_DU.oam}
+
+    # collect PM file after the test
+    5GC001586_Keywords.Collect PM Counters file coam
+
+    Run Keyword And Ignore Error     common_Dss_Keywords.Collect EGATE console Logs
+
+    # Restore WTS cfg file name
+    Run Keyword If   '${Param.seq.bandwidth}'!='10MHz'      restoreFilename
+
+    # Save current SCF file used during test cases
+    ${current_scf_file}             OAM Get SCF File            dir=${testCaseDir}      file=SCF_used_for_1586_${testParam.seq.bandwidth}_Tests.xml
+    Set Suite Variable              ${current_scf_file}
+    Dated Log New Line         Current 1586 SCF file stored to ${current_scf_file}
+
+    # Get swconfig file used during 1586-M tests
+    ${alias_gnb}                    SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${testCaseDir}/swconfig_used_for_1586_${testParam.seq.bandwidth}_Tests.txt
+    ...                             connection=${alias_gnb}
+    Dated Log                  Current 1586 swconfig file stored to ${testCaseDir}/swconfig_used_for_1586_${testParam.seq.bandwidth}_Tests.txt
+
+    # Get EPC file configuration used during 1586-M tests
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${testCaseDir}/basic_wts_used_for_1586_${testParam.seq.bandwidth}_Tests.cfg
+    ...                             connection=${alias_epc}
+
+    # Get AP configuration file used during 1586-M tests
+    ${ap_configfile}                Get XML AirPhoneConfig Path
+    run Keyword if      '${ap_configfile}' != '${empty}'     csn.download_file        remote_path=${tl.core.dir_path}/${ap_configfile}
+    ...                             local_path=${testCaseDir}/ApOamConfig_used_for_1586_${testParam.seq.bandwidth}_Tests.xml
+    ...                             connection=${alias_epc}
+
+    ${msg}=   Catenate    Current 1586-J basic file ${tl.core.cfg_filename} stored
+    ...                      to ${testCaseDir}/basic_wts_used_for_1586_${testParam.seq.bandwidth}_Tests.cfg
+    Dated Log    ${msg}
+    Dated Log  Current 1586-J ApOamConfig file stored to ${testCaseDir}/ApOamConfig_used_for_1586_${testParam.seq.bandwidth}_Tests.xml
+
+    # check here that there is no DSS alarm at the end of the test
+    Check Dss active Alarm Should not be present
+
+    common_Dss_Keywords.Get Gnb Snapshot if TestCase Failed
+
+    # wts.Stop and Collect Wts logs
+    wts.teardown_all_aliases_for_egate
+    wts.teardown_all_aliases_for_edaemon
+
+
+###################################################################################################################################################
+#   DSS specific procedure
+###################################################################################################################################################
+
+# 10:32:38.101 WARN: ENB-1: Cell 1: Received EN DSS UL Subcarrier Resource Allocation Failure SequenceNumber=1 Cause=Unspecified
+
+DSS UL Cell Resource Allocation Failure
+    [Arguments]                 ${UL_CELL_RESOURCE_ALLOCATION_PARAMS}
+    # ${ULNbrOfPrb}=0x00000025
+    sleep   2
+    # wts.execute egate command    cmd=enb_dss_resource_allocation enb=1 cell=1 tgt_enb=2 tgt_cell=1 dir=UL ...
+    # ...                allocation_start_time=immediate ul_allocated_prb_list=4,27
+
+    # ULPrbStart and ULNbrOfPrb are an int
+
+    # ${ULNbrOfPrb_decimal}              toDecimalStr     ${ULNbrOfPrb}
+    # ULPrbStart is an int
+    # ${ULPrbStart_decimal}              toDecimalStr     ${ULPrbStart}
+
+    ${msg}=     Catenate    \tDSS UL Cell Resource Allocation with StartPrb=${UL_CELL_RESOURCE_ALLOCATION_PARAMS.StartPrb} and
+    ...                                                                 NbrOfPRB=${UL_CELL_RESOURCE_ALLOCATION_PARAMS.NbrPrb}
+    Dated Log New Line       ${msg}
+
+    # ratio is 37 *100 / 50 = 75 %
+    # wts.execute egate command    cmd=enb_dss_resource_allocation enb=1 cell=1 tgt_enb=2 tgt_cell=1 dir=UL ...
+    # ...                               allocation_start_time=immediate ul_allocated_prb_list=4,37
+    # ${output}=   wts.execute egate command and wait for data    cmd=enb_dss_resource_allocation enb=1 ...
+    # ...           cell=1 tgt_enb=2 tgt_cell=1 dir=UL allocation_start_time=immediate ul_allocated_prb_list=4,37
+    # ...           pass_regexp=Received EN DSS UL Subcarrier Resource Allocation Failure   timeout=25
+    ${cmd}=     Catenate    enb_dss_resource_allocation enb=1 cell=1 tgt_enb=2 tgt_cell=1 dir=UL
+    ...                          allocation_start_time=immediate
+    ...                          ul_allocated_prb_list=${UL_CELL_RESOURCE_ALLOCATION_PARAMS.StartPrb},${UL_CELL_RESOURCE_ALLOCATION_PARAMS.NbrPrb}
+    ${output}=   wts.execute egate command and wait for data    cmd=${cmd}
+    ...                                                         pass_regexp=Received EN DSS UL Subcarrier Resource Allocation Failure
+    ...                                                         timeout=25   alias=${UL_CELL_RESOURCE_ALLOCATION_PARAMS.alias}
+    log to console    ${output}
+    log to console  \n***DSS UL Cell Resource Allocation Failure completed***
+
+##################################################################################################################################################
+# UL_Cell_Subcarrier_Resource_Coordination_Update
+##################################################################################################################################################
+
+
+UL_Cell_Subcarrier_Resource_Coordination_Update
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+
+    Log to console  \n***DSS Phase-II UL_Cell_Subcarrier_Resource_Coordination_Update ***
+    sleep   2
+    wts.execute egate command    cmd=enb_dss_param id=1 feature_flag=on message_sets=V1,DMS2    alias=${alias}
+    sleep   2
+    wts.execute egate command    cmd=enb_cell_param enb=1 id=1 lte_nr_dss_mode=DL_CRS_TDM_UL_FDM    alias=${alias}
+    sleep   2
+    wts.execute egate command    cmd=enb_dss_configure_partnership enb=1 cell=1 dss_peer=2:1    alias=${alias}
+    sleep   2
+    ${cmd}=   Catenate      enb_crm_cell_resource_reservation enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    ...                                  assigned_ul_minimum_share_to_nr=20 assigned_ul_maximum_share_to_nr=70
+    wts.execute egate command    cmd=${cmd}   alias=${alias}
+    sleep   2
+  # to simulate the EN DSS UL QoS LOAD INDICATION not sent into DL coord rsp
+    wts.execute egate command    cmd=enb_crm_param id=1 ul_qos_load_meas_timer=none    alias=${alias}
+    sleep   5
+#    wts.execute egate command    cmd=enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    #  EN DSS UL Cell Subcarrier Resource Coordination success on remote NE
+    ${cmd}=   Catenate     enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2
+    ...                                                  tgt_cell=1
+    wts.execute egate command and wait for data    cmd=${cmd}    pass_regexp=EN DSS UL Cell Subcarrier Resource Coordination success on remote NE
+    ...                                            timeout=25    alias=${alias}
+
+    # wait for DL & UL Coordination
+    Dated Log           \tEN DSS DL & UL Cell Subcarrier Resource Coordination success on remote NE
+    # sleep   25
+
+    #  DL alloc  with pattern 0011001010-0110001110-0011001010-0110001110
+    # allocatedNormalSubframes (Bytes): 3298e3298e3298e3298e
+    ${cmd}=    Catenate    enb_dss_resource_allocation enb=1 cell=1 tgt_enb=2 tgt_cell=1 dir=DL
+    ...                      allocation_start_time=immediate
+    ...                      dl_allocated_normal_subframes=0011001010-0110001110-0011001010-0110001110-0011001010-0110001110-0011001010-0110001110
+    wts.execute egate command    cmd=${cmd}    alias=${alias}
+
+    #   10:53:02.483 INF: ENB-1: Received DSS DL Subframe Cell Resource Allocation Response SequenceNumber=0
+    # expect "DSS DL Subframe Cell Resource Allocation Response"
+
+    # UL alloc  with pattern (  prachPrbOffset = 4 into Ul coordination because of msg1StartFrequency=4 into scf file)
+    # wts.execute egate command    cmd=enb_dss_resource_allocation enb=1 cell=1 tgt_enb=2 tgt_cell=1 dir=UL ...
+    # ...                           allocation_start_time=immediate ul_allocated_prb_list=4,20    alias=${alias}
+
+    # move after the UL Coord update  - CSAMSON - 20112020
+    # wts.execute egate command    cmd=enb_dss_resource_allocation enb=1 cell=1 tgt_enb=2 tgt_cell=1 dir=UL ...
+    # ...              allocation_start_time=immediate ul_allocated_prb_list=${Param.scfFile.nrcell.msg1FrequencyStart},20    alias=${alias}
+
+    sleep   2
+
+    # to simulate on Crm an eNB Coordination request, so, the coordination update will be sent to gNB
+    wts.execute egate command    cmd=enb_crm_param id=1 ul_qos_load_meas_timer=80    alias=${alias}
+    sleep   1
+
+    ${cmd}=     Catenate      enb_crm_cell_resource_reservation enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    ...                           assigned_ul_minimum_share_to_nr=20 assigned_ul_maximum_share_to_nr=70
+    wts.execute egate command    cmd=${cmd}    alias=${alias}
+    # expect "EGATE>"
+
+    # wts.execute egate command    cmd=enb_dss_cell_resource_coordination enb=1 cell=1 tgt_enb=2 tgt_cell=1 dir=UL    ...
+    # ...                 pass_regexp=Update Indication : EN DSS UL Cell Subcarrier Resource Coordination: both NEs synchronized ...
+    # ...                 timeout=15    alias=${alias}
+    wts.execute egate command and wait for data    cmd=enb_dss_cell_resource_coordination enb=1 cell=1 tgt_enb=2 tgt_cell=1 dir=UL
+    ...                             pass_regexp=Update Indication : EN DSS UL Cell Subcarrier Resource Coordination: both NEs synchronized
+    ...                             timeout=15    alias=${alias}
+    # expect "EGATE>"
+    # expect "DSS UL Subframe Cell Resource Allocation Response"
+    Dated Log           \tExpect EN DSS UL Cell Subcarrier Resource Coordination Update
+
+    ${cmd}=     Catenate       enb_dss_resource_allocation enb=1 cell=1 tgt_enb=2 tgt_cell=1 dir=UL
+    ...                                       allocation_start_time=immediate ul_allocated_prb_list=${Param.scfFile.nrcell.msg1FrequencyStart},20
+    wts.execute egate command    cmd=${cmd}   alias=${alias}
+
+    sleep   5
+
+    # UL alloc  with pattern (  prachPrbOffset = 4 into Ul coordination because of msg1StartFrequency=4 into scf file)
+    # wts.execute egate command    cmd=enb_dss_resource_allocation enb=1 cell=1 tgt_enb=2 tgt_cell=1 dir=UL allocation_start_time=immediate ...
+    # ...                              ul_allocated_prb_list=4,20    alias=${alias}
+
+# expect "14:38:24.164 INF: ENB-1: Cell 1: Update Indication : EN DSS UL Cell Subcarrier Resource Coordination: both NEs synchronized"
+
+    log to console  \n***DSS UL_Cell_Subcarrier_Resource_Coordination_Update completed***
+
+###################################################################################################################################################
+# UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_Case1_w_time_to_wait
+# ul coord failed case with "non_matching_resource_reservation"
+#   send "crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=failure ...
+# ...      ul_cell_resource_coordination_cause=non_matching_resource_reservation \r"
+#   wts.execute egate command    cmd=crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=failure ...
+# ...      ul_cell_resource_coordination_cause=non_matching_resource_reservation
+###################################################################################################################################################
+
+UL_Cell_Subcarrier_Resource_Coordination_Normal_case
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+
+    Log to console  \n***DSS Phase-II UL_Cell_Subcarrier_Resource_Coordination_Normal_case ***
+    sleep   2
+
+    wts.execute egate command    cmd=crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=normal    alias=${alias}
+
+    sleep       2
+
+    log to console  \n***DSS UL_Cell_Subcarrier_Resource_Coordination_Normal_case completed***
+
+
+UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_Case1_w_time_to_wait
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+
+    Log to console  \n***DSS Phase-II UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_Case1_w_time_to_wait ***
+    sleep   2
+
+    # wts.execute egate command    cmd=enb_dss_param id=1 feature_flag=on message_sets=V1,DMS2   alias=${HOST_EPCSIM.alias}
+    wts.execute egate command    cmd=enb_dss_param id=1 feature_flag=on message_sets=V1,DMS2   alias=${alias}
+    sleep   2
+    wts.execute egate command    cmd=enb_cell_param enb=1 id=1 lte_nr_dss_mode=DL_CRS_TDM_UL_FDM   alias=${alias}
+    sleep   2
+    wts.execute egate command    cmd=enb_dss_configure_partnership enb=1 cell=1 dss_peer=2:1     alias=${alias}
+    sleep   2
+    ${cmd}=     Catenate      enb_crm_cell_resource_reservation enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    ...                               assigned_ul_minimum_share_to_nr=20 assigned_ul_maximum_share_to_nr=70
+    wts.execute egate command    cmd=${cmd}   alias=${alias}
+    sleep   2
+
+    wts.execute egate command    cmd=enb_crm_param id=1 cell_resource_coordination_failure_ttw=1    alias=${alias}
+
+    sleep   1
+
+# ul coord failed case
+# send "crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=failure ...
+# ...     ul_cell_resource_coordination_cause=dss_configuration_error \r"
+# send "crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=failure ...
+# ...     ul_cell_resource_coordination_cause=non_matching_resource_reservation \r"
+# send "crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=failure ...
+# ...     ul_cell_resource_coordination_cause=resource_conflict \r"
+
+# ul coord failed case with no_rsp
+#    wts.execute egate command    cmd=crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=no_rsp
+    ${cmd}=   Catenate     crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=failure
+    ...                    ul_cell_resource_coordination_cause=non_matching_resource_reservation
+    wts.execute egate command    cmd=${cmd}   alias=${alias}
+
+    sleep       5
+
+# expect  "EN DSS UL Cell Subcarrier Resource Coordination Failure"
+# 17:51:04.097 INF: ENB-1: Cell 1: EN DSS DL Cell Subframe Resource Coordination success on remote NE
+# 17:51:04.099 WARN: ENB-1: Cell 1: Abnormal case (CRM): EN DSS UL Cell Subcarrier Resource Coordination Failure has been triggered
+    # wts.execute egate command    cmd=enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1     alias=${alias}
+    ${cmd}=      Catenate      enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    wts.execute egate command and wait for data    cmd=${cmd}   pass_regexp=EN DSS DL Cell Subframe Resource Coordination success on remote NE
+    ...                                            alias=${alias}
+
+    # wts.execute egate command and wait for data   cmd=enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    #               pass_regexp=EN DSS UL Cell Subcarrier Resource Coordination Failure has been triggered
+
+    log to console  \n***DSS UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_Case1_w_time_to_wait completed***
+
+#################################################################################################################################################
+# UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_Case2_w_no_time_to_wait
+# ul coord failed case
+# send "crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=
+#                                                 failure ul_cell_resource_coordination_cause=dss_configuration_error \r"
+# send "crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=
+#                                                 failure ul_cell_resource_coordination_cause=non_matching_resource_reservation \r"
+# send "crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=
+#                                                 failure ul_cell_resource_coordination_cause=resource_conflict \r"
+#################################################################################################################################################
+
+UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_Case2_w_no_time_to_wait
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+
+    Log to console  \n***DSS Phase-II UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_Case2_w_no_time_to_wait ***
+    sleep   2
+
+    wts.execute egate command    cmd=enb_dss_param id=1 feature_flag=on message_sets=V1,DMS2    alias=${alias}
+    sleep   2
+    wts.execute egate command    cmd=enb_cell_param enb=1 id=1 lte_nr_dss_mode=DL_CRS_TDM_UL_FDM     alias=${alias}
+    sleep   2
+    wts.execute egate command    cmd=enb_dss_configure_partnership enb=1 cell=1 dss_peer=2:1      alias=${alias}
+    sleep   2
+    ${cmd}=     Catenate    enb_crm_cell_resource_reservation enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    ...                                          assigned_ul_minimum_share_to_nr=20 assigned_ul_maximum_share_to_nr=70
+    wts.execute egate command    cmd=${cmd}    alias=${alias}
+    sleep   2
+
+# no time to wait
+    # wts.execute egate command    cmd=enb_crm_param id=1 cell_resource_coordination_failure_ttw=0
+    wts.execute egate command    cmd=enb_crm_param id=1 cell_resource_coordination_failure_ttw=1     alias=${alias}
+
+    sleep   1
+
+# ul coord failed case
+# send "crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=
+#                                                            failure ul_cell_resource_coordination_cause=dss_configuration_error \r"
+# send "crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=
+#                                                          failure ul_cell_resource_coordination_cause=non_matching_resource_reservation \r"
+# send "crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=
+#                                                          failure ul_cell_resource_coordination_cause=resource_conflict \r"
+
+# ul coord failed case with no_rsp
+    ${cmd}=    Catenate     crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=failure
+    ...                                                  ul_cell_resource_coordination_cause=resource_conflict
+    wts.execute egate command    cmd=${cmd}     alias=${alias}
+
+    # sleep   15
+    sleep   5
+
+    # wts.execute egate command    cmd=enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1    alias=${alias}
+    wts.execute egate command and wait for data    cmd=enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    ...                                            pass_regexp=EN DSS DL Cell Subframe Resource Coordination success on remote NE   alias=${alias}
+
+#   pass_regexp=Partnership activated on both partners timeout=15
+
+# expect "Partnership activated on both partners"
+
+# expect "Coordination"
+    log to console  \n***DSS UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_Case2_w_no_time_to_wait completed***
+
+#################################################################################################################################################
+# UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_timeout
+# DSS CellSetup + UL CEll Coordination Procedure Failure case (No resp to UL Coord Request from CRMSim)
+# crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=no_rsp
+#################################################################################################################################################
+
+UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_timeout
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+
+    Log to console  \n***DSS Phase-II UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_timeout ***
+    sleep   2
+
+# [session 2]: enb_xp_param id=1 ignore_xp=off xp_listening_socket=on
+# [session 2]: enb_xp_param id=1 xp_peers=2
+# [session 2]: enb_xp_link_up enb=1 target=2
+# [session 2]: enb_x2_link_up enb=1 target=2
+# [session 2]: enb_dss_param id=1 feature_flag=on message_sets=V1,DMS2
+# [session 2]: enb_cell_param enb=1 id=1 lte_nr_dss_mode=DL_CRS_TDM_UL_FDM
+# [session 2]: enb_dss_configure_partnership enb=1 cell=1 dss_peer=2:1
+# [session 2]: enb_crm_cell_resource_reservation enb=1 cell=1 tgt_enb=2 tgt_cell=1 assigned_ul_minimum_share_to_nr=20
+#                      assigned_ul_maximum_share_to_nr=40
+# [session 2]: enb_crm_param id=1 cell_resource_coordination_failure_ttw=1
+# [session 2]: crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=no_rsp
+# [session 2]: enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1
+
+    wts.execute egate command    cmd=enb_dss_param id=1 feature_flag=on message_sets=V1,DMS2    alias=${alias}
+    sleep   2
+    wts.execute egate command    cmd=enb_cell_param enb=1 id=1 lte_nr_dss_mode=DL_CRS_TDM_UL_FDM    alias=${alias}
+    sleep   2
+    wts.execute egate command    cmd=enb_dss_configure_partnership enb=1 cell=1 dss_peer=2:1     alias=${alias}
+    sleep   2
+    ${cmd}=    Catenate      enb_crm_cell_resource_reservation enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    ...                                                        assigned_ul_minimum_share_to_nr=20 assigned_ul_maximum_share_to_nr=40
+    wts.execute egate command    cmd=${cmd}    alias=${alias}
+    sleep    2
+    wts.execute egate command    cmd=enb_crm_param id=1 cell_resource_coordination_failure_ttw=1    alias=${alias}
+    sleep   2
+    wts.execute egate command    cmd=crm_management_abnormal_cases enb=1 cell=1 ul_cell_resource_coordination_req_action=no_rsp    alias=${alias}
+    sleep   2
+    # wts.execute egate command    cmd=enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1    alias=${alias}
+    wts.execute egate command and wait for data    cmd=enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    ...                                            pass_regexp=EN DSS DL Cell Subframe Resource Coordination success on remote NE   alias=${alias}
+    # sleep   20
+    sleep   5
+    log to console  \n***DSS UL_Cell_Subcarrier_Resource_Coordination_Procedure_Failure_timeout***
+
+####################################################################################################################################################
+# CRM_connection_lost_during_EN_DSS_UL_Cell_Subcarrier_Resource_Coordination
+####################################################################################################################################################
+CRM_connection_lost_during_EN_DSS_UL_Cell_Subcarrier_Resource_Coordination
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+
+    Log to console  \n***DSS Phase-II CRM_connection_lost_during_EN_DSS_UL_Cell_Subcarrier_Resource_Coordination ***
+    sleep   2
+
+    wts.execute egate command    cmd=enb_dss_param id=1 feature_flag=on message_sets=V1,DMS2    alias=${alias}
+    Sleep   2
+    wts.execute egate command    cmd=enb_cell_param enb=1 id=1 lte_nr_dss_mode=DL_CRS_TDM_UL_FDM     alias=${alias}
+    Sleep   2
+    wts.execute egate command    cmd=enb_dss_configure_partnership enb=1 cell=1 dss_peer=2:1     alias=${alias}
+    sleep   2
+    ${cmd}=    Catenate      enb_crm_cell_resource_reservation enb=1 cell=1 tgt_enb=2 tgt_cell=1 assigned_dl_minimum_share_to_nr=15
+    ...                                                        assigned_dl_maximum_share_to_nr=70 assigned_dl_minimum_share_to_lte=15
+    ...                                                        assigned_dl_maximum_share_to_lte=70 assigned_ul_minimum_share_to_nr=20
+    ...                                                        assigned_ul_maximum_share_to_nr=70
+    wts.execute egate command    cmd=${cmd}     alias=${alias}
+    sleep   5
+    wts.execute egate command    cmd=enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1     alias=${alias}
+
+    # wts.execute egate command and wait for data cmd=enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    #                                                pass_regexp=CRM Partnership Creation timeout=15
+    sleep   20
+
+    wts.execute egate command    cmd=link_drop link=xp by=enb:1 to=gnb:2     alias=${alias}
+
+    sleep   2
+
+    wts.execute egate command    cmd=enb_xp_link_up enb=1 target=2     alias=${alias}
+
+    sleep    2
+
+    log to console  \n***DSS CRM_connection_lost_during_EN_DSS_UL_Cell_Subcarrier_Resource_Coordination ***
+
+
+#################################################################################################################################################
+# 5g Call Setup  & Verify & Traffic function
+#################################################################################################################################################
+
+Test SgNB Addition PRACH
+    CallSetup.SgNB Addition to ENB          ueSetting=${UE_SIMPLE_CellDSS}
+
+Verify AP Classical for 1 UE attach
+	${output}           SSH Wait For Connect and Cmd
+	...                 command=grep crnti /tmp/startup_l3.log
+	...                 host=${AP_DU.sys[0].M}
+    run keyword if      should contain	    ${output}	        ueFsId=0, crnti=
+    Dated log           5G attach successful for UE 1
+
+Test Verify Attach
+    Verify AP Classical for 1 UE attach
+
+Test DL traffic for 1 Ue
+    Traffic UEs DL                   ueSettingList=@{UE_SIMPLE_CellDSS}
+    ...                              throughput=3
+Test UL traffic for 1 Ue
+    Traffic UEs UL                   ueSettingList=@{UE_SIMPLE_CellDSS}
+    ...                              throughput=3
+
+Test UL DL traffic for 1 Ue
+   Traffic UE UL DL                 ueSetting=${UE_SIMPLE_CellDSS}
+    ...                             throughput=2
+
+
+################################################################################################################################
+#              For testing purpose
+################################################################################################################################
+
+Get Software Version_2
+    [Documentation]      Return software version
+    ...     alias:   AdminConnection object or if used, string name alias
+    coam.connect to   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+    ${software_info}=    coam.get_software_info     connection=coam_admin
+
+    Dated Log New Line  sw_info=${software_info}
+
+    ${sw_version}=       set variable    ${software_info['Active SW version']}
+    ${sw_version_package}=       nps_sweng_luashark_analyzer.get_sw_package_2   sw_version=${sw_version}
+
+    Dated Log New Line   Get current sw version package = ${sw_version_package}
+    [Return]             ${sw_version_package}
+    [Teardown]    coam.teardown    connection=coam_admin
+
+
+################################################################################################################################
+#              END :  For Testing purpose
+################################################################################################################################
+
+

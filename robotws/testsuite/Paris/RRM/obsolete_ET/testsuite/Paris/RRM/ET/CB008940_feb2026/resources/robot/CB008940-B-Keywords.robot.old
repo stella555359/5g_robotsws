@@ -1,0 +1,542 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Common keyword of CB008940-B feature
+...               Prerequisite :
+...               Scope : keywords for CB008940-B
+...
+...               Test Case Scenario author   : ying.yw.wu@nokia.com
+...               Test Case Scenario contact  : ying.yw.wu@nokia.com
+...               Test Case automation author : ying.yw.wu@nokia.com
+...               Test Case automation contact: ying.yw.wu@nokia.com
+...               Creation Date               : 31-08-2022
+...               Modified Date               : 31-08-2022
+...               Last Modified by            : imen.mestiri@nokia.com
+...               Version History   Date            Author                      Notes
+...               0.1               FB2218      ying.yw.wu@nokia.com            Creation
+...               0.2               FB2219      ying.yw.wu@nokia.com            add rad param for csirs send req event in sherpa
+...               0.3               FB2219      ying.yw.wu@nokia.com            add rad param 0x420068 (hardcoded 8940&8847)
+...               0.4               FB2219      ying.yw.wu@nokia.com            documentation
+...               0.5               FB2220      ying.yw.wu@nokia.com            update RAD param for 8940
+...               0.6               FB2223      ying.yw.wu@nokia.com            update RAD param, remove 0x5901C0=1
+...               0.7               FB2223      imen.mestiri@nokia.com          add KW for CB008940-B_4-EI3
+...               0.8               FB2301      ying.yw.wu@nokia.com            call the sweng interne kw
+...                                                                             "Check Values on Operator In File" with
+...                                                                             arg name "column_name" instead of "Column_name"
+...               0.9               FB2317      blandine.garnier@nokia.com      Add R&D parameter 0x420080=0
+...               1.0               FB2419      richard.duthu@nokia.com         Produce Scout Data + some RF50 fixes
+Library           OperatingSystem
+Library           String
+Library           BuiltIn
+Library           ute_wtssim           WITH NAME    wts
+Library           ../../../../../resources/SWENG/python/PandasCsv.py
+Library           ../../../resources/python/luashark_tools.py
+Library           luashark_tools.analyzer       WITH NAME       analyzer
+Resource          taf/rfrl/common_resources/robot/preconditions.robot
+
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../../../resources/SWENG/robot/Container.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+
+Resource          ./CB008940-Config.robot
+Resource          ../../../5GC001227/resources/robot/5GC001227-Common_keywords.robot
+
+Variables           ../../../../../resources/SWENG/python/Colors.py
+
+
+*** Variables ***
+# Variables for ue profile and traffic
+
+
+#Variables for sherpa event 45 check
+
+#Variables for trsInfo check
+
+${trsInfo_0}               trsInfo=0
+${trsInfo_1}               trsInfo=1
+
+@{FIELDS_cell_cellsetupreq}                             physCellId        csirsPoolingGroupId
+@{FIELDS_cell_cellsetupresp}             				nrCellIdentity    slotOffset
+@{FIELDS_slot_offset}                                   slotOffset    nrCellIdentity
+@{listToCheck_cell_16385}                               20      61    95
+@{listToCheck_cell_16386}                               60      101   15
+@{listToCheck_cell_16387}                               100     21    55
+${nrCellid_16385}                                       16385
+${nrCellid_16386}                                       16386
+${nrCellid_16387}                                       16387
+${text_offset_cell1_1}                                  Slot Offset Position for nrCellid 16385 are included in [RS1:20,
+${text_offset_cell1_2}                                  RS2:61, RS4:95] if cell1 in PG0 or [RS1:100, RS2:21, RS4:55] if cell1 in PG2
+${text_offset_cell3_1}                                  Slot Offset Position for nrCellid 16387 are included in [RS1:20,
+${text_offset_cell3_2}                                  RS2:61, RS4:95] if cell3 in PG0 or [RS1:100, RS2:21, RS4:55] if cell3 in PG2
+
+
+*** Keywords ***
+
+TC 8940 Cell Setup
+    [Documentation]        8940 Cell Setup
+    [Arguments]            ${params}        ${Vendor_Param}
+    Set Suite Variable     ${params}
+    Init Sequence          ${params}
+    Step                   Set RAD Params Of 8940
+    Step                   CB008940-Config.Vendor File Config With Specific Settings     argument=${Vendor_Param}
+    Step                   CB008940-Config.Update 8940 Params in OAM SCF And Recommissioning
+    # Critical Step          Restart.F1 Wait Link Classical
+    Step                   Restart.F1 Wait Link Classical
+    # Step                   sleep    600s
+    Step                   Multi Cells Setup 8940                 argument=${params.nbCell}
+    Step                   Activate Sherpa On All Cells
+    Step                   sleep    10s
+    Step                   Stop Sherpa Collection
+    Step                   5GC001227-Common_keywords.Check Sherpa RR Pooling Report Presence
+
+TC 8940 check csi-rs for tracking
+    [Documentation]        Check Scheduling and periodicity of the cell specific CSI-RS for Tracking Interworking with
+    ...                    Paging OSI slots frame structure
+    [Arguments]            ${params}        ${Vendor_Param}
+    Set Suite Variable     ${params}
+    Init Sequence          ${params}
+    Step                   Set RAD Params Of 8940
+    Step                   CB008940-Config.Vendor File Config With Specific Settings     argument=${Vendor_Param}
+    Step                   CB008940-Config.Update 8940 Params in OAM SCF And Recommissioning
+    Step                   Restart.F1 Wait Link Classical
+    Step                   CB008940-B-Keywords.Start Capture on ASIB CPRT Container
+    Step                   Multi Cells Setup 8940                 argument=${params.nbCell}
+    Step                   CB008940-B-Keywords.Stop Capture on ASIB CPRT Container
+    Step                   Activate Sherpa On All Cells
+    Step                   sleep    10s
+    Step                   Stop Sherpa Collection
+    Step                   5GC001227-Common_keywords.Check Sherpa RR Pooling Report Presence
+    Step                   Check csi pooling group
+#    Step                   Check slot offset position
+     Step                   Check slot offset position test lib
+    Step                   Check TRS symbols
+
+
+Suite Setup 8940
+
+    [Documentation]
+    ...     Conditions:     customs configurations yamlPathname
+    ...     Actions:        it performs the generic suite setup and backup the configurations files
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        suite setup is passed
+    [Arguments]             ${yamlPathname}=${EMPTY}
+
+    Setup.Suite Setup from scratch        yamlPathname=${yamlPathname}
+    ...                                   listBackupFiles=${FD_ALL}
+    ...                                   keepAllUeDataInCfgFile=${True}
+
+    Backup Files
+    ${scf_suite_setup_backup}         OAM Get SCF File    file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable      ${scf_suite_setup_backup}
+    Dated Log               SCF backup file = ${scf_suite_setup_backup}
+
+Check csi pooling group
+    [Documentation]      Check that each cell is in different csi-rs pooling group starting from 0 to 2
+    ...                  check is done in itf_l2_ps_cell_cellsetupreq packet using cprt traces.
+
+    Dated Log    [Checking csirsPoolingGroupId In CPRT itf_l2_ps_cell_CellSetupReq depending on physCellId]
+    Dated Log    ----> convert pcap to pdml with filter itf_l2_ps_cell_cellsetupreq ......
+    Dated Log    ----> pcap file : ${CaptureCPRT_ASIB.path}
+
+    ${CaptureCPRT_setupreq}         analyzer.filter_pcap
+    ...                             pcapInFile=${CaptureCPRT_ASIB.path}
+    ...                             filterName=filteredBymsg
+    ...                             filterExp=itf_l2_ps_cell_cellsetupreq
+    ${pdmlFile}                     analyzer.pcap_to_pdml      ${CaptureCPRT_setupreq}
+
+    Dated Log    ----> filtred pcap file (itf_l2_ps_cell_cellsetupreq) : ${CaptureCPRT_setupreq}
+
+    Dated log new line                      Getting some captured itf_l2_ps_cell_cellsetupreq on cell0
+    @{itf_l2_ps_cell_cellsetupreq}          Get Packet Match List
+    ...                                     pdmlFile=${pdmlFile}
+    ...                                     packetName=itf_l2_ps_cell_CellSetupReq
+    ...                                     pathList=${FIELDS_cell_cellsetupreq}
+    ...                                     startPacket=${1}
+    ...                                     endPacket=${1}
+    Dated log new line                 - For cell0
+    FOR     ${packet}   IN           @{itf_l2_ps_cell_cellsetupreq}
+            ${physCellId_in_pcap}           Get Value In Packet Match
+            ...                             packetMatch=${packet}
+            ...                             field=physCellId
+
+            ${csirsPoolingGroupId_in_pcap}             Get Value In Packet Match
+            ...                                        packetMatch=${packet}
+            ...                                        field=csirsPoolingGroupId
+            Dated Log                  - physCellId=${physCellId_in_pcap}
+            Dated Log                  - PoolingGroupId=${csirsPoolingGroupId_in_pcap}
+            Dated Log                  - PoolingGroupId=${packet}
+            should be true              ${physCellId_in_pcap}==0x00000032
+            should be true              ${csirsPoolingGroupId_in_pcap}==0x00000000
+    END
+
+    Dated log new line                      Getting some captured itf_l2_ps_cell_cellsetupreq on cell1
+    @{itf_l2_ps_cell_cellsetupreq}          Get Packet Match List
+    ...                                     pdmlFile=${pdmlFile}
+    ...                                     packetName=itf_l2_ps_cell_CellSetupReq
+    ...                                     pathList=${FIELDS_cell_cellsetupreq}
+    ...                                     startPacket=${2}
+    ...                                     endPacket=${2}
+    Dated log new line                  - For cell1
+    FOR     ${packet}   IN           @{itf_l2_ps_cell_cellsetupreq}
+
+            ${physCellId_in_pcap}           Get Value In Packet Match
+            ...                             packetMatch=${packet}
+            ...                             field=physCellId
+
+            ${csirsPoolingGroupId_in_pcap}             Get Value In Packet Match
+            ...                                        packetMatch=${packet}
+            ...                                        field=csirsPoolingGroupId
+            Dated Log                  - physCellId=${physCellId_in_pcap}
+            Dated Log                  - PoolingGroupId=${csirsPoolingGroupId_in_pcap}
+            should be true              ${physCellId_in_pcap}==0x00000033
+            should be true              ${csirsPoolingGroupId_in_pcap}==0x00000001
+    END
+
+    Dated log new line                      Getting some captured itf_l2_ps_cell_cellsetupreq on cell2
+    @{itf_l2_ps_cell_cellsetupreq}          Get Packet Match List
+    ...                                     pdmlFile=${pdmlFile}
+    ...                                     packetName=itf_l2_ps_cell_CellSetupReq
+    ...                                     pathList=${FIELDS_cell_cellsetupreq}
+    ...                                     startPacket=${3}
+    ...                                     endPacket=${3}
+    Dated log new line                  - For cell2
+    FOR     ${packet}   IN           @{itf_l2_ps_cell_cellsetupreq}
+
+            ${physCellId_in_pcap}           Get Value In Packet Match
+            ...                             packetMatch=${packet}
+            ...                             field=physCellId
+
+            ${csirsPoolingGroupId_in_pcap}             Get Value In Packet Match
+            ...                                        packetMatch=${packet}
+            ...                                        field=csirsPoolingGroupId
+            Dated Log                  - physCellId=${physCellId_in_pcap}
+            Dated Log                  - PoolingGroupId=${csirsPoolingGroupId_in_pcap}
+            should be true              ${physCellId_in_pcap}==0x00000034
+            should be true              ${csirsPoolingGroupId_in_pcap}==0x00000002
+    END
+
+Check slot offset position
+    [Documentation]      Check slot offset position for tdLte frame structure
+    ...                  check is done in itf_l2_ps_cell_cellsetupresp packet using cprt traces.
+
+    Dated Log    [Checking slot offset position In CPRT itf_l2_ps_cell_cellsetupresp]
+    Dated Log    ----> convert pcap to pdml with filter itf_l2_ps_cell_cellsetupresp ......
+    Dated Log    ----> pcap file : ${CaptureCPRT_ASIB.path}
+    ${pdmlFile}                    analyzer.pcap_to_pdml      ${CaptureCPRT_ASIB.path}
+
+    Dated log new line                                     Getting some captured itf_l2_ps_cell_cellsetupresp on cell0
+    @{itf_l2_ps_cell_cellsetupresp}          Get Packet Match List
+    ...                                                    pdmlFile=${pdmlFile}
+    ...                                                    packetName=itf_l2_ps_cell_cellsetupresp
+    ...                                                    pathList=${FIELDS_cell_cellsetupresp}
+    ...                                                    startPacket=${1}
+    ...                                                    endPacket=${1}
+    Dated log new line                 - For cell0
+    FOR     ${packet}   IN           @{itf_l2_ps_cell_cellsetupresp}
+            ${nrCellIdentity_in_pcap}           Get Value In Packet Match
+            ...                                 packetMatch=${packet}
+            ...                                 field=nrCellIdentity
+
+            ${slotOffset_in_pcap}               Get Value In Packet Match
+            ...                                 packetMatch=${packet}
+            ...                                 field=slotOffset
+
+            #${slotOffset_in_pcap_dict}          Get Packet Match Dict
+            #...                                 packetMatch=${packet}
+            #...                                 field=${FIELDS_resourceSet}
+
+
+            Dated Log                  - nrCellIdentity=${nrCellIdentity_in_pcap}
+            Dated Log                  - slotOffset=${slotOffset_in_pcap}
+#            Dated log                  - resourceSet_dict=${slotOffset_in_pcap_dict}
+
+#            should be true              ${nrCellIdentity_in_pcap}==16385
+#            should be true              ${csirsPoolingGroupId_in_pcap}==0x00000000
+    END
+
+    Dated log new line                                     Getting some captured itf_l2_ps_cell_cellsetupresp on cell1
+    @{itf_l2_ps_cell_cellsetupresp}          Get Packet Match List
+    ...                                                    pdmlFile=${pdmlFile}
+    ...                                                    packetName=itf_l2_ps_cell_cellsetupresp
+    ...                                                    pathList=${FIELDS_cell_cellsetupresp}
+    ...                                                    startPacket=${2}
+    ...                                                    endPacket=${2}
+    Dated log new line                 - For cell1
+    FOR     ${packet}   IN           @{itf_l2_ps_cell_cellsetupresp}
+            ${nrCellIdentity_in_pcap}           Get Value In Packet Match
+            ...                                 packetMatch=${packet}
+            ...                                 field=nrCellIdentity
+
+            ${slotOffset_in_pcap}               Get Value In Packet Match
+            ...                                 packetMatch=${packet}
+            ...                                 field=slotOffset
+
+            Dated Log                  - nrCellIdentity=${nrCellIdentity_in_pcap}
+            Dated Log                  - slotOffset=${slotOffset_in_pcap}
+
+    END
+
+    Dated log new line                                     Getting some captured itf_l2_ps_cell_cellsetupresp on cell2
+    @{itf_l2_ps_cell_cellsetupresp}          Get Packet Match List
+    ...                                                    pdmlFile=${pdmlFile}
+    ...                                                    packetName=itf_l2_ps_cell_cellsetupresp
+    ...                                                    pathList=${FIELDS_cell_cellsetupresp}
+    ...                                                    startPacket=${3}
+    ...                                                    endPacket=${3}
+    Dated log new line                 - For cell2
+    FOR     ${packet}   IN           @{itf_l2_ps_cell_cellsetupresp}
+            ${nrCellIdentity_in_pcap}           Get Value In Packet Match
+            ...                                 packetMatch=${packet}
+            ...                                 field=nrCellIdentity
+
+            ${slotOffset_in_pcap}               Get Value In Packet Match
+            ...                                 packetMatch=${packet}
+            ...                                 field=slotOffset
+
+            Dated Log                  - nrCellIdentity=${nrCellIdentity_in_pcap}
+            Dated Log                  - slotOffset=${slotOffset_in_pcap}
+
+    END
+
+Check slot offset position test lib
+
+   ${CaptureCPRT_cellsetupresp}         analyzer.filter_pcap
+    ...                                               pcapInFile=${CaptureCPRT_ASIB.path}
+    ...                                               filterName=filteredBymsg
+    ...                                               filterExp=itf_l2_ps_cell_cellsetupresp
+   ${pdmlFile}                     analyzer.pcap_to_pdml      ${CaptureCPRT_cellsetupresp}
+
+    Dated Log    ----> filtred pcap file (itf_l2_ps_cell_cellsetupresp) : ${CaptureCPRT_cellsetupresp}
+
+# ---> check the number of occurrences for debug
+#   ${count}                        analyzer.count_path
+#   ...                             pdmlFile=${pdmlFile}
+#   ...                             packetName=itf_l2_ps_cell_cellsetupresp
+#   ...                             path=itf_l2_ps_Res.slotOffset
+#  Dated Log                       - count_path=${count}
+
+
+   @{slot_offset}                  Get Packet Match List
+   ...                             pdmlFile=${pdmlFile}
+   ...                             packetName=itf_l2_ps_cell_cellsetupresp
+   ...                             pathList=${FIELDS_slot_offset}
+
+   ${res1}                         analyzer.getSubpacketsFromPaths
+   ...                             ${slot_offset}     ${FIELDS_slot_offset}
+
+   DatedLog                        Generated list:\n ${res1}
+
+   ${res2}                         analyzer.scanDict              ${res1}
+   DatedLog                        Generated result:\n ${res2}
+
+####check check slot offset position for Cell 1###
+
+   Dated Log    ----> check slot offset position for Cell 1 (NrCellIdenty = ${nrCellid_16385} )
+    ${slot_offset_cell1_PG0}       analyzer.checkListVlaues
+    ...                            ${nrCellid_16385}        ${listToCheck_cell_16385}              ${res2}
+
+    ${slot_offset_cell1_PG2}       analyzer.checkListVlaues
+    ...                            ${nrCellid_16385}        ${listToCheck_cell_16387}              ${res2}
+    ${text_offset_cell1}           Catenate                 ${text_offset_cell1_1}                 ${text_offset_cell1_2}
+    ${check_slot_offset_cell1} =     Set Variable If   ${slot_offset_cell1_PG0}==True    or    ${slot_offset_cell1_PG2}==True
+    ...                              ${text_offset_cell1}
+    ...                              ${slot_offset_cell1_PG0}==False    and    ${slot_offset_cell1_PG2}==False
+    ...                              one or more Slot Offset for nrCellid 16385 are in the wrong position
+   Dated Log New Line              slot_offset_cell1 in PG0: ${slot_offset_cell1_PG0}
+   Dated Log New Line              slot_offset_cell1 in PG2: ${slot_offset_cell1_PG2}
+
+   ${Bool_slot_offset_cell1}       luashark_tools.orlogicalExp
+   ...                             ${slot_offset_cell1_PG0}        ${slot_offset_cell1_PG2}
+
+   should be true                  ${Bool_slot_offset_cell1}==True
+
+####check check slot offset position for Cell 2###
+
+   Dated Log    ----> check slot offset position for Cell 2 (NrCellIdenty = ${nrCellid_16386} )
+   ${slot_offset_cell2}            analyzer.checkListVlaues
+    ...                            ${nrCellid_16386}        ${listToCheck_cell_16386}              ${res2}
+   ${check_slot_offset_cell2} =    Set Variable If     ${slot_offset_cell2}==True
+   ...                             Slot Offset Position for nrCellid 16386 are included in [RS1:60, RS2:101, RS4:15]
+   ...                                                 ${slot_offset_cell2}==False
+   ...                                                 one or more Slot Offset for nrCellid 16386 are in the wrong position
+   Dated Log New Line              ${check_slot_offset_cell2}
+   should be true                  ${slot_offset_cell2}==True
+
+####check check slot offset position for Cell 3###
+    Dated Log    ----> check slot offset position for Cell 3 (NrCellIdenty = ${nrCellid_16387} )
+    ${slot_offset_cell3_PG0}       analyzer.checkListVlaues
+    ...                            ${nrCellid_16387}        ${listToCheck_cell_16385}              ${res2}
+
+    ${slot_offset_cell3_PG2}       analyzer.checkListVlaues
+    ...                            ${nrCellid_16387}        ${listToCheck_cell_16387}              ${res2}
+    ${text_offset_cell3}           Catenate                 ${text_offset_cell3_1}                 ${text_offset_cell3_2}
+    ${check_slot_offset_cell3} =     Set Variable If   ${slot_offset_cell3_PG0}==True    or    ${slot_offset_cell3_PG2}==True
+    ...                              ${text_offset_cell3}
+    ...                              ${slot_offset_cell3_PG0}==False    and    ${slot_offset_cell3_PG2}==False
+    ...                              one or more Slot Offset for nrCellid 16387 are in the wrong position
+   Dated Log New Line              slot_offset_cell3 in PG0: ${slot_offset_cell3_PG0}
+   Dated Log New Line              slot_offset_cell3 in PG2: ${slot_offset_cell3_PG2}
+
+   ${Bool_slot_offset_cell3}       luashark_tools.orlogicalExp
+   ...                             ${slot_offset_cell3_PG0}        ${slot_offset_cell3_PG2}
+
+   should be true                  ${Bool_slot_offset_cell3}==True
+
+
+
+
+Check TRS symbols
+    [Documentation]      Check TRS symbols position  (sherpa traces)
+    ...                  for all cells, start symbols should be 4,5,6,8,9,10
+    Dated Log New Line    Verify the position of CSI-RS for tracking for all cells
+    ${file_path_micro_l1l2} =      set variable    ${sherpa_output_path}/tcpdump/micro__l1l2Trace.csv
+    Retrieve raws of the DL CSI RS Send Req Event on given trsInfo     file_name=${file_path_micro_l1l2}      trsInfo=${trsInfo_1}
+    Calling Panda Extract Csv function CsiRs
+    Dated Log New Line    Read the startSymbol csi-rs for tracking in Downlink
+
+
+    ${csirs_tracking_startSymbol}       Check Values on Operator In File    file=${sherpa_output_path}/tcpdump/Dl_CsiRsSendReqEvent_13_.csv
+    ...                                 column_name=startSymbol     check_operator=>=     valuetocheck=10
+    ${Check_csirs_tracking_startSymbol} =     Set Variable If   ${csirs_tracking_startSymbol}==True
+    ...                                       The position of CSI-RS for traking is below 10
+    ...                                                         ${csirs_tracking_startSymbol}==False
+    ...                                                         CSI-RS for tracking are in the wrong position
+    Dated Log New Line     ${Check_csirs_tracking_startSymbol}
+    should be true              ${csirs_tracking_startSymbol}==True
+
+
+
+    ${csirs_tracking_startSymbol}       Check Values on Operator In File    file=${sherpa_output_path}/tcpdump/Dl_CsiRsSendReqEvent_13_.csv
+    ...                                 column_name=startSymbol     check_operator=<=     valuetocheck=4
+    ${Check_csirs_tracking_startSymbol} =     Set Variable If   ${csirs_tracking_startSymbol}==True
+    ...                                       The position of CSI-RS for traking is above 4
+    ...                                                         ${csirs_tracking_startSymbol}==False
+    ...                                                         CSI-RS for tracking are in the wrong position
+    Dated Log New Line     ${Check_csirs_tracking_startSymbol}
+    should be true              ${csirs_tracking_startSymbol}==True
+
+
+    ${csirs_tracking_startSymbol}       Check Values on Operator In File    file=${sherpa_output_path}/tcpdump/Dl_CsiRsSendReqEvent_13_.csv
+    ...                                 column_name=startSymbol     check_operator=!=     valuetocheck=7
+    ${Check_csirs_tracking_startSymbol} =     Set Variable If   ${csirs_tracking_startSymbol}==True
+    ...                                       The position of CSI-RS for traking is included in {4,5,6,8,9,10}
+    ...                                                         ${csirs_tracking_startSymbol}==False
+    ...                                                         CSI-RS for tracking are in the wrong position
+    Dated Log New Line     ${Check_csirs_tracking_startSymbol}
+    should be true              ${csirs_tracking_startSymbol}==True
+
+
+Retrieve raws of the DL CSI RS Send Req Event on given trsInfo
+    [Documentation]     Filter DL csi-rs for tracking (trsInfo=1) or DL csi-rs for Acquisition (trsInfo=0)
+    [Arguments]      ${file_name}       ${trsInfo}
+    BuiltIn.Log      ${file_name}      console=yes
+    ${data} =  OperatingSystem.Get File    ${file_name}
+    ${Top_row} =  Get Line    ${data}    0
+    ${file_path_Dl_CsiSendReqEvent_trsInfo} =    set variable        ${sherpa_output_path}/tcpdump/Dl_CsiRsSendReqEvent_${trsInfo}.csv
+    Set Suite Variable    ${file_path_Dl_CsiSendReqEvent_trsInfo}
+    ${Dl_CsiRsSendReqEvent_13_trsInfo} =    Get Lines Containing String     ${data}   ${trsInfo}
+    Append To File     ${file_path_Dl_CsiSendReqEvent_trsInfo}    ${Top_row}\n
+    Append To File     ${file_path_Dl_CsiSendReqEvent_trsInfo}    ${Dl_CsiRsSendReqEvent_13_trsInfo}\n
+
+Calling Panda Extract Csv function CsiRs
+      Dated Log New Line     Calling Panda Extract Csv function CsiRs
+      ${file_path_Dl_CsiSendReqEvent} =      set variable    ${sherpa_output_path}/tcpdump/Dl_CsiRsSendReqEvent_${trsInfo_1}.csv
+      Dated Log New Line     input Panda extract function is ${file_path_Dl_CsiSendReqEvent}
+      Dated Log New Line     input Panda extract function is ${sherpa_output_path}/tcpdump/Dl_CsiRsSendReqEvent_${trsInfo_1}.csv
+      PandasCsv.Setup Reader     ${file_path_Dl_CsiSendReqEvent}    # Load data from a csv file using pandas library
+      PandasCsv.extract_cvs_files_forcolumn    filter_column=TEXT    by_value=MSGID    filter=CsiRsSendReqEvent(13)
+      ...                                      list_grp=None    csv_sep=;
+
+
+Set RAD Params Of 8940
+    [Documentation]     Add or Modify the RAD params of 8940 To Activate the feature
+    ...                 will be replaced later by NIDD params
+    ...                 0x580117=1 : #CSI-RS Event Sherpa
+    ...                 0x420062=1 : new cell slot model
+    ...                 0x590191=1 : rdSlowPrbPoolingTddFr1UseHardcodedTrackingCsiRs
+    ...                 0x420068=000 : rdTddPoolingFeaturesEnable default value is 111
+    ...                              Binary 3 bits LSB bit0->CB8940; bit1->CB008847; bit2->CB007113
+    ...                              0 disable; 1 enable features can be activated independantly
+    ...                 0x590190=1 : rdActSlowPrbPoolingTddFr1Dl
+    ...                 0x58057A=4 : L2 feature flags : ERR & WRN & INF & DBG
+    ...                 0x58057C=0x3800 : rdFeatureFlagBitmap1
+    ...                     bit 11 - PRB_POOLING.BASIC,
+    ...                     bit 12   PRB_POOLING.DL,
+    ...                     bit 13 - PRB_POOLING.UL ==> binary 0011 1000 0000 0000
+    ...                 0x5901C0=1 : rdEnableBBL1SpPrbInitCapacity
+    ...                 0x580690=0  # rdAllowZeroAllocByPass - 0 : ZAB Disabled - 1 : Enabled
+    ...                 0x58066a=0  # InterL1SubPool         - 0 : Disabled - 1 : Enabled
+    ...                 0x420080=0  #rdTddSubCellDeactEnable - 0 : Disabled - 1 : Enabled
+
+    Dated Log New Line   Add RAD params of 8940 ......
+    ${rad_param_1}=      create dictionary       field=0x580117    value=1
+    ${rad_param_2}=      create dictionary       field=0x420068    value=3
+    ${rad_param_3}=      create dictionary       field=0x580690    value=0
+    ${rad_param_4}=      create dictionary       field=0x58066a    value=0
+    ${rad_param_5}=      create dictionary       field=0x420080    value=0
+
+    ${rad_param_list}=       Create List         ${rad_param_1}
+    ...                                          ${rad_param_2}
+    ...                                          ${rad_param_3}
+    ...                                          ${rad_param_4}
+    ...                                          ${rad_param_5}
+
+    Dated Log New Line    RAD params :  ${rad_param_list}
+    SetConfig.Set Fields in swconfig DU       param_list=${rad_param_list}
+    Dated Log New Line   RAD params of 8940 update completed
+
+Start Capture on ASIB CPRT Container
+    ${CaptureCPRT_ASIB}             Capture CPRT Set Upon Config    airscale=${GNB_DU}
+    # ${CaptureCPRT_ASIB.filter}      Run Keyword If      'SBTS22R3' in '${TLConfig.topo.gnbVersion}'
+    # ...                                                  Set Variable       Get Filter For SCTP
+    # ...                             ELSE
+    # ...                                                  Set Variable       Get Filter For TCP
+    Set Suite Variable              ${CaptureCPRT_ASIB}
+    Capture Init                    ${CaptureCPRT_ASIB}
+    Capture Start                   ${CaptureCPRT_ASIB}
+
+Stop Capture on ASIB CPRT Container
+    Capture Stop    ${CaptureCPRT_ASIB}
+
+Multi Cells Setup 8940
+    [Arguments]       ${nbCell}
+    ${msgStr}=    Catenate  Test ${nbCell} Cells Setup
+    Dated Log   ${msgStr}
+    Setup Wtsemu SA
+    sleep    60s
+    WTS Set X2 Link
+    sleep    5s
+   # WTS Testmode Decode PDSCH On SSB Slot
+
+WTS Testmode Decode PDSCH On SSB Slot
+    wtsemu.ue_testmode_decode_muxphychan    decode_mux_phy_chan=decode_PDSCH
+    sleep    2s
+
+Recommissioning
+    Oam.OAM Perform Full Commissioning       scf_file=${SCF_SETUP_PATH}
+    WA Airscale Wait For Ready               ${GNB_DU}
+
+End Of TC Teardown
+   [Documentation]        At the end of each TC :
+   ...                      - prepare Scout data
+   ...                      - show the Diagnosis of the TC steps
+   ...                      - collect the gnb Snapshot
+   ...                      - if TC failed, collect also AP sosReport
+
+   Dated Log              End Of TC : start
+   Produce Scout Data
+   Oam.OAM Get Snapshot
+   # Run Keyword If Test Failed     Setup.Get Sos Report
+   GenericTest.Display Diagnosis
+   Dated Log              End of TC : end
+
+

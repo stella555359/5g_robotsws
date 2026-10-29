@@ -1,0 +1,368 @@
+# - Override values for deployment in cloud-development enviromnent
+# - Operator need to set the values base on the real scenario.
+# - This is a YAML-formatted file.
+# - Declare variables to be passed into your templates.
+
+# - Description: Infrasturcture type. Support value: NCIR or TPI#3
+# - Default value: NCIR
+infraType: "NCIR"
+
+global:
+  #########################################################
+  # global configuration shared by parent and sub charts
+  #########################################################
+  # - Description: registry of image
+  image:
+    registry: "registry.kube-system.svc.nokia.net:5555/dep"
+
+  # - Description: time zone in format "Region/City", e.g. "Asia/Shanghai". Defuault as 'UTC'.
+  timezone: "UTC"
+
+  #########################################################
+  # global configuration for VDU parent chart
+  #########################################################
+
+  # - Description: the name of persistent volume
+  # - Note: Ensure uniqueness for every VDU and keep same when do upgrade/update
+  pvcName: "aic-pvc-mvp"
+  # - Description: the storageclass name of persistent volume. Will use default storageclass in case not filled.
+  # - Values:
+  # -   NCIR Non SNC: ceph-storage-class
+  # -   NCIR SNC: local-volume
+  # -   TPI#3: general
+  storageClassName: "local-volume"
+  # - Description: the flag that indicate if fastpath interfaces are bind on Host or not. Support Values: true, false.
+  # - Default value: false
+  fpIfaceBindOnHost: "false"
+  # - Description: Name of a network Device Plugin resource pool. it is Physical function, which has mapped to several virtual function
+  # - Note:  fronthaul net need a Individual PF
+  netPF:
+    # - Description: The SR-IOV Device Pool used by f1 and bip networks (fast path)
+    # - Note: mandatory if fpIfaceBindOnHost set true
+    commonHostBind: ""
+    # - Description: Device Pool for slow path
+    # - Note: if fpIfaceBindOnHost set true, used by oam network; else used by f1, bip and oam networks
+    common: "nokia.k8s.io/sriov_ens1f1"
+    # - Description: The SR-IOV Device Pool used by fhuc network (fast path)
+    # - Note: mandatory if fpIfaceBindOnHost set true
+    fhHostBind: ""
+    # - Description: Device Pool for slow path used by fh
+    # - Note: if fpIfaceBindOnHost set true, used by fhm network; else used by fhuc and fhm networks
+    fh: "nokia.k8s.io/sriov_ens11f0"
+
+#########################################################
+# top level configuration private to RCP sub charts
+#########################################################
+
+# - Description: sub chart pm private configuration
+pm:
+  pv:
+    enabled: false
+
+  # must define valid value for below pvc when 'pm.pv.enabled' set to 'true'
+  pvc:
+    #for high frequency read/write PV
+    hfrw:
+      name: ""
+      storageClassName: ""
+      accessModes: "" # ReadWriteMany
+      capacity: 500Mi
+
+    #for low frequency read/write PV
+    lfrw:
+      name: ""
+      storageClassName: ""
+      accessModes: "" # ReadWriteMany
+      capacity: 100Mi
+
+# - Description: sub chart rcpfm private configuration
+rcpfm:
+  pv:
+    enable: false
+
+  # must define valid value for below pvc when 'rcpfm.pv.enable' set to 'true'
+  pvc:
+    # - Description: the name of persistent volume
+    name: ""
+    # - Description: the name of a StorageClass. Only PVs of the requested class, ones with the same storageClassName as the PVC, can be bound to the PVC
+    storageClassName: ""
+    # - Description: the access modes of persistent volume claim, use the same conventions as access modes of persistent volume
+    accessModes: "ReadWriteMany"
+    # - Description: storage size, request specific quantities of storage from persistent volume
+    storage: "200Mi"
+
+# - Description: sub chart logservice private configuration
+logservice:
+  # Use persistent volume for log storage
+  pvc:
+    # By default persistent volume claims defined
+    # If persistent volume is not an option
+    # hostPath mounts can be used by setting pvc.enabled = false
+    enabled: true
+    # syslog persistent volume
+    syslog:
+      name: logservice-syslog
+      storageClassName: ""
+      accessModes: ReadWriteOnce
+      storage: "150Mi"
+    # auditlog persistent volume
+    auditlog:
+      name: logservice-auditlog
+      storageClassName: ""
+      accessModes: ReadWriteOnce
+      storage: "150Mi"
+
+# - Description: sub chart healing-controller private configuration
+healing-controller:
+  custom:
+    serviceAccount: "healing-controller"
+
+# - Description: sub chart secret-storage-framework private configuration
+secret-storage-framework:
+  vaultmanagerpvc:
+    name: "vaultmanagerpvc"
+    storageClassName: "ceph-storage-class"
+
+  vaultserverpvc:
+    name: "vaultserverpvc"
+    storageClassName: "ceph-storage-class"
+
+# - Description: sub chart rcpum private configuration
+rcpum:
+  storage:
+    persistentVolume:
+      claimName: "um-pvc" # PersistentVolumeClaim
+      size: "300Mi"
+
+#########################################################
+# top level configuration for VDU parent chart
+#########################################################
+
+# ========configuration oamcp POD dynamic networks =========
+oamcp:
+  f1:
+    # - Description: ip version used for f1 interface
+    # - Value range: string, "ipv4" or "ipv6"
+    version: "ipv4"
+    # - Description: MTU of f1-c network
+    # - Value range: string, feature 1995 define range from "1280" to "9500".
+    # - Note: eg."1500"
+    mtu: "1500"
+    # - Description: Guest VLAN information for f1 interface
+    # vlanInfo:
+    #   vlanId: "100"
+    # - Description: IP allocation pool for f1 interface used by oamcp POD
+    # - Note: ip pool information for specific ip version is mandantory
+    ippool:
+      ipv4:
+        start: "10.69.246.90"
+        end: "10.69.246.90"
+        subnet: "10.69.246.88/29"
+      ipv6:
+        start: "2a00:8a00:8000:117:1:2:a47:a10a"
+        end: "2a00:8a00:8000:117:1:2:a47:a10a"
+        subnet: "2a00:8a00:8000:117:1:2:a47:a108/125"
+  oam:
+    # - Description: ip version used for oam interface
+    # - Value range: string, "ipv4" or "ipv6"
+    version: "ipv4"
+    # - Description: MTU of oam network
+    # - Value range: string, feature 1995 define range from "1280" to "9500".
+    # - Note: eg."1500"
+    mtu: "1500"
+    # - Description: Guest VLAN information for oam interface
+    # vlanInfo:
+    #   vlanId: "111"
+    # - Description: IP allocation pool for oam interface
+    # - Note: ip pool information for specific ip version is mandantory
+    ippool:
+      ipv4:
+        start: "10.69.246.98"
+        end: "10.69.246.98"
+        subnet: "10.69.246.96/29"
+      ipv6:
+        start: "2a00:8a00:8000:117:1:2:a47:a112"
+        end: "2a00:8a00:8000:117:1:2:a47:a112"
+        subnet: "2a00:8a00:8000:117:1:2:a47:a110/125"
+    # - Description: oam default route configuration.
+    # - Note: gateway information for specific ip version is mandantory
+    oamDefaultRoute:
+      # interface name for source subnet of route policy "from"
+      srciface: "oam3"
+      # ipv4 gateway address for source based route "via [address]"
+      gateway: "10.69.246.97"
+      # ipv6 gateway address for source based route "via [address]"
+      gateway6: "2a00:8a00:8000:117:1:2:a47:a111"
+  fhm:
+    # - Description: Guest VLAN information for fhm interface
+    # vlanInfo:
+    #   # - Note: when guest VLAN applied, vlanId 295 for fhm is not recommend to change
+    #   vlanId: "295"
+    #   pcp: "2"
+    # - Description: IP allocation pool for fhm interface
+    # - Note: ipv4 pool information is mandantory for fhm, not support ipv6
+    ippool:
+      ipv4:
+        start: "192.168.254.33"
+        end: "192.168.254.60"
+        subnet: "192.168.254.0/26"
+  xpbipxp:
+    # - Description: bip network name used for interface xpbipxp
+    name: "xpbip"
+    # - Description: Guest VLAN information for xpbip interface used by xipif
+    # vlanInfo:
+    #   vlanId: "714"
+
+# ========configuration up POD dynamic networks =========
+up:
+  f1:
+    # - Description: ip version used for f1 interface
+    # - Value range: string, "ipv4" or "ipv6"
+    version: "ipv4"
+    # - Description: MTU of f1-u interface
+    # - Value range: string, feature 1995 define range from "1280" to "9500".
+    # - Note: eg."1500"
+    mtu: "1500"
+    # - Description: Guest VLAN information for f1 interface
+    # vlanInfo:
+    #   vlanId: "100"
+    # - Description: IP allocation pool for f1 interface used by up POD
+    # - Note: ip pool information for specific ip version is mandantory
+    ippool:
+      ipv4:
+        start: "10.69.246.92"
+        end: "10.69.246.92"
+        subnet: "10.69.246.88/29"
+      ipv6:
+        start: "2a00:8a00:8000:117:1:2:a47:a10b"
+        end: "2a00:8a00:8000:117:1:2:a47:a10b"
+        subnet: "2a00:8a00:8000:117:1:2:a47:a108/125"
+  # fhuc:
+    # - Description: Guest VLAN information for fhuc interface
+    # vlanInfo:
+    #   # - Note: when guest VLAN applied, vlanId 301 for fhuc is not recommend to change
+    #   vlanId: "301"
+    #   pcp: "7"
+  l1bipl1:
+    # - Description: bip network name used for interface l1bipl1
+    name: "l1bip"
+    # - Description: Guest VLAN information for l1bip interface used by l1hi
+    # vlanInfo:
+    #   vlanId: "712"
+  l1biprt:
+    # - Description: bip network name used for interface l1biprt
+    name: "l1bip"
+    # - Description: Guest VLAN information for l1bip interface used by l2rt
+    # vlanInfo:
+    #   vlanId: "712"
+  l2biphi:
+    # - Description: bip network name used for interface l2biphi
+    name: "l2bip"
+    # - Description: Guest VLAN information for l2bip interface used by l2hi
+    # vlanInfo:
+    #   vlanId: "713"
+  l2biprt:
+    # - Description: bip network name used for interface l2biprt
+    name: "l2bip"
+    # - Description: Guest VLAN information for l2bip interface used by l2rt
+    # vlanInfo:
+    #   vlanId: "713"
+  xpbiprt:
+    # - Description: bip network name used for interface xpbiprt
+    name: "xpbip"
+    # - Description: Guest VLAN information for xpbip interface used by l2rt
+    # vlanInfo:
+    #   vlanId: "714"
+
+# ====== Vista Creek and dptrace function configuration running in lihi conatiner=====
+l1hi:
+  resources:
+    limits:
+      # - Description: fecVFNum is that number of virtual function.
+      # - Note: it is forbidden to change, default: 1
+      #         The Vista Creek accelerator function has been supported as default.
+      #         If there is no Vista Creek accelerator function, this value should be set to'0',
+      #         else this value should be set to 1
+      fecVFNum: "0"
+      # - Description:Enable or disable fast cplane feature
+      # - Note: RCP2029 enable or not. Available value is 'true' or 'false'.
+      #         false means disable RCP2029 feature as default.
+      #         true means enable RCP2029 feature.
+      #         This functions should be enabled together on FHGW and vDU side, if FHGW hasn't included this function, this value
+      #         should be set to false on VDU side, or this value should be set to true.
+      fast_cplane_enabled: false
+  dptrace:
+    # - Description: Enable or disable l1 container dptrace function. 0 means disable, 1 means enable.
+    enable: "0"
+    # - Description: Enable or disable l1 container payload dump. 0 means disable payload dump, 1 means enable payload dump.
+    dump_payload: "0"
+    # - Description: Config l1 container dptrace filter. Format: messageID:queueID. Example: none:1(means messageID not set ,queueID set with 1), which means will trace em packets with local queueID=1.
+    # - Note: Maxmum dptrace filter condition num is 4. Example: "none:1,1:10,10:none,2:5", which means 4 type of em packets will be traced: 1. local queueID=1; 2. messageID=1 and local queueID=10; 3. messageID=10; 4. messageID=2 and local queueID=5.
+    filter: "none:none"
+
+# ====== dptrace function configuration running in l2hi conatiner =====
+l2hi:
+  dptrace:
+    # - Description: Enable or disable l2hi container dptrace function. 0 means disable, 1 means enable.
+    enable: "0"
+    # - Description: Enable or disable l2hi container payload dump. 0 means disable payload dump, 1 means enable payload dump.
+    dump_payload: "0"
+    # - Description: Config l2hi container dptrace filter. Format: messageID:queueID. Example: none:1(means messageID not set ,queueID set with 1), which means will trace em packets with local queueID=1.
+    # - Note: Maxmum dptrace filter condition num is 4. Example: "none:1,1:10,10:none,2:5", which means 4 type of em packets will be traced: 1. local queueID=1; 2. messageID=1 and local queueID=10; 3. messageID=10; 4. messageID=2 and local queueID=5.
+    filter: "none:none"
+
+# ====== dptrace function configuration running in l2hi conatiner =====
+l2rt:
+  dptrace:
+    # - Description: Enable or disable l2rt container dptrace function. 0 means disable, 1 means enable.
+    enable: "0"
+    # - Description: Enable or disable l2rt container payload dump. 0 means disable payload dump, 1 means enable payload dump.
+    dump_payload: "0"
+    # - Description: Config l2rt container dptrace filter. Format: messageID:queueID. Example: none:1(means messageID not set ,queueID set with 1), which means will trace em packets with local queueID=1. 
+    # - Note: Maxmum dptrace filter condition num is 4. Example: "none:1,1:10,10:none,2:5", which means 4 type of em packets will be traced: 1. local queueID=1; 2. messageID=1 and local queueID=10; 3. messageID=10; 4. messageID=2 and local queueID=5.
+    filter: "none:none"
+
+# ======ne3sagent configuration running in oam conatiner=====
+oam:
+  ne3sagent:
+    configuration:
+      # Configuration for Ne3sAgent daemon to startup. Please adjust according to environment and needs.
+      # Interface name in container. Ne3sAgent will listen its IP address.
+      # Name of the interface used for ne3s external connection.
+      # Note: if guest vlan applied for oam interface, ip_interface should be the same as oam vlanName
+      ip_interface: "oam3"
+      # TLS enable or not. Available value is 'true' or 'false'.
+      # Ne3sAgent only support non-TLS mode in container currently.
+      is_tls_enabled: false
+# ========configuration about dhcp container ========
+dhcp:
+  service:
+    # v4Iface define names of your network interfaces to listen on.
+    v4Iface: fhm4
+    # v4Pools define the actual part of your subnet that is governed
+    v4Pools: 192.168.254.34 - 192.168.254.60
+    # v4Subnet define the whole subnet.
+    v4Subnet: 192.168.254.0/26
+
+    # DHCP vendor specific information of master agent ip and port number
+    option43_vendor_specific_information_master_agent_ip: "192.168.254.33"
+    option43_vendor_specific_information_port_number: "13001"
+
+# ========configuration about APIGW ========
+apigw:
+  securityContext:
+    runAsUser: 763
+
+# ========configuration about HTTPD ========
+httpd:
+  securityContext:
+    runAsUserHttpd: 9999
+
+# - Description: select node to deploy oam pod. it will be automatic allocation by system if the value is blank
+# - Note: please use the value of kubernetes.io/hostname.it's usually a ip address,
+#         the value can be fetched by command: kubectl get nodes --show-labels
+oamnodeAffinityIP: "192.168.4.26"
+# - Description: select node to deploy up pod,it will be automatic allocation by system if the value is blank
+# - Note: please use the value of kubernetes.io/hostname.it's usually a ip address,
+#         the value can be fetched by command: kubectl get nodes --show-labels
+upnodeAffinityIP: "192.168.4.26"

@@ -1,0 +1,128 @@
+
+/* Generated with DIA03 for creating dedicated bearer*/
+
+
+IpslVersion 2.0;
+
+Script CCA_server;
+
+Activated By Message(CCR);                       /* |<--- CCR         ----| */
+
+Var
+  msg           : String;
+  msg1          : String;
+  RequestType   : Integer;
+  RequestNumber : Integer;
+  Sid           : String;
+  OHost         : String;
+  ORealm        : String;
+  IMSI          : String;
+  Fail          : Integer;
+  Bearer        : String;
+
+BeginScript
+  RequestType   := GetPar(CCRequestType);
+  RequestNumber := GetPar(CCRequestNumber);
+  ORealm        := GetPar(OriginRealm);
+  OHost         := GetPar(OriginHost);
+  IMSI          := GetPar(SubscriptionIdData);
+  Sid           := GetPar(SessionId);
+  If RequestType = 2  Then
+     Fail       := GetPar(RuleFailureCode(Last));
+     Bearer     := GetPar(ChargingRuleName);
+  EndIf;
+  PRINT("Begin CCR script");
+// default AVPs
+  msg := Modify(Pool("CCA", MSG_Universal))         /* |---- CCA (common--->| */
+          OriginHost := "5g111-ipsl";
+          OriginRealm := "5g111.nsn.com";
+          Insert c_P_ResultCode;
+          ResultCode := 2001;
+          AuthApplicationId := 16777238;
+          CCRequestType := RequestType;
+          CCRequestNumber := RequestNumber;
+          Insert c_P_OriginStateId;
+          OriginStateId := 11;
+
+  EndModify;
+
+/*  CCR Initial request   */
+  If  RequestType = 1  Then
+       PRINT ("Incoming Request " & IMSI);
+/*+++++++++++++  IMSI from SDX55 TL357_TL358   ++++++++++++++++++++++*/
+       If MATCH_STRING(IMSI,"262033032996539") Then
+           PRINT ("PND Request Group2 " & IMSI );
+           //Modification of msg Header; Here QCI modification of Default Bearer
+           msg := Modify(msg, MSG_Universal, CCA)     /* |---- CCA  Initial --->| */
+             Insert c_P_DefaultEPSBearerQoS;
+             Insert DefaultEPSBearerQoS.c_P_QoSClassIdentifier;
+             QoSClassIdentifier := 7;
+             Insert DefaultEPSBearerQoS.c_P_AllocationRetentionPriority;
+             Insert AllocationRetentionPriority.c_P_PreemptionCapability;
+             PreemptionCapability := 0 /* 0 = PRE-EMPTION_CAPABILITY_ENABLED */;
+             Insert AllocationRetentionPriority.c_P_PreemptionVulnerability;
+             PreemptionVulnerability := 0 /* 0 = PRE-EMPTION_VULNERAB_ENABLED */;
+             PriorityLevel := 7;
+  	      EndModify;
+          Put(msg);
+          Send;
+
+          PRINT ("DefaultBearerSetup QCI_8" & IMSI);
+          /* Wait 0 ms to stable dedicated bearer activation */
+          StartTimer(delay, 0);	  /* start timer to simulate  */
+          WaitFor Timer(delay);		  /* a waiting time of 0 sec */
+          PRINT ("Request additionally QCI_6 for IMSI: " & IMSI);
+        EndIf;
+
+       If MATCH_STRING(IMSI,"262033032996540") Then
+           PRINT ("PND Request Group2 " & IMSI );
+           //Modification of msg Header; Here QCI modification of Default Bearer
+           msg := Modify(msg, MSG_Universal, CCA)     /* |---- CCA  Initial --->| */
+            Insert c_P_DefaultEPSBearerQoS;
+             Insert DefaultEPSBearerQoS.c_P_QoSClassIdentifier;
+             QoSClassIdentifier := 9;
+             Insert DefaultEPSBearerQoS.c_P_AllocationRetentionPriority;
+             Insert AllocationRetentionPriority.c_P_PreemptionCapability;
+             PreemptionCapability := 0 /* 0 = PRE-EMPTION_CAPABILITY_ENABLED */;
+             Insert AllocationRetentionPriority.c_P_PreemptionVulnerability;
+             PreemptionVulnerability := 0 /* 0 = PRE-EMPTION_VULNERAB_ENABLED */;
+             PriorityLevel := 9;
+  	      EndModify;
+          Put(msg);
+          Send;
+
+          PRINT ("DefaultBearerSetup QCI_9" & IMSI);
+          /* Wait 0 ms to stable dedicated bearer activation */
+          StartTimer(delay, 0);	  /* start timer to simulate  */
+          WaitFor Timer(delay);		  /* a waiting time of 0 sec */
+          PRINT ("Request additionally QCI_69 for IMSI: " & IMSI);
+      EndIf;
+ EndIf;
+
+
+/*  CCR Update request   */
+  If RequestType = 2 Then
+    If ( Fail = 10  ) Then
+       If ( Bearer = "\x48" ) Then
+          PRINT (IMSI & " QCI8 DRB release(RAF)");
+          Put(msg);
+          Send;
+
+       ElsIf ( Bearer = "\x49" ) Then
+          PRINT (IMSI & " QCI9 DRB release(RAF)");
+          Put(msg);
+          Send;
+       EndIf;
+    EndIf;
+	EndIf;
+
+
+/*  CCA Termination request   */
+  If RequestType = 3 Then
+    PRINT (IMSI & " detached");
+    Put(msg);
+    Send;
+	EndIf;
+EndScript;
+/* ##############################################################################*/
+

@@ -1,0 +1,237 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  tests for DSS feature 1586 CellSetup / Ue call and Traffic (10MHZ only) (Refactoring from 1586-C / 1586-B)
+...               Test Case Scenario author   : Christophe.samson@nokia.com
+...               Test Case Scenario contact  : Christophe.samson@nokia.com
+...               Test Case automation author :
+...               Test Case automation contact:
+...               Creation Date               : January 14 2021
+...               Modified Date               : January 19 2021
+...               Last Modified by            : Christophe.samson@nokia.com
+#------------------------------------------------------------------------------------------------------------------------------------[150 characters]
+
+Library           taf.sbts.oam.coam.admin            WITH NAME               coam
+Library           ../resources/python/luashark_tools.py
+Library           ../../../resources/SWENG/python/StringTool.py
+Library           resources/python/Constants.py                     WITH NAME    MyConstants
+Library           resources/python/tools.py                         WITH NAME    nps_1586_tools
+Library           ../resources/common/TtiTrace/python/ttitrace.py   WITH NAME    nps_ttitraces_tools
+Library           ../resources/DSS/python/robot_extension.py        WITH NAME    robot_extension
+
+# TTI Traces resource
+Resource          ../resources/common/TtiTrace/ttitrace.robot
+
+# DSS specific
+Resource          ../resources/DSS/robot/btslog.robot
+Resource          ../resources/DSS/robot/common_Dss_Keywords.robot
+Resource          ../resources/DSS/robot/common_Dss_CellSetup.robot
+Resource          ../resources/DSS/robot/common_Dss_command.robot
+Resource          ../resources/DSS/robot/IpTrafficCapturing.robot
+
+# 1586 specific
+Resource          resources/robot/5GC001586_Kw_TestSetup.robot
+Resource          resources/robot/5GC001586_Keywords.robot
+Resource          resources/robot/5GC001586_C_Keywords.robot
+Resource          resources/robot/5GC001586_D_keywords.robot
+Resource          resources/robot/5GC001586_Ue_command.robot
+
+# Variables           ../../../../../resources/sites/NPS/SWENG/python/Colors.py
+
+# 1586 specific
+Variables         resources/python/Constants.py
+Variables         resources/python/dss_scf_params.py
+Variables         resources/python/dss_SA_scf_params.py
+Variables         resources/python/NSA_scf_params.py
+
+# Tags for QC mapping
+Force Tags                          CA_5G_SW_FR-Villarceaux   RRM
+...                                 PY36
+...                                 master_classicalbts_all
+...                                 CONFIGURED    5G_RAN    RAN_5G
+
+Suite Setup         Run keywords   Print My Constants version  AND
+...                                Test Suite Setup for 1586   AND
+...                                Get gNB cell 5g On air
+Suite Teardown      Test suite teardown for 1586
+
+
+*** Test Cases ***
+
+# TestLine_preparation
+# TestLine_1586_Test_setup
+# [1]PRV_5GC001586_C_TC_04_5GC001586-C_NSA_Check_cellsetup_1586_C_activated
+# [1]PRV_5GC001586_C_TC_16_5GC001586-C_NSA_Check_NSA_5g_call_with_1586-C_activated
+# [1]5GC001586_B_1_TC1-Verify_Cell_Setup_Updates_SB1
+# [1]5GC001586_B_2_TC2-Verify_Cell_Setup_updates_SB6
+# [1]5GC001586_C_TC_17_5GC001586-C_NSA_Check_dynamic_UL_(outer_&_inner_PRBs)_basic_behaviour
+# [1]5GC001586_C_TC_18_5GC001586-C_NSA_Check_UL_Tput
+# [1]CNI_57031_C_TC_20_5GC001586-C_Check_DSS_DL_And_UL_PM_counters
+
+
+# prepare the test line
+# testcase executed only for CRT tests
+TestLine_preparation
+    [Tags]    FULL_RUN    Cellsetup   10MHZ
+    ...       CRT
+    5GC001586_Kw_TestSetup.Test Line Preparation for NSA Only    ${TestDSS10Mhz_1586_M1}
+    5GC001586_Kw_TestSetup.Test Line Preparation                 ${TestDSS10Mhz_1586_M1}
+
+# testcase executed only for CRT tests
+TestLine_1586_Test_setup
+    [Tags]    FULL_RUN    Cellsetup   FULL_CALL  10MHZ
+	...       CRT
+    [Setup]   Run Keywords    set Suite Variable    ${testCaseDir}    None      AND
+    ...                       common_Dss_Keywords.Get testcase log directory
+    5GC001586_Kw_TestSetup.Test Setup 1586 M    ${TestDSS10Mhz_1586_M1}
+
+# TC covered under New feature
+# [1]5GC001586_C_TC_20_ Check DSS UL PM counters
+# [1]5GC001586_C_TC_21_ Check DSS DL PM counters
+# comment : TestLine_preparation is not executed (based on QC) for CIT tests
+# the robot testcase TestLine_preparation is executed only for CRT tests
+# CNI_57031_C_TC_20_5GC001586-C_Check_DSS_DL_And_UL_PM_counters is tagged CIT under QC
+[1][1.0] CNI57031_20_5GC001586_C_Check_DSS_DL_And_UL_PM_counters
+    [Tags]    FULL_RUN     PMCounters    10MHZ    1586C
+	...       CIT    AP_REG
+    [Documentation]   M55332C00001, M55332C00002, M55332C00003, M55332C01001, M55332C01002, M55332C01003, M55332C02001, M55332C02002 - BW=10MHZ
+    [Setup]   Run Keywords    set Suite Variable    ${testCaseDir}    None      AND
+    ...       update Get Mem Usage Variable                                     AND
+    ...       common_Dss_Keywords.Get testcase log directory    AND
+    ...       5GC001586_Keywords.Clean Up Env                   AND
+    ...       common_Dss_Keywords.Prepare Test Name             AND
+    ...       set test variable    ${collector_name}    FDD_DSS_scenario_TC20      AND
+    ...       depends  TestLine_1586_Test_setup
+    robot_extension.Run Keyword And Warn On Failure    Get Mem Usage for 1586    period=before
+    ${tc_name}    Set variable    TestLine_preparation
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    Run keyword if     '${tc_status}'!='PASS'        run keywords
+    ...           Set global variable    ${CELLSETUP_SHOULD_BE_CHECK}   0                                AND
+    ...           5GC001586_Kw_TestSetup.Test Line Preparation for NSA Only    ${TestDSS10Mhz_1586_M1}   AND
+    ...           5GC001586_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_1586_M1}
+    ${tc_name}    Set variable    TestLine_1586_Test_setup
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    Run keyword if    '${tc_status}'!='PASS'
+    ...           5GC001586_Kw_TestSetup.Test Setup 1586 M    ${TestDSS10Mhz_1586_M1}
+    ${TestDSS10Mhz_PMCounters.Context.cellDepType}   set variable     ${TestDSS10Mhz_1586_M1.Context.cellDepType}
+    # eNBid = 2 and gNBId = 1 if SANSA
+    # BEWARE : ${WITH_UPLOAD_1586_CONFIGURATION} should be 0 in case of cellDepType == SANSA => add warning !!!
+    Run Keyword If   '${TestDSS10Mhz_PMCounters.Context.cellDepType}' == 'SA+NSA'
+    ...                                        5GC001586_Kw_TestSetup.update eNBId and gNBId In Context  ${TestDSS10Mhz_PMCounters}   2   1
+    ${TestDSS10Mhz_PMCounters.scfFile.nrdsslte.eNodeBId}          set variable      ${TestDSS10Mhz_PMCounters.Context.eNBId}
+    robot_extension.Run Keyword And Warn On Failure     btslog.Start Btslog
+    5GC001586_C_Keywords.TC 1586-C_NSA_Check DSS DL And UL PM counters      ${TestDSS10Mhz_PMCounters}
+    # Get TTI traces
+    [Teardown]       run Keywords       robot_extension.Run Keyword And Warn On Failure    Get TTI traces       AND
+    ...                                 robot_extension.Run Keyword And Warn On Failure    Get Mem Usage for 1586    period=Teardown     AND
+    ...                                 robot_extension.Run Keyword And Warn On Failure    btslog.Stop Btslog    target_dir=${testCaseDir}   AND
+    ...                                 Teardown 1586          tc_counters
+
+
+*** Keywords ***
+# robocop: off=unused-argument
+# robocop: off=possible-variable-overwriting
+Prepare TL for TTITraces
+    [Documentation]    :
+    ...    This keyword helps to download and install MULTI packages needed for TTITraces
+    ...
+    nps_ttitraces_tools.install_multidynamic_if_needed
+
+Get TTI traces
+    Dated Log         Start TTI Traces in Streaming Mode
+    ttitrace.Start TTI Traces in Streaming Mode      filter_bitmap2=0x0
+    Traced Sleep    1s      msg=Waiting for TTI Traces
+    Dated log         Stop TTI Traces in Streaming Mode...
+    ${tti_trace_path}=     ttitrace.Stop TTI Traces in Streaming Mode     tti_trace_path=${testCaseDir}
+    Dated log         Decode TTI Traces...
+    # nps_ttitraces_tools.decode tti traces     desired_storage_directory=${testCaseDir}    num_of_events=10000
+    nps_ttitraces_tools.decode_tti_traces_using_TtitraceReaderEvtDec    desired_storage_directory=${testCaseDir}   num_of_events=10000
+    Dated log         Convert TTI trace from pcap to excelCsv...
+    Run keyword and continue on failure     ttitrace.Convert TTI trace from pcap to excelCsv     input_file_path=${tti_trace_path}
+    ...                                                                                          output_file_path=${testCaseDir}
+
+Check BTS status in WEM for cOAM
+    [Documentation]   This keyword is used to Check BTS status in WEM for cOAM.
+    ...    author: Ch SAMSON
+    [Arguments]     ${cell_id}=0
+    BuiltIn.log     cell_id=${cell_id}
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+    ${bts_status}=    coam.get_bts_statuses    timeout=30    connection=${GNB_DU.oam.httpAlias}
+    Dated log      =======> Current bts status is ${bts_status}
+    should Contain Any       ${bts_status['operationalState']}   Enabled   Disabled         ignore_case=true
+    should Contain Any       ${bts_status['proceduralState']}    configured    OnAir       msg=ENB is not on air, Current status is ${bts_status}
+    ...                                                                                    ignore_case=true
+    should be equal    ${bts_status['blockingState']}       Unblocked            ignore_case=true
+
+    ${cell_info}=    coam.get_cells_info    cell_type=nr    timeout=30    connection=${GNB_DU.oam.httpAlias}
+    Dated log      =======> Current cell(s) info is ${cell_info}
+    FOR    ${elem}    IN    @{cell_info}
+#    ${cell_info}=    set variable   ${cell_info[${cell_id}]['status']}
+        should Contain Any    ${elem['status']['operationalState']}    Enabled   Disabled    ignore_case=true
+        should Contain Any    ${elem['status']['proceduralStatus']}    not initialized   configured   OnAir    ignore_case=true
+        Should be equal    ${elem['status']['administrativeState']}    Unlocked    ignore_case=true
+    END
+
+    OAM Disconnect                  ${GNB_DU.oam}
+
+Restart TL wo WTS clear
+    [Documentation]                 Entry point for the restart of a TL, Classical only , without WTS clear
+    [Arguments]                     ${GNBCallback}=None                     ${APCallback}=None
+    ...                             ${isOAMRebooted}=False
+    Dated Log                       Start Restart TL ${TLConfig.configName}. Is GNB Cloud: ${TLConfig.isGnbCloud}
+    ...                             first=True
+    Private Restart Gnb Classical           GNBCallback=${GNBCallback}          APCallback=${APCallback}
+    ...                             isOAMRebooted=${isOAMRebooted}
+
+
+reset TL if BTS not OnAir
+    [Arguments]  ${connection}=${GNB_DU.oam}
+    ${aliasGNB}                     OAM Connect                             ${connection}
+    ${bts_status}=  coam.get_bts_statuses   connection=${connection.httpAlias}
+    OAM Disconnect                  ${GNB_DU.oam}
+    Dated log     BTS procedural state is now: ${bts_status["proceduralState"]}
+    ${gnb_status}=     evaluate    '${bts_status["proceduralState"]}'.lower()
+    Run Keyword If  '${gnb_status}'!='OnAir'.lower() and '${gnb_status}'!='Configured'.lower()
+    ...          Run Keywords       Log To Console  \n BTS procedural state is now: ${bts_status["proceduralState"]} ==> Reset TL     AND
+    ...                             Restart TL wo WTS clear     AND
+    ...                             run keyword and ignore error        5GC001586_Kw_TestSetup.Upload 1586 Configuration          AND
+    ...                             run keyword and ignore error        common_Dss_Keywords.Start WTS           egate_alias_default   AND
+    ...                             run keyword and ignore error        common_Dss_command.X2Ap link Setup     egate_alias_default
+
+
+Get gNB cell 5g On air
+    [Documentation]       get gNB 5g cell On air
+    Return From Keyword If    "${WAIT_5G_CELL_ONAIR}" == "0"
+    common_Dss_Keywords.Log to Console like Next Step     0     Get gNB 5g cell OnAir
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+    ${bts_status}=  coam.get_bts_statuses   connection=${GNB_DU.oam.httpAlias}
+    OAM Disconnect                  ${GNB_DU.oam}
+    Log To Console  \n BTS procedural state is now: ${bts_status["proceduralState"]}
+    ${gnb_status}=     evaluate    '${bts_status["proceduralState"]}'.lower()
+    Return From Keyword If    '${gnb_status}'=='OnAir'.lower() or '${gnb_status}'=='Configured'.lower()
+    run keyword and ignore error        5GC001586_Kw_TestSetup.Upload 1586 Configuration
+    run keyword and ignore error        common_Dss_Keywords.Start WTS        egate_alias_default
+    run keyword and ignore error        common_Dss_command.X2Ap link Setup     egate_alias_default
+    run keyword and ignore error        wait until keyword succeeds    2min    30s      Check BTS status in WEM for cOAM
+    Dated log new line         =======> Restart TL if needed to get Cell Is OnAir/Configured
+    run keyword and ignore error        reset TL if BTS not OnAir
+    run keyword and ignore error        wait until keyword succeeds    5min    30s      Check BTS status in WEM for cOAM
+
+Print My Constants version
+    [Documentation]   Print to Console Constants.py version
+    run Keyword    MyConstants.hello
+
+Get Mem Usage for 1586
+  [Documentation]     Get Mem Usage for 1586
+  ...                 w_Get_Mem_Usage is a global variable
+  [Arguments]         ${period}=before
+  return from Keyword if     '${w_Get_Mem_Usage}' == 'False'
+  dated log    Get Mem Usage during period=${period}
+  ${aliasGNB_2}=   common_Dss_Keywords.Connect to gNB Common Unit     gnb_id=0    du_id=0     comu_id=0
+  set Test Variable       ${aliasGNB_2}
+  common_Dss_Keywords.Get Mem Usage      board_id=1
+  ...                                    period=${period}
+  ...                                    connection=${aliasGNB_2}
+  robot_extension.Run Keyword And Warn On Failure     ssh.disconnect      connection=${aliasGNB_2}
+
+
+
+

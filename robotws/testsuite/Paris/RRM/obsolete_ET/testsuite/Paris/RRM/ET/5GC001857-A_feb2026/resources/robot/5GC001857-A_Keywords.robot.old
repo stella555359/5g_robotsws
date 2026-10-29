@@ -1,0 +1,647 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of Keywords used for 5GC001857-A
+...               refactored version
+...               22-Sept-2021          |       Fix SCF file name and AIRSCALE_AP
+...               24-Sept-2021          |       Add CU reset before test (ARP CU issues improvement ?)
+...               19-may-2022           |       Modification For AiC - Axel Gouilly-Frossard
+...               01-jun-2022           |       Modification For PTRS - Emmanuel Diatta
+...               14-Apr-2023           |       Adding route on VDU for capture Sherpa in case of the VRAN
+...               19-Sep-2024           |       Scout Data + some fixes for RF50
+
+Library           ../../../../../../Paris/RRM/ET/resources/python/luashark_tools.py
+Library           luashark_tools.analyzer          WITH NAME       analyzer
+Library           OperatingSystem
+
+Resource          ../../../../../../Paris/resources/SWENG/robot/Oam.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Restart.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Capture.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Tools.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Setup.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/PacketSearch.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Scf.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/CaptureFilter.robot
+
+Variables         ../python/Constants.py
+
+
+*** Variables ***
+
+@{FIELDS_PDSCHSendReq}              numOfPrb       dlPtrsTimeDensity       dlPtrsFrequencyDensity      dlPtrsFlag       mcs
+@{FIELDS_PUSCHRecvReq}              numOfPrb       ulPtrsTimeDensity       ulPtrsFrequencyDensity      ulPtrsFlag
+
+${cell_index}                       1
+${TestSharkTool}                    MC_SHARK
+
+*** Keywords ***
+# ===========================================================================================================
+# Main Keywords Used For 5GC001857-A TestCases
+# ===========================================================================================================
+
+Check PTRS in DL Traffic
+    # threshold_Nrb0 => Low level for PTRS density threshold, PTRS disabled if threshold_Nrb0 = 277
+    # threshold_Nrb1 => High level for PTRS density threshold, PTRS disabled if threshold_Nrb1 = 24
+    [Arguments]                     ${threshold_Nrb0}
+    ...                             ${threshold_Nrb1}
+
+    ${CaptureBIP_DL}                Capture L1L2 Set Upon Config            airscale=${GNB_DU}
+    ${CaptureBIP_DL.prefix}         set variable                            ${CaptureBIP_DL.prefix}_DL
+    Traffic UE DL                   ueSetting=${UE_SIMPLE}                  # previously : UE_NO_PROFILE
+    ...                             throughput=20
+    ...                             captureCallback=Callback Capture L1L2
+    ...                             capture=${CaptureBIP_DL}
+    ...                             deviation=5
+
+    Check DlData_PdschSendReq       ${CaptureBIP_DL.path}         ${threshold_Nrb0}    ${threshold_Nrb1}
+
+Check PTRS in UL Traffic
+    # threshold_Nrb0 => Low level for PTRS density threshold, PTRS disabled if threshold_Nrb0 = 277
+    # threshold_Nrb1 => High level for PTRS density threshold, PTRS disabled if threshold_Nrb1 = 24
+    [Arguments]                     ${threshold_Nrb0}
+    ...                             ${threshold_Nrb1}
+
+    ${CaptureBIP_UL}                Capture L1L2 Set Upon Config            airscale=${GNB_DU}
+    ${CaptureBIP_UL.prefix}         set variable                            ${CaptureBIP_UL.prefix}_UL
+    Traffic UE UL                   ueSetting=${UE_SIMPLE}                  # previously : UE_NO_PROFILE
+    ...                             throughput=5
+    ...                             captureCallback=Callback Capture L1L2
+    ...                             capture=${CaptureBIP_UL}
+    ...                             deviation=5
+
+    Check UlData_puschreceivereq    ${CaptureBIP_UL.path}         ${threshold_Nrb0}    ${threshold_Nrb1}
+
+Check PtrsFlag
+    [Arguments]                     ${pcapfile}
+    ...                             ${filterExp}=None               ${msg}=None
+    ...                             ${data}=none                    ${value}=None
+    ...                             ${startPacket}=${1}             ${endPacket}=${-1}
+    ${filterPcap}                   analyzer.filter_pcap            ${pcapFile}
+    ...                             filterName=${filterExp}         filterExp=${filterExp}
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${filterPcap}
+
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${data}$
+    ...                             value=${value}
+    ...                             startPacket=${startPacket}
+    ...                             endPacket=${endPacket}
+
+Check PtrsFlag in Msg2 Msg3
+    [Arguments]                     ${pcapFile}
+    Dated log                       Check PtrsFlag in BIP messages              first=True
+    Check PtrsFlag                  ${pcapFile}
+    ...                             filterExp=uldata_puschreceivereq
+    ...                             msg=UlData_PuschReceiveReq
+    ...                             data=ulPtrsFlag
+    ...                             value=0
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Check PtrsFlag                  ${pcapFile}
+    ...                             filterExp=dldata_pdschsendreql1sw
+    ...                             msg=DlData_PdschGrant
+    ...                             data=dlPtrsFlag
+    ...                             value=0
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+
+# ===========================================================================================================
+# THE PARAMETER CONFIGURATION SERVICE CORNER (Second Level Keywords for 5GC001857 ClassicalBts TestCase)
+# ===========================================================================================================
+
+Set Suitable PTRS Config
+    [Documentation]                 Set suitable PTRS configuration inside SCF
+    [Arguments]                     ${frequencyDensityThresNrb0}=${frequencyDensity_defValue}
+    ...                             ${frequencyDensityThresNrb1}=${frequencyDensity_defValue}
+    ...                             ${tl_type}=classical
+
+    ${CURRENT_SCF}                  OAM Get SCF File
+    # Copy SCF file to not override existing one
+    ${file_name_without_extention}    String.Replace string    ${CURRENT_SCF}    .xml    ${EMPTY}
+
+    # Remove spaces inside file name
+    ${test_file_name}                  getFormattedTestName
+    ${dedicated_scf_name_wo_space}     catenate    SEPARATOR=${EMPTY}    ${file_name_without_extention}_${test_file_name}.xml
+
+    ${std_output}=                  Run         cp ${CURRENT_SCF} ${dedicated_scf_name_wo_space}
+
+    SCF StartSession                scf_file=${dedicated_scf_name_wo_space}
+
+    # Update PTRS parameters
+    SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             element_name=frequencyDensityThresNrb0
+    ...                             element_value=${frequencyDensityThresNrb0}
+
+    SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             element_name=frequencyDensityThresNrb1
+    ...                             element_value=${frequencyDensityThresNrb1}
+
+    # There is an interaction between PTRS and DMRS additional (5GC001347).
+    # So, it's important to keep additional DMRS disabled in case of PTRS tests only.
+    SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             element_name=dlDMRSAdditionalPosition
+    ...                             element_value=No additional DMRS
+
+    SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             element_name=ulDMRSAdditionalPosition
+    ...                             element_value=No additional DMRS
+
+
+    # Activated PTRS feature
+    SCF Set element in List         dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=dlPtrs
+    ...                             element_name=actDlPtrs
+    ...                             element_value=true
+    SCF Set element in List         dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=dlPtrs
+    ...                             element_name=dlPtrsFreqDensityThresNrb0
+    ...                             element_value=${frequencyDensityThresNrb0}
+    SCF Set element in List         dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=dlPtrs
+    ...                             element_name=dlPtrsFreqDensityThresNrb1
+    ...                             element_value=${frequencyDensityThresNrb1}
+
+
+    SCF Set element in List         dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=ulPtrs
+    ...                             element_name=actUlPtrs
+    ...                             element_value=true
+    SCF Set element in List         dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=ulPtrs
+    ...                             element_name=ulPtrsFreqDensityThresNrb0
+    ...                             element_value=${frequencyDensityThresNrb0}
+    SCF Set element in List         dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=ulPtrs
+    ...                             element_name=ulPtrsFreqDensityThresNrb1
+    ...                             element_value=${frequencyDensityThresNrb1}
+
+
+    # Disable release about inactivity
+    # Does not work in case of cloud BTS, to be reviewed later.
+    #SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    #...                             element_name=actInactDetNSAUe
+    #...                             element_value=false
+
+
+    SCF StopSession                 scf_file=${dedicated_scf_name_wo_space}
+
+    # Perform OAM commissioning and restart because of full commissioning
+    # AP is supposed to be also restarted because of GPS link drop
+    OAM Perform Full Commissioning      scf_file=${dedicated_scf_name_wo_space}
+
+    # As gNB was rebooted after re-commissioning, wait until AP is also ready.
+    # Is it the right way to do this ?:
+    # Because of commissioning, gNB restarts. It also triggers AP restart because of GPS loss
+    # gNB is ready before AP in this. We need to ensure that AP is ready before triggering WTS setup
+    # Another solution would be to call "Restart" KW, but because AP is already restarting just after
+    # commissioning I don't also don't know if it's a good idea.
+    # So, just wait for Airscale ready (ADET) after gNB recomissioning is done.
+    # Would it be better to also check F1 status ?
+    # It seems to work fine like this.
+    Airscale Wait for Ready         ${AP_DU}
+
+    # CU part is not restarted during DU commisioning in case of a cloud TL
+    # It should not be useful, so keep below part under comment to save time.
+    Run Keyword If                  '${tl_type}'=='cloud'        Run Keywords
+    ...                             Traced Sleep    1 minutes    msg="gNB Cloud: Waiting for 1 mn before restarting CU and DU"
+    ...                             AND
+    ...                             Restart TL
+
+    # Necessary pause for gNB recovery before WTS Setup
+    Traced Sleep  5 minutes
+
+Set tdLte frame Structure
+    [Documentation]                 Remove existing frame structure and add tdLTE
+    [Arguments]                     ${prach_ci}
+    ...                             ${destIpAddr_value}=10.0.1.1
+    ...                             ${gateway_value}=172.16.2.101
+
+    ${CURRENT_SCF}                  OAM Get SCF File
+    # Copy SCF file to not override existing one
+    ${file_name_without_extention}    String.Replace string    ${CURRENT_SCF}    .xml    ${EMPTY}
+
+    # Remove spaces inside file name
+    ${test_file_name}                  getFormattedTestName
+    ${dedicated_scf_name_wo_space}     catenate    SEPARATOR=${EMPTY}    ${file_name_without_extention}_${test_file_name}.xml
+
+    ${std_output}=                  Run         cp ${CURRENT_SCF} ${dedicated_scf_name_wo_space}
+
+    SCF StartSession                scf_file=${dedicated_scf_name_wo_space}
+
+    ${tdLte_fs}                     Create Dictionary       frameStructureType=tdLte
+    ...                                                     guardPeriodLength=4Symbols
+    ...                                                     lteToNrFrameShift=3ms
+    ...                                                     tdLteUlDlConfig=tdLteConfig2
+    ...                                                     ulDlDataSlotRatio=1/4
+
+    # 1. Remove existing tddFrameStructure from SCF
+    SCF Remove list                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=tddFrameStructure
+    ...                             aicListEntity=vdu       scope=both
+
+    # 2. Add new tddFrameStructure from SCF
+    SCF Add list                    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=tddFrameStructure
+    ...                             aicListEntity=vdu       scope=both
+
+    # 3. Fill in new object with previous elements (definition + value)
+    SCF Add items to list           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=tddFrameStructure
+    ...                             elements=${tdLte_fs}
+    ...                             aicListEntity=vdu       scope=both
+
+    # Update PRACH CI
+    SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             element_name=prachConfigurationIndex
+    ...                             element_value=${prach_ci}
+    ...                             aicListEntity=vdu       scope=both
+
+    #vbo# adding route on VDU for capture Sherpa in case of the VRAN#
+    ${dn}                           Set Variable    MRBTS-${MRBTS_ID}/TNLSVC-1/TNL-3/IPNO-1/IPRT-1
+    ${staticRoutes_elements}        Create Dictionary    destIpAddr=${destIpAddr_value}    destinationIpPrefixLength=32    gateway=${gateway_value}
+    ${is_dn_for_route}              SCF Is Object Exist    ${dn}    aicListEntity=Vdu    scope=AIC
+    Dated Log New Line              ===> is_dn_for_route= ${is_dn_for_route} for object ${dn}
+    Run Keyword If                  ${enable_sherpa} == ${True} and ${isAic} and ${is_dn_for_route} == ${True}    Run Keywords
+    ...    Dated Log New Line       Create route into ${dn} with elements= ${staticRoutes_elements} is mandatory for capturing Sherpa traces
+    ...    AND    SCF Add list             dist_name=${dn}    list_name=staticRoutes    aicListEntity=Vdu    scope=AIC
+    ...    AND    SCF Add items to list    dist_name=${dn}    list_name=staticRoutes    aicListEntity=Vdu    scope=AIC
+    ...                                    elements=${staticRoutes_elements}
+
+    SCF StopSession                 scf_file=${dedicated_scf_name_wo_space}
+
+    [Return]                        ${dedicated_scf_name_wo_space}
+
+Set semiStatic frame Structure
+    [Documentation]                 Remove existing frame structure and add tdLTE
+    [Arguments]                     ${prach_ci}
+
+    ${CURRENT_SCF}                  OAM Get SCF File
+    # Copy SCF file to not override existing one
+    ${file_name_without_extention}    String.Replace string    ${CURRENT_SCF}    .xml    ${EMPTY}
+
+    # Remove spaces inside file name
+    ${test_file_name}                  getFormattedTestName
+    ${dedicated_scf_name_wo_space}     catenate    SEPARATOR=${EMPTY}    ${file_name_without_extention}_${test_file_name}.xml
+
+    ${std_output}=                  Run         cp ${CURRENT_SCF} ${dedicated_scf_name_wo_space}
+
+    SCF StartSession                scf_file=${dedicated_scf_name_wo_space}
+
+    &{semistatic_fs}                Create Dictionary       frameStructureType=semiStatic
+    ...                                                     guardPeriodLength=2Symbols
+    ...                                                     tdLteUlDlConfig=tdLteConfig2
+    ...                                                     ulDlDataSlotRatio=1/4
+
+    # 1. Remove existing frame structure from SCF
+    SCF Remove list                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=tddFrameStructure
+
+    # 2. Add new tddFrameStructure from SCF
+    SCF Add list                    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=tddFrameStructure
+
+    # 3. Fill in new object with previous elements (definition + value)
+    SCF Add items to list           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             list_name=tddFrameStructure
+    ...                             elements=${semistatic_fs}
+
+    # Update PRACH CI
+    SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_index}
+    ...                             element_name=prachConfigurationIndex
+    ...                             element_value=${prach_ci}
+
+    SCF StopSession                 scf_file=${dedicated_scf_name_wo_space}
+
+    [Return]                        ${dedicated_scf_name_wo_space}
+
+Set Suitable PRACH
+    [Documentation]                 Put wanted PRACH CI inside SCF and also updated frame configuration
+    ...                             compliant with the PRACH CI (tdLte or semiStatic as flexible no more exist)
+    [Arguments]                     ${prach_ci_value}
+    ...                             ${band}
+    ...                             ${tl_type}=classical
+
+    Dated log                       Band is ${band}, PRACH CI is ${prach_ci_value}
+
+    # Update frame structure depending on PRACH CI
+    ${TestScf}=                     Run Keyword If      '${band}'== 'cmW'
+    ...                                                 Set tdLte frame Structure           ${prach_ci_value}
+    ...                             ELSE                Set semiStatic frame Structure      ${prach_ci_value}
+
+    # Perform OAM commissioning and restart because of full commissioning
+    # AP is supposed to be also restarted because of GPS link drop
+    OAM Perform Full Commissioning      scf_file=${TestScf}
+
+    # As gNB was rebooted after re-commissioning, wait until AP is also ready.
+    # Is it the right way to do this ?:
+    # Because of commissioning, gNB restarts. It also triggers AP restart because of GPS loss
+    # gNB is ready before AP in this. We need to ensure that AP is ready before triggering WTS setup
+    # Another solution would be to call "Restart" KW, but because AP is already restarting just after
+    # commissioning I don't also don't know if it's a good idea.
+    # So, just wait for Airscale ready (ADET) after gNB recomissioning is done.
+    # Would it be better to also check F1 status ?
+    # It seems to work fine like this.
+
+    #agf#correction to support vRAN2.0.
+    Run Keyword If    ${isAic}    Run Keywords
+    ...                               Wait Vcu And Vdu Available
+    ...    AND                        OAM Get SCF File     oam=${GNB_DU.oam}    file=SCF_DU_Updated.xml
+    ...    AND                        Restart Airphone
+    ...    AND                        Wait Airphone Available
+    ...    AND                        Wait Vcu And Vdu Available
+    ...    ELSE                       Airscale Wait for Ready         ${AP_DU}
+
+    # CU part is not restarted during DU commisioning in case of a cloud TL
+    # It should not be useful, so keep below part under comment to save time.
+    Run Keyword If                  '${tl_type}'=='cloud'        Run Keywords
+    ...                             Traced Sleep                1 minutes           msg="gNB Cloud: Waiting for 1 mn before restarting CU and DU"
+    ...                             AND
+    ...                             Restart TL
+
+    # Necessary pause for gNB recovery before WTS Setup
+    Traced Sleep  5 minutes
+
+Set UE capa on EPCSim
+    [Arguments]                     ${band}
+
+    # Update capabilities to include PTRS support
+    Run Keyword If                  '${band}' == 'cmW'      Modify Field in WtsEmu Cfg File
+    ...                                                         field=ue_nr_capabilities
+    ...                                                         value=${ue_nr_capa_onePortsPTRS_11_FR1}
+
+    Run Keyword If                  '${band}' == 'mmW'      Modify Field in WtsEmu Cfg File
+    ...                                                         field=ue_nr_capabilities
+    ...                                                         value=${ue_nr_capa_onePortsPTRS_11_FR2}
+
+
+Test Setup for 1857
+    [Documentation]    Configuration files are saved at test level
+    Backup Files        listFileDesc=${FD_ALL}
+
+
+Test Teardown for 1857
+    [Documentation]                 Perform needed actions at the end of a test case
+    Dated log                       Test teardown : start
+    # Stop Sherpa if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}             Sherpa.Deactivate Sherpa and Stop Collect
+    # "Test Teardown" KW from Setup.robot
+    Test Teardown
+    Restore Files                   listFileDesc=${FD_ALL}
+    Dated log                       Test teardown : end
+
+# =====================================================================================================================
+# THE VERIFICATION SERVICE CORNER (Second Level Keywords for 5GC001857-A ClassicalBts TestCases)
+# =====================================================================================================================
+
+# ===============================================
+#       PRACH checks
+# ===============================================
+
+Check Msg3 with X PRBs
+    [Arguments]                     ${pcapFile}
+    ...                             ${expNumPrb}
+    ${filterPcap}                   analyzer.filter_pcap            ${pcapFile}
+    ...                             filterName=uldata_puschreceivereq
+    ...                             filterExp=uldata_puschreceivereq
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${filterPcap}
+    Dated log                       Checking uldata_puschreceivereq contains ${expNumPrb} PRBs
+    ...                             first=True
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=UlData_PuschReceiveReq
+    ...                             path=.*.numOfPrb$
+    ...                             value=${expNumPrb}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+
+# ===============================================
+#       PTRS density checks
+# ===============================================
+
+Check No Frequency in RRC Reconfiguration
+    [Arguments]                     ${pcapFile}
+
+    ${pcapFiltered}                 analyzer.filter_pcap
+    ...                                 pcapInFile=${pcapFile}
+    ...                                 filterName=x2ap
+    ...                                 filterExp=x2ap
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+    Dated Log                       In RRC Reconfiguration, check no frequencyDensity and no timeDensity
+    ...                             first=True
+    ${msg}                          Set Variable                    SgNBAdditionRequestAcknowledge
+    ${root}                         Set Variable                    nr-rrc.phaseTrackingRS/nr-rrc.setup_element
+    # ${freq}=                        Set Variable                    nr-rrc.frequencyDensity
+    # ${time}=                        Set Variable                    nr-rrc.timeDensity
+    Dated log                       Check we have 0 ${freq}         first=True
+    ${nb}                           analyzer.count_path
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${root}/${freq}$
+    should be true                  '${nb}'=='0'                    ${nb} field with ${freq} found in ${msg}
+    Dated log                       \tCheck we have 0 ${time}
+    ${nb}                           analyzer.count_path
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${root}/${time}$
+    should be true                  '${nb}'=='0'                    ${nb} field with ${freq} found in ${msg}
+
+Check Frequency in RRC Reconfiguration
+    [Arguments]                     ${pcapFile}
+    ...                             ${frequencyDensity_1}=1
+    ...                             ${frequencyDensity_2}=20
+    ...                             ${timeDensity}=0
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFile}
+    Dated Log                       In RRC Reconfiguration, check frequencyDensity and timeDensity
+    ...                             first=True
+    ${msg}                          Set Variable                    SgNBAdditionRequestAcknowledge
+    ${root}                         Set Variable                    nr-rrc.phaseTrackingRS/nr-rrc.setup_element
+    ${freq}=                        Set Variable                    nr-rrc.frequencyDensity
+    ${freq_item}=                   Set Variable                    nr-rrc.frequencyDensity_item
+    ${time}=                        Set Variable                    nr-rrc.timeDensity
+    ${time_item}=                   Set Variable                    nr-rrc.timeDensity_item
+    Dated log                       Check we have 2 fields in ${freq} table     first=True
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${root}/${freq}$
+    ...                             value=2
+    Dated log                       \tCheck ${freq} = ${frequencyDensity_1}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${root}/${freq}/_.1./${freq_item}$
+    ...                             value=${frequencyDensity_1}
+    Dated log                       \tCheck ${freq} = ${frequencyDensity_2}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${root}/${freq}/_.2./${freq_item}$
+    ...                             value=${frequencyDensity_2}
+    Dated log                       \tCheck we have 3 fields in ${time} table
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${root}/${time}$
+    ...                             value=3
+    Dated log                       \tCheck ${time} = ${timeDensity}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${root}/${time}/_.1./${time_item}$
+    ...                             value=${timeDensity}
+    Dated log                       \tCheck ${time} = ${timeDensity}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${root}/${time}/_.2./${time_item}$
+    ...                             value=${timeDensity}
+    Dated log                       \tCheck ${time} = ${timeDensity}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${root}/${time}/_.3./${time_item}$
+    ...                             value=${timeDensity}
+
+Check PTRS Config in RRC Reconfiguration
+    [Arguments]                     ${pcapFile}
+    ...                             ${threshold_0}=1
+    ...                             ${threshold_1}=100
+
+    Run Keyword If                  ${threshold_0}==${No_threshold} and ${threshold_1}==${No_threshold}
+    ...                             Check No Frequency in RRC Reconfiguration
+    ...                             pcapFile=${pcapFile}
+    ...                             ELSE        Check Frequency in RRC Reconfiguration
+    ...                             pcapFile=${pcapFile}
+    ...                             frequencyDensity_1=${threshold_0}
+    ...                             frequencyDensity_2=${threshold_1}
+    ...                             timeDensity=0
+
+Check UlData_puschreceivereq
+    [Arguments]                     ${pcapFile}
+    ...                             ${threshold_0}=1
+    ...                             ${threshold_1}=100
+    ${filterPcap}                   analyzer.filter_pcap                               ${pcapFile}
+    ...                             filterName=uldata_puschreceivereq
+    ...                             filterExp=(uldata_puschreceivereq)&&!(3gpp.rnti==0xffff)
+    ${pdmlFile}=                    analyzer.pcap_to_pdml                              ${filterPcap}
+    Dated log                       Checking UlData_PuschReceiveReq BIP message        first=True
+
+    # Sample the 10 first packet and check PTRS configuration depending on number of allocated PRB
+    Dated log new line              Getting all capture PuschRecvReq
+    @{listSomePuschRecvReq}         Get Packet Match List
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=uldata_puschreceivereq
+    ...                             pathList=${FIELDS_PUSCHRecvReq}
+    ...                             startPacket=${1}
+    ...                             endPacket=${15}
+    ${lenPuschSendReq}              get length                                         ${listSomePuschRecvReq}
+    Dated Log New Line              Total number of PuschRecvReq msgs: ${lenPuschSendReq}
+    should be true                  ${lenPuschSendReq}!=0
+    FOR    ${packet}   IN           @{listSomePuschRecvReq}
+    #       Retrieve PTRS frequency
+           ${nbPrb}                 Get Value In Packet Match
+           ...                          packetMatch=${packet}
+           ...                          field=numOfPrb
+  #         ${nbPrb}                 Convert To Integer                                 ${nbPrb}           16
+           Dated log                numOfPrb is ${nbPrb}
+           ${ptrs_fdensity}         Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=ulPtrsFrequencyDensity
+           Dated log                Frequency density is ${ptrs_fdensity}
+           ${ptrs_tdensity}         Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=ulPtrsTimeDensity
+           Dated log                Time density is ${ptrs_tdensity}
+           ${ptrs_enabled}          Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=ulPtrsFlag
+           Run Keyword If           ${nbPrb}<${threshold_0} and ${threshold_1}!=${No_threshold}
+           ...                          should be true          ${ptrs_enabled}==1
+           Run Keyword If           (${nbPrb}>=${threshold_0} and ${nbPrb}<${threshold_1}) or ${threshold_1}==${No_threshold}
+           ...                          should be true          ${ptrs_enabled}==1
+           Run Keyword If           (${nbPrb}>=${threshold_0} and ${nbPrb}<${threshold_1}) or ${threshold_1}==${No_threshold}
+           ...                          should be true          ${ptrs_fdensity}==2
+           Run Keyword If           ${nbPrb}>=${threshold_1} and ${threshold_1}!=${No_threshold}
+           ...                          should be true          ${ptrs_enabled}==1
+           Run Keyword If           ${nbPrb}>=${threshold_1} and ${threshold_1}!=${No_threshold}
+           ...                          should be true          ${ptrs_fdensity}==4
+           should be true           ${ptrs_tdensity}==1
+    END
+
+Check DlData_PdschSendReq
+    [Arguments]                     ${pcapFile}
+    ...                             ${threshold_0}=1
+    ...                             ${threshold_1}=100
+    ${filterPcap}                   analyzer.filter_pcap                               ${pcapFile}
+    ...                             filterName=dldata_pdschsendreql1sw
+    ...                             filterExp=(dldata_pdschsendreql1sw)&&!(3gpp.rnti==0xffff)
+    ${pdmlFile}=                    analyzer.pcap_to_pdml                              ${filterPcap}
+    Dated log                       Checking dldata_Pdschsendreql1sw BIP message           first=True
+    # Sample the 10 first packet and check PTRS configuration depending on number of allocated PRB
+    Dated log new line              Getting all capture PdschSendReq
+    @{listSomePdschSendReq}         Get Packet Match List
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=dldata_pdschsendreql1sw
+    ...                             pathList=${FIELDS_PDSCHSendReq}
+    ...                             startPacket=${1}
+    ...                             endPacket=${15}
+    ${lenPdschSendReq}              get length                                         ${listSomePdschSendReq}
+    Dated Log New Line              Total number of PdschSendReq msgs: ${lenPdschSendReq}
+    should be true                  ${lenPdschSendReq}!=0
+    FOR    ${packet}   IN           @{listSomePdschSendReq}
+    #       Retrieve PTRS frequency
+           ${nbPrb}                 Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPrb
+     #      ${nbPrb}                 Convert To Integer                                 ${nbPrb}         16
+           Dated log                numOfPrb is ${nbPrb}
+           ${ptrs_fdensity}         Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=dlPtrsFrequencyDensity
+           Dated log                Frequency density is ${ptrs_fdensity}
+           ${ptrs_tdensity}         Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=dlPtrsTimeDensity
+           Dated log                Time density is ${ptrs_tdensity}
+           ${ptrs_enabled}          Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=dlPtrsFlag
+           Dated log                PT-RS flags is ${ptrs_enabled}
+           ${mcs}                   Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcs
+           Dated log                MCS is ${mcs}
+           Run Keyword If           ${nbPrb}<${threshold_0} and ${threshold_1}!=${No_threshold}
+           ...                          should be true          ${ptrs_enabled}==1
+           Run Keyword If           (${nbPrb}>=${threshold_0} and ${nbPrb}<${threshold_1}) or (${threshold_1}==${No_threshold} and ${mcs}>=10)
+           ...                          should be true          ${ptrs_enabled}==1
+           Run Keyword If           (${nbPrb}>=${threshold_0} and ${nbPrb}<${threshold_1}) or (${threshold_1}==${No_threshold} and ${mcs}>=10)
+           ...                          should be true          ${ptrs_fdensity}==2
+           # Inside �5.1.6.3 3GPP 38.124, it's stated that if PTRS theshold are disabled and
+           # if MCS < 10, no PTRS should be added inside PDSCH
+           Run Keyword If           (${threshold_1}==${No_threshold} and ${mcs}<10)
+           ...                          should be true          ${ptrs_enabled}==1
+           Run Keyword If           ${nbPrb}>=${threshold_1} and ${threshold_1}!=${No_threshold}
+           ...                          should be true          ${ptrs_enabled}==1
+           Run Keyword If           ${nbPrb}>=${threshold_1} and ${threshold_1}!=${No_threshold}
+           ...                          should be true          ${ptrs_fdensity}==4
+           should be true           ${ptrs_tdensity}==1
+    END
+
+
+# ===============================================
+#       PRACH CI checks
+# ===============================================
+
+Check PrachConfigIndex in RRC Reconfiguration
+    [Arguments]                     ${pcapFile}
+    ...                             ${expected_prach_ci_value}
+
+    ${pcapFiltered}                 analyzer.filter_pcap
+    ...                                 pcapInFile=${pcapFile}
+    ...                                 filterName=x2ap
+    ...                                 filterExp=x2ap
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+    ${msg}                          Set Variable                    SgNBAdditionRequestAcknowledge
+    Dated Log                       In message ${msg}, check PrachConfigIndex=${expected_prach_ci_value}      first=True
+    ${prachPath}                    set variable                    nr-rrc.prach_ConfigurationIndex
+
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${prachPath}
+    ...                             value=${expected_prach_ci_value}
+ 

@@ -1,0 +1,80 @@
+# *** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# ---------------------------------------------------------------------------------------------------------------------
+# Documentation   CB009915
+#                 Scope : functions for sub-feature B2
+#
+#                 Test Case Scenario author   : vincent.boulet@nokia.com
+#                 Creation Date               : 2024-01-04
+#                 Modified Date               : 2024-09-17
+#
+#                 Last Modified by            : vincent.boulet@nokia.com
+#                 Version    Date      Author                      Notes
+#                 0.1        FB2327    vincent.boulet@nokia.com    Creation pyhton
+#                 0.2        FB2419    vincent.boulet@nokia.com    Remove use of searchSpaceType key
+
+import getopt
+import json
+import os
+import sys
+
+# from enum import Enum
+# TAF Libraries:
+from taf.analyzer.ttitrace_eventdecoder import TtitraceReader as TtitraceReaderEvtDec
+
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+def check_searchSpace_cellBwpId(_modeDbg, _jsonPath, _eventType, _physCellId, _spaceType, _spaceId, _cellBwpId):
+    """
+    This function checks the information of a cell into TTI trace
+    It returns 1 if the verification is passed else 0
+    _modeDbg: mode debug is activated if true
+    _jsonPath: json file of the TTI trace
+    _eventType: dlFdSchedData or ulFdSchedData
+    _physCellId: physical cell identifier
+    _spaceType: type of the search space to control
+    _spaceId: identifier of the search space to control
+    _cellBwpId: identifier of the cell bandwidth to control
+    """
+
+    resultCheck = False
+    print("===> TTI_INF: check_searchSpace_cellBwpId for _eventType=%s into json file=%s" % (_eventType, _jsonPath))
+    if not os.path.exists(_jsonPath) or os.path.getsize(_jsonPath) <= 24:
+        print("===> TTI_ERR: json file=%s doesn't exist or size <= 24" % _jsonPath)
+        return resultCheck
+    if _eventType != "dlFdSchedData" and _eventType != "ulFdSchedData":
+        print("===> TTI_ERR: _eventType=%s is not supported" % _eventType)
+        return resultCheck
+    nbCheck = 0
+    with open(_jsonPath, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            if event.type == _eventType:
+                sfn = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                lcrId = event.data["eventHeader"]["lcrId"]
+                physCellId = event.data["eventHeader"]["physCellId"]
+                if _modeDbg:
+                    print("===> TTI_DBG: event.type=%s physCellId=%s" % (event.type, physCellId))
+                if physCellId == int(_physCellId):
+                    if _modeDbg:
+                        print("===> TTI_DBG: sfn=%s slot=%s physCellId=%s" % (sfn, slot, physCellId))
+                    nbCheck += 1
+                    resultCheck = False
+                    # searchSpaceType key is no more available into dlFdSchedData, check is not mandatory
+                    # spaceType = event.data["searchSpaceType"]
+                    spaceId = event.data["searchSpaceId"]
+                    cellBwpId = event.data["cellBwpId"]
+                    # searchSpaceType key is no more available into dlFdSchedData, check is not mandatory
+                    # if spaceType == _spaceType and spaceId == int(_spaceId) and cellBwpId == int(_cellBwpId):
+                    if spaceId == int(_spaceId) and cellBwpId == int(_cellBwpId):
+                        resultCheck = True
+                    else:
+                        # searchSpaceType key is no more available into dlFdSchedData, check is not mandatory
+                        # print("===> TTI_ERR: spaceType=%s spaceId=%s cellBwpId=%s" % (spaceType, spaceId, cellBwpId))
+                        print("===> TTI_ERR: spaceId=%s cellBwpId=%s" % (spaceId, cellBwpId))
+                        print("===> TTI_ERR: check IS NOT PASSED if physicalCellId is %s" % (_physCellId))
+                        return resultCheck
+    print("===> TTI_INF: %s analyzis have been done" % nbCheck)
+    print("===> TTI_INF: check_searchSpace_cellBwpId is passed when physicalCellId is %s" % _physCellId)
+    return resultCheck

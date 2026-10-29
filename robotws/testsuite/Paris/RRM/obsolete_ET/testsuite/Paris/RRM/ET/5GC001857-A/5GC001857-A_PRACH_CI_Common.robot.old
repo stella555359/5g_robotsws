@@ -1,0 +1,48 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Verification of 5GC001857-A
+...               Scope : Test new PRACH configuration index introduced by 1857 (=spillover 580-D)
+...                       The scenario is to configure the gNB with usable frame structure
+...                       for the PRACH CI and perform UE attach
+...                       08-10-2021              |           1857 refactoring
+...                       14-Sept-2021            |           Updates for mmW (same strategy as for 1347)
+
+Resource          resources/robot/5GC001857-A_Keywords.robot
+
+
+*** Variables ***
+
+
+*** Keywords ***
+TC_1857_PRACH_CI
+    [Documentation]                 Generic test for all PRACH CI introduced by 1857 (FR1 and FR2)
+    [Arguments]                     ${band}
+    ...                             ${prach_ci_value}
+    ...                             ${tl_topology}=classical
+
+    Set Suitable PRACH              band=${band}         prach_ci_value=${prach_ci_value}       tl_type=${tl_topology}    
+
+	#In case of mmW set the ueid to 1, for NSA call
+	Run Keyword If                  "${band}"=="mmW"	Run Keywords
+	...								Run    sed -i 's/set_ue simulated id=11 /set_ue simulated id=1 /g' ${tl.core.dir_path}/${tl.core.cfg_filename}
+	...								AND 
+	...								Run    sed -i 's/ue_param id=11 /ue_param id=1 /g' ${tl.core.dir_path}/${tl.core.cfg_filename}
+	     
+    
+	WTS Setup
+
+    # Cellsetup is now done, Sherpa can be enabled if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}           Activate Sherpa
+    
+
+	
+    # Capture X2 to check PRACH configuration sent to UE
+    # UE attach to 4G+5G (NSA)
+    ${CaptureCPRT_X2} =              SgNB Addition to ENB                 ueSetting=${UE_SIMPLE}
+    ...                                                                   withTN=True
+
+    # If attach was successful, it's enough as PRACH CI configured inside SCF was used.
+    # Anyway, check PRACH CI sent to UE to be sure the right CI was used.
+    Check PrachConfigIndex in RRC Reconfiguration           ${CaptureCPRT_X2}       ${prach_ci_value}
+
+    # Detach UE
+    UE Detach Enb                   ueSetting=${UE_SIMPLE}

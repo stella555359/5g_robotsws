@@ -1,0 +1,104 @@
+# -*- coding: utf-8 -*
+
+"""
+:copyright: Nokia Networks
+:author: Christophe SAMSON
+:contact: christophe.samson@nokia.com
+:maintainer:
+:contact:
+"""
+
+import csv
+import logging
+import io
+
+from testsuite.Paris.RRM.ET.CB009915.resources.python.tti_analyzer_framework import pandas_gate
+from testsuite.Paris.RRM.ET.CB009915.resources.python.tti_analysis.ue_cell_identification import identify_cells_and_ues
+
+
+class AutoDict(dict):
+    def __missing__(self, k):
+        self[k] = AutoDict()
+        return self[k]
+
+
+def check_rnti_bwpid(csv_file, rnti, pattern='dlFdSchedData.ueBwpId'):
+    dummy = AutoDict()
+    with io.open(csv_file, 'rt', encoding="utf-8") as csvfile:
+        csv_reader = csv.DictReader(csvfile, delimiter=';')
+        for line in csv_reader:
+            # logging.info("line = %s" % line)
+            try:
+                dummy[line['rnti']].append(int(float(line[pattern])))
+            except Exception:
+                dummy[line['rnti']] = [int(float(line[pattern]))]
+    logging.info("dummy = %s" % dummy)
+    Check = True
+    for key in rnti:
+        # logging.info("rnti key = %s" % key)
+        try:
+            # logging.info("key1 = %s" % key)
+            cellbwp = list(set(dummy.get(key)))
+            # logging.info("cellbwp1 = %s" % cellbwp)
+            if len(cellbwp) != 1:
+                Check = False
+            elif cellbwp[0] != int(rnti[key]):
+                print("BwpId for rnti:", key, rnti[key], "is not matching with ueBwpId", cellbwp[0])
+                Check = False
+            elif cellbwp[0] == int(rnti[key]):
+                print("BwpId for rnti:", key, rnti[key], "is matching with ueBwpId", cellbwp[0])
+        except Exception:
+            # logging.info("dummy = %s" % dummy)
+            # logging.info("key = %s" % key)
+            rntikey = dummy.keys()
+            # logging.info("rntikey = %s" % rntikey)
+            for i in rntikey:
+                # logging.info("i = %s" % i)
+                if i == str(65535) or key != int(float(i)):
+                    continue
+                cellbwp = list(set(dummy.get(i)))
+                # logging.info("cellbwp = %s" % cellbwp)
+                if len(cellbwp) != 1:
+                    Check = False
+                elif cellbwp[0] != int(rnti[key]):
+                    print("BwpId for rnti:", int(float(i)), rnti[key], "is not matching with ueBwpId", cellbwp[0])
+                    Check = False
+                elif cellbwp[0] == int(rnti[key]):
+                    print("BwpId for rnti:", int(float(i)), "is matching with ueBwpId", cellbwp[0])
+    return Check
+
+
+def load_dataframe(path_to_pickle):
+    global pd
+    pd = pandas_gate.install_and_import_pandas()
+    df = pd.read_pickle(path_to_pickle)
+    return df
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
+    file =\
+        '/home/ute/csamson/TRACES/dl_dataframe_for_manual_analysis_prblanking_cell1.csv'
+    path_to_ttitrace_pkl = '/home/ute/csamson/TRACES/ttitrace_streaming_CB009915_C.pkl'
+    df = load_dataframe(path_to_ttitrace_pkl)
+    try:
+        output = identify_cells_and_ues(df)
+        logging.info("output = %s" % (output))
+    except Exception as e:
+        logException("get_cells_and_ues_physCellId", e)
+    detected_cell_id_rnti = output
+    logging.info("detected_cell_id_rnti = %s" % (detected_cell_id_rnti))
+    logging.info("detected_cell_id_rnti type= %s" % (type(detected_cell_id_rnti)))
+    logging.info("detected_cell_id_rnti cell50= %s" % (detected_cell_id_rnti.loc[50]['rnti']))
+    logging.info("detected_cell_id_rnti cell51= %s" % (detected_cell_id_rnti.loc[51]['rnti']))
+    ue_rnti_1_cell50 = int(detected_cell_id_rnti.loc[50]['rnti'].iloc[0])
+    ue_rnti_2_cell50 = int(detected_cell_id_rnti.loc[50]['rnti'].iloc[1])
+    logging.info("ue_rnti_1_cell50 = %s" % (ue_rnti_1_cell50))
+    logging.info("ue_rnti_2_cell50 = %s" % (ue_rnti_2_cell50))
+    rntiBwp = {
+        ue_rnti_1_cell50: "2",
+        ue_rnti_2_cell50: "1"
+    }
+    logging.info("rntiBwp = %s" % (rntiBwp))
+    Check = check_rnti_bwpid(file, rnti=rntiBwp)
+    logging.info("Check rntiBwp = %s" % (Check))

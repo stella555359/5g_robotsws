@@ -1,0 +1,665 @@
+import os
+from robot.libraries.BuiltIn import BuiltIn
+tl = BuiltIn().get_variable_value('${tl}')
+
+CFG_DIR = os.path.dirname(os.path.abspath(__file__))
+MR_BTS_NAME = 'MRBTS-' + str(tl.gnbs[0].instance_id)
+MR_NR_BTS_NAME = MR_BTS_NAME + '/NRBTS-' + str(tl.gnbs[0].instance_id)
+MR_NR_CELL_NAME = MR_NR_BTS_NAME + '/NRCELL-1'
+
+MODIFY_SCF_2040_1000_01 = [
+    # 1116 frame structure
+    dict(
+        value='tdLte',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='frameStructureType'),
+    dict(
+        value='4Symbols',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='guardPeriodLength'),
+    dict(
+        value='0ms',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='lteToNrFrameShift'),
+    dict(
+        value='2/8',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='ulDlDataSlotRatio'),
+    dict(
+        value='97',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='prachConfigurationIndex'),
+    dict(
+        value='10',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaBlerTarget'),
+    dict(
+        value='-30',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaDeltaCqiMin'),
+    dict(
+        value='250',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaDeltaCqiStepdown'),
+    dict(
+        value='3',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaIniMcs'),
+    dict(
+        value='Automatic',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ulDMRSAdditionalPosition'),
+    dict(
+        value='20MHz',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='chBw'),
+    dict(
+        value='Automatic',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dlDMRSAdditionalPosition'),
+    dict(
+        value='true',
+        dist_name=MR_NR_BTS_NAME,
+        p_name='actEnhancedLinkAdaptation')
+]
+
+MODIFY_SCF_2040_1000_02 = [
+    # 1116 frame structure
+    dict(
+        value='tdLte',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='frameStructureType'),
+    dict(
+        value='4Symbols',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='guardPeriodLength'),
+    dict(
+        value='0ms',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='lteToNrFrameShift'),
+    dict(
+        value='2/8',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='ulDlDataSlotRatio'),
+    dict(
+        value='97',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='prachConfigurationIndex'),
+    dict(
+        value='10',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ullaBlerTarget'),
+    dict(
+        value='30',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ullaDeltaSinrMax'),
+    dict(
+        value='-30',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ullaDeltaSinrMin'),
+    dict(
+        value='250',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ullaDeltaSinrStepdown'),
+    dict(
+        value='0',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ullaIniMcs'),
+    dict(
+        value='One additional DMRS',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ulDMRSAdditionalPosition'),
+    dict(
+        value='20MHz',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='chBw'),
+    dict(
+        value='One additional DMRS',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dlDMRSAdditionalPosition'),
+    dict(
+        value='false',
+        dist_name=MR_NR_BTS_NAME,
+        p_name='actEnhancedLinkAdaptation')
+]
+
+MODIFY_SCF_2040_1000_03 = [
+    # 1116 frame structure
+    dict(
+        value='tdLte',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='frameStructureType'),
+    dict(
+        value='4Symbols',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='guardPeriodLength'),
+    dict(
+        value='0ms',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='lteToNrFrameShift'),
+    dict(
+        value='2/8',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='ulDlDataSlotRatio'),
+    dict(
+        value='97',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='prachConfigurationIndex'),
+    dict(
+        value='10',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaBlerTarget'),
+    dict(
+        value='30',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaDeltaCqiMax'),
+    dict(
+        value='-30',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaDeltaCqiMin'),
+    dict(
+        value='250',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaDeltaCqiStepdown'),
+    dict(
+        value='3',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaIniMcs'),
+    dict(
+        value='Automatic',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ulDMRSAdditionalPosition'),
+    dict(
+        value='20MHz',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='chBw'),
+    dict(
+        value='Automatic',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dlDMRSAdditionalPosition'),
+    dict(
+        value='true',
+        dist_name=MR_NR_BTS_NAME,
+        p_name='actEnhancedLinkAdaptation'),
+    dict(
+        value='true',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='actDl256Qam')
+
+]
+
+MODIFY_SCF_2040_1000_04 = [
+    # 1116 frame structure
+    dict(
+        value='tdLte',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='frameStructureType'),
+    dict(
+        value='4Symbols',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='guardPeriodLength'),
+    dict(
+        value='0ms',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='lteToNrFrameShift'),
+    dict(
+        value='2/8',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='ulDlDataSlotRatio'),
+    dict(
+        value='97',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='prachConfigurationIndex'),
+    dict(
+        value='10',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaBlerTarget'),
+    dict(
+        value='30',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaDeltaCqiMax'),
+    dict(
+        value='-30',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaDeltaCqiMin'),
+    dict(
+        value='250',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaDeltaCqiStepdown'),
+    dict(
+        value='3',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaIniMcs'),
+    dict(
+        value='20MHz',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='chBw'),
+    dict(
+        value='One additional DMRS',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dlDMRSAdditionalPosition'),
+    dict(
+        value='One additional DMRS',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ulDMRSAdditionalPosition'),
+    dict(
+        value='true',
+        dist_name=MR_NR_BTS_NAME,
+        p_name='actEnhancedLinkAdaptation'),
+    dict(
+        value='false',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='actDl256Qam')
+]
+
+
+MODIFY_SCF_2040_1000_05 = [
+    # 1116 frame structure
+    dict(
+        value='tdLte',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='frameStructureType'),
+    dict(
+        value='4Symbols',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='guardPeriodLength'),
+    dict(
+        value='0ms',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='lteToNrFrameShift'),
+    dict(
+        value='2/8',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='ulDlDataSlotRatio'),
+    dict(
+        value='97',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='prachConfigurationIndex'),
+    dict(
+        value='10',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaBlerTarget'),
+    dict(
+        value='30',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaDeltaCqiMax'),
+    dict(
+        value='-30',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaDeltaCqiMin'),
+    dict(
+        value='250',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaDeltaCqiStepdown'),
+    dict(
+        value='3',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaIniMcs'),
+    dict(
+        value='Automatic',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ulDMRSAdditionalPosition'),
+    dict(
+        value='20MHz',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='chBw'),
+    dict(
+        value='Automatic',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dlDMRSAdditionalPosition'),
+    dict(
+        value='true',
+        dist_name=MR_NR_BTS_NAME,
+        p_name='actEnhancedLinkAdaptation')
+]
+
+MODIFY_SCF_2040_1000_06 = [
+    # 1116 frame structure
+    dict(
+        value='tdLte',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='frameStructureType'),
+    dict(
+        value='4Symbols',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='guardPeriodLength'),
+    dict(
+        value='0ms',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='lteToNrFrameShift'),
+    dict(
+        value='2/8',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='ulDlDataSlotRatio'),
+    dict(
+        value='97',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='prachConfigurationIndex'),
+    dict(
+        value='10',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaBlerTarget'),
+    dict(
+        value='30',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaDeltaCqiMax'),
+    dict(
+        value='-30',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaDeltaCqiMin'),
+    dict(
+        value='250',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaDeltaCqiStepdown'),
+    dict(
+        value='3',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaIniMcs'),
+    dict(
+        value='20MHz',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='chBw'),
+    dict(
+        value='One additional DMRS',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dlDMRSAdditionalPosition'),
+    dict(
+        value='One additional DMRS',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ulDMRSAdditionalPosition'),
+    dict(
+        value='true',
+        dist_name=MR_NR_BTS_NAME,
+        p_name='actEnhancedLinkAdaptation'),
+    dict(
+        value='false',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='actDl256Qam')
+]
+
+MODIFY_SCF_2040_1000_07 = [
+    # 1116 frame structure
+    dict(
+        value='tdLte',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='frameStructureType'),
+    dict(
+        value='4Symbols',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='guardPeriodLength'),
+    dict(
+        value='0ms',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='lteToNrFrameShift'),
+    dict(
+        value='2/8',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='ulDlDataSlotRatio'),
+    dict(
+        value='97',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='prachConfigurationIndex'),
+    dict(
+        value='10',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ullaBlerTarget'),
+    dict(
+        value='30',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ullaDeltaSinrMax'),
+    dict(
+        value='-30',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ullaDeltaSinrMin'),
+    dict(
+        value='250',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ullaDeltaSinrStepdown'),
+    dict(
+        value='0',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ullaIniMcs'),
+    dict(
+        value='No additional DMRS',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ulDMRSAdditionalPosition'),
+    dict(
+        value='20MHz',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='chBw'),
+    dict(
+        value='No additional DMRS',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dlDMRSAdditionalPosition'),
+    dict(
+        value='true',
+        dist_name=MR_NR_BTS_NAME,
+        p_name='actEnhancedLinkAdaptation')
+]
+
+MODIFY_SCF_2040_1000_08 = [
+    # 1116 frame structure
+    dict(
+        value='tdLte',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='frameStructureType'),
+    dict(
+        value='4Symbols',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='guardPeriodLength'),
+    dict(
+        value='10ms',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='csirsForTracking',
+        p_name='csirsTrackingPeriod'),
+    dict(
+        value='0ms',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='lteToNrFrameShift'),
+    dict(
+        value='2/8',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='ulDlDataSlotRatio'),
+    dict(
+        value='97',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='prachConfigurationIndex'),
+    dict(
+        value='0',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaIniMcs'),
+    dict(
+        value='0',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ullaIniMcs'),
+    dict(
+        value='No additional DMRS',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ulDMRSAdditionalPosition'),
+    dict(
+        value='20MHz',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='chBw'),
+    dict(
+        value='No additional DMRS',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dlDMRSAdditionalPosition'),
+    dict(
+        value='true',
+        dist_name=MR_NR_BTS_NAME,
+        p_name='actEnhancedLinkAdaptation')
+]
+
+MODIFY_SCF_2040_1000_09 = [
+    # 1116 frame structure
+    dict(
+        value='tdLte',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='frameStructureType'),
+    dict(
+        value='4Symbols',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='guardPeriodLength'),
+    dict(
+        value='0ms',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='lteToNrFrameShift'),
+    dict(
+        value='2/8',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='ulDlDataSlotRatio'),
+    dict(
+        value='97',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='prachConfigurationIndex'),
+    dict(
+        value='27',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dllaIniMcs'),
+    dict(
+        value='One additional DMRS',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ulDMRSAdditionalPosition'),
+    dict(
+        value='20MHz',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='chBw'),
+    dict(
+        value='One additional DMRS',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dlDMRSAdditionalPosition'),
+    dict(
+        value='true',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='actDl256Qam'),
+    dict(
+        value='true',
+        dist_name=MR_NR_BTS_NAME,
+        p_name='actEnhancedLinkAdaptation')
+]
+
+MODIFY_SCF_2040_1000_10 = [
+    # 1116 frame structure
+    dict(
+        value='tdLte',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='frameStructureType'),
+    dict(
+        value='4Symbols',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='guardPeriodLength'),
+    dict(
+        value='0ms',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='lteToNrFrameShift'),
+    dict(
+        value='2/8',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='ulDlDataSlotRatio'),
+    dict(
+        value='97',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='prachConfigurationIndex'),
+    dict(
+        value='28',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ullaIniMcs'),
+    dict(
+        value='Automatic',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='ulDMRSAdditionalPosition'),
+    dict(
+        value='20MHz',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='chBw'),
+    dict(
+        value='Automatic',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='dlDMRSAdditionalPosition'),
+    dict(
+        value='true',
+        dist_name=MR_NR_BTS_NAME,
+        p_name='actEnhancedLinkAdaptation')
+]
+
+MODIFY_SCF_2040_1138_06 = [
+    # 1116 frame structure
+    dict(
+        value='tdLte',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='frameStructureType'),
+    dict(
+        value='4Symbols',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='guardPeriodLength'),
+    dict(
+        value='0ms',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='lteToNrFrameShift')
+]
+
+MODIFY_SCF_2040_1138_03 = [
+    # 1116 frame structure
+    dict(
+        value='tdLte',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='frameStructureType'),
+    dict(
+        value='4Symbols',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='guardPeriodLength'),
+    dict(
+        value='0ms',
+        dist_name=MR_NR_CELL_NAME,
+        list_name='tddFrameStructure',
+        p_name='lteToNrFrameShift'),
+    dict(
+        value='true',
+        dist_name=MR_NR_CELL_NAME,
+        p_name='actDl256Qam')
+]

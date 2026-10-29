@@ -1,0 +1,131 @@
+***Settings ***
+Documentation
+...            [Author]     "Mamatha"
+...            [Maintenance]    "TRS I & V Tools Bangalore Team"
+variables      ta_e2e_bts_trs_fw
+Resource       taf/rfrl/trs_e2e_fw/setup/framework.robot
+Resource       ${CURDIR}/../resources/Common_Twamp.robot
+Resource       ${CURDIR}/../resources/common_keywords.robot
+Resource       ${CURDIR}/../resources/Common_Traffic_Mirroring.robot
+Resource       ${CURDIR}/../resources/wft_filters.json
+
+#Suite Setup        Run Keywords     Pre-conditions for testsuite
+#Suite Teardown     Run Keywords         Post-conditions for testteardown
+
+***Variables***
+${sbh_filter_file}                 SBH_traffic_filter.json
+${sbh_lock_filter_file}            SBH_TWAMP_lock_traffic_filter.json
+${counter_analysis_file_name}      SBH_counter_analysis.json
+${pcap_dir}                        ${EXECDIR}
+${mplane_ipv4}                     10.0.1.2
+
+*** Test Cases ***
+[1][1.0]RP000798_IPv4 MBMS sessions with Upgrade and rollback
+    Perform Commissioning       scf_file=${SCF_MBMS_ipv6_plainnewlatest}    verify_bts_status=True      timeout=600
+    Sleep   400
+    Bring Up Logical Interface
+    Sleep   120
+    actMBMS flag should be activated
+    Traffic Capture Start   capture_device=vm_eth3_interface    alias=eth3_pcap
+    Call Setup      lte=MBMS_IPV6_plain:data     parallel=${False}   verify_attach=${False}      attach=${False}
+    Perform Recommissioning     type=param  param_path=LNM3-0:administrativeState   operation=update    value=locked    timeout=300
+    Perform Recommissioning     type=param  param_path=LNM3-0:administrativeState   operation=update    value=unlocked      timeout=300
+    Sleep       300
+    Verify Bts Status
+    Establish MBMS session
+    Sleep       180
+    ${MBMS_start}=      Traffic Capture Stop    alias=eth3_pcap
+    Sleep       180
+    Perform Commissioning       scf_file=${SCF_MBMS_ipv6_plainnewcustomer}      verify_bts_status=True      timeout=600
+    Sleep       400
+    actMBMS flag should be deactivated
+    Sleep       120
+    Perform sw upgrade
+    Perform Recommissioning     type=param      param_path=${LNM3_modify}       operation=update        value=${modified_M3}        skip_parameter_relation_errors=${True}     timeout=300
+    Perform Recommissioning     type=param      param_path=${LNMME_modify}      operation=update        value=${modified_MME}       skip_parameter_relation_errors=${True}     timeout=300
+    Sleep       60
+    Run     sudo ifconfig eth3 inet6 add 2c00::4/116
+    Traffic Capture Start   capture_device=vm_eth3_interface    alias=eth3_pcap1
+    Call Setup      lte=MBMS_IPV6_plain_new:data     parallel=${False}   verify_attach=${False}      attach=${False}
+    Sleep      300
+    Verify Bts Status
+    Establish MBMS session
+    Rollback Software   verify_bts_status=false     is_config_reset=false   timeout=1600    alias=default
+    Sleep       300
+    ${MBMS_start}=  Traffic Capture Stop    alias=eth3_pcap1
+    Sleep       180
+    [Teardown]     Keywords to run at end
+*** Keywords ***
+Bring Up Logical Interface
+    Run     sudo ifconfig eth3 inet6 add 2c00::1/116
+    Run     sudo ifconfig eth3 inet6 add 2c00::5/116
+
+actMBMS flag should be activated
+	${flag_status}=     Get Parameter		param_path=MRBTS-1/LNBTS-1:actMBMS
+	${flag_status1}=    Get Parameter		param_path=MRBTS-1/LNBTS-1:actIPv6MBMS
+	Should Be Equal		'${flag_status}'    'True'
+	Should Be Equal		'${flag_status1}'   'True'	
+Establish MBMS session
+	Execute Cmd On Egate		lte=MBMS_IPV6_plain:data	cmd=mbms_session_start tmgi=1:244:09 duration=0:900 sai=1 m1_dst_addr=ff3b::8000:0001 m1_teid=201 mbmsgw_trf_tun_ip=2.2.2.1 dst_ip=3.3.3.254 dst_port=5001 max_delay=50 trf_adapt_scheme=buffering sync_seq=1 sync_period=100 qci=1 gbr=50
+
+actMBMS flag should be deactivated
+	${flag_status}=     Get Parameter		param_path=MRBTS-1/LNBTS-1:actMBMS
+	${flag_status1}=    Get Parameter		param_path=MRBTS-1/LNBTS-1:actIPv6MBMS
+	Should Be Equal		'${flag_status}'    'False'
+	Should Be Equal		'${flag_status1}'   'False'
+	
+Perform sw upgrade
+    Perform Software Download And Update    wft_profile=sbtstrunk_00    package=auto    activate_sw=true    update_timeout=4500
+    Sleep       300
+
+MBMS config should not be present
+    Run Keyword And Ignore Error        Element Should Not Exist        ${target_file}
+    ...     xpath=.//managedObject[@class="NOKLTE:MBSFNCEL"]
+    Run Keyword And Ignore Error        Element Should Not Exist        ${target_file}
+    ...     xpath=.//managedObject[@class="NOKLTE:MBSFN_FDD"]
+    ${flag_status}=     Get Element Text            ${target_file}
+    ...     .//managedObject[@distName="MRBTS-1/LNBTS-1"]//p[@name="actMBMS"]
+    Run Keyword And Ignore Error        Should Be Equal     '${flag_status}'    'false'
+
+Check for MBMS configuration
+    ${file}=        Parse XML       ${target_file}
+    ${status1}      Run Keyword and Return Status       Element Should Exist        ${file}
+    ...     xpath=.//managedObject[@class="NOKLTE:MBSFNCEL"]
+    Run keyword if      '${status1}'!='True'        XML.Remove Element      ${file}
+    ...     xpath=.//managedObject[@class="NOKLTE:MBSFNCEL"]        remove_tail=true
+    ${status2}      Run Keyword and Return Status       Element Should Exist        ${file}
+    ...     xpath=.//managedObject[@class="NOKLTE:MBSFN_FDD"]
+    Run keyword if      '${status2}'!='True'        XML.Remove Element      ${file}
+    ...     xpath=.//managedObject[@class="NOKLTE:MBSFN_FDD"]           remove_tail=true
+    Save Xml        ${file}         ${tmp}
+    Run keyword if      '${status1}'=='${status2'=='False'     Perform commissioning         ${tmp}
+
+Perform MBMS configuration
+    Run             sudo ifconfig eth3:100 10.0.1.5 netmask 255.255.255.0
+
+Perform software Upgrade
+    Perform software download for Upgrade
+    Perform software update with activation
+    Sleep   900
+    Enable SSH
+    ${status}=    ssh status
+    wait till enb to come up
+    Check if software on eNB is '${build_number}'
+
+Software Rollback Using Uboot command
+    ${ssh_enb_handle}    Open Connection    ${enb_ip}
+    Login                  ${enb_root_user}    ${enb_root_passwd}
+    ${output}=  Execute Command     uboot_env get active_partition
+    ${mac}  ${value}=   Split String  ${output}     =
+    Log To Console      ${value}
+    Run Keyword If    ${value}==1     Execute Command     uboot_env set active_partition=2
+    Run Keyword If    ${value}==2     Execute Command     uboot_env set active_partition=1
+    ${output}=  Execute Command     uboot_env get active_partition
+    ${mac}  ${value}=   Split String  ${output}     =
+    Close Connection
+    Execute command on ENodeB       reboot
+
+Keywords To Run At End
+	Run		rm -rf /home/ute/MN/UTE/robotws/testsuite/Bangalore/TRS/E2E_BTS_TRS_FW/fw_user_path/testcases/MBMS/execution_logs/*_A54.zip
+
+

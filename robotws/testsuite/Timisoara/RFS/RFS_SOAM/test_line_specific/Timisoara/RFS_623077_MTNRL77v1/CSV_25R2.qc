@@ -1,0 +1,1 @@
+{"SBTS25R2.*": {"Root\\Test_Sets\\25R2\\Regression\\VRF_TSR2\\VRF_TSR2_T02\\CRT\\MTNRL77 - MWingz": {"MTNRL77 - MWingz": [       "[1][1.0] SW_Activation_Reset_in_loops",       "[1][1.0] Automated_RFS_UUF_SW_UPGRADE",       "[1][1.0] E2E_TL_Cell_Block_Unblock_LTE_with_OAM_KPI"]}}}

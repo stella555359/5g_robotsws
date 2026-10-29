@@ -1,0 +1,1 @@
+../qc_file_default.qc

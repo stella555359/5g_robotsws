@@ -1,0 +1,16 @@
+import os
+
+__team__ = "MN 5G RAN I&V 4 Pz HZG SG1"
+__email__ = "I_MN_5G_RAN_IV4_LINE_HZG_1@internal.nsn.com"
+# CU
+PARAMS_TO_DELETE_CU = []
+MOs_TO_ADD_CU = []
+PARAMS_TO_MODIFY = []
+LIST_PARAMS_TO_MODIFY_CU = []
+LIST_TO_ADD_CU = []
+# DU
+PARAMS_TO_DELETE_DU = []
+MOs_TO_ADD_DU = []
+PARAMS_TO_MODIFY_DU = []
+LIST_PARAMS_TO_MODIFY = []
+LIST_TO_ADD_DU = []

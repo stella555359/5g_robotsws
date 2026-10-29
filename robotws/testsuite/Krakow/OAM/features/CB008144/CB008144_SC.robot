@@ -1,0 +1,49 @@
+*** Settings ***
+Documentation
+...    author: Marcin Szlapa
+...    contact: marcin.szlapa@nokia.com
+...    Description: Test Cases CB008144-5G Improved 5G sleeping cell detection
+
+Library       DateTime
+Resource      resources/Resources.robot
+Resource      resources/variables_sc.robot
+Resource      taf/rfrl/bts/robot/logs_collecting.robot
+Resource      taf/rfrl/procedures/resources/robot/common_setups_and_teardowns.robot
+Variables     taf/rfrl/procedures/resources/python/common_allowed_alarms.py
+Variables     resources/counter_dict_sc.py
+
+Test Timeout  24 hours
+
+Suite Setup         Common Suite Setup With OnAir Test Line Preparation
+...  prefix_tag=CB008144
+...  swconfig_from_path=commissionings/${CONFIGURATION.replace('.', '/')}/swconfig.txt
+...                                increase_time_for_checking_bbmod=600
+...                                increase_timeout_for_update_sw=1800
+...                                increase_time_for_checking_radios=2100
+...                                increase_time_for_checking_cells=700
+Suite Teardown      Common Suite Teardown
+Test Setup          Common Preconditions With Watching Alarms
+Test Teardown       Common Postconditions With Watching Alarms
+
+*** Variables ***
+@{additional_allowed_alarms}
+...    Sleeping Cell Detection Due To Abnormal Antenna TX Power Measurements
+...    Sleeping Cell Detection Due To Abnormal Antenna RX Power Measurements
+...    Baseband card autonomous reset as recovery action
+...    No feedback signal
+...    BTS site autonomous reset as recovery action
+...    Setup of X2 connectivity to gNB failed
+...    NgGnbInitFullReset
+...    No X2 link available
+...    No X2 link available for a specific LTEENB
+
+
+*** Test Cases ***
+CB008144-5G_22_Antenna_TX_power_sleeping_cell_is_not_detected_for_RU_with_TX_power_less_than_1mW_while_threshold_equals_0mW
+    CB008144-5G_22_Antenna_TX_power_sleeping_cell_is_not_detected_for_RU_TX_power_less_than_1mW_while_threshold_equals_0mW
+
+CB008144-5G_1_Antenna_RX_power_sleeping_cell_detected_all_recovery_phases
+    CB008144-5G_1_Antenna_RX_power_sleeping_cell_detected_all_recovery_phases
+
+CB008144-5G_6_Antenna_TX_power_sleeping_cell_detected_only_selected_recovery_phases
+    CB008144-5G_6_Antenna_TX_power_sleeping_cell_detected_only_selected_recovery_phases

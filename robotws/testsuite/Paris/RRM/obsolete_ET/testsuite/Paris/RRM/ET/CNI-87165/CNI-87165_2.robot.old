@@ -1,0 +1,149 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE] Automation of Feature CNI-87165
+...               Test Case Scenario author   : dan.moldovan@nokia.com
+...               Test Case Scenario contact  : loic.marzin@nokia.com
+...               Test Case automation author : dan.moldovan@nokia.com
+...               Test Case automation contact: loic.marzin@nokia.com
+...               Creation Date               : 08-Oct-2024
+...               Modified Date               : 08-Oct-2024
+...               Modification                : loic.marzin@Nokia.com -- Script adaptations
+
+
+Resource        CNI-87165_Variables_And_Keywords.robot
+
+
+Suite Setup     Run Keywords    Dated Log New Line    Suite Setup start
+...             AND             Update And Put Iphy Xml    input_filepath=${custom-iphy}
+...             AND             Setup Custom SCF    scf=${custom-scf}
+...             AND             Start Default Logging    output_dirpath=${OUTPUT_DIR}/Suite_Setup_Logs
+...             AND             Start Xn And Ng Interfaces For Second Gnb
+...          AND             Reach OnAir    lua_cfg=${CURDIR}/config/egate_TDD_2Cells_SANSA_n41_n79_cell2capabil.lua
+...          AND             Stop Default Logging    output_dirpath=${OUTPUT_DIR}/Suite_Setup_Logs
+
+Test Setup        Run Keywords     Dated Log New Line    Test Setup start
+...               AND              Start Default Logging   output_dirpath=${OUTPUT_DIR}/${TEST_NAME}
+
+Test Teardown    Run Keywords     Dated Log New Line    Test Teardown start
+...               AND             UE Multiple Deregister    1    10
+
+Suite Teardown    Run Keywords     Dated Log New Line    Suite Teardown start
+...               AND              Stop Default Processes And Gather Logs And Compress Logs
+
+*** Variables ***
+
+${rdMaxNumUeTdDl}=  0x5800CA=6
+${rdMaxNumUeTDUl}=  0x5800CB=6
+@{FLAGS_LIST}=  ${rdMaxNumUeTdDl}    ${rdMaxNumUeTDUl}
+
+*** Test Cases ***
+T2_CNI87165_Multi_UE_CA_DL_data_transmission_without_gNB_restart
+    [Tags]    CRT
+    [Documentation]     This test case validates the effect of the enhanced Estimated Throughput (eTh) calculation designed to reduce
+     ...    the volatility of the eTh due to spikes in the CS1 list size. It helps to mitigate issues with RLC delays/retransmissions
+     ...    caused by such spikes on any of the Cells where a CA UE is active.
+
+
+### Step 1 - Attach all Ue + all PDU Session + Start all traffic
+    ${message}=  Evaluate  "\\033[44mAttach all Ue + all PDU Session + Start all traffic\\033[0m"
+    Dated Log New Line              ${message}
+    FOR    ${i}    IN RANGE    1    10
+        Attach Ue And Establish PDU Session    ue_id=${i}    pdu_id=${i}    gw_id=${i}    mbps=30
+    END
+
+### Step 2 - Increase all traffic
+    ${message}=  Evaluate  "\\033[44mIncrease all traffic\\033[0m"
+    Dated Log New Line              ${message}
+    FOR    ${i}    IN RANGE    1    10
+        Start Traffic    ue_id=${i}    pdu_id=${i}    dir=dl    mbps=20    trf_id=2
+    END
+
+### Step 3 - Calculate average rate
+    ${message}=  Evaluate  "\\033[44mCalculate average rate\\033[0m"
+    Dated Log New Line              ${message}
+    sleep    60
+    ${average}    Evaluate     0
+    FOR    ${i}    IN RANGE    1    10
+        Check trafic    ue_id=${i}    pdu_id=${i}    scell=0
+        ${average}      Evaluate     ${average} + ${out}
+        Dated Log       av${i}:${average}
+    END
+    ${av1}  Evaluate    ${average}/${i}
+    ${message}=  Evaluate  "\\033[41mTotal Average rate without feature: ${av1}\\033[0m"
+    Dated Log New Line              ${message}
+
+### Step 4 - Stop all Traffic
+    ${message}=  Evaluate  "\\033[44mStop all Traffic\\033[0m"
+    Dated Log New Line              ${message}
+    FOR    ${i}    IN RANGE    1    10
+        Stop Traffic    ue_id=${i}    pdu_id=${i}    trf_id=1
+        Stop Traffic    ue_id=${i}    pdu_id=${i}    trf_id=2
+    END
+
+### Step 5 - Deregister all UE
+    ${message}=  Evaluate  "\\033[44mDeregister all UE\\033[0m"
+    Dated Log New Line              ${message}
+    FOR    ${i}    IN RANGE    1    10
+        CNI-87165_Variables_And_Keywords.UE Deregister    ue_id=${i}
+    END
+
+### Step 6 - Activate feature 87165
+    ${message}=  Evaluate  "\\033[44mActivate feature 87165\\033[0m"
+    Dated Log New Line              ${message}
+    Perform Parameter Commissioning    parameter=actEnhancedFlowControlETh   value=true    dist_name=MRBTS-1/NRBTS-1/NRCELL-1
+    Perform Parameter Commissioning    parameter=actEnhancedFlowControlETh   value=true    dist_name=MRBTS-1/NRBTS-1/NRCELL-2
+    Wait for all cells to be enabled    timeout=480
+
+### Step 7 - Attach all Ue + all PDU Session + Start all traffic
+    ${message}=  Evaluate  "\\033[44mAttach all Ue + all PDU Session + Start all traffic\\033[0m"
+    Dated Log New Line              ${message}
+    FOR    ${i}    IN RANGE    1    10
+        Attach Ue And Establish PDU Session    ue_id=${i}    pdu_id=${i}    gw_id=${i}    mbps=30
+    END
+
+### Step 8 - Increase all traffic
+    ${message}=  Evaluate  "\\033[44mIncrease all traffic\\033[0m"
+    Dated Log New Line              ${message}
+    FOR    ${i}    IN RANGE    1    10
+        Start Traffic    ue_id=${i}    pdu_id=${i}    dir=dl    mbps=20    trf_id=2
+    END
+
+### Step 9 - Compare Average rates
+    ${message}=  Evaluate  "\\033[44mCompare average rates\\033[0m"
+    Dated Log New Line              ${message}
+    sleep    60
+    ${average}    Evaluate     0
+    FOR    ${i}    IN RANGE    1    10
+        Check trafic    ue_id=${i}   pdu_id=${i}    scell=0
+        ${average}      Evaluate     ${average} + ${out}
+        Dated Log       av${i}:${average}
+    END
+    ${av2}  Evaluate    ${average}/${i}
+    ${Diffav}    Evaluate    ${av1}-${av2}
+    ${absDiffav}    Evaluate    abs(${Diffav})
+    ${margin}  Evaluate  ${av1}/10
+    ${message}=  Evaluate  "\\033[41mTotal Average rate with feature: ${av1}\\033[0m"
+    Dated Log New Line              ${message}
+    ${message}=  Evaluate  "\\033[41mAverage rate difference: ${absDiffav}\\033[0m"
+    Dated Log New Line              ${message}
+    Run Keyword If    ${absDiffav} <= ${margin}
+    ...    Dated Log New Line    ${absDiffav} is smaler than margin:${margin}
+    ...    ELSE
+    ...    Fail     msg=${absDiffav} is bigger than margin:${margin}
+
+### Step 10 - Stop all traffic
+    ${message}=  Evaluate  "\\033[44mStop all traffic\\033[0m"
+    Dated Log New Line              ${message}
+    FOR    ${i}    IN RANGE    1    10
+        Stop Traffic    ue_id=${i}    pdu_id=${i}    trf_id=1
+        Stop Traffic    ue_id=${i}    pdu_id=${i}    trf_id=2
+    END
+
+### Step 11 - Deregister all UE
+    ${message}=  Evaluate  "\\033[44mDeregister all UE\\033[0m"
+    Dated Log New Line              ${message}
+    FOR    ${i}    IN RANGE    1    10
+        CNI-87165_Variables_And_Keywords.UE Deregister    ue_id=${i}
+    END
+
+### Step 12 - Produce Scout Data
+    Produce Scout Data

@@ -1,0 +1,833 @@
+*** Settings ***
+Documentation
+...               CB009222
+...
+...               Test Case Scenario author   : axel.gouilly-frossard@nokia.com
+...               Creation Date               : 30-december-2022
+...               Modified Date               : 12-january-2023
+...               Last Modified by            : axel.gouilly-frossard@nokia.com
+...               Based on CB007382 robots
+...               Last Modification           : 24-september-2024 - richard.duthu@nokia.com: Scout data + some RF50 fixes
+
+Library             OperatingSystem
+Library             DateTime
+Library             ../../../resources/python/luashark_tools.py
+Library             luashark_tools.analyzer       WITH NAME       analyzer
+
+Resource             ../../../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../../../resources/SWENG/robot/Connect.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource          ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+
+
+*** Keywords ***
+
+    # Start Keyword for TCs
+
+CB009222_FDD_receiver_test_model
+    [Arguments]           ${param}     ${feat}
+    [Documentation]       Test Model for uplink
+
+    Set Suite Variable    ${param}
+    Init Sequence         ${param}
+
+    Set Suite Variable    ${feat}
+
+    Step                  CB009222-A Test Line Preparation                              argument=${param}
+
+    Critical Step         oam.Activate Test dedicated Mode                   depends=Test Line Preparation
+    Step                  Start 5g Uplink test                               depends=Activate Test dedicated Mode
+    Step                  Check CpRtCm_StartConformanceTestReq parameters_FDD_G-FR1-A1-4    argument=${CAPTURE_CPRT}
+    ...                   depends=Start 5g Uplink test
+    Step                  Check CpRtCm_CellSetupRequest parameters_FDD_G-FR1-A1-4    argument=${CAPTURE_CPRT}
+    ...                   depends=Check CpRtCm_StartConformanceTestReq parameters_FDD_G-FR1-A1-4
+    Step                  Check PuschReceiveReq FR1-A1-4    argument=${CAPTURE_GNB}
+    ...                   depends=Check CpRtCm_CellSetupRequest parameters_FDD_G-FR1-A1-4
+
+    [Teardown]            Teardown TC
+
+CB009222_FDD_transmitter_test_model
+    [Arguments]           ${param}     ${feat}
+    [Documentation]       Test Model for downlink
+
+    Set Suite Variable    ${param}
+    Init Sequence         ${param}
+
+    Set Suite Variable    ${feat}
+
+    Step                   CB009222-A Test Line Preparation                              argument=${param}
+
+    Critical Step          oam.Activate Test dedicated Mode                       depends=Test Line Preparation
+    Step                   Start 5g downlink test                                 depends=Activate Test dedicated Mode
+    Step                   Check CpRtCm_StartConformanceTestReq parameters_FDD_NR-FR1-TM2a    argument=${CAPTURE_CPRT}
+    ...                    depends=Start 5g downlink test
+    Step                   Check CpRtCm_CellSetupRequest parameters_FDD_NR-FR1-TM2a    argument=${CAPTURE_CPRT}
+    ...                    depends=CpRtCm_StartConformanceTestReq parameters_FDD_NR-FR1-TM2a
+    Step                   Check pdschsendreq FR1-TM2a    argument=${CAPTURE_GNB}
+    ...                    depends=Check CpRtCm_CellSetupRequest pparameters_FDD_NR-FR1-TM2a
+
+    [Teardown]            Teardown TC
+
+Start 5g Uplink test
+    [Documentation]         Prepare capture CPRT and gNB, start and stop uplink Test
+    ...                     Then analyze CPRT and BIP traces
+    [Arguments]
+
+    ${CAPTURE_CPRT.prefix}    Set Variable    Cprt_downlink
+
+    ${CAPTURE_GNB.prefix}     Set Variable    gNB_downlink
+
+    Dated log               Cprt capture prefix: ${CAPTURE_CPRT.prefix} & Gnb capture prefix: ${CAPTURE_GNB.prefix}
+
+    Start Capture CPRT      ${CAPTURE_CPRT}
+    Start Capture GNB       ${CAPTURE_GNB}
+
+    @{beam_pattern_id_list}       Create List     1
+    ${rtId}                       Get Runtime Id
+    ${tCellId}                    Set Variable    1
+    ${oam}                        Set Variable   ${GNB_DU.oam}
+    ${cell_dn}           Set Variable   /MRBTS-1/RAT-1/RUNTIME_VIEW-${rtId}/MRBTS_R-${rtId}/NRBTS_R-${tCellId}/NRCELL_R-${tCellId}
+
+    ${beam_pattern_id}            Set Variable   ${beam_pattern_id_list}
+    ${ru_mode}                    Set Variable   NR_Only
+    ${phys_cell_id}               Set Variable   50
+
+    Dated Log                     Start Upnlink test
+
+    ${cmd}                          Set Variable    start_5g_uplink_test
+
+    &{args}                         Create Dictionary
+    ...                                 dist_name="${cell_dn}"
+    ...                                 frc_index="G_FR1_A1_4"
+    ...                                 beam_pattern_id=${beam_pattern_id}
+    ...                                 interval=1
+    ...                                 prb_offset=0
+    ...                                 ru_mode="${ru_mode}"
+    ...                                 phys_cell_id=${phys_cell_id}
+    ${result}                        SBTS OAM Run Command    oam=${oam}    cmd=${cmd}    cmd_args=${args}
+    Traced Sleep   2        msg=CPRT and BIP L1L2 logs capture is ongoing
+
+    Run Keyword And Ignore Error    Stop 5g uplink Test
+
+    Stop Capture            ${CAPTURE_GNB}
+    Stop Capture            ${CAPTURE_CPRT}
+
+Stop uplink Test
+    [Documentation]
+    ...     Stop uplink test
+    ...
+    ...                             *Argument details:*
+    ...                              - oam : Oam identity (ex: ${TGNB_DU[0].oam} or ${TGNB_CU[0].oam})
+    ...                              - cell_dn :  cell DN (/MRBTS-1/RAT-1/RUNTIME_VIEW-.../NRCELL_R-1)
+    [Arguments]                     ${oam}
+    ...                             ${cell_dn}
+    Dated Log                       Stop uplink test
+    ${cmd}                          Set Variable    stop_5g_uplink_test
+    &{args}                         Create Dictionary
+    ...                                 dist_name="${cell_dn}"
+    ${result}                       SBTS OAM Run Command    oam=${oam}    cmd=${cmd}    cmd_args=${args}
+    Log to console                  ${result}
+
+Start 5g Downlink test
+    [Documentation]         Prepare capture CPRT and gNB, start and stop uplink Test
+    ...                     Then analyze CPRT and BIP traces
+    [Arguments]
+
+    ${CAPTURE_CPRT.prefix}    Set Variable    Cprt_downlink
+    ${CAPTURE_GNB.prefix}     Set Variable    gNB_downlink
+    Dated log               Cprt capture prefix: ${CAPTURE_CPRT.prefix} & Gnb capture prefix: ${CAPTURE_GNB.prefix}
+    Start Capture CPRT      ${CAPTURE_CPRT}
+    Start Capture GNB       ${CAPTURE_GNB}
+
+    @{beam_pattern_id_list}         Create List     1
+    ${rtId}                         Get Runtime Id
+    ${tCellId}                      Set Variable    1
+    ${oam}                          Set Variable   ${GNB_DU.oam}
+    ${cell_dn}                      Set Variable   /MRBTS-1/RAT-1/RUNTIME_VIEW-${rtId}/MRBTS_R-${rtId}/NRBTS_R-${tCellId}/NRCELL_R-${tCellId}
+    ${beam_pattern_id}              Set Variable   ${beam_pattern_id_list}
+    ${ru_mode}                       Set Variable   NR_Only
+    ${phys_cell_id}                  Set Variable   50
+
+    Dated Log                       Start Downnlink test
+    ${cmd}                          Set Variable    start_5g_downlink_test
+    &{args}                         Create Dictionary
+    ...                                 dist_name="${cell_dn}"
+    ...                                 test_model="TM2A"
+    ...                                 beam_pattern_id=${beam_pattern_id}
+    ...                                 polarization="P_plus45_or_0"
+    ...                                 power_backoff=0
+    ...                                 ru_mode="${ru_mode}"
+    ...                                 codebook_2_antports=0
+    ...                                 i11_codebook_4_antports=0
+    ...                                 i2_codebook_4_antports=0
+    ...                                 i13_codebook_4_antports=0
+    ...                                 phys_cell_id=${phys_cell_id}
+    ...                                 mimo_rank=1
+
+
+    ${result}                        SBTS OAM Run Command    oam=${oam}    cmd=${cmd}    cmd_args=${args}
+    Traced Sleep   2        msg=CPRT and BIP L1L2 logs capture is ongoing
+
+    Run Keyword And Ignore Error    Stop 5g Downlink Test
+
+    Stop Capture            ${CAPTURE_GNB}
+    Stop Capture            ${CAPTURE_CPRT}
+
+Stop Downlink Test
+    [Documentation]
+    ...     Stop 5G downlink test
+    ...
+    ...                             *Argument details:*
+    ...                              - oam : Oam identity (ex: ${TGNB_DU[0].oam} or ${TGNB_CU[0].oam})
+    ...                              - cell_dn :  cell DN (/MRBTS-1/RAT-1/RUNTIME_VIEW-.../NRCELL_R-1)
+    [Arguments]                     ${oam}
+    ...                             ${cell_dn}
+    Dated Log                       Stop uplink test
+    ${cmd}                          Set Variable    stop_5g_uplink_test
+    &{args}                         Create Dictionary
+    ...                                 dist_name="${cell_dn}"
+    ${result}                       SBTS OAM Run Command    oam=${oam}    cmd=${cmd}    cmd_args=${args}
+    Log to console                  ${result}
+
+
+Check CpRtCm_StartConformanceTestReq parameters_FDD_G-FR1-A1-4
+    [Documentation]
+    ...     Check CpRtCm_StartConformanceTestReq parameters
+    ...    -frcIndex: Indicate which test model for the testing (G_FR1_A1_4)
+    ...    -type: receiver for uplink test
+    ...    -rumode: NR_Only
+
+    [Arguments]         ${CAPTURE_CPRT}
+
+    ${CB009222_TestModel}    set variable    G_FR1_A1_4
+
+    Dated Log       Capture_CPRT_path ${CAPTURE_CPRT.path}  ${CAPTURE_CPRT}
+
+    ${pdmlFileCprt}     analyzer.pcap_to_pdml       ${CAPTURE_CPRT.path}
+
+    Dated Log       Check CpRtCm_StartConformanceTestReq parameters
+
+    @{msg_field}    Create List     frcIndex
+    ...                             type
+    ...                             ruMode
+    ...                             nrCellIdentity
+
+    @{listPacketMatch}              Get Packet Match List
+    ...                             pdmlFile=${pdmlFileCprt}
+    ...                             packetName=itf_l2_ps_tm_cell_startconformancetestreq_t
+    ...                             pathList=@{msg_field}
+
+    ${packet}                       set variable                  ${listPacketMatch[0]}
+
+    ${frcindex}                    Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=frcIndex
+    ...                             kind=showname
+
+    Should contain                  ${frcindex}        ${CB009222_TestModel}
+
+    ${type}                Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=type
+    ...                             kind=showname
+
+    Should contain                  ${type}             Receiver
+
+    ${ruMode}               Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=ruMode
+    ...                             kind=showname
+
+    Should contain                  ${ruMode}             NR_only
+
+    ${nrCellIdentity}               Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=nrCellIdentity
+    ...                             kind=showname
+
+    Should contain                  ${nrCellIdentity}             16385
+
+Check CpRtCm_CellSetupRequest parameters_FDD_G-FR1-A1-4
+    [Documentation]
+    ...     Check CpRtCm_StartConformanceTestReq parameters
+    ...    -phyCellId and nrCellIdnetity :  50 and 16385 resp according to scf
+    ...    -dlBandwidth and ulBandwidth: 133 prbs since test done on 25MHz
+    ...
+
+    [Arguments]         ${CAPTURE_CPRT}
+
+    ${CB009222_TestModel}    set variable    G_FR1_A1_4
+
+    Dated Log       Capture_CPRT_path ${CAPTURE_CPRT.path}  ${CAPTURE_CPRT}
+
+    ${pdmlFileCprt}     analyzer.pcap_to_pdml       ${CAPTURE_CPRT.path}
+
+    Dated Log       Check Cell Setup Requestparameters
+
+    @{msg_field}    Create List     physCellId
+    ...                             nrCellIdentity
+    ...                             dlBandwidth
+    ...                             ulBandwidth_item
+
+    @{listPacketMatch}              Get Packet Match List
+    ...                             pdmlFile=${pdmlFileCprt}
+    ...                             packetName=itf_l2_ps_cell_cellsetupreq
+    ...                             pathList=@{msg_field}
+
+    ${packet}                       set variable                  ${listPacketMatch[0]}
+
+    ${physCellId}                    Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=physCellId
+    ...                             kind=showname
+
+    Should contain                  ${physCellId}        50
+
+    ${nrCellIdentity}                Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=nrCellIdentity
+    ...                             kind=showname
+
+    Should contain                  ${nrCellIdentity}             16385
+
+    ${dlBandwidth}               Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=dlBandwidth
+    ...                             kind=showname
+
+    Should contain                  ${dlBandwidth}             133
+
+    ${ulBandwidth}               Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=ulBandwidth_item
+    ...                             kind=showname
+
+    Should contain                  ${ulBandwidth}             133
+
+
+Check CpRtCm_CellSetupRequest parameters_FDD_NR-FR1-TM2a
+    [Documentation]
+    ...     Check CpRtCm_StartConformanceTestReq parameters
+    ...    -phyCellId and nrCellIdnetity :  50 and 16385 resp according to scf
+    ...    -dlBandwidth and ulBandwidth: 133 prbs since test done on 25MHz
+    ...
+
+    [Arguments]         ${CAPTURE_CPRT}
+
+    ${CB009222_TestModel}    set variable    TM2a
+
+    Dated Log       Capture_CPRT_path ${CAPTURE_CPRT.path}  ${CAPTURE_CPRT}
+
+    ${pdmlFileCprt}     analyzer.pcap_to_pdml       ${CAPTURE_CPRT.path}
+
+    Dated Log       Check Cell Setup Requestparameters
+
+    @{msg_field}    Create List     physCellId
+    ...                             nrCellIdentity
+    ...                             dlBandwidth
+    ...                             ulBandwidth_item
+
+    @{listPacketMatch}              Get Packet Match List
+    ...                             pdmlFile=${pdmlFileCprt}
+    ...                             packetName=itf_l2_ps_cell_cellsetupreq
+    ...                             pathList=@{msg_field}
+
+    ${packet}                       set variable                  ${listPacketMatch[0]}
+
+    ${physCellId}                    Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=physCellId
+    ...                             kind=showname
+
+    Should contain                  ${physCellId}        50
+
+    ${nrCellIdentity}                Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=nrCellIdentity
+    ...                             kind=showname
+
+    Should contain                  ${nrCellIdentity}             16385
+
+    ${dlBandwidth}               Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=dlBandwidth
+    ...                             kind=showname
+
+    Should contain                  ${dlBandwidth}             133
+
+    ${ulBandwidth}               Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=ulBandwidth_item
+    ...                             kind=showname
+
+    Should contain                  ${ulBandwidth}             133
+
+Check CpRtCm_StartConformanceTestReq parameters_FDD_NR-FR1-TM2a
+    [Documentation]
+    ...     Check CpRtCm_StartConformanceTestReq parameters
+    ...    -frcIndex: Indicate which test model for the testing (TM2a)
+    ...    -type: transmitter for downlink test
+    ...    -rumode: NR_Only
+
+    [Arguments]         ${CAPTURE_CPRT}
+
+    ${CB009222_TestModel}    set variable    TM2A
+
+    Dated Log       Capture_CPRT_path ${CAPTURE_CPRT.path}  ${CAPTURE_CPRT}
+
+    ${pdmlFileCprt}     analyzer.pcap_to_pdml       ${CAPTURE_CPRT.path}
+
+    Dated Log       Check CpRtCm_StartConformanceTestReq parameters
+
+    @{msg_field}    Create List     testModel
+    ...                             type
+    ...                             ruMode
+    ...                             nrCellIdentity
+
+    @{listPacketMatch}              Get Packet Match List
+    ...                             pdmlFile=${pdmlFileCprt}
+    ...                             packetName=itf_l2_ps_tm_cell_startconformancetestreq_t
+    ...                             pathList=@{msg_field}
+
+    ${packet}                       set variable                  ${listPacketMatch[0]}
+
+    ${frcindex}                    Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=testModel
+    ...                             kind=showname
+
+    Should contain                  ${frcindex}        ${CB009222_TestModel}
+
+    ${type}                Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=type
+    ...                             kind=showname
+
+    Should contain                  ${type}             Transmitter
+
+    ${ruMode}               Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=ruMode
+    ...                             kind=showname
+
+    Should contain                  ${ruMode}             NR_only
+
+    ${nrCellIdentity}               Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=nrCellIdentity
+    ...                             kind=showname
+
+    Should contain                  ${nrCellIdentity}             16385
+
+Check PuschReceiveReq FR1-A1-4
+    [Documentation]     Check Prbs for PuschReceiveReq are in line with FR1-A1-4 expectations
+    ...                 knowing that even for 25 MHz bdw, 20 MHz pattern is used meaning 106 prb
+    [Arguments]         ${BIP_L1L2}
+
+    ${pcapFiltered}          analyzer.filter_pcap
+    ...                      pcapInFile=${BIP_L1L2.path}
+    ...                      filterName=uldata_puschreceivereq
+    ...                      filterExp=uldata_puschreceivereq
+
+    ${pdml}=                 analyzer.pcap_to_pdml         ${pcapFiltered}
+
+    @{ListOfPuschReceiveReqIE}           Create List      startPrb       numOfPrb
+
+    FOR   ${slot}  IN RANGE   0  10
+        @{ListOfPuschReceiveReq}            Get Packet Match List
+        ...                             pdmlFile=${pdml}
+        ...                             packetName=uldata_puschreceivereq
+        ...                             pathList=@{ListOfPuschReceiveReqIE}
+        ...                             startPacket=${1}
+        ...                             endPacket=${20}
+        ...                             filter='slot$'== ${slot}
+        Dated Log     Look in Slot ${slot}
+        ${lenPuschSendReq}              get length          ${ListOfPuschReceiveReq}
+        Dated Log New Line              Total number of PdcchSendReq msgs: ${lenPuschSendReq}
+        should be true                  ${lenPuschSendReq}!=0
+        Dated Log  =====> Start check PUSCH IEs
+        Check prb in uplink      ${ListOfPuschReceiveReq}
+    END
+
+Check pdschsendreq FR1-TM2a
+    [Documentation]     Check Prbs for dldata_pdschsendreq are in line with FR1-TM2a expectations
+    ...                 This is pdschsendreq with one prb starting in prb 0, 66 or 132 depending on the slot.
+    [Arguments]         ${BIP_L1L2}
+
+    ${pcapFiltered}          analyzer.filter_pcap
+    ...                      pcapInFile=${BIP_L1L2.path}
+    ...                      filterName=dldata_pdschsendreq
+    ...                      filterExp=dldata_pdschsendreq
+
+    ${pdml}=                 analyzer.pcap_to_pdml         ${pcapFiltered}
+
+    @{ListOfpdschsendreqIE}           Create List      startPrb       numOfPrb
+
+    FOR   ${slot}  IN RANGE   0  10
+        @{ListOfpdschsendreq}            Get Packet Match List
+        ...                             pdmlFile=${pdml}
+        ...                             packetName=dldata_pdschsendreq
+        ...                             pathList=@{ListOfpdschsendreqIE}
+        ...                             startPacket=${1}
+        ...                             endPacket=${20}
+        ...                             filter='slot$'== ${slot}
+        Dated Log     Look in Slot ${slot}
+        ${lenPdschSendReq}              get length          ${ListOfpdschsendreq}
+        Dated Log New Line              Total number of PdcchSendReq msgs: ${lenPdschSendReq}
+        should be true                  ${lenPdschSendReq}!=0
+        Dated Log  =====> Start check PDSCH IEs
+        Check prb in downlink      ${ListOfpdschsendreq}   ${slot}
+    END
+
+Check prb in downlink
+    [Arguments]         ${ListOfPuschReceiveReq}    ${slot}
+    Dated log   Check prb in downlink for slot ${slot}
+    FOR    ${packet}   IN           @{ListOfPuschReceiveReq}
+
+        run Keyword If       ${slot}==0 or ${slot}==3 or ${slot}==6 or ${slot}==9
+        ...     Check prb0 in downlink     ${packet}
+        run Keyword If       ${slot}==1 or ${slot}==4 or ${slot}==7
+        ...     Check prb66 in downlink    ${packet}
+        run Keyword If       ${slot}==2 or ${slot}==5 or ${slot}==8
+        ...     Check prb132 in downlink   ${packet}
+    END
+
+Check prb0 in downlink
+        [Arguments]         ${packet}
+        ${startPrb}              Get Value In Packet Match
+        ...                      packetMatch=${packet}
+        ...                      field=startPrb
+        dated log     start_prb: ${startPrb}
+        should be true           ${startPrb}==0
+        ${numOfPrb}              Get Value In Packet Match
+        ...                      packetMatch=${packet}
+        ...                      field=numOfPrb
+        dated log     num_of_prb: ${numOfPrb}
+        should be true           ${numOfPrb}==1
+
+Check prb66 in downlink
+        [Arguments]         ${packet}
+        ${startPrb}              Get Value In Packet Match
+        ...                      packetMatch=${packet}
+        ...                      field=startPrb
+        dated log     start_prb: ${startPrb}
+        should be true           ${startPrb}==66
+        ${numOfPrb}              Get Value In Packet Match
+        ...                      packetMatch=${packet}
+        ...                      field=numOfPrb
+        dated log     num_of_prb: ${numOfPrb}
+        should be true           ${numOfPrb}==1
+
+Check prb132 in downlink
+        [Arguments]         ${packet}
+        ${startPrb}              Get Value In Packet Match
+        ...                      packetMatch=${packet}
+        ...                      field=startPrb
+        dated log     start_prb: ${startPrb}
+        should be true           ${startPrb}==132
+        ${numOfPrb}              Get Value In Packet Match
+        ...                      packetMatch=${packet}
+        ...                      field=numOfPrb
+        dated log     num_of_prb: ${numOfPrb}
+        should be true           ${numOfPrb}==1
+
+Check prb in uplink
+    [Arguments]         ${ListOfpdschsendreq}
+    FOR    ${packet}   IN           @{ListOfpdschsendreq}
+
+           ${startPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startPrb
+           dated log     start_prb: ${startPrb}
+           should be true           ${startPrb}==0
+
+           ${numOfPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPrb
+           dated log     num_of_prb: ${numOfPrb}
+           should be true           ${numOfPrb}==106
+    END
+
+
+Start Capture CPRT
+    [Arguments]                     ${capture}
+    [Tags]                          CAPTURE
+    ${capture.filter}               Get Filter For SCTP
+    Get Filter For TCP
+    Set Suite Variable              ${capture}
+    Capture Init                    ${capture}           withTN=True
+    Capture Start                   ${capture}
+
+Start Capture GNB
+    [Arguments]                     ${capture}
+    [Tags]                          CAPTURE
+    Set Suite Variable              ${capture}
+    Capture Init                    ${capture}           withTN=True
+    Capture Start                   ${capture}
+
+Stop Capture
+    [Arguments]                     ${capture}
+    [Tags]                          CAPTURE
+    ${stop_path}                    Capture Stop                    ${capture}
+    Dated Log  log dans ${stop_path}
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${Capture.path}     AND
+    Run Keyword And Ignore Error    OperatingSystem.Copy File    ${Capture.path}    ${testCaseDir}
+    Dated Log              log saved to ${testCaseDir}\n
+
+
+Set SCF CB009222
+    [Arguments]                    ${testParam}
+    Dated log New Line                       NRCELL_DIST_NAME=${NRCELL_DIST_NAME}
+    &{modify_param0}    Create Dictionary
+    ...    parameter=btsName
+    ...    dist_name=MRBTS-${MRBTS_ID}
+    ...    value=${testParam.scf.mrbts.btsName}
+    &{modify_param1}    Create Dictionary
+    ...    parameter=prodCodePlanned
+    ...    dist_name=MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-1
+    ...    value=${testParam.scf.nrcell.prodCodePlanned}
+    &{modify_param2}    Create Dictionary
+    ...    parameter=freqBandIndicatorNR
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scf.nrcell.freqBandIndicatorNR}
+    &{modify_param3}    Create Dictionary
+    ...    parameter=gscnOrSsPbchArfcn
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scf.nrcell.gscn}
+    &{modify_param4}    Create Dictionary
+    ...    parameter=chBwDl
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1/NRCELL_FDD-1
+    ...    value=${testParam.scf.nrcell.chBwDL}
+    &{modify_param5}    Create Dictionary
+    ...    parameter=chBwUl
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1/NRCELL_FDD-1
+    ...    value=${testParam.scf.nrcell.chBwUL}
+    &{modify_param6}    Create Dictionary
+    ...    parameter=nrarfcnDl
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1/NRCELL_FDD-1
+    ...    value=${testParam.scf.nrcell.nrarfcnDL}
+    &{modify_param7}    Create Dictionary
+    ...    parameter=nrarfcnUl
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1/NRCELL_FDD-1
+    ...    value=${testParam.scf.nrcell.nrarfcnUL}
+
+    @{modify_param_FR1}     Create List
+    ...     ${modify_param0}        ${modify_param1}        ${modify_param2}
+    ...     ${modify_param3}        ${modify_param4}        ${modify_param5}
+    ...     ${modify_param6}        ${modify_param7}
+
+
+    Dated Log       Frequency Range: ${testParam.seq.bandwidth}
+
+
+    OAM Set Params      ${modify_param_FR1}
+
+
+    #Common
+PrintTLInformation
+    log many    EGATE_CFG_NAME=${tl.core.cfg_filename}    WTS_FILE_PATH=${tl.core.dir_path}   GNB_IP=${GNB_IP}
+    log many    UTE_IP=${tl.core.default_ssh_connection_details.addr}
+    ...         UTE_USERNAME=${tl.core.default_ssh_connection_details.username}
+    ...         UTE_PASSWORD=${tl.core.default_ssh_connection_details.password}
+
+    #Common
+gNB BackupSCF
+    [Arguments]
+    ${backupfolder}    set variable    backups
+    run   command=mkdir ${LOG_PATH}${/}${backupfolder}
+    set global variable    ${BACKUP_DIR}    ${LOG_PATH}${/}${backupfolder}
+
+    ${sufix}=     set variable if          ${isAic}            _DU
+    ...                                                        ${EMPTY}
+    ${scffile}                   set variable                old_commission${sufix}.xml
+    ${scf_file_path}             OAM Get SCF File           dir=${BACKUP_DIR}      file=${scffile}
+    set global variable    ${BACKUP_SCF}    ${scf_file_path}
+    return from Keyword if      '${isAic}'=='${FALSE}'
+    ${sufix}=     set variable if       ${isAic}     _CU
+    ...                                              ${EMPTY}
+    ${scffile}                   set variable                old_commission${sufix}.xml
+    ${scf_file_path}             OAM Get SCF File           dir=${BACKUP_DIR}      file=${scffile}     oam=${GNB_CU.oam}
+    # OperatingSystem.Copy File    ${scffile}    ${BACKUP_DIR}
+    set global variable    ${BACKUP_CU_SCF}    ${scf_file_path}
+
+Create Test Case Folder
+    [Documentation]    create test case folder
+    ${testCaseDir}    Replace String    ${TEST_NAME[0:30]}    ${SPACE}    _
+    ${testCaseDir}    Replace String    ${testCaseDir}    .    _
+    ${testCaseDir}    Remove String    ${testCaseDir}    [1]
+    ${testCaseDir}    Remove String    ${testCaseDir}    [
+    ${testCaseDir}    Remove String    ${testCaseDir}    ]
+    Dated log       Create Test Case Folder ${testSuiteDir}/${testCaseDir}
+    Set Suite Variable    ${testCaseDir}    ${testSuiteDir}/${testCaseDir}
+    Create Directory    ${testCaseDir}
+
+    #Common
+Get testcase log directory
+    [Documentation]    :Author: Ch SAMSON
+    ...    Retuns path for Testcase log directory
+    ...    If Testcase Log directory does not exist it will created automatically
+    ...
+    ...    :returns: Path for Testcase log
+    ...
+    ${P_resultTestDir}=    Get Variable Value    ${testCaseDir}
+    Run Keyword If    '${P_resultTestDir}'=='None'
+    ...    CB009222_keywords.Create Test Case Folder
+    ${P_resultTestDir} =    Get Variable Value   ${testCaseDir}
+    #${P_resultTestDir} =    Set Variable If    '${P_resultTestDir}'=='None'
+    #...              ${testCaseDir}
+    [Return]    ${P_resultTestDir}
+
+Prepare Test Name
+    [Documentation]    :Author: Ch SAMSON
+    ...    Retuns formated test name
+    ...
+    ...    :returns: formated test name
+    ...
+    ${TEST_NAME}=       replace string  ${TEST_NAME}      ${SPACE}        _
+    set test variable      ${TEST_NAME}
+    [Return]    ${TEST_NAME}
+
+Prepare Logs Directory Path
+    [Arguments]    ${resultDir}=None   ${subdir}=${EMPTY}    ${with_timestamp}=${FALSE}
+    [Documentation]
+    ...    Creates directory for storing logs, based on current execution context.
+    ...    An absolute path to created directory is returned.
+    [Tags]    PRIVATE
+    ${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    ${subdir}    set variable if    '${with_timestamp}'=='${TRUE}'   ${subdir}_${timestamp}
+    ...                                                              ${subdir}
+    ${resultDir}=    Run Keyword If    '${resultDir}'=='None'    CB007382_keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${resultDir}
+    ${logs_dir}   set variable     ${resultDir}/${subdir}
+    OperatingSystem.Create Directory    ${logs_dir}
+    [Return]    ${logs_dir}
+
+    #Common
+
+CB009222-A Test Line Preparation
+   [Arguments]       ${testParam}
+
+    #    Log to Console like Next Step    0    ${SUITE NAME} - ${TEST NAME.replace(" ", "_")}
+    CB009222_keywords.PrintTLInformation
+    GnbXmlTools.Get Data From Gnb TargetBD File               card_name=${param.scf.nrcell.RU}
+    CB009222 Set Context_AP IPHY
+    CB009222_keywords.gNB BackupSCF
+    #    CB007382_keywords.Get Testline Name
+    CB009222_keywords.Set SCF CB009222       ${testParam}
+
+    #Franck
+
+CB009222 Set Context_AP IPHY
+    CB00922 Backup Iphy AirphoneConfig
+
+    WtsXmlConfig.startSession           file=iphy
+
+    #set iphy parameters
+    WtsXmlConfig.setTextUsingIndex    //GSCN    ${param.scf.nrcell.gscn}  idx=1
+
+    WtsXmlConfig.setTextUsingIndex    //cardName       ${param.scf.nrcell.RU}      idx=1
+
+    # update iphy.xml with swVersion and swFileKey values taken fomr GNB TargetBD_*.xml
+    WtsXmlConfig.setTextUsingIndex        //version                        ${g_resource_swVersion}  idx=1
+    WtsXmlConfig.setTextUsingIndex        //bldVersion                     ${g_resource_swVersion}  idx=1
+# obsolete param:    WtsXmlConfig.setTextUsingIndex        //buildversion                   ${g_resource_swVersion}  idx=1
+    WtsXmlConfig.setTextUsingIndex        //software/file/name             ${g_resource_swFileKey}  idx=1
+
+    WtsXmlConfig.stopSession         file=iphy
+
+    ${alias}                        SSH Connect                          ${AP_DU.sys[0].M}
+
+    ${file}                         SSH Cmd                              command=readlink -f /rom/simmode/iphy.xml
+    ...                             alias=${alias}
+    ${file}                         Strip String                         ${file}
+    ssh.Download File    remote_path=${file}    local_path=${testCaseDir}/modified_iphy.xml   connection=${alias}
+    Dated log                       ${file} is backed up in log directory
+
+CB00922 Backup Iphy AirphoneConfig
+    [Documentation]                 Backup current iphy file on AP
+
+    ${alias}                        SSH Connect                          ${AP_DU.sys[0].M}
+
+    ${file}                         SSH Cmd                              command=readlink -f /rom/simmode/iphy.xml
+    ...                             alias=${alias}
+    Dated log                       On Airphone, backing up file ${file}
+    ${file}                         Strip String                         ${file}
+    ${iphy_backup_exists}=          SSH Cmd                              command=test -f ${file}.backup && echo -n "okman" || echo -n "noway"
+    ...                             alias=${alias}
+    ${iphy_file_exist}              SSH Cmd                              command=test -f ${file} && echo -n "okman" || echo -n "noway"
+    ...                             alias=${alias}
+    run keyword if                  '${iphy_file_exist}'=='okman' and '${iphy_backup_exists}'!='okman'
+    ...                             SSH Cmd                              command=cp ${file} ${file}.backup     alias=${alias}
+    Dated log                       On Airphone, ${file} is backed up
+    ssh.Download File    remote_path=${file}    local_path=${testCaseDir}/original_iphy.xml   connection=${alias}
+    Dated log                       ${file} is backed up in log directory
+
+
+CB00922 Restore Iphy AirphoneConfig
+    [Documentation]                 Restore current iphy file on AP
+
+    ${alias}                        SSH Connect                          ${AP_DU.sys[0].M}
+
+    ${file}                         SSH Cmd                              command=readlink -f /rom/simmode/iphy.xml
+    ...                             alias=${alias}
+    Dated log                       On Airphone, restoring file ${file}
+    ${file}                         Strip String                         ${file}
+    ${iphy_backup_exists}=          SSH Cmd                              command=test -f ${file}.backup && echo -n "okman" || echo -n "noway"
+    ...                             alias=${alias}
+    ${iphy_file_exist}              SSH Cmd                              command=test -f ${file} && echo -n "okman" || echo -n "noway"
+    ...                             alias=${alias}
+    run keyword if                  '${iphy_file_exist}'=='okman' and '${iphy_backup_exists}'=='okman'
+    ...                             Run keywords
+    ...                                 SSH Cmd                          command=cp ${file}.backup ${file}    alias=${alias}
+    ...     AND                         SSH Cmd                          command=rm ${file}.backup   alias=${alias}
+    Dated log                       On Airphone, ${file} is restored
+
+Teardown TC
+    Dated log              Test ${TEST_NAME} CB009222 ending
+    Produce Scout Data
+    #Step                   Setup.Get Sos Report
+    [Teardown]             GenericTest.Display diagnosis
+
+    #Common
+Create Test Suite Folder
+    [Documentation]    create test suite folder
+    ${timeStamp}    get current date    result_format=%Y%m%d_%H%M%S
+    Set Suite Variable    ${testSuiteDir}    ${LOG_PATH}/${SUITE_NAME}
+    create directory    ${testSuiteDir}
+
+    #Common
+
+
+
+CB9222 Suite Setup From Scratch
+    Setup.Suite Setup From Scratch
+    Init Variables
+
+Init Variables
+    ${CAPTURE_GNB}                  Capture L1L2 Set Upon Config
+    Set Suite Variable                ${CAPTURE_GNB}
+    Dated Log            CAPTURE_GNB: ${CAPTURE_GNB}
+    ${CAPTURE_CPRT}      Capture CPRT Set Upon Config
+    Set Suite Variable                ${CAPTURE_CPRT}
+    Dated Log           CAPTURE_CPRT: ${CAPTURE_CPRT}
+    CB009222_keywords.Create Test Suite Folder
+
+Stop 5g downlink Test     #u
+    ${rtId}                         Get Runtime Id
+    ${tCellId}                      Set Variable    1
+    Stop Downlink Test              oam=${GNB_DU.oam}
+    ...         cell_dn=/MRBTS-1/RAT-1/RUNTIME_VIEW-${rtId}/MRBTS_R-${rtId}/NRBTS_R-${tCellId}/NRCELL_R-${tCellId}
+
+Stop 5g uplink Test     #u
+    ${rtId}                         Get Runtime Id
+    ${tCellId}                      Set Variable    1
+    Stop uplink Test              oam=${GNB_DU.oam}
+    ...         cell_dn=/MRBTS-1/RAT-1/RUNTIME_VIEW-${rtId}/MRBTS_R-${rtId}/NRBTS_R-${tCellId}/NRCELL_R-${tCellId}
+
+
+CB9222 Suite teardown
+    CB00922 Restore Iphy AirphoneConfig
+    Setup.Suite Teardown
+

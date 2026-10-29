@@ -1,0 +1,51 @@
+*** Settings ***
+Documentation
+...    Author: Monika Szlovak (monika.szlovak@nokia.com)
+...    Maintainer: Monika Szlovak (monika.szlovak@nokia.com)
+...    Group in charge: MANO_SOAM3
+...    References: doors
+...    Feature Description: 5GC000371
+...    Sample execution: /opt/ute/python/bin/robot --variable CONFIGURATION:$UTE_CONFIGURATION -L TRACE -b debug.log
+...    -d /opt/ute/logs/ /home/ute/robotws5g/testsuite/OAM/ET/BTS_OAM_FMRECOV/CB007308-5G_5GC000371/general.robot
+...    NA in OSSEMS TRUNK
+
+Resource    ./resources/5GC000371.robot
+
+Force Tags   STATE_CONFIGURED  RAN_5G   RAN_5G_TDD  5G_RAN_TDD  5G_RAN   SBTS22R3   SBTS22R4   master_classicalbts_all
+...    CLOUD_5G_O_E_AP_LO_SANSA_FS_ECPRI_CMWV_TDD
+...    CA_BTS_OAM_FMRECOV  # SBTS22R1  SBTS22R2  CLOUD_5G_O_E_AP_KL_SANSA_L1B_ECPRI_CMWV_TDD
+
+Suite Setup       Suite Preconditions
+#Suite Teardown    Suite Postconditions
+Test Setup        Test Preconditions
+Test Teardown     Test Postconditions
+
+*** Variables ***
+${LOGGING_ENB_SYSLOG}=             True
+${LOGGING_IPHY_SYSLOG}=            True
+${LOGGING_ADMIN_LOG}=              True
+${LOGGING_ADMIN_INFOMODEL_LOG}=    True
+${LOGGING_EMSSIM_LOG}=             True
+
+*** Test Cases ***
+[1.0] CB007308-5G_5GC000371-Snapshot_collection_is_triggered_by_radio_recovery
+    [Tags]   CRT
+    [Documentation]
+    ...
+    CB007308-5G_5GC000371-Snapshot_collection_is_triggered_by_radio_recovery
+
+[1.0] CB007308-5G_5GC000371-Snapshot_collection_is_triggered_by_autonomous_radio_recovery
+    [Tags]   CRT
+    [Documentation]
+    ...
+    CB007308-5G_5GC000371-Snapshot_collection_is_triggered_by_autonomous_radio_recovery
+
+[1.0] CB007308-5G_5GC000371-Collect_logs_after_FCT_Critical_Process_Crash
+    [Tags]   CRT
+    [Documentation]
+    ...
+    CB007308-5G_5GC000371-Collect_logs_after_FCT_Critical_Process_Crash
+
+
+
+

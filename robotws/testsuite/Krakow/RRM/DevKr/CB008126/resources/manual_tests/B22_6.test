@@ -1,0 +1,72 @@
+# ; first value after semicolon means sleep after action command
+# ; parameter 'o' after semicolon means, that output of the command is required
+
+# CB008126-A-B22 Failed TNL modification followed by outgoing HO
+# Test verifies that:
+# - it is not possible to modify UL NG-U UP TNL address when CB008126 FF is diabled
+# - when UE performs HO, old (not modified) UL NG-U UP TNL address are present in XN message
+# use lua SA_TDD_2c_1gNBSim.lua
+
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/GBR_5QI_1_2_3_4_71_72_76_128_170_212_254.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/vonr_gbr_activation.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/gNBSim.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/disable_ciphering.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/inter_gnb_ho.yaml
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/CB008126_enable.yaml
+
+ue_history_information_list_add_ngran id=1 gnb_id=3 cell_type=medium nrcgi=311:489|0x01 time_ue_stayed_in_cell=100
+ue_history_information_list_add_ngran id=1 gnb_id=2 cell_type=medium nrcgi=311:489|0x01 time_ue_stayed_in_cell=100
+ue_history_information_list id=1 action=commit
+ue_enb_param id=1 ue_history_list=1
+
+# attach UE1
+ue_change_location id=1 enb=2 cell=1
+ue_register id=1;2
+set_pdu_param ue=1 pdu=1 trf_type=internal
+ue_pdu_session_setup pdu=1 ue=1 gw=1 nwslice=1;2
+trf_data_start ue=1 pdu=1 qfi=1 dir=dl mbps=30 trf_id=1
+trf_data_start ue=1 pdu=1 qfi=1 dir=ul mbps=10 trf_id=1;10
+
+% [{'MOC': 'NRBTS', 'ID': '1', 'act5qiAndUlNguTnlQosFlowMod': 'False'}]
+pause
+
+ue_pdu_session_modify ue=1 pdu=1 switch_ul_tunnel_endpoint=ip_teid
+# Verify NGAP:PDUSessionResourceModifyResponse with PDUSessionResourceFailedToModifyListModRes
+pause
+
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;1;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;1;o
+pause
+
+% [{'MOC': 'NRBTS', 'ID': '1', 'act5qiAndUlNguTnlQosFlowMod': 'True'}]
+pause
+
+# XN HO UE1
+ue_measurement_send_nr id=1 meas_id=2 event=A5 srsrp_nr=19 srsrq_nr=10 phycell_id=52 nrsrp_nr=85 nrsrq_nr=31;2
+pause
+meas_cfg_ue_disp id=1;1;o
+ue_measurement_send_nr id=1 meas_id=5 event=A5 srsrp_nr=18 phycell_id=50 nrsrp_nr=85;2
+# Verify in XNAP:HandoverRequest, that old uL-NGU-UP-TNL is used
+pause
+
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;1;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;1;o
+pause
+
+ue_kill id=1;5
+exit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

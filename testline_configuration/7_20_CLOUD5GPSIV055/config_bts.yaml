@@ -1,0 +1,846 @@
+#-- template to create 5GRAC VNF
+#-- Version: 1.0.0.3
+#-- Tenant network and VNFC configuration based on 5G cloud architecture below:
+
+#-- Single instance for each VNFC type, no redundancy.
+
+#** Notes:
+#     The comments in this template are added for test version only, should be removed in formal release.
+#     this draft template is not verified in NCIR yet. 
+
+heat_template_version: 2014-10-16
+
+description: deploy 5G RAC VNF as |OAM|CNCP|UECP|UEUP| VNFCs.
+
+parameters:
+  _nokfsoperator_password:
+    type: string
+    description: password for _nokfsoperator
+    default: "!"
+  root_password:
+    type: string
+    description: password for root
+    default: "!"
+  _nokadmin_password:
+    type: string
+    description: password for _nokadmin
+    default: "!"
+
+# refer to oam_net defined in 5grac_ext_net.yaml
+  oam_net_id:
+    description: UUID of oam network.
+    type: string
+    
+# refer to backhaul_net defined in 5grac_ext_net.yaml    
+  backhaul_net_id:
+    description: UUID of oam network.
+    type: string
+    
+
+  key_name:
+    type: string
+    description: Name of keypair to assign to servers
+  image_name:
+    type: string
+    description: Name of image to use for servers
+  cluster_identification:
+    description: Cluster identification.
+    type: number
+    constraints:
+      - range: { min: 1, max: 4095 }
+        description: (cluster_identification must be number <1-4095>)
+
+  management_net_provider_name:
+    description: provider net name for management networks.
+    type: string
+  internal_net_provider_name:
+    description: provider net name for internal networks.
+    type: string
+  internal_service_net_mask:
+    description: internal service network mask
+    type: string
+  internal_net_mask:
+    description: internal network mask
+    type: string
+    
+  #- IP address can be configured by heat template or O&M application, just need to be aligned with 5G17 O&M solution 
+  #  In this version, All IP address in VNFC and be configured.
+   
+  #- if use DHCP for internal_service_net, can this fixed IP be removed ? 
+
+  oam_internal_net_ip:
+    description: ip address for OAM VNFC internal network port
+    type: string  
+  oam_internal_service_net_ip:
+    description: ip address for OAM internal service network port
+    type: string
+  oam_ip:
+    description: ip address for OAM network port
+    type: string
+  oam_fronthaul_net_ip:
+    description: ip address for OAM fronthaul port
+    type: string    
+  oam_default_gw:
+    description: gw for OAM network 
+    type: string
+  oam_net_mask:
+    description: netmask for OAM network 
+    type: string
+
+  cncp_internal_net_ip:
+    description: ip address for CNCP VNFC internal network port
+    type: string
+  cncp_internal_service_net_ip:
+    description: ip address for CNCP VNFC internal service network port
+    type: string
+  cncp_backhaul_net_ip:
+    description: ip address for CNCP VNFC backhual network port
+    type: string    
+  cncp_fronthaul_net_ip:
+    description: ip address for CNCP VNFC fronthual network port
+    type: string
+
+  uecp_internal_net_ip:
+    description: ip address for UECP VNFC internal network port
+    type: string
+  uecp_internal_service_net_ip:
+    description: ip address for UECP VNFC internal service network port
+    type: string
+    
+ 
+  ueup0_internal_net_ip:
+    description: ip address for ueup0 VNFC internal network port
+    type: string
+  ueup0_internal_service_net_ip:
+    description: ip address for UEUP0 VNFC internal service network port
+    type: string
+
+  ueup0_backhaul_up0_net_ip:
+    description: ip address for UEUP0 VNFC backhual network port
+    type: string
+  
+  ueup0_fronthaul_up0_net_ip:
+    description: ip address for UEUP0 VNFC fronthual network port
+    type: string
+  
+ 
+  rap_01_ip:
+    description: ip address for 5G RAP01
+    type: string
+  rap_02_ip:
+    description: ip address for 5G RAP02
+    type: string
+  rtm_ip:
+    description: ip address for 5G rtm
+    type: string
+    
+  ntp_servers:
+    type: comma_delimited_list
+    description: Comma separated list of servers to synchronize to
+  dns_forwarders:
+    type: comma_delimited_list
+    description: Comma separated list of servers to forward queries to
+  tzregion:
+    type: string
+    description: Timezone region
+    default: Asia/Shanghai
+  # use same platform installation script as CloudBTS 16.3
+  deployment:
+    type: string
+    description: Deployment name
+    default: create_vBTS.sh
+    
+  vif_model:
+    type: string
+    description: virtual interface model (avp or virtio)
+    default: avp
+
+  disk_config_size:
+    type: string
+    description: Config storage size
+    default: 5
+  disk_mstate_size:
+    type: string
+    description: Mstate storage size
+    default: 3
+  disk_log_size:
+    type: string
+    description: Log storage size
+    default: 5
+  disk_services_size:
+    type: string
+    description: Services storage size
+    default: 2
+  disk_home_size:
+    type: string
+    description: Home storage size
+    default: 2
+  disk_export_size:
+    type: string
+    description: Export storage size
+    default: 5
+  disk_db_size:
+    type: string
+    description: Export storage size
+    default: 4
+  disk_ccs_size:
+    type: string
+    description: CCS storage size
+    default: 10
+
+  OAM-0_availability_zone:
+    description: OAM-0 availability zone.
+    type: string
+    default: "nova"
+
+  CNCP-0_availability_zone:
+    description: CNCP-0 availability zone.
+    type: string
+    default: "nova"
+
+  UECP-0_availability_zone:
+    description: UECP-0 availability zone.
+    type: string
+    default: "nova"
+
+ 
+  UEUP-0_availability_zone:
+    description: UEUP-0 availability zone.
+    type: string
+    default: "nova"
+  
+
+  # RCP networks
+  internal_net_name:
+    type: string
+    description: Name of internal network to be created.
+    default: internal_net
+  internal_net_subnet_name:
+    type: string
+    description: Name of the internal network subnet to be created.
+    default: internal_subnet
+  internal_net_ip_and_mask:
+    type: comma_delimited_list
+    description: Internal network subnet IP and mask.
+    default: 169.254.0.0,19
+
+  internal_net_pool:
+    type: comma_delimited_list
+    description: Start and end of internal network IP address allocation pool for node addresses.
+    default: 169.254.0.7,169.254.1.254
+    
+  internal_net_sid:
+    type: number
+    description: Internal network sid
+
+  management_net_name:
+    type: string
+    description: For getting userdata from metadata server
+    default: management_net
+  management_net_subnet_name:
+    type: string
+    description: Name of the management network subnet to be created.
+    default: management_subnet
+  management_net_ip_and_mask:
+    type: comma_delimited_list
+    description: Management network subnet IP and mask
+    default: 192.168.1.0,24
+  management_net_pool:
+    type: comma_delimited_list
+    description: Start and end of management network IP address allocation pool.
+    default: 192.168.1.2,192.168.1.127
+  management_net_gw:
+    type: string
+    description: Management network GW IP
+    default: 192.168.1.1    
+  management_net_sid:
+    type: number
+    description: Management network sid
+    
+  # Application networks
+  fronthaul_net_name:
+    type: string
+    description: fronthaul network.
+    default: fronthaul_net
+  fronthaul_net_ip_and_mask:
+    type: comma_delimited_list
+    description: fronthaul network ip and mask
+  fronthaul_net_sid:
+    type: number
+    description: fronthaul network sid
+  fronthaul_net_provider_name:
+    type: string
+    description: provider name for fronthaul network 
+
+  internal_service_net_name:
+    type: string
+    description: Internal communication for syscom message and OAM
+    default: internal_service_net
+  internal_service_net_ip_and_mask:
+    type: comma_delimited_list
+    description: Internal service network IP and mask
+  internal_service_net_sid:
+    type: number
+    description: internal service network sid
+  internal_service_net_type:
+    type: string
+    description: internal service network type (vlan/vxlan)
+  internal_service_net_provider_name:
+    type: string
+    description: provider name for internal service network
+  internal_service_net_router_ext_flag:
+    type: string
+    description: internal service net router external flag
+
+  flavor_oam:
+    type: string
+    description: Flavor to use for OAM
+  flavor_cncp:  
+    type: string
+    description: Flavor to use for CNCP
+  flavor_uecp:
+    type: string
+    description: Flavor to use for UECP
+  flavor_ueup:
+    type: string
+    description: Flavor to use for UEUP 
+ 
+resources:
+  # RCP networks 
+  internal_net:
+    type: OS::Neutron::Net
+    properties:
+      name: { get_param: internal_net_name }
+      value_specs:
+        provider:physical_network: { get_param: internal_net_provider_name }
+        provider:network_type: vlan
+        provider:segmentation_id: { get_param: internal_net_sid }
+
+  internal_net_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      name: { get_param: internal_net_subnet_name }
+      network: { get_resource: internal_net }
+      cidr: { list_join: ['/', { get_param: internal_net_ip_and_mask }] }
+      enable_dhcp: False
+      allocation_pools:
+        - start: { get_param: [internal_net_pool, 0] }
+          end:   { get_param: [internal_net_pool, 1] }
+
+  management_net:
+    type: OS::Neutron::Net
+    properties:
+      name: { get_param: management_net_name }
+      value_specs:
+        provider:physical_network: { get_param: management_net_provider_name }
+        provider:network_type: vlan
+        provider:segmentation_id: { get_param: management_net_sid }
+
+  management_net_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      name: { get_param: management_net_subnet_name }
+      network: { get_resource: management_net }
+      cidr: { list_join: ['/', { get_param: management_net_ip_and_mask }] }
+      gateway_ip: { get_param: management_net_gw }
+      allocation_pools:
+        - start: { get_param: [management_net_pool, 0] }
+          end: { get_param: [management_net_pool, 1] }
+
+  # Application networks
+  fronthaul_net:
+    type: OS::Neutron::Net
+    properties:
+      name: { get_param: fronthaul_net_name }
+      shared: True
+      value_specs:
+        router:external: True
+        provider:physical_network: { get_param: fronthaul_net_provider_name }
+        provider:network_type: vlan
+        provider:segmentation_id: { get_param: fronthaul_net_sid }
+      
+  fronthaul_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      network_id: { get_resource: fronthaul_net }
+      cidr: { list_join: ['/', { get_param: fronthaul_net_ip_and_mask }] }
+      enable_dhcp: False
+       
+  internal_service_net:
+    type: OS::Neutron::Net
+    properties:
+      name: { get_param: internal_service_net_name }
+      shared: True
+      value_specs:
+        router:external: { get_param: internal_service_net_router_ext_flag }
+        provider:physical_network: { get_param: internal_service_net_provider_name }
+        provider:network_type: { get_param: internal_service_net_type }
+        provider:segmentation_id: { get_param: internal_service_net_sid }
+
+  internal_service_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      network_id: { get_resource: internal_service_net }
+      cidr: { list_join: ['/', { get_param: internal_service_net_ip_and_mask }] }
+      gateway_ip: Null
+      enable_dhcp: False
+      allocation_pools: []
+      
+  # Disks
+  Disk_Config_OAM-0:
+    type: OS::Cinder::Volume
+    properties:
+      size: { get_param: disk_config_size }
+  Disk_Mstate_OAM-0:
+    type: OS::Cinder::Volume
+    properties:
+      size: { get_param: disk_mstate_size }
+  Disk_Log_OAM-0:
+    type: OS::Cinder::Volume
+    properties:
+      size: { get_param: disk_log_size }
+  Disk_Services_OAM-0:
+    type: OS::Cinder::Volume
+    properties:
+      size: { get_param: disk_services_size }
+  Disk_Home_OAM-0:
+    type: OS::Cinder::Volume
+    properties:
+      size: { get_param: disk_home_size }
+  Disk_Export_OAM-0:
+    type: OS::Cinder::Volume
+    properties:
+      size: { get_param: disk_export_size }
+  
+  Disk_DB_BB-0:
+    type: OS::Cinder::Volume
+    properties: 
+      size: { get_param: disk_db_size }
+  
+  Disk_CCS_OAM-0:
+    type: OS::Cinder::Volume
+    properties:
+      size: { get_param: disk_ccs_size }
+        
+  # 5G OAM VNFC
+  OAM-0_management_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: management_net }
+
+  OAM-0_internal_port:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: internal_net }
+      fixed_ips:
+        - ip_address: { get_param: oam_internal_net_ip}
+
+  OAM-0_oam_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_param: oam_net_id }
+      fixed_ips:
+        - ip_address: { get_param: oam_ip }
+
+  OAM-0_fronthaul_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: fronthaul_net }
+      fixed_ips:
+        - ip_address: { get_param: oam_fronthaul_net_ip }
+        
+  OAM-0_internal_service_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: internal_service_net }
+      fixed_ips:
+        - ip_address: { get_param: oam_internal_service_net_ip }
+  
+  OAM-0:
+    type: OS::Nova::Server
+    depends_on: [ UEUP-0 ]
+    properties:
+      name: OAM-0
+      image: { get_param: image_name }
+      flavor: { get_param: flavor_oam }
+      key_name: { get_param: key_name }
+      availability_zone: { get_param: OAM-0_availability_zone }
+      networks:
+        - port: { get_resource: OAM-0_management_port }
+          vif-model: { get_param: vif_model }
+        - port: { get_resource: OAM-0_internal_port }
+          vif-model: { get_param: vif_model }
+        - port: { get_resource: OAM-0_internal_service_port }
+          vif-model: { get_param: vif_model }
+        - port: { get_resource: OAM-0_fronthaul_port }
+          vif-model: { get_param: vif_model }
+        - port: { get_resource: OAM-0_oam_port }
+          vif-model: { get_param: vif_model }          
+      block_device_mapping:
+        - { volume_id: { get_resource: Disk_Config_OAM-0 }, device_name: "vdb" }
+        - { volume_id: { get_resource: Disk_Mstate_OAM-0 }, device_name: "vdc" }
+        - { volume_id: { get_resource: Disk_Log_OAM-0 }, device_name: "vdd" }
+        - { volume_id: { get_resource: Disk_Services_OAM-0 }, device_name: "vde" }
+        - { volume_id: { get_resource: Disk_Home_OAM-0 }, device_name: "vdf" }
+        - { volume_id: { get_resource: Disk_Export_OAM-0 }, device_name: "vdg" }
+        - { volume_id: { get_resource: Disk_CCS_OAM-0 }, device_name: "vdh" }
+      user_data:
+        str_replace:
+          template: |
+           properties:
+            - hostname:OAM-0
+            - instance-type:OAMNodeType
+            - ip-info:management,,$management_mac,|internal,$internal_ip,$internal_mac,$internal_prefix|$external_ip_info
+            - interface-info:management,internal|internal,internal|internal_srv,internal|fronthaul,external|oam,oam
+            - extra-host-mapping:$oam_fronthaul_ip,oamfh.trial.cloud.nokia,oamfh|$oam_internal_service_ip,oam.trial.cloud.nokia,oam|$cncp_internal_service_ip,cncp.trial.cloud.nokia,cncp|$uecp_internal_service_ip,uecp.trial.cloud.nokia,uecp|$ueup01_internal_service_ip,ueup01.trial.cloud.nokia,ueup01|$rap_01_ip,mcu.rap01.trial.cloud.nokia,rap01|$rap_02_ip,mcu.rap02.trial.cloud.nokia,rap02|$rtm_ip,rtm.rap01.trial.cloud.nokia,rtm
+            - free-internalnet-ip-range:169.254.2.4-169.254.2.254
+            - free-fabricnet-ip-range:169.254.34.4-169.254.34.254
+            - time-zone:$timezone
+            - deployment-name:$dep
+            - storage-provider-config:/mnt/config;ext4;/dev/vdb
+            - storage-provider-mstate:/mnt/mstate;ext4;/dev/vdc
+            - storage-provider-log:/mnt/log;ext4;/dev/vdd
+            - storage-provider-services:/mnt/services;ext4;/dev/vde
+            - storage-provider-home:/home;ext4;/dev/vdf
+            - storage-provider-export:/mnt/export;ext4;/dev/vdg
+            - storage-provider-ccs:/mnt/ccs;ext4;/dev/vdh
+            - cluster-id:RAC-$cid
+            - ntp-servers:$ntp_servers
+            - dns-forwarders:$dns_forwarders
+            - installation-node:true
+            - password__nokfsoperator:$nokfspasswd
+            - password_root:$rootpasswd
+            - password__nokadmin:$nokadminpasswd
+            - oam-service-ip:ssh,/MgmtIP,oam,$oam_ip/$oam_net_mask
+            - oam-default-gw:$oam_default_gw
+           configuration:
+            - nodes.all.cluster_engine.quorate_monitor.state:disabled
+            - nodes.all.db.db_service.state:disable
+          params:
+            $oam_default_gw:   { get_param: oam_default_gw }
+            $oam_net_mask:     { get_param: oam_net_mask }
+            $management_mac:     { get_attr: [OAM-0_management_port,mac_address]}
+            $internal_ip:      { get_attr: [OAM-0_internal_port, fixed_ips, 0, ip_address ] }
+            $internal_mac:     { get_attr: [OAM-0_internal_port, mac_address]}
+            $internal_prefix:  { get_param: [internal_net_ip_and_mask, 1] }
+            $oam_fronthaul_ip: { get_attr: [OAM-0_fronthaul_port, fixed_ips, 0, ip_address ] }
+            $oam_internal_service_ip: { get_attr: [OAM-0_internal_service_port, fixed_ips, 0, ip_address ] }
+            $cncp_internal_service_ip: { get_param: cncp_internal_service_net_ip }
+            $uecp_internal_service_ip: { get_param: uecp_internal_service_net_ip }
+            
+            $ueup01_internal_service_ip: { get_param: ueup0_internal_service_net_ip }
+            
+            $rap_01_ip:                  { get_param: rap_01_ip }
+            $rap_02_ip:                  { get_param: rap_02_ip }
+            $rtm_ip:                  { get_param: rtm_ip }
+            $external_ip_info:
+              str_replace:
+                template: internal_srv,$internal_service_ip,$internal_service_mac,$internal_service_mask|fronthaul,,$fronthaul_mac,|oam,$oam_ip,$oam_mac,$oam_net_mask
+                params:
+                  $oam_ip:                { get_attr: [OAM-0_oam_port, fixed_ips, 0, ip_address ] }
+                  $oam_mac:               { get_attr: [OAM-0_oam_port, mac_address ] }
+                  $oam_net_mask:          { get_param: oam_net_mask }
+                  $fronthaul_mac:         { get_attr: [OAM-0_fronthaul_port, mac_address ] }
+                  $internal_service_ip:   { get_attr: [OAM-0_internal_service_port, fixed_ips, 0, ip_address ] }
+                  $internal_service_mac:  { get_attr: [OAM-0_internal_service_port, mac_address ] }
+                  $internal_service_mask: { get_param: internal_service_net_mask }
+            $dep:                   { get_param: deployment }
+            $timezone:              { get_param: tzregion }
+            $cid:                   { get_param: cluster_identification }
+            $ntp_servers:           { list_join: [',', {get_param: ntp_servers} ] }
+            $dns_forwarders:        { list_join: [',', {get_param: dns_forwarders} ] }
+            $nokfspasswd:      { get_param: _nokfsoperator_password}
+            $rootpasswd:       { get_param: root_password }
+            $nokadminpasswd:   { get_param: _nokadmin_password }
+  
+  # 5G CNCP VNFC
+  CNCP-0_management_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: management_net }
+
+  CNCP-0_internal_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: internal_net }
+      fixed_ips:
+        - ip_address: { get_param: cncp_internal_net_ip }
+
+  CNCP-0_internal_service_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: internal_service_net }
+      fixed_ips:
+        - ip_address: { get_param: cncp_internal_service_net_ip }
+  
+  CNCP-0_backhaul_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_param: backhaul_net_id  }
+      fixed_ips:
+        - ip_address: { get_param: cncp_backhaul_net_ip }
+
+  CNCP-0_fronthaul_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: fronthaul_net }
+      fixed_ips:
+        - ip_address: { get_param: cncp_fronthaul_net_ip }
+        
+  # keep TRSL3NodeType until all RCP change has been made      
+  CNCP-0:
+    type: OS::Nova::Server
+    depends_on: [ UEUP-0 ]
+    properties:
+      name: CNCP-0
+      image: { get_param: image_name }
+      flavor: { get_param: flavor_cncp }
+      key_name: { get_param: key_name }
+      availability_zone: { get_param: CNCP-0_availability_zone }
+      networks:
+        - port: { get_resource: CNCP-0_management_port  }
+          vif-model: { get_param: vif_model }
+        - port: { get_resource: CNCP-0_internal_port }
+          vif-model: { get_param: vif_model }
+        - port: { get_resource: CNCP-0_internal_service_port }
+          vif-model: { get_param: vif_model }
+        - port: { get_resource: CNCP-0_fronthaul_port }
+          vif-model: { get_param: vif_model }
+        - port: { get_resource: CNCP-0_backhaul_port }
+          vif-model: { get_param: vif_model }
+      user_data:
+        str_replace:
+          template: |
+           properties:
+            - hostname:CNCP-0
+            - instance-type:CNCPNodeType
+            - ip-info:management,,$management_mac,|internal,$internal_ip,$internal_mac,$internal_prefix|$external_ip_info
+            - interface-info:management,internal|internal,internal|internal_srv,internal|fronthaul,external|backhaul,external
+            - time-zone:$timezone
+            - deployment-name:$dep
+            - storage-user-config:$OAM_internal_ip:/config;/mnt/config;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-mstate:$OAM_internal_ip:/mstate;/mnt/mstate;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-log:$OAM_internal_ip:/log;/mnt/log;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-services:$OAM_internal_ip:/services;/mnt/services;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-home:$OAM_internal_ip:/home;/home;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-export:$OAM_internal_ip:/export;/mnt/export;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-ccs:$OAM_internal_ip:/ccs;/mnt/ccs;nfs4;rw,noac,nordirplus,nolock 
+            - cluster-id:RAC-$cid
+            - dns-forwarders:$dns_forwarders
+          params:
+            $management_mac:  { get_attr: [CNCP-0_management_port,mac_address]}
+            $internal_ip:     { get_attr: [CNCP-0_internal_port, fixed_ips, 0, ip_address ] }
+            $internal_mac:    { get_attr: [CNCP-0_internal_port, mac_address]}
+            $internal_prefix: { get_param: [internal_net_ip_and_mask, 1] }
+            $external_ip_info:
+              str_replace:
+                template: internal_srv,$internal_service_ip,$internal_service_mac,$internal_service_prefix|fronthaul,,$fronthaul_mac,|backhaul,,$backhaul_mac,
+                params:  			  
+                  $internal_service_ip:      { get_attr: [CNCP-0_internal_service_port, fixed_ips, 0, ip_address ] }
+                  $internal_service_mac:     { get_attr: [CNCP-0_internal_service_port, mac_address]}
+                  $internal_service_prefix:  { get_param: internal_service_net_mask }
+                  $fronthaul_mac:            { get_attr: [CNCP-0_fronthaul_port, mac_address] }
+                  $backhaul_mac:             { get_attr: [CNCP-0_backhaul_port, mac_address] }
+            $dep:                { get_param: deployment}
+            $timezone:           { get_param: tzregion }
+            $OAM_internal_ip:    { get_attr: [ OAM-0_internal_port, fixed_ips, 0, ip_address ] }
+            $cid:                { get_param: cluster_identification }
+            $dns_forwarders:     { list_join: [',', {get_param: dns_forwarders} ] }
+ 
+  #5G UECP VNFC
+  UECP-0_management_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: management_net }
+
+  UECP-0_internal_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: internal_net }
+      fixed_ips:
+        - ip_address: { get_param: uecp_internal_net_ip }
+
+  UECP-0_internal_service_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: internal_service_net }
+      fixed_ips:
+        - ip_address: { get_param: uecp_internal_service_net_ip }
+  
+  # Need to define new UECPNodeType        
+  UECP-0:
+    type: OS::Nova::Server
+    depends_on: [ UEUP-0 ]
+    properties:
+      name: UECP-0
+      image: { get_param: image_name }
+      flavor: { get_param: flavor_uecp }
+      key_name: { get_param: key_name }
+      availability_zone: { get_param: UECP-0_availability_zone }
+      networks:
+        - port: { get_resource: UECP-0_management_port  }
+          vif-model: { get_param: vif_model }
+        - port: { get_resource: UECP-0_internal_port }
+          vif-model: { get_param: vif_model }
+        - port: { get_resource: UECP-0_internal_service_port }
+          vif-model: { get_param: vif_model }
+      user_data:
+        str_replace:
+          template: |
+           properties:
+            - hostname:UECP-0
+            - instance-type:UECPNodeType
+            - cncp-ip-info:internal,$cncp_internal_ip,,$cncp_internal_prefix
+            - ip-info:management,,$management_mac,|internal,$internal_ip,$internal_mac,$internal_prefix|$external_ip_info
+            - interface-info:management,internal|internal,internal|internal_srv,internal
+            - time-zone:$timezone
+            - deployment-name:$dep
+            - storage-user-config:$OAM_internal_ip:/config;/mnt/config;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-mstate:$OAM_internal_ip:/mstate;/mnt/mstate;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-log:$OAM_internal_ip:/log;/mnt/log;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-services:$OAM_internal_ip:/services;/mnt/services;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-home:$OAM_internal_ip:/home;/home;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-export:$OAM_internal_ip:/export;/mnt/export;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-ccs:$OAM_internal_ip:/ccs;/mnt/ccs;nfs4;rw,noac,nordirplus,nolock 
+            - cluster-id:RAC-$cid
+            - dns-forwarders:$dns_forwarders
+          params:
+            $management_mac:  { get_attr: [UECP-0_management_port,mac_address]}
+            $internal_ip:     { get_attr: [UECP-0_internal_port, fixed_ips, 0, ip_address ] }
+            $internal_mac:    { get_attr: [UECP-0_internal_port, mac_address]}
+            $internal_prefix: { get_param: [internal_net_ip_and_mask, 1] }
+            $cncp_internal_ip:     { get_param: cncp_internal_net_ip }
+            $cncp_internal_prefix: { get_param: internal_net_mask }
+            $external_ip_info:
+              str_replace:
+                template: internal_srv,$internal_service_ip,$internal_service_mac,$internal_service_prefix
+                params:
+                  $internal_service_ip:      { get_attr: [UECP-0_internal_service_port, fixed_ips, 0, ip_address ] }
+                  $internal_service_prefix:  { get_param: internal_service_net_mask }
+                  $internal_service_mac:     { get_attr: [UECP-0_internal_service_port, mac_address]}
+            $dep:                { get_param: deployment}
+            $timezone:           { get_param: tzregion }
+            $OAM_internal_ip:    { get_attr: [ OAM-0_internal_port, fixed_ips, 0, ip_address ] }
+            $cid:                { get_param: cluster_identification }
+            $dns_forwarders:     { list_join: [',', {get_param: dns_forwarders} ] }
+  
+
+  #UEUP VM
+  UEUP-0_management_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: management_net }
+
+  UEUP-0_internal_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: internal_net }
+      fixed_ips:
+        - ip_address: { get_param: ueup0_internal_net_ip}
+
+  UEUP-0_internal_service_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: internal_service_net }
+      fixed_ips:
+        - ip_address: { get_param: ueup0_internal_service_net_ip }
+
+  UEUP-0_backhaul_up0_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_param: backhaul_net_id }
+      fixed_ips:
+        - ip_address: { get_param: ueup0_backhaul_up0_net_ip }
+
+  UEUP-0_fronthaul_up0_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: fronthaul_net }
+      fixed_ips:
+        - ip_address: { get_param: ueup0_fronthaul_up0_net_ip }
+        
+  # keep L2PSNodeType until all RCP changes made to support UEUPNodeType 
+  UEUP-0:
+    type: OS::Nova::Server
+    properties:
+      name: UEUP-0
+      image: { get_param: image_name }
+      flavor: { get_param: flavor_ueup }
+      key_name: { get_param: key_name }
+      availability_zone: { get_param: UEUP-0_availability_zone }
+      networks:
+        - port: { get_resource: UEUP-0_management_port  }
+          vif-model: { get_param: vif_model }
+        - port: { get_resource: UEUP-0_internal_port }
+          vif-model: { get_param: vif_model }
+        - port: { get_resource: UEUP-0_internal_service_port }
+          vif-model: { get_param: vif_model }
+        - port: { get_resource: UEUP-0_fronthaul_up0_port }
+          vif-model: { get_param: vif_model }
+        - port: { get_resource: UEUP-0_backhaul_up0_port }
+          vif-model: { get_param: vif_model }
+      block_device_mapping:
+        - { volume_id: { get_resource: Disk_DB_BB-0 }, device_name: "vdb" }
+      user_data:
+        str_replace:
+          template: |
+           properties:
+            - hostname:UEUP-0
+            - instance-type:UEUPNodeType
+            - ip-info:management,,$management_mac,|internal,$internal_ip,$internal_mac,$internal_prefix|$external_ip_info
+            - interface-info:management,internal|internal,internal|internal_srv,internal|fronthaul,external|backhaul,external
+            - time-zone:$timezone
+            - deployment-name:$dep
+            - storage-user-config:$OAM_internal_ip:/config;/mnt/config;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-mstate:$OAM_internal_ip:/mstate;/mnt/mstate;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-log:$OAM_internal_ip:/log;/mnt/log;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-services:$OAM_internal_ip:/services;/mnt/services;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-home:$OAM_internal_ip:/home;/home;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-export:$OAM_internal_ip:/export;/mnt/export;nfs4;rw,noac,nordirplus,nolock
+            - storage-user-ccs:$OAM_internal_ip:/ccs;/mnt/ccs;nfs4;rw,noac,nordirplus,nolock
+            - cluster-id:RAC-$cid
+            - dns-forwarders:$dns_forwarders
+          params:
+            $management_mac:     { get_attr: [UEUP-0_management_port,mac_address]}
+            $internal_ip:        { get_attr: [UEUP-0_internal_port, fixed_ips, 0, ip_address ] }
+            $internal_mac:       { get_attr: [UEUP-0_internal_port, mac_address]}
+            $internal_prefix:    { get_param: [internal_net_ip_and_mask, 1] }
+            $external_ip_info:
+              str_replace:
+                template: internal_srv,$internal_service_ip,$internal_service_mac,$internal_service_prefix|fronthaul,,$fronthaul_mac,|backhaul,,$backhaul_mac,
+                params:
+                  $internal_service_ip:      { get_attr: [UEUP-0_internal_service_port, fixed_ips, 0, ip_address ] }
+                  $internal_service_mac:     { get_attr: [UEUP-0_internal_service_port, mac_address] }
+                  $internal_service_prefix:  { get_param: internal_service_net_mask }
+                  $fronthaul_mac:            { get_attr: [UEUP-0_fronthaul_up0_port, mac_address] }
+                  $backhaul_mac:             { get_attr: [UEUP-0_backhaul_up0_port, mac_address] }
+            $dep:                { get_param: deployment}
+            $timezone:           { get_param: tzregion }
+            $OAM_internal_ip:    { get_attr: [ OAM-0_internal_port, fixed_ips, 0, ip_address ] }
+            $cid:                { get_param: cluster_identification }
+            $dns_forwarders:     { list_join: [',', {get_param: dns_forwarders} ] }
+            
+     
+  
+outputs: 
+  
+   oam_ip: 
+     description: SSH OAM-O and login O&M WebUI IP address
+     value: { get_attr: [OAM-0_oam_port, fixed_ips, 0, ip_address ] }
+   oam_net_id:
+     description: UUID of oam network.
+     value: { get_param: oam_net_id }
+   backhaul_net_id:
+     value: { get_param: backhaul_net_id }
+   fronthaul_net_id:
+     value: { get_resource: fronthaul_net }
+   internal_net_id:
+     value: { get_resource: internal_net }
+   internal_service_net_id:
+     value: { get_resource: internal_service_net }
+   management_net_id:
+     value: { get_resource: management_net }
+   management_subnet_id:
+     value: { get_resource: management_net_subnet }
+   internal_subnet_id:
+     value: { get_resource: internal_net_subnet }

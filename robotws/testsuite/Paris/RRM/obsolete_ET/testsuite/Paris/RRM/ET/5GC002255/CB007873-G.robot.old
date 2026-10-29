@@ -1,0 +1,100 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  verification of 5GC002255-G CA(FDD+TDD)-DSS-PRB Blanking Interaction
+...               Prerequisite : GNB and Airphone should be installed
+...               Scope : Reach a cell setup state, and perfom basic tests : 
+...                       Ue Register, CRNTI checks, ...
+...                       
+...
+...               Test Case Scenario author   : loic.marzin@nokia.com
+...               Test Case automation author : loic.marzin@nokia.com
+...               Test Case automation contact: loic.marzin@nokia.com
+...               Creation Date               : 26-July-2021
+...               Modified Date               : 06-October-2023
+...               Last Modified by            : loic.marzin@nokia.com
+...                    06/10/2023        Refactoring due to BOO_AP_LOO Migration
+
+Library           taf.lteemu                              WITH NAME    lteemu
+
+Resource          ../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../resources/SWENG/robot/CallSetup.robot
+Variables         ../../../resources/SWENG/python/ReadConfig.py
+Resource          robot/5GC002255_Keywords.robot
+Resource          robot/CB007873_Keywords.robot
+Resource          ../../../resources/SWENG/robot/Scf.robot
+
+
+Force Tags        CA_5G_SW_FR-Villarceaux   RRM
+...               PY36
+...               master_classicalbts_all
+...               CONFIGURED    5G_RAN    RAN_5G
+
+
+Suite Setup       CB007873_Keywords.setup 7873
+Suite Teardown    CB007873_Keywords.teardown 7873 
+
+*** Variables ***
+${TestSharkTool}      MC_SHARK
+
+# variable set to ${True} to automatically save SOS report and OAM snapshot
+# (by default, these information are saved only if a test is failed)
+${ForceDebugDataCollection}    ${False}
+#${ForceDebugDataCollection}    ${True}
+   
+*** Test Cases ***
+
+[1][1.0] CB007873_5G_G_2_1_UE_DSS_And_PRB_Blanking_CA_ScellActivation
+    [Tags]                          CRT        CLOUD_5G_I_BOO_AP_LOO
+	...                             VARIANT    VARIANT_SANSA_FS_ECPRI_CMWV_FDD+TDD
+    ...                             SBTS00
+    [Documentation]    Carrier Aggregation CB007873 Test G-2
+	...                The aim of this test is to check that ScellActivation is Ok when DSS and PRB Blanking low Edge 
+    ...                are enabled when SA
+    Init Sequence                   _
+    Step                            CB007873_G_gNB_Startup_Ok_with_Flags
+    Step                            CB007873_G_Cell_Setup
+    Step                            CB007873_5G_G_2_1_UE_DSS_And_PRB_Blanking_CA_ScellActivation
+    [Teardown]                      Teardown CB007873_G-2
+
+
+*** Keywords ***
+
+CB007873_G_gNB_Startup_Ok_with_Flags
+    [Tags]  RESTART_STARTUP
+    5GC002255_Keywords.Set SCF Context DSS
+    Restart.Restart TL
+
+CB007873_G_Cell_Setup
+    [Tags]  Cell_Setup
+    CB007873_Keywords.WTS Setup DSS    shouldUseLua=${False}
+    CB007873_Keywords.Setup_DSS_Cell
+	CB007873_Keywords.Check_Cell_Setup_Ok
+
+CB007873_5G_G_2_1_UE_DSS_And_PRB_Blanking_CA_ScellActivation
+    [Tags]  ScellActivation
+    CallSetup.UE Register    ue=3
+    CallSetup.Launch PDU Session    ue=3    pdu=3    gw=3
+    ${ueSetting}        set variable    ${BASIC_UE_SA}
+    ${ueSetting.pdu}    set variable    3
+    ${ueSetting.ue}     set variable    3
+#	CallSetup.Empty Buffer For Egate
+#    Traced sleep   10s  msg=wait 10s for flush
+#	CB007873_Keywords.Collect EGATE console Logs    	
+    Traffic.Traffic UE DL    throughput=175     duration=5    ueSetting=${ueSetting}    shouldBeCheck=False
+    Dated Log   Pause 10 mn to get the next PM period
+    sleep   600s
+    5GC002255_Keywords.Collect PM Counters File
+    5GC002255_Keywords.Check ScellActivationCounters    expValue9=1
+    5GC002255_Keywords.Check DSS Counters    DLSlots=200000    ULPRB=20000000
+
+Teardown CB007873_G-2
+    [Documentation]    collect Sos Report if a TC is failed or if the user need traces ForceDebugDataCollection
+    Dated log                       Teardown for CB007873_G-2
+    Run Keyword If                  ${ForceDebugDataCollection}   Get Sos Report
+    [Teardown]                      GenericTest.Display diagnosis

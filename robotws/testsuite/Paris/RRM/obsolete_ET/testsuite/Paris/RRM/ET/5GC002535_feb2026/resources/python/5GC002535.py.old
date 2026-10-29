@@ -1,0 +1,589 @@
+# -*- coding: utf-8 -*
+
+"""
+:copyright: Nokia Networks
+:author: Christophe SAMSON
+:contact: christophe.samson@nokia.com
+:maintainer:
+:contact:
+"""
+
+import time
+from decimal import *
+import re
+import os
+import csv
+
+import linux_cmds as linux
+
+# Robot Framework Libraries:
+from robot.libraries.BuiltIn import BuiltIn
+from robot.libraries.OperatingSystem import OperatingSystem
+
+# TAF & UTE Libraries:
+from taf.transport.ssh import ssh
+from robot.api import logger
+from taf.analyzer.ttitrace import TtitraceReader
+from taf.config.scf import scf
+
+from ta5g_throughput.throughput_measurement import ThroughputMeasurement
+from ta5g_throughput.egate_interface import *
+from ta5g_throughput.table_parser import *
+
+
+class EgateRetryException(Exception):
+    pass
+
+# ====================================================================================================[120 characters]
+#   Global Variables
+# ====================================================================================================[120 characters]
+
+
+logLevel = "INFO"
+RED = '\033[31m'
+GREEN = '\033[32m'
+YELLOW = '\033[33m'
+RESET = '\033[0m'
+BOLD = '\033[1m'
+offlineVerification = ""
+rbi = BuiltIn()
+
+
+def logException(functionNameStr, e, silent=False):
+    rbi.log("%s(): Exception = <%s>" % (functionNameStr, str(e)), "TRACE")
+    if not silent:
+        rbi.log_to_console(
+            "  %s: exception happened (see log.html)" % functionNameStr)
+
+
+def verify_5GC002535_UL_MCS_NbrPrb(resultDir):
+    # TTITraces Events: dlFdSchedData + csiSrReportData
+    filePathName = resultDir + "/msg_all.csv"
+    BuiltIn().log("verify_qc_test_case(5GC002535): filePathName = %s" %
+                  filePathName, logLevel)
+    mcsList = []
+    numOfPrbList = []
+    averageMcs = 0
+    gradiantMcs = 0
+    averageNbrPrb = 0
+    gradiantNbrPrb = 0
+    tcResult = "failed"
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("verify_qc_test_case(5GC002535): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("verify_qc_test_case(5GC002535): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("verify_qc_test_case(5GC002535): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("verify_qc_test_case(5GC002535): line content = %s %s" % (line,lineNumber))
+                    if "ulFdSchedData;" in line and "isValidWhatIsProposed;1" in line:
+                        a = line.find(";rrmUlProposedMcs;") + 18
+                        b = line[a:].find(";") + a
+                        mcs = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC002535): mcs = %s (%s)" % (mcs, lineNumber))
+                        try:
+                            mcsList.append(int(mcs))
+                        except Exception as e:
+                            BuiltIn().log("verify_qc_test_case(5GC002535): MCS exit")
+                            logException("verify_qc_test_case", e, True)
+                        # numOfPrb;35;startPrb;4
+                        a = line.find(";numOfPrb;") + 10
+                        b = line[a:].find(";") + a
+                        numOfPrbs = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrb = %s (%s)" % (numOfPrbs, lineNumber))
+                        try:
+                            numOfPrbList.append(int(numOfPrbs))
+                        except Exception as e:
+                            BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrbs exit")
+                            logException("verify_qc_test_case", e, True)
+                    if "csiSrReportData;" in line:
+                        a = line.find(";cqi;") + 5
+                        b = line[a:].find(";") + a
+                        cqi = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC002535): cqi = %s (%s)" % (cqi, lineNumber))
+                        # break
+            BuiltIn().log("verify_qc_test_case(5GC002535): mcsList = %s" % (mcsList))
+            length = len(mcsList)
+            if length > 2:
+                aX = sum(mcsList)/length
+                BuiltIn().log("verify_qc_test_case(5GC002535): aX = %s" % (aX))
+                averageMcs = aX
+                aY = (1+length)/2
+                BuiltIn().log("verify_qc_test_case(5GC002535): aY = %s" % (aY))
+                y, m1, m2, m = 0, 0, 0, 0
+                for mcs in mcsList:
+                    y += 1
+                    m1 += (mcs-aX) * (y-aY)
+                    m2 += (mcs-aX) * (mcs-aX)
+                BuiltIn().log("verify_qc_test_case(5GC002535): m1 = %s" % (m1))
+                BuiltIn().log("verify_qc_test_case(5GC002535): m2 = %s" % (m2))
+                if m2 == 0:
+                    m2 = 1.0
+                m = m1 / m2
+                BuiltIn().log("verify_qc_test_case(5GC002535): m = %s" % (m))
+                gradiantMcs = m
+            BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrbList = %s" % (numOfPrbList))
+            length = len(numOfPrbList)
+            if length > 2:
+                aX = sum(numOfPrbList)/length
+                BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrb aX = %s" % (aX))
+                averagenumOfPrb = aX
+                aY = (1+length)/2
+                BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrb aY = %s" % (aY))
+                y, m1, m2, m = 0, 0, 0, 0
+                for numOfPrb in numOfPrbList:
+                    y += 1
+                    m1 += (numOfPrb-aX) * (y-aY)
+                    m2 += (numOfPrb-aX) * (numOfPrb-aX)
+                BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrb m1 = %s" % (m1))
+                BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrb m2 = %s" % (m2))
+                if m2 == 0:
+                    m2 = 1.0
+                m = m1 / m2
+                BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrb m = %s" % (m))
+                gradiantNbrPrb = m
+        if averagenumOfPrb >= 35 and 35 in numOfPrbList and gradiantNbrPrb >= 0.0:
+            tcResult = "passed"
+        msg = "averageNumOfPrb=" + str(averagenumOfPrb)
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult
+
+
+def verify_5GC002535_UL_MCS_StartPrb(resultDir):
+    # TTITraces Events: dlFdSchedData + csiSrReportData
+    filePathName = resultDir + "/msg_all.csv"
+    BuiltIn().log("verify_qc_test_case(5GC002535): filePathName = %s" %
+                  filePathName, logLevel)
+    mcsList = []
+    startPrbList = []
+    averagestartPrb = 0
+    gradiantstartPrb = 0
+    tcResult = "failed"
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("verify_qc_test_case(5GC002535): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("verify_qc_test_case(5GC002535): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("verify_qc_test_case(5GC002535): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("verify_qc_test_case(5GC002535): line content = %s %s" % (line,lineNumber))
+                    if "ulFdSchedData;" in line and "isValidWhatIsProposed;1" in line:
+                        a = line.find(";rrmUlProposedMcs;") + 18
+                        b = line[a:].find(";") + a
+                        mcs = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC002535): mcs = %s (%s)" % (mcs, lineNumber))
+                        try:
+                            mcsList.append(int(mcs))
+                        except Exception as e:
+                            BuiltIn().log("verify_qc_test_case(5GC002535): MCS exit")
+                            logException("verify_qc_test_case", e, True)
+                        # numOfPrb;35;startPrb;4
+                        a = line.find(";startPrb;") + 10
+                        b = line[a:].find(";") + a
+                        startPrb = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrb = %s (%s)" % (numOfPrbs, lineNumber))
+                        try:
+                            startPrbList.append(int(startPrb))
+                        except Exception as e:
+                            BuiltIn().log("verify_qc_test_case(5GC002535): startPrb exit")
+                            logException("verify_qc_test_case", e, True)
+                    if "csiSrReportData;" in line:
+                        a = line.find(";cqi;") + 5
+                        b = line[a:].find(";") + a
+                        cqi = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC002535): cqi = %s (%s)" % (cqi, lineNumber))
+                        # break
+            BuiltIn().log("verify_qc_test_case(5GC002535): startPrbList = %s" % (startPrbList))
+            length = len(startPrbList)
+            if length > 2:
+                aX = sum(startPrbList)/length
+                BuiltIn().log("verify_qc_test_case(5GC002535): aX = %s" % (aX))
+                averagestartPrb = aX
+                aY = (1+length)/2
+                BuiltIn().log("verify_qc_test_case(5GC002535): aY = %s" % (aY))
+                y, m1, m2, m = 0, 0, 0, 0
+                for startPrb in startPrbList:
+                    y += 1
+                    m1 += (startPrb-aX) * (y-aY)
+                    m2 += (startPrb-aX) * (startPrb-aX)
+                BuiltIn().log("verify_qc_test_case(5GC002535): m1 = %s" % (m1))
+                BuiltIn().log("verify_qc_test_case(5GC002535): m2 = %s" % (m2))
+                if m2 == 0:
+                    m2 = 1.0
+                m = m1 / m2
+                BuiltIn().log("verify_qc_test_case(5GC002535): m = %s" % (m))
+                gradiantstartPrb = m
+            BuiltIn().log("verify_qc_test_case(5GC002535): startPrbList = %s" % (startPrbList))
+#        if averageMcs > 20 and 28 in mcsList and gradiantMcs >= 0.0:
+#            tcResult = "passed"
+        if startPrb >= 4 and 4 in startPrbList and gradiantstartPrb >= 0.0:
+            tcResult = "passed"
+        msg = "averagesSartPrb=" + str(averagestartPrb)
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult
+
+
+# with and without   "Expand array item Field"   to introduced
+# method=""   => No expand
+# method="Expand array item Field"   => expand
+def verify_5GC002535_DL_numOfDmrsCdmGroupWithoutData_Based_Mcs(resultDir, rnti_ue, rdMcsIndexForDmrsFDMThreshold=20,
+                                                               method=""):
+    # TTITraces Events: dlFdSchedData + csiSrReportData
+    filePathName = resultDir + "/msg_all.csv"
+    BuiltIn().log("verify_qc_test_case(5GC002535): filePathName = %s" % filePathName)
+    rrmDlProposedMcsList = []
+    cqiList = []
+    tbSizeList = []
+    averagerrmDlProposedMcs = 0
+    averageCqi = 0
+    gradiantCqi = 0
+    tcResult = "failed"
+    rnti_csiSrReportData_s = 0
+    averagetbSize = 0
+    try:
+        if os.path.isfile(filePathName):
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                for line in csvFile:
+                    lineNumber += 1
+                    # s = "line1 : Nbr line = %s (%s) "
+                    # BuiltIn().log(s % (line, lineNumber))
+                    if "csiSrReportData;" in line:
+                        a = line.find(";cqi;") + 5
+                        b = line[a:].find(";") + a
+                        cqi = (int)(line[a:b])
+                        a = line.find(";rnti;") + 6
+                        b = line[a:].find(";") + a
+                        rnti_csiSrReportData = (int)(line[a:b])
+                        s = "csiSrReportData : rnti_csiSrReportData = %s (%s) "
+                        BuiltIn().log(s % (rnti_csiSrReportData, rnti_ue))
+                        if rnti_csiSrReportData != rnti_ue:
+                            BuiltIn().log("csiSrReportData : %s discarded => continue..." % rnti_csiSrReportData)
+                            continue
+                        BuiltIn().log("csiSrReportData : rnti %s found (%s)" %
+                                      (rnti_csiSrReportData, rnti_ue))
+                        rnti_csiSrReportData_s = rnti_csiSrReportData
+                        cqi_csiSrReportData_s = cqi
+                        try:
+                            cqiList.append(int(cqi_csiSrReportData_s))
+                        except Exception as e:
+                            logException("verify_qc_test_case", e, True)
+                        s = "verify_qc_test_case(5GC002535): cqi = %s rnti = %s (%s)"
+                        BuiltIn().log(s % (cqi, rnti_csiSrReportData, lineNumber))
+                    if "dlFdSchedData;" in line and "isValidWhatIsProposed;1" in line:
+                        # s = "line2 : Nbr line = %s (%s) "
+                        # BuiltIn().log(s % (line, lineNumber))
+                        a = line.find(";rnti;") + 6
+                        # a = line.find(";rrmDlProposedMcs;") + 18
+                        b = line[a:].find(";") + a
+                        rnti2 = (int)(line[a:b])
+                        if rnti2 != rnti_csiSrReportData_s:
+                            BuiltIn().log("dlFdSchedData: %s discarded => continue..." % rnti2)
+                            continue
+                        a = line.find(";rrmDlProposedMcs;") + 18
+                        b = line[a:].find(";") + a
+                        # AL is the last field
+                        # b = a + 1
+                        rrmDlProposedMcs = (int)(line[a:b])
+                        a = line.find(";rrmDlUsedMcs;") + 14
+                        b = line[a:].find(";") + a
+                        # AL is the last field
+                        # b = a + 1
+                        rrmDlUsedMcs = (int)(line[a:b])
+                        # BuiltIn().log("ligne = %s" % line)
+                        a = line.find(";numCdmGroupNoData;") + 19
+                        b = line[a:].find(";") + a
+                        # AL is the last field
+                        # b = a + 1
+                        numCdmGroupNoData = (int)(line[a:b])
+                        a = line.find(";numOfLayers;") + 13
+                        b = line[a:].find(";") + a
+                        # AL is the last field
+                        # b = a + 1
+                        # numOfLayers = (int)(line[a:b])
+                        numOfLayers = (line[a:b])
+                        if "Expand array item Field" in method:
+                            if numOfLayers == 'RANK1':
+                                numOfLayers = 1
+                            elif numOfLayers == 'RANK2':
+                                numOfLayers = 2
+                            elif numOfLayers == 'RANK3':
+                                numOfLayers = 3
+                            elif numOfLayers == 'RANK4':
+                                numOfLayers = 4
+                            else:
+                                numOfLayers = 4
+                        else:
+                            numOfLayers = (int)(line[a:b])
+                        a = line.find(";tbSize;") + 8
+                        b = line[a:].find(";") + a
+                        # AL is the last field
+                        # b = a + 1
+                        tbSize = (int)(line[a:b])
+                        s = "verify_qc_test_case(5GC002535): dlFdSchedData : "
+                        s = s + \
+                            "rrmDlUsedMcs = %s numOfLayers = %s numCdmGroupNoData = %s rnti = %s (%s)"
+                        BuiltIn().log(s % (rrmDlUsedMcs, numOfLayers, numCdmGroupNoData, rnti2, lineNumber))
+                        if (((rrmDlUsedMcs >= rdMcsIndexForDmrsFDMThreshold) and (numOfLayers <= 2)
+                             and (numCdmGroupNoData != 1)) or ((rrmDlUsedMcs < rdMcsIndexForDmrsFDMThreshold) and
+                                                               (numCdmGroupNoData == 1))):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002535): dlFdSchedData : "
+                            s = s + \
+                                "rrmDlUsedMcs = %s numOfLayers = %s numCdmGroupNoData = %s rnti = %s (%s)"
+                            BuiltIn().log(s % (rrmDlUsedMcs, numOfLayers, numCdmGroupNoData, rnti2, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + s +
+                                                     RESET + "", no_newline=False)
+                            break
+                        try:
+                            rrmDlProposedMcsList.append(int(rrmDlProposedMcs))
+                            tbSizeList.append(int(tbSize))
+                        except Exception as e:
+                            logException("verify_qc_test_case", e, True)
+            BuiltIn().log("verify_qc_test_case(5GC002535): rrmDlProposedMcsList = %s" % (rrmDlProposedMcsList))
+            BuiltIn().log("verify_qc_test_case(5GC002535): cqiList = %s" % (cqiList))
+            length = len(rrmDlProposedMcsList)
+            if length > 2:
+                averagerrmDlProposedMcs = sum(rrmDlProposedMcsList)/length
+                s = "verify_qc_test_case(5GC002535): averagerrmDlProposedMcs = %s"
+                BuiltIn().log(s % averagerrmDlProposedMcs)
+            length = len(tbSizeList)
+            if length > 2:
+                averagetbSize = sum(tbSizeList) / length
+                s = "verify_qc_test_case(5GC002535): averagetbSize = %s"
+                BuiltIn().log(s % averagetbSize)
+            length = len(cqiList)
+            if length > 2:
+                averageCqi = sum(cqiList)/length
+                aX = averageCqi
+                aY = (1+length)/2
+                BuiltIn().log("verify_qc_test_case(5GC002535): aY = %s" % (aY))
+                y, m1, m2, m = 0, 0, 0, 0
+                for cqi in cqiList:
+                    y += 1
+                    m1 += (cqi-aX) * (y-aY)
+                    m2 += (cqi-aX) * (cqi-aX)
+                BuiltIn().log("verify_qc_test_case(5GC002535): m1 = %s" % (m1))
+                BuiltIn().log("verify_qc_test_case(5GC002535): m2 = %s" % (m2))
+                if m2 == 0:
+                    m2 = 1.0
+                m = m1 / m2
+                BuiltIn().log("verify_qc_test_case(5GC002535): m = %s" % (m))
+                gradiantCqi = m
+                msg = "verify_qc_test_case(5GC002535): averageCqi = %s gradiantCqi=%s "
+                BuiltIn().log(msg % (averageCqi, gradiantCqi))
+        tcResult = "passed"
+        msg = "rnti_ue=" + str(rnti_ue)\
+              + " averagerrmDlProposedMcs=" + str(averagerrmDlProposedMcs)\
+              + " averagetbSize=" + str(averagetbSize)\
+              + " averageCqi=" + str(averageCqi)\
+              + " gradiantCqi=" + str(gradiantCqi)\
+              + " rdMcsIndexForDmrsFDMThreshold=" + \
+            str(rdMcsIndexForDmrsFDMThreshold)
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult
+
+
+def get_rntis_from_pcap(resultDir):
+    # TTITraces Events: csiSrReportData
+    filePathName = resultDir + "/msg_DlData_PdschSendReq_pcap.csv"
+    BuiltIn().log("get_rntis: filePathName = %s" % filePathName)
+    rnti = 0
+    rntiList = []
+    try:
+        if os.path.isfile(filePathName):
+            with open(filePathName, "r") as csvFile:
+                linenumber = 0
+                for line in csvFile:
+                    linenumber += 1
+                    if "ICOM_5G/DlData_PdschSendReqL1sw;" in line:
+                        tcResult = "passed"
+                        # BuiltIn().log("verify_qc_test_case(5GC002535): line content = %s %s" % (line, lineNumber))
+                        string_split = line.split(';')
+                        info = string_split[0]
+                        sfn = int(string_split[1], 16)
+                        slot = int(string_split[2], 16)
+                        rnti = int(string_split[3], 16)
+                        try:
+                            if rnti not in rntiList:
+                                rntiList.append(rnti)
+                        except Exception as e:
+                            logException("get_rntis", e, True)
+                        s = "get_rntis(5GC002535): rnti = %s (%s)"
+                        BuiltIn().log(s % (rnti, linenumber))
+            print("get_rntis(5GC002535): rntiList = %s" % (rntiList))
+
+    except Exception as e:
+        logException("get_rntis", e)
+
+    return rntiList
+
+
+def verify_5GC002535_numOfDmrsCdmGroupWithoutData(resultDir, rnti_ue, rdMcsIndexForDmrsFDMThreshold=20):
+    # [PRIVATE] : used for Acceptance criteria of TC TC 2535-DLOnly and check numOfDmrsCdmGroupWithoutData
+    # pcap Events: DlData_PdschSendReq
+    # Info;mcs;rvIndex;numOfLayers;rnti;numOfDmrsCdmGroupWithoutData
+    filePathName = resultDir + "/msg_DlData_PdschSendReq_pcap.csv"
+    BuiltIn().log("verify_qc_test_case(5GC002535): filePathName = %s" %
+                  filePathName, logLevel)
+    tcResult = "failed"
+    rat0BitmapList = []
+    num_of_bits = 32
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("verify_qc_test_case(5GC002535): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("verify_qc_test_case(5GC002535): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("verify_qc_test_case(5GC002535): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("verify_qc_test_case(5GC002535): line content = %s %s" % (line, lineNumber))
+                    if "ICOM_5G/DlData_PdschSendReqL1sw;" in line:
+                        tcResult = "passed"
+                        # BuiltIn().log("verify_qc_test_case(5GC002535): line content = %s %s" % (line, lineNumber))
+                        string_split = line.split(';')
+                        info = string_split[0]
+                        sfn = int(string_split[1], 16)
+                        slot = int(string_split[2], 16)
+                        rnti = int(string_split[3], 16)
+                        mcs = int(string_split[4], 16)
+                        rvIndex = int(string_split[5], 16)
+                        numOfLayers = int(string_split[6], 16)
+                        numCdmGroupNoData = int(string_split[7], 16)
+                        # s = " slot = %s sfn %s rnti %s mcs %s rvIndex %s "
+                        # s = s + "numOfLayers %s numOfDmrsCdmGroupWithoutData= %s (%s)"
+                        # BuiltIn().log(s % (slot, sfn, rnti, mcs, rvIndex, numOfLayers,
+                        #                     numCdmGroupNoData, lineNumber))
+                        if (((mcs >= rdMcsIndexForDmrsFDMThreshold) and (numOfLayers <= 2)
+                             and (numCdmGroupNoData != 1)) or ((mcs < rdMcsIndexForDmrsFDMThreshold) and
+                                                               (numCdmGroupNoData == 1))):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002535): DlData_PdschSendReqL1sw : "
+                            s = s + \
+                                "sfn = %s slot = %s mcs = %s numOfLayers = %s numOfDmrsCdmGroupWithoutData = %s (%s)"
+                            BuiltIn().log(s % (sfn, slot, mcs, numOfLayers, numCdmGroupNoData, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) +
+                                                     tcResult + RESET + "", no_newline=False)
+                            break
+        msg = "verify_5GC002535_numOfDmrsCdmGroupWithoutData "
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult
+
+
+def verifyFeatureActivation(resultBaseDir):
+    tcResult = "failed"
+    actDlDataDmrsFdm = ""
+    try:
+        scfObj = scf()
+        scfFilePath = BuiltIn().run_keyword(
+            "5GC002535_Keywords.Get Testcase Log Directory") + "/SCF.xml"
+        # BuiltIn().log("verifyFeatureActivation: scfFilePath = %s (SCF)" % scfFilePath)
+        scfObj.load_scf(scfFilePath)
+        NRBTS = "NRBTS-1"
+        NRCELL = "NRCELL-1"
+        if os.path.isfile(scfFilePath):
+            # BuiltIn().log("isfile scfFilePath = %s (SCF)" % scfFilePath)
+            with open(scfFilePath, "r") as scfFile:
+                line = scfFile.readline()
+                # BuiltIn().log("readline scfFilePath = %s (line)" % line)
+                while line:
+                    line = scfFile.readline()
+                    # BuiltIn().log("readline scfFilePath = %s (line)" % line)
+                    if "/NRBTS-" in line and "/NRCELL-" in line:
+                        # BuiltIn().log("readline scfFilePath = %s (line)" % line)
+                        rbi.log("getNeededValuesFromScf(): line = %s" %
+                                line, logLevel)
+                        nrbtsIndex = line.find("/NRBTS-") + 1
+                        nrcellIndex = line.find("/NRCELL-") + 1
+                        endIndex = line[nrcellIndex:].find("\" ") + nrcellIndex
+                        NRBTS = line[nrbtsIndex:nrcellIndex - 1]
+                        NRCELL = line[nrcellIndex:endIndex]
+                        break
+        dist_name = NRBTS + "/" + NRCELL
+        list_name = "dlDataDmrsFdm"
+        p_name = "actDlDataDmrsFdm"
+        actDlDataDmrsFdm = scfObj.get_value_from_scf(
+            list_name=list_name, p_name=p_name, dist_name=dist_name)
+        BuiltIn().log("verifyFeatureActivation: actDlDataDmrsFdm = %s (SCF)" % actDlDataDmrsFdm)
+        if actDlDataDmrsFdm.lower() == "true":
+            tcResult = "passed"
+        # check also that actDl256Qam = True
+        p_name = "actDl256Qam"
+        actDl256Qam = scfObj.get_value_from_scf(
+            p_name=p_name, dist_name=dist_name)
+        BuiltIn().log("verifyFeatureActivation: actDl256Qam = %s (SCF)" % actDl256Qam)
+        if tcResult == "passed" and actDl256Qam.lower() == "true":
+            tcResult = "passed"
+        else:
+            tcResult = "failed"
+    except Exception as e:
+        logException("verifyFeatureActivation", e)
+    BuiltIn().log("verifyFeatureActivation(5GC002535): tcResult = %s" % tcResult, logLevel)
+    return tcResult
+
+
+def verify_qc_test_case(testCaseName, repFlag="without Reporting", rnti_ue=61, rdMcsIndexForDmrsFDMThreshold=20,
+                        method=""):
+    """Keyword: Verify QC Test Case"""
+    BuiltIn().log_to_console(
+        BOLD + " Verify QC Test Case(s) of 5GC002535: " + RESET + "~" * 102 + "")
+    BuiltIn().log_to_console(("  "+testCaseName+"   "+repFlag).ljust(133), no_newline=True)
+    tcResult = "failed"
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    if offlineVerification:
+        resultBaseDir = offlineVerification[:
+                                            offlineVerification[:-2].rfind("/")]
+        resultDir = offlineVerification
+    else:
+        resultBaseDir = BuiltIn().run_keyword(
+            "5GC002535_Keywords.Get Testcase Log Directory")
+        resultDir = BuiltIn().run_keyword("5GC002535_Keywords.Get Testcase Log Directory")
+    BuiltIn().log("verify_qc_test_case(): resultBaseDir = %s" % resultBaseDir, logLevel)
+    BuiltIn().log("verify_qc_test_case(): resultDir = %s" % resultDir, logLevel)
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    if verifyFeatureActivation(resultBaseDir) == "failed":
+        BuiltIn().log_to_console(BOLD + RED +
+                                 "5GC002535 is NOT enabled!" + RESET + "", no_newline=True)
+    if "verify_5GC002535_UL_MCS_NbrPrb" == testCaseName:
+        featureList = ["5GC002535"]
+        tcResult = verify_5GC002535_UL_MCS_NbrPrb(resultDir)
+    if "verify_5GC002535_UL_MCS_StartPrb" == testCaseName:
+        featureList = ["5GC002535"]
+        tcResult = verify_5GC002535_UL_MCS_StartPrb(resultDir)
+    if "verify_5GC002535_DL_numOfDmrsCdmGroupWithoutData_Based_Mcs" == testCaseName:
+        featureList = ["5GC002535"]
+        tcResult = verify_5GC002535_DL_numOfDmrsCdmGroupWithoutData_Based_Mcs(resultDir, rnti_ue,
+                                                                              rdMcsIndexForDmrsFDMThreshold,
+                                                                              method)
+    if "verify_5GC002535_numOfDmrsCdmGroupWithoutData" == testCaseName:
+        featureList = ["5GC002535"]
+        tcResult = verify_5GC002535_numOfDmrsCdmGroupWithoutData(resultDir, rnti_ue, rdMcsIndexForDmrsFDMThreshold)
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    BuiltIn().log_to_console((GREEN if tcResult.lower()
+                              == 'passed' else RED) + tcResult + RESET + "")
+    if "without" not in repFlag:
+        BuiltIn().run_keyword("Online Reporting to ReP",
+                              testCaseName,
+                              tcResult,
+                              "resultDir=%s" % resultDir,
+                              "isForDebugging=%s" % ("YES" if "without" in repFlag or "ailed" in tcResult else "NO"))
+    return tcResult

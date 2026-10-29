@@ -1,0 +1,2 @@
+cfg file=/opt/wts/latest/basic_wts_step2.cfg;30
+script file=/home/ute/CrtRoot/robotws/testsuite/Paris/RRM/ET/CB008661/resources/robot/../../script/X2_Link_Setup.sce;30

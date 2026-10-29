@@ -1,0 +1,282 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB012533_A
+...               Test Case Scenario author   : blandine.garnier@nokia.com
+...               Test Case Scenario contact  : blandine.garnier@nokia.com
+...               Creation Date               : 22-Nov-2023
+...               Modified Date               : 08-Jan-2024           yann.merlin@nokia.com
+...               n/a       22-Nov-2023       blandine.garnier@nokia.com         Creation
+...               1.0       08-Jan-2024       yann.merlin@nokia.com              Modification
+...               1.1       25-Sep-2024       richard.duthu@nokia.com            Produce Scout Data + some RF50 fixes
+
+Resource          ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/CfgFilesTools.robot
+Resource          ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/KPIs.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+
+Resource          ./CB012533_keywords.robot
+
+Library            ../../../../../resources/SWENG/python/CoamParameter.py      WITH NAME     coam_parameter
+Library            taf.sbts.oam.coam.admin           WITH NAME   sbts_coam
+Library            ute_wtssim           WITH NAME    wts
+Library            taf.wts.runner              WITH NAME       wtsemu
+Library            OperatingSystem
+Library            String
+Library            BuiltIn
+Library                                         ../../../resources/python/luashark_tools.py
+Library                                         luashark_tools.analyzer       WITH NAME       analyzer
+
+*** Variables ***
+
+${gnb_alias}                      gnb_under_test
+
+# UE-NR capabilities including support for Srs Beam
+${nr_capas_srs_beam}                    SEPARATOR=
+...                                     "E1A09000575F7A13160003C2A002C1001018093170019C3D07013641873E
+...                                      618F28581C130080C47006A8D89BAC1184341020E90381F5B2E2AC6873E2
+...                                      38F40CFB027C66471E439F40CFB027D473E618F28581C0E1E2E000BE0038
+...                                      002F8001E4007001B280002800003A8D85181AC1184341020E90381F5B2E
+...                                      2AC6873E238F40CFB027C66471E439F40CFB027D473E618F28581C0E1E2E
+...                                      000BE0038002F8001E0007001860E140400000E30F0A000309A00010E30F
+...                                      0A000305000020E30E0A00E268000030E307134200000718789A00184D00
+...                                      010B801805101342C045034089B1CF870A24ED8E7C3851226C73E1C29D13
+...                                      639F0E044D8E7C3851226C73E181E826007C005020280381804A00E000C0
+...                                      7C270040000000200000401000000008000010040000100200000C010000
+...                                      080080000500400200802008000060040000300200001C0100000E008004
+...                                      00000010000100080040300C010000120080000A00400202008008004070
+...                                      1C0100001724A0040C030B925000061724A00C0C0300C030B92500406018
+...                                      061724A0180C0300C0300C0300C2E4940201806018060185C928070300C0
+...                                      300C0300C0300C2E094000185C928000313925002060189C928020300C03
+...                                      13825000062724A01C0C0300C0300C0300C031392500606018060189C928
+...                                      00030392500E060180601806018060181C928030300C0300C0E094000181
+...                                      8020000340DE54D654D60A56065606D60CD652D64CD602D60256045646D6
+...                                      E9182B40D04000025949410000196524040000A594941000039652404000
+...                                      125949010000596524040001A59490100007965240400022594901000099
+...                                      6524040002A5949010000B9652504010300C965250400032594940C52AAA
+...                                      A55174AAAE95455058AA071541A2A94C55268AA031540A2A91D5576A0481
+...                                      7C09E8140A05028140A05028140A05028140A05028140A05028140A05028
+...                                      140A05028140A05028140A05028140A050000600101C00C20200C0180803
+...                                      00010100600C04008000808030000200C018D50300008101820303A100"
+
+#SRS configuration to add in Wts config
+${srs_beam_pos}                 cell_srs_beam_pos_nr profile_id=1 num_of_ue_positions=4 azimuth=-69,-34,14,48
+${test_mode_srs}                cell_testmode_set_nr cell_id=1 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate
+
+&{DlSrsBmConfig}                dftBeamDiffThresholdH=15
+...                             dftBeamDiffThresholdV=15
+
+&{dftBeamDiffThreshold}         dftBeamDiffThresholdH=30
+...                             dftBeamDiffThresholdV=0
+
+&{dict_settings_ue_1}           ue=1
+...                             pdu=1
+...                             throughput_dl=175
+...                             deviation_dl=10     # Allowed % deviation for DL throughput
+...                             throughput_ul=100
+...                             deviation_ul=10     # Allowed % deviation for UL throughput
+...                             originalCell=1
+
+@{dict_settings_all_ues}        ${dict_settings_ue_1}
+
+
+*** Keywords ***
+
+CB012533_A_B1_3
+    [Documentation]        Test to check that online modification of NIDD Rnd parameters is applied on NRCELL1
+    ...                    while UE DL Traffic is on-going .
+    [Arguments]            ${param}
+    Init Sequence        ${param}
+    # STEP               CB012533_A Configuration                                             #  execution duration approximately 5"
+    STEP                 Delta commissioning of Json       json_file=${json_scf_CB012533-A}   #  execution duration approximately 3"30
+    STEP                 WtsConfiguration of Srs Beam
+    Critical Step        Restart TL
+    STEP                 CB012533 Setup Mirroring     prefix=CB012533-A_dftBeam_cellsetupreq
+    STEP                 CB012533 Start Capture CPRT
+    STEP                 Cell Setup
+    STEP                 CB012533 Stop Capture CPRT
+    STEP                 Check DlSrsBm parameters      ${CAPTURE_CPRT}    ${DlSrsBmConfig}
+    ${listOfUes}         Build UEs list SA Multi UEs
+    STEP                 SA Attach and Start Traffic Multi UEs       ${param}    ${listOfUes}
+    STEP                 CB012533 Setup Mirroring     prefix=CB012533-A_dftBeam_cellreconfigurationreq
+    STEP                 CB012533 Start Capture CPRT
+    # ymerlin
+    # Debugging missing cellreconfigurationreq into CPRT Log (SysLog isDftBeamDiffThresholdHChange=1) when applying online modifications
+    # Method 1 :
+    # STEP                 Online Modification of DftBeam parameters     # cellreconfigurationreq not triggered
+    # Method 2 :
+    # STEP                 Delta commissioning of Json     json_file=${json_scf_dftBeamDiffThreshold}  # cellreconfigurationreq triggered
+    # Method 3 :
+    STEP                 Set dftBeamDiffTreshold Parameters             # cellreconfigurationreq triggered
+    STEP                 CB012533 Stop Capture CPRT
+    STEP                 Check dftBeamDiffThreshold parameters      ${CAPTURE_CPRT}    ${dftBeamDiffThreshold}
+    [Teardown]           Run Keywords       Produce Scout data      AND
+    ...                                     GenericTest.Display diagnosis
+
+
+CB012533_A Configuration
+    [Documentation]               Dedicated KW to commission gNB either with delta json file and or online modification
+    ...                           1 TDD cell with SRS beam + 1 TDD cell without SRS beam
+    [Arguments]
+    ${scf_suite_setup_backup}        OAM Get SCF File           file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable               ${scf_suite_setup_backup}
+    Dated Log                        Current file ${scf_suite_setup_backup} saved
+    ${current_scf}                   String.Replace string    ${scf_suite_setup_backup}    _Suite_Setup_Backup.xml    ${EMPTY}
+    ${updated_scf}                   catenate    SEPARATOR=${EMPTY}    ${current_scf}_Modification_on_line_srsForBeamMgmt.xml
+    ${std_output}=                   Run    cp ${scf_suite_setup_backup} ${updated_scf}
+    SCF StartSession               scf_file=${updated_scf}
+    ${dist_name_nrcell}        Set Variable    MRBTS-1/NRBTS-1/NRCELL-1
+    &{srsForBeamMgmt}          Create Dictionary
+    ...                        bSRS=2
+    ...                        comb=comb2
+    ...                        cSRS=49
+    ...                        srsPowerThresholdForDlBm=-1200
+    ...                        srsPowerThresholdForUlBm=-1320
+    ...                        srsTypeAllocForDlBm=antenna switching or codebook
+    ...                        srsUePeriodicity=slots40
+
+    SCF Set element            dist_name=${dist_name_nrcell}    element_name=actDlSrsBm     element_value=true    scope=Classical
+    SCF Set element            dist_name=${dist_name_nrcell}    element_name=actUlSrsBm     element_value=true    scope=Classical
+    SCF Remove List            dist_name=${dist_name_nrcell}    list_name=srsForBeamMgmt    scope=Classical
+    SCF Add list               dist_name=${dist_name_nrcell}    list_name=srsForBeamMgmt    scope=Classical
+    SCF Add items to list      dist_name=${dist_name_nrcell}    list_name=srsForBeamMgmt    elements=&{srsForBeamMgmt}
+    ...                        scope=Classical
+
+    &{periodicCsiAcquisition}    Create Dictionary
+    ...                          csiReportPeriodicity=slots320
+    ...                          csirsNumberWithinReportPeriod_Set1=1
+    ...                          csirsPower=3
+    ...                          maxCsirsNumber=4
+    ...                          scramblingIdStep=3
+
+    SCF Remove List            dist_name=${dist_name_nrcell}    list_name=periodicCsiAcquisition    scope=Classical
+    SCF Add list               dist_name=${dist_name_nrcell}    list_name=periodicCsiAcquisition    scope=Classical
+    SCF Add items to list      dist_name=${dist_name_nrcell}    list_name=periodicCsiAcquisition    elements=&{periodicCsiAcquisition}
+    ...                        scope=Classical
+    # SCF Set element in List    dist_name=${dist_name_nrcell}    list_name=periodicCsiAcquisition    element_name=csirsPower    element_value=3
+    # If element doesn't exist into Scf, SWENG Automatically add missing object
+    SCF Add element    dist_name=${dist_name_nrcell}    element_name=actUeCsirsCoexistCellCsirs      element_value=false    scope=Classical
+    SCF Set element    dist_name=${dist_name_nrcell}    element_name=actUeCsirsCoexistCellCsirs      element_value=false    scope=Classical
+    SCF Set element    dist_name=${dist_name_nrcell}    element_name=dftBeamDiffThresholdH           element_value=15     scope=Classical
+    SCF Set element    dist_name=${dist_name_nrcell}    element_name=dftBeamDiffThresholdV           element_value=15     scope=Classical
+    SCF Set element    dist_name=${dist_name_nrcell}    element_name=dlMimoMode           element_value=8x4 Closed Loop Spatial Multiplexing
+    SCF Set element    dist_name=${dist_name_nrcell}    element_name=mMimoAntArrayMode    element_value=Full 64TRX Array (4x8x2)
+    SCF StopSession                             scf_file=${updated_scf}
+    OAM Perform Full Commissioning              scf_file=${updated_scf}
+    OAM wait available
+    ${scf_delta_configuration}     OAM Get SCF File         file=CB012533-A_Scf_srsForBeamMgmt_Online_Modification.xml
+
+WtsConfiguration of Srs Beam
+    [Documentation]
+    WtsCfgConfig.startSession
+    ${line}             getIndexUsingParam   prefix=uec_param    paramId=id    paramVal=1
+    # Add Test Mode Srs beam
+    WtsCfgConfig.setConfigLine          configuration=${srs_beam_pos}       line=${line+1}
+    WtsCfgConfig.setConfigLine          configuration=${test_mode_srs}      line=${line+2}
+    WtsCfgConfig.stopSession            rename=modified
+    Modify Field in WtsEmu Cfg File     field=SA_UE_CAPABILITIES_TDD    value=${nr_capas_srs_beam}
+
+Set dftBeamDiffTreshold Parameters
+    [Documentation]    Dedicated KW to modify some parameters in the database of the OAM set in arguments
+    ${dist_name}       Set Variable    MRBTS-1/NRBTS-1/NRCELL-1
+    &{modify_param1}   Create Dictionary
+    ...                parameter=dftBeamDiffThresholdH
+    ...                dist_name=${dist_name}
+    ...                value=30
+    &{modify_param2}   Create Dictionary
+    ...                parameter=dftBeamDiffThresholdV
+    ...                dist_name=${dist_name}
+    ...                value=0
+    @{modiflist}       Create List
+    Append To List     ${modiflist}    ${modify_param1}   ${modify_param2}
+    OAM Set Params     ${modiflist}
+
+Delta commissioning of Json
+    [Documentation]      Dedicated KW to commission gNB with delta json file
+    [Arguments]          ${json_file}
+    sbts_coam.connect_to    name=${gnb_alias}
+    Run Keywords    coam_parameter.perform_scf_delta_commission    delta_file=${json_file}     connection=${gnb_alias}
+    ...    AND
+    ...             OAM wait available
+    sbts_coam.teardown            connection=${gnb_alias}
+
+Online Modification of DftBeam parameters
+    [Documentation]        Dedicated KW to commission gNB by setting parameter into Scf file
+    ${scf_suite_setup}     OAM Get SCF File     file=CB012533-A_before_Online_modification_of_DftBeam_params.xml
+    Set Suite Variable               ${scf_suite_setup}
+    Dated Log                        SCF file = ${scf_suite_setup}
+    SCF StartSession               scf_file=${scf_suite_setup}
+    ${dist_name}        Set Variable    MRBTS-1/NRBTS-1/NRCELL-1
+    # Display current setting of dftBeamDiffTresholdH and dftBeamDiffTresholdV
+    ${dftBeamDiffTresholdH}    SCF Get Single Value    dist_name=${dist_name}    p_name=dftBeamDiffThresholdH    scope=Classical
+    ${dftBeamDiffTresholdV}    SCF Get Single Value    dist_name=${dist_name}    p_name=dftBeamDiffThresholdV    scope=Classical
+    Dated log   dftBeamDiffThresholdH : ${dftBeamDiffTresholdH}
+    Dated log   dftBeamDiffThresholdV : ${dftBeamDiffTresholdV}
+    Dated Log    Modify on line dftBeamDiffTresholdH and dftBeamDiffTresholdV
+    SCF Set element    dist_name=${dist_name}    element_name=dftBeamDiffThresholdH      element_value=30     scope=Classical
+    SCF Set element    dist_name=${dist_name}    element_name=dftBeamDiffThresholdV      element_value=0      scope=Classical
+    # OAM Set Params
+    ${dftBeamDiffTresholdH}    SCF Get Single Value    dist_name=${dist_name}    p_name=dftBeamDiffThresholdH
+    ${dftBeamDiffTresholdV}    SCF Get Single Value    dist_name=${dist_name}    p_name=dftBeamDiffThresholdV
+    Dated log     dftBeamDiffThresholdH : ${dftBeamDiffTresholdH}
+    Dated log     dftBeamDiffThresholdV : ${dftBeamDiffTresholdV}
+    SCF StopSession                             scf_file=${scf_suite_setup}
+#   OAM Perform Full Commissioning              scf_file=${scf_suite_setup}
+#   OAM wait available
+    OAM Get SCF File                            file=CB012533-A_SCF_updated_online_modification_of_dftBeamDiffThreshold.xml
+
+Check DlSrsBm parameters
+    [Documentation]
+    ...     Actions:        Take trace CPRT-L2PS
+    ...     Checks:         Check in message l2_ps_cell_cellsetup_req the field dftBeamDiffThresholdV  and dftBeamDiffThresholdH
+    ...     Verdict:        Check the value configured after the cell setup
+    [Arguments]    ${CAPTURE_CPRT}    ${FieldShowName}
+    Dated Log    Checking dftBeamDiffThresholdV and H in itf_l2_ps_cell_cellsetupreq structure
+    Dated Log    convert pcap to pdml with filter itf_l2_ps_cell_cellsetupreq/itf_l2_ps_cell_DlSrsBmConfig
+    Dated Log    pcap file : ${CAPTURE_CPRT}
+    ${pdml}                     analyzer.pcap_to_pdml      ${CAPTURE_CPRT.path}
+    ${msg_field}       Set Variable    @{FieldShowName.keys()}
+    Dated log new line                 Getting some captured value in itf_l2_ps_cell_DlSrsBmConfig
+    FOR     ${Field}   IN           @{msg_field}
+            ${Value}          set variable    ${FieldShowName["${Field}"]}
+            Dated Log         --- Check ${Field} = ${Value}
+            analyzer.check_exists_once     pdmlFile=${pdml}
+            ...                            packetName=itf_l2_ps_cell_DlSrsBmConfig
+            ...                            path=${Field}
+            ...                            value=${Value}
+            ...                            kind=showname
+            ...                            test=MATCH
+    END
+    [return]    ${pdml}
+
+Check dftBeamDiffThreshold parameters
+    [Documentation]
+    ...     Actions:        Take trace CPRT-L2PS
+    ...     Verdict:        Check dftBeamDiffThresholdV and dftBeamDiffThresholdH values after procedure of cell reconfiguration request
+    [Arguments]    ${CAPTURE_CPRT}    ${FieldShowName}
+    Dated Log    Checking dftBeamDiffThresholdV and H in itf_l2_ps_cell_cellreconfigurationreq structure
+    Dated Log    convert pcap to pdml with filter itf_l2_ps_cell_cellreconfigurationreq
+    Dated Log    pcap file : ${CAPTURE_CPRT}
+    ${pdml}                     analyzer.pcap_to_pdml      ${CAPTURE_CPRT.path}
+    ${msg_field}       Set Variable    @{FieldShowName.keys()}
+    Dated log new line                 Getting some captured value in itf_l2_ps_cell_DlSrsBmConfig
+    FOR     ${Field}   IN           @{msg_field}
+            ${Value}          set variable    ${FieldShowName["${Field}"]}
+            Dated Log         --- Check ${Field} = ${Value}
+            analyzer.check_exists_once     pdmlFile=${pdml}
+            ...                            packetName=itf_l2_ps_cell_cellreconfigurationreq
+            ...                            path=${Field}
+            ...                            value=${Value}
+            ...                            kind=showname
+            ...                            test=MATCH
+    END
+    [return]    ${pdml}

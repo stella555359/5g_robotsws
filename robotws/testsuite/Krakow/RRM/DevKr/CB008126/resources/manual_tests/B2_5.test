@@ -1,0 +1,56 @@
+# ; value after semicolon means sleep after acton command
+# ; parameter 'o' after semicolon means, that output of the command is required
+
+# CB008126-A-B2 TNL modificaiton for PDU session without QoS flows
+# Test verifies that:
+# - it is possible to modify UL NG-U UP TNL address for 2 PDU sessions in one NGAP:PDUSessionResourceModifyRequest, when
+# one PDU session is empty (has no QFI). Second PDU session has QFI with ongoing traffic.
+
+# use lua SA_TDD_2c_1gNBSim.lua
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/5QI_1_2_3_4_71_72_76_128_170_212_254.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/vonr_gbr_activation.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/gNBSim.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/disable_ciphering.yaml
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/CB008126_enable.yaml
+
+# attach UE1 with 2 PDU sessions
+qosflow_modify qos_flow=15 ue=all default=true;1
+ue_change_location id=1 enb=2 cell=1
+ue_register id=1;2
+set_pdu_param ue=1 pdu=1 trf_type=internal
+set_pdu_param ue=1 pdu=2 trf_type=internal
+ue_pdu_session_setup pdu=1 ue=1 gw=1 nwslice=1;2
+ue_pdu_session_setup pdu=2 ue=1 gw=2 nwslice=1;2
+trf_data_start ue=1 pdu=1 qfi=1 dir=dl mbps=30 trf_id=1
+trf_data_start ue=1 pdu=1 qfi=1 dir=ul mbps=10 trf_id=1
+trf_data_start ue=1 pdu=2 qfi=1 dir=dl mbps=30 trf_id=1
+trf_data_start ue=1 pdu=2 qfi=1 dir=ul mbps=10 trf_id=1
+pause
+
+
+# Verify that traffic is ongoing
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;o
+bearer_stats ue=1 pdu=2 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=2 qfi=1 dir=ul;o
+pause
+
+# Remove last QFI from PDU=1
+pdu_session_ue_modify ue=1 pdu=1 qosflows_to_del=1 by=amf validation=off
+pause
+
+# Modify UL NG-U UP TNL for both PDU sessions
+ue_pdu_session_modify ue=1 pdu=1 switch_ul_tunnel_endpoint=ip_teid pdu=2 switch_ul_tunnel_endpoint=ip_teid by=amf;2
+# Verify trat traffic on PDU=2 is ongoing. Empty PDU=1 session (unexpected state) did not impacted successful modification
+# of UL NG-U UP TNL for PDU=2
+pause
+
+# Verify that there is no traffic drop
+bearer_stats ue=1 pdu=2 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=2 qfi=1 dir=ul;o
+pause
+
+#TC cleanup
+ue_kill id=1;5
+exit
+

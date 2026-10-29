@@ -1,0 +1,11 @@
+*** Settings ***
+Documentation  This suite contains WebEM__vDU__Resetting_gNB_vDU_of_cell_groups_by_M2M_interface TC
+
+Resource  ../test_resources/WebEM__vDU__Resetting_gNB_vDU_of_cell_groups_by_M2M_interface.robot
+
+
+*** Test Cases ***
+WebEM__vDU__Resetting_gNB_vDU_of_cell_groups_by_M2M_interface
+    [Setup]  TC Setup
+    TC__WebEM__vDU__Resetting_gNB_vDU_of_cell_groups_by_M2M_interface
+    [Teardown]  TC Teardown

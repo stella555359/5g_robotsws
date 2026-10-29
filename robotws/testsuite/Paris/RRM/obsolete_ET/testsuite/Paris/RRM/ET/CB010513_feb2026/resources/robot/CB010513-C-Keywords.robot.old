@@ -1,0 +1,546 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   Configuration related keywords for feature CB010513-C ...
+...               Prerequisite : commissioning for slicing does not have to be done, but basic_setup.cfg must be properly configured
+...               Scope : keywords for CB010513-C
+...
+...               Test Case Scenario author   : vincent.boulet@nokia.com
+...               Creation Date               : 2023-06-27
+...               Modified Date               : 2023-07-07
+
+...               Last Modified by            : vincent.boulet@nokia.com
+...               Version    Date      Author                                Notes
+...               0.1        FB2313    vincent.boulet@nokia.com              Creation robot
+...               0.2        FB2313    vincent.boulet@nokia.com              Perform full commissioning for slicing
+...               0.3        FB2313    vincent.boulet@nokia.com              Introduce loop to allow generation of new count period
+...               0.4        FB2313    vincent.boulet@nokia.com              Add Sherpa capture after cell setup for PRB pooling verifications
+...               0.5        FB2313    vincent.boulet@nokia.com              Evaluate KPI's constraints
+...               1.0        FB2313    vincent.boulet@nokia.com              Align commissioning for slicing to be compatible custom config 10513-B
+...                                                                          Add a parameter to Check Counter And KPI Constraints
+...               1.1        FB2314    vincent.boulet@nokia.com              Introduce new parameter on ue settings for throughput ul
+...               1.2        FB2317    blandine.garnier@nokia.com            Modification on addition of objet SNSSAI in object TRACKINGAREA 
+...                                                                          Modification of the min value for KPI M55308C10001
+...               1.3        FB2321    blandine.garnier@nokia.com            Migration to LO_LOOO with variant
+...               1.4        FB2323    blandine.garnier@nokia.com            Suppression Sherpa + modif KPis
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+#vbo#debug deregister#
+#vbo#obsolete with custom config#
+
+# Libraries
+
+# Resources
+Resource                                        ./CB010513-Common-Keywords.robot
+
+*** Variables ***
+# IF auto THEN it means that the value of the counter to check is compute automatically ELSE the value set is used
+# Counters settings for Peak numbers of SA RRC users in the CU and non-GBR versus GBR DRBs on NRBTS
+&{dict_settings_M55140C00001}         counter=M55140C00001    obj=NRBTS     obj_id=auto    min=auto     max=auto    iteration=3
+&{dict_settings_M55140C00002}         counter=M55140C00002    obj=NRBTS     obj_id=auto    min=auto     max=auto    iteration=3
+&{dict_settings_M55140C00501}         counter=M55140C00501    obj=NRBTS     obj_id=auto    min=auto     max=auto    iteration=3
+# Counters settings for number of scheduled UEs on PDSCH                                                            
+&{dict_settings_M55308C17002}         counter=M55308C17002    obj=NRCELL    obj_id=auto    min=2        max=2       iteration=3
+# Counters settings for number of PRBs                                                                              
+&{dict_settings_M55308C10003}         counter=M55308C10003    obj=NRCELL    obj_id=auto    min=0        max=0       iteration=0
+&{dict_settings_M55308C10005}         counter=M55308C10005    obj=NRCELL    obj_id=auto    min=0        max=0       iteration=0
+&{dict_settings_M55308C10007}         counter=M55308C10007    obj=NRCELL    obj_id=auto    min=0        max=0       iteration=0
+# Counters settings for PRBs on PDSCH for NSA traffic per PLMN                                                      
+&{dict_settings_M55338C01000}         counter=M55338C01000    obj=NRCELL    obj_id=auto    min=0        max=0       iteration=0
+&{dict_settings_M55338C01001}         counter=M55338C01001    obj=NRCELL    obj_id=auto    min=0        max=0       iteration=-1
+# Counters settings for number of PRBs used for PDSCH per slice                                                     
+&{dict_settings_M55359C00000}         counter=M55359C00000    obj=NRCELL    obj_id=auto    min=0        max=0       iteration=0
+&{dict_settings_M55359C00001}         counter=M55359C00001    obj=NRCELL    obj_id=auto    min=0        max=85      iteration=0
+# Counters for cells are added dynamically
+@{dict_all_counters}                            &{dict_settings_M55140C00001}
+...                                             &{dict_settings_M55140C00002}
+...                                             &{dict_settings_M55140C00501}
+
+${custom_config_file}       ${CURDIR}/../../../../../../../custom-config/POOLING/CB010513/CB010513_C/custom_config_10513_C.yaml
+
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+*** Keywords ***
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Suite Setup CB010513-C
+    [Documentation]
+    ...     Conditions:    it needs no conditions
+    ...     Actions:       it performs the generic suite setup and backup the configurations files
+    ...     Checks:        it checks nothing more than already done on lib.
+    ...     Verdict:       suite setup is passed
+    Setup.Suite Setup From Scratch
+    ...                    keepAllUeDataInCfgFile=${True}
+    ...                    automaticTeardown=${True}
+    ...                    yamlPathname=${custom_config_file}
+    
+    Backup Files
+    ${scf_suite_setup_backup}        OAM Get SCF File           file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable               ${scf_suite_setup_backup}
+    Dated Log                        SCF backup file = ${scf_suite_setup_backup}
+
+Perform Full Commissioning for Slicing
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${nb_cell} ${test_name}
+    ...     Actions:        it performs the full commissioning to support the slicing for SA and NSA
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        the parameters for the objects are configured
+    [Arguments]             ${param}
+    ...                     ${nb_cell}
+    ...                     ${test_name}
+   
+    ${current_scf}                              String.Replace string    ${scf_suite_setup_backup}    _Suite_Setup_Backup.xml    ${EMPTY}
+    ${updated_scf}                              catenate    SEPARATOR=${EMPTY}    ${current_scf}_Activated_For_Slicing.xml
+    ${std_output}=                              Run    cp ${scf_suite_setup_backup} ${updated_scf}   
+    SCF StartSession                            scf_file=${updated_scf}
+    #definition of the objects dist_name
+    ${dist_name_mrbts}                          Set Variable    MRBTS-${TMRBTS_ID[0]}
+    Dated log                                   dist_name_mrbts is ${dist_name_mrbts}
+    ${dist_name_nrbts}                          Set Variable    ${dist_name_mrbts}/NRBTS-${TNRBTS_ID[0]}
+    Dated log                                   dist_name_nrbts is ${dist_name_nrbts}
+    ${dist_name_nrresourcegroup_prof}           Set Variable    ${dist_name_nrbts}/NRRESOURCEGROUP_PROFILE-1
+    Dated log                                   dist_name_nrresourcegroup_profile is ${dist_name_nrresourcegroup_prof}
+    ${dist_name_nrresourcegroup_base}           Set Variable    ${dist_name_nrresourcegroup_prof}/NRRESOURCEGROUP
+    Dated log                                   dist_name_nrresourcegroup_base is ${dist_name_nrresourcegroup_base}
+    ${dist_name_nrdrb_5qi1}                     Set Variable    ${dist_name_nrbts}/NRDRB_5QI-1
+    Dated log                                   dist_name_nrdrb_5qi1 is ${dist_name_nrdrb_5qi1}
+    ${dist_name_nrdrb_5qi2}                     Set Variable    ${dist_name_nrbts}/NRDRB_5QI-2
+    Dated log                                   dist_name_nrdrb_5qi2 is ${dist_name_nrdrb_5qi2}
+    ${dist_name_nrdrb_5qi5}                     Set Variable    ${dist_name_nrbts}/NRDRB_5QI-5
+    Dated log                                   dist_name_nrdrb_5qi5 is ${dist_name_nrdrb_5qi5}
+    ${dist_name_nrdrb_5qi6}                     Set Variable    ${dist_name_nrbts}/NRDRB_5QI-6
+    Dated log                                   dist_name_nrdrb_5qi6 is ${dist_name_nrdrb_5qi6}
+    ${dist_name_nrplmn1}                        Set Variable    ${dist_name_nrbts}/NRPLMN-1
+    Dated log                                   dist_name_nrplmn1 is ${dist_name_nrplmn1}
+    #vbo#obsolete with custom config#${dist_name_nrplmn2}                        Set Variable    ${dist_name_nrbts}/NRPLMN-2
+    #vbo#obsolete with custom config#Dated log                                   dist_name_nrplmn2 is ${dist_name_nrplmn2}
+    ${dist_name_snssai1}                        Set Variable    ${dist_name_nrbts}/SNSSAI-1
+    Dated log                                   dist_name_snssai1 is ${dist_name_snssai1}
+    ${dist_name_snssai2}                        Set Variable    ${dist_name_nrbts}/SNSSAI-2
+    Dated log                                   dist_name_snssai2 is ${dist_name_snssai2}
+    ${dist_name_trackingarea200}                Set Variable    ${dist_name_nrbts}/TRACKINGAREA-200
+    Dated log                                   dist_name_trackingarea200 is ${dist_name_trackingarea200}
+    ${dist_name_nrpmrnl}                        Set Variable    ${dist_name_nrbts}/NRPMRNL-1
+    Dated log                                   dist_name_nrpmrnl is ${dist_name_nrpmrnl}
+
+    ### MRBTS
+    #btsName / update / + ${test_name}
+    SCF Set element    dist_name=${dist_name_mrbts}    element_name=btsName    element_value=${test_name}    scope=Classical
+
+    ### NRBTS
+    #actSliceAwareScheduler / update / true
+    SCF Set element    dist_name=${dist_name_nrbts}    element_name=actSliceAwareScheduler    element_value=${True}    scope=Classical
+    #actPdcpRlcBufCongestionMechsm / update / disabled
+    SCF Set element    dist_name=${dist_name_nrbts}    element_name=actPdcpRlcBufCongestionMechsm    element_value=disabled    scope=Classical
+
+    ### NRDRB_5QI-1
+    #list_name=snssaiDNList / add / ${dist_name_snssai2}
+    SCF Add list                                dist_name=${dist_name_nrdrb_5qi1}    list_name=snssaiDNList
+    @{list_snssai}                              Create List    ${dist_name_snssai2}
+    SCF Add elements to list                    dist_name=${dist_name_nrdrb_5qi1}    list_name=snssaiDNList    elements=${list_snssai}
+    #nrPlmnDN / add / ${dist_name_nrplmn1}
+    SCF Add element    dist_name=${dist_name_nrdrb_5qi1}    element_name=nrPlmnDN    element_value=${dist_name_nrplmn1}    scope=Classical
+
+    ### NRDRB_5QI-2
+    #list_name=snssaiDNList / add / ${dist_name_snssai1}
+    SCF Add list                                dist_name=${dist_name_nrdrb_5qi2}    list_name=snssaiDNList
+    @{list_snssai}                              Create List    ${dist_name_snssai1}    ${dist_name_snssai2}
+    SCF Add elements to list                    dist_name=${dist_name_nrdrb_5qi2}    list_name=snssaiDNList    elements=${list_snssai}
+    #nrPlmnDN / add / ${dist_name_nrplmn1}
+    SCF Add element    dist_name=${dist_name_nrdrb_5qi2}    element_name=nrPlmnDN    element_value=${dist_name_nrplmn1}    scope=Classical
+
+    ### NRDRB_5QI-5
+    #nrPlmnDN / add / ${dist_name_nrplmn2}
+    #vbo#obsolete with custom config#
+    #vbo#SCF Add element    dist_name=${dist_name_nrdrb_5qi5}    element_name=nrPlmnDN    element_value=${dist_name_nrplmn2}    scope=Classical
+
+    ### NRDRB_5QI-6
+    #list_name=snssaiDNList / add / ${dist_name_snssai2}
+    SCF Add list                                dist_name=${dist_name_nrdrb_5qi6}    list_name=snssaiDNList
+    @{list_snssai}                              Create List    ${dist_name_snssai2}
+    SCF Add elements to list                    dist_name=${dist_name_nrdrb_5qi6}    list_name=snssaiDNList    elements=${list_snssai}
+    #nrPlmnDN / add / ${dist_name_nrplmn1}
+    SCF Add element    dist_name=${dist_name_nrdrb_5qi6}    element_name=nrPlmnDN    element_value=${dist_name_nrplmn1}    scope=Classical
+
+    ### NRPLMN
+    #vbo#obsolete with custom config#
+    #vbo#SCF Add object    dist_name=${dist_name_nrplmn2}    class_name=com.nokia.srbts.nrbts:NRPLMN    version=${None}    scope=Classical
+    #vbo##mcc / add / 312
+    #vbo#SCF Add element    dist_name=${dist_name_nrplmn2}    element_name=mcc    element_value=312    scope=Classical
+    #vbo##mnc / add / 490
+    #vbo#SCF Add element    dist_name=${dist_name_nrplmn2}    element_name=mnc    element_value=490    scope=Classical
+    #vbo##mncLength / add / 3
+    #vbo#SCF Add element    dist_name=${dist_name_nrplmn2}    element_name=mncLength    element_value=3    scope=Classical
+    
+    ### NRRESOURCEGROUP_PROFILE
+    SCF Add object    dist_name=${dist_name_nrresourcegroup_prof}    class_name=com.nokia.srbts.nrbts:NRRESOURCEGROUP_PROFILE    version=${None}
+    ### NRRESOURCEGROUP
+    SCF Add object    dist_name=${dist_name_nrresourcegroup_base}-1    class_name=com.nokia.srbts.nrbts:NRRESOURCEGROUP    version=${None}
+    #list_name=nrResourceDNList / add / ${dist_name_snssai1}
+    SCF Add list                                dist_name=${dist_name_nrresourcegroup_base}-1    list_name=nrResourceDNList
+    @{list_nrresource}                          Create List    ${dist_name_snssai1}
+    SCF Add elements to list    dist_name=${dist_name_nrresourcegroup_base}-1    list_name=nrResourceDNList    elements=${list_nrresource}
+    #list_name=schedulerParams / add / maxQuota / 80 + minQuota / 45
+    ${list_scheduler_params}                    Create Dictionary    maxQuota=80    minQuota=45
+    SCF Add list                                dist_name=${dist_name_nrresourcegroup_base}-1    list_name=schedulerParams
+    SCF Add items to list    dist_name=${dist_name_nrresourcegroup_base}-1    list_name=schedulerParams    elements=${list_scheduler_params}
+
+    SCF Add object    dist_name=${dist_name_nrresourcegroup_base}-2    class_name=com.nokia.srbts.nrbts:NRRESOURCEGROUP    version=${None}
+    #list_name=nrResourceDNList / add / ${dist_name_snssai2}
+    SCF Add list                                dist_name=${dist_name_nrresourcegroup_base}-2    list_name=nrResourceDNList
+    @{list_nrresource}                          Create List    ${dist_name_snssai2}
+    SCF Add elements to list          dist_name=${dist_name_nrresourcegroup_base}-2    list_name=nrResourceDNList    elements=${list_nrresource}
+    #list_name=schedulerParams / add / maxQuota / 60 + minQuota / 25
+    ${list_scheduler_params}                    Create Dictionary    maxQuota=60    minQuota=25
+    SCF Add list                                dist_name=${dist_name_nrresourcegroup_base}-2    list_name=schedulerParams
+    SCF Add items to list    dist_name=${dist_name_nrresourcegroup_base}-2    list_name=schedulerParams    elements=${list_scheduler_params}
+    
+    #vbo#obsolete with custom config#
+    #vbo#SCF Add object    dist_name=${dist_name_nrresourcegroup_base}-3    class_name=com.nokia.srbts.nrbts:NRRESOURCEGROUP    version=${None}
+    #vbo##list_name=nrResourceDNList / add / ${dist_name_nrplmn1}
+    #vbo#SCF Add list                                dist_name=${dist_name_nrresourcegroup_base}-3    list_name=nrResourceDNList
+    #vbo#@{list_nrresource}                          Create List    ${dist_name_nrplmn1}
+    #vbo#SCF Add elements to list    dist_name=${dist_name_nrresourcegroup_base}-3    list_name=nrResourceDNList    elements=${list_nrresource}
+    #vbo##list_name=schedulerParams / add / maxQuota / 80 + minQuota / 20
+    #vbo#${list_scheduler_params}                    Create Dictionary    maxQuota=80    minQuota=20
+    #vbo#SCF Add list                                dist_name=${dist_name_nrresourcegroup_base}-3    list_name=schedulerParams
+    #vbo#SCF Add items to list    dist_name=${dist_name_nrresourcegroup_base}-3    list_name=schedulerParams    elements=${list_scheduler_params}
+    #vbo#
+    #vbo#SCF Add object    dist_name=${dist_name_nrresourcegroup_base}-4    class_name=com.nokia.srbts.nrbts:NRRESOURCEGROUP    version=${None}
+    #vbo##list_name=nrResourceDNList / add / ${dist_name_nrplmn2}
+    #vbo#SCF Add list                                dist_name=${dist_name_nrresourcegroup_base}-4    list_name=nrResourceDNList
+    #vbo#@{list_nrresource}                          Create List    ${dist_name_nrplmn2}
+    #vbo#SCF Add elements to list    dist_name=${dist_name_nrresourcegroup_base}-4    list_name=nrResourceDNList    elements=${list_nrresource}
+    #vbo##list_name=schedulerParams / add / maxQuota / 60 + minQuota / 10
+    #vbo#${list_scheduler_params}                    Create Dictionary    maxQuota=60    minQuota=10
+    #vbo#SCF Add list                                dist_name=${dist_name_nrresourcegroup_base}-4    list_name=schedulerParams
+    #vbo#SCF Add items to list    dist_name=${dist_name_nrresourcegroup_base}-4    list_name=schedulerParams    elements=${list_scheduler_params}
+
+    ### SNSSAI
+    SCF Add object                              dist_name=${dist_name_snssai2}    class_name=com.nokia.srbts.nrbts:SNSSAI    version=${None}
+    #administrativeState / add / Unlocked
+    SCF Add element    dist_name=${dist_name_snssai2}    element_name=administrativeState    element_value=Unlocked    scope=Classical
+    #sd / add / 2
+    SCF Add element    dist_name=${dist_name_snssai2}    element_name=sd    element_value=2    scope=Classical
+    #sst / add / 1
+    SCF Add element    dist_name=${dist_name_snssai2}    element_name=sst    element_value=1    scope=Classical
+    #list_name=nrPlmnDNList / add / ${dist_name_nrplmn1}
+    SCF Add list                                dist_name=${dist_name_snssai2}    list_name=nrPlmnDNList
+    @{list_nrplmn}                              Create List    ${dist_name_nrplmn1}
+    SCF Add elements to list                    dist_name=${dist_name_snssai2}    list_name=nrPlmnDNList    elements=${list_nrplmn}
+    
+    ###TRACKINGAREA
+    #list_name=snssaiList / add / ${snssaiDN}
+    ${snssaiDN}                    Create Dictionary    snssaiDN=${dist_name_snssai2}
+    SCF Add items to list    dist_name=${dist_name_trackingarea200}    list_name=snssaiList    elements=${snssaiDN}
+   
+    ###NRPMRNL
+    #miNrSlicingL1Resource / update / 5min
+    SCF Set element    dist_name=${dist_name_nrpmrnl}    element_name=miNrSlicingL1Resource    element_value=5min    scope=Classical
+    
+    ### NRCELL
+    FOR    ${cell_id}    IN RANGE    0    ${nb_cell}
+        ${dist_name_nrcell}                     Set Variable    ${TNRCELL_DN_LIST[0]}[${cell_id}]
+        Dated log                               dist_nrcell_name is ${dist_name_nrcell}
+        #nrResourceGroupProfileDN / add / ${dist_name_nrresourcegroup_prof}       
+        SCF Add element    dist_name=${dist_name_nrcell}    element_name=nrResourceGroupProfileDN    element_value=${dist_name_nrresourcegroup_prof}
+        ...                                                         scope=Classical
+        
+        ###NRPLMNSET_NSA
+        #vbo#obsolete with custom config#
+        #vbo#${dist_name_nrplmnset_nsa}              Set Variable    ${dist_name_nrcell}/NRPLMNSET_NSA-1
+        #vbo#Dated log                               dist_name_nrplmnset_nsa is ${dist_name_nrplmnset_nsa}
+        #vbo##list_name=nrPlmnDNList / add / ${dist_name_nrplmn2}
+        #vbo#@{list_nrplmn}                          Create List    ${dist_name_nrplmn2}
+        #vbo#SCF Add elements to list                dist_name=${dist_name_nrplmnset_nsa}    list_name=nrPlmnDNList    elements=${list_nrplmn}
+        #vbo#
+        #vbo## Disable MU MIMO
+        #vbo##actUlMuMimo / update / false
+        #vbo#SCF Set element    dist_name=${dist_name_nrcell}    element_name=actUlMuMimo    element_value=${False}    scope=Classical
+        #vbo##actDlMuMimo / update / false
+        #vbo#SCF Set element    dist_name=${dist_name_nrcell}    element_name=actDlMuMimo    element_value=${False}    scope=Classical
+        #vbo##actDlMuMimoEnh / update / false
+        #vbo#SCF Set element    dist_name=${dist_name_nrcell}    element_name=actDlMuMimoEnh    element_value=${False}    scope=Classical
+        
+        #actVoipPacketAggr / update / false
+        SCF Set element    dist_name=${dist_name_nrcell}    element_name=actVoipPacketAggr    element_value=${False}    scope=Classical
+    END
+    SCF StopSession                             scf_file=${updated_scf}
+    OAM Perform Full Commissioning              scf_file=${updated_scf}
+    OAM wait available
+    OAM Get SCF File                            file=SCF_Updated_For_Slicing.xml
+    ${std_output}=                              Run    rm -f ${updated_scf}
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+TC_CB010513_C_1_SA
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${test_name} ${vendor_custom} ${dict_ues} ${is_capture}
+    ...     Actions:        it performs the call setup for multi-ues with traffic on different cells
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        calls for multi ues with traffic and PRB pooling are passed 
+    [Arguments]             ${param}
+    ...                     ${test_name}
+    ...                     ${vendor_custom}
+    ...                     ${dict_ues}
+    ...                     ${is_capture}
+    
+    Init Sequence                               ${param}
+    Dated Log New Line                          ===> test name is ${test_name}
+    Run Keyword If    ${SUITE_DEBUG_MODE}       Set Debug Mode
+    Step                                        Set RAD Parameters for CB010513
+    Critical Step                               Deploy Vendor File Config    vendor_param=${vendor_custom}    is_perform_full_commissioning=${true}
+    # Critical Step                               Perform Full Commissioning for Slicing    param=${param}    nb_cell=3    test_name=${test_name}
+    # Configure new ue's dynamically
+    ${initial_nb_ue}                            get length    ${dict_ues}
+    Run Keyword If    ${initial_nb_ue} < ${param.total_nb_ue}    Configure New Ues    ${dict_ues}    
+    ...                                                             ${initial_nb_ue}
+    ...                                                             ${param.total_nb_ue}
+    ...                                                             ${dict_settings_ue_default}
+
+    # Configure the current setting for all the ue's
+    ${param.total_nb_ue}                        get length    ${dict_ues}
+    
+    Dated Log New Line                          ===> configure the setting for all the ${param.total_nb_ue} ue's
+    @{list_ue}                                  Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.total_nb_ue}
+        ${current_ue}=                          Evaluate                ${current_id} + 1
+        ${current_ue_setting}=                  Copy Dictionary         ${BASIC_UE_SA}
+        Set To Dictionary                       ${current_ue_setting}    ue    ${current_ue}
+        Set To Dictionary                       ${current_ue_setting}    pdu    1
+        Set To Dictionary                       ${current_ue_setting}    trf_id    1
+        Set To Dictionary                       ${current_ue_setting}    target_gnb    ${param.target_gnb}
+
+        # Dispatching the ue on the requested original cell for the call establishment
+        Set To Dictionary                       ${current_ue_setting}    target_cells    ${dict_ues[${current_id}].original_cell}        
+        # Dispatching the ue on the requested network slice for the call establishment
+        Set To Dictionary                       ${current_ue_setting}    nwslice    ${dict_ues[${current_id}].sa_nwslice}        
+        # Set the correct requested throughput per ue
+        Set To Dictionary                       ${current_ue_setting}    throughput    ${dict_ues[${current_id}].throughput}
+        Set To Dictionary                       ${current_ue_setting}    throughput_gbr    ${dict_ues[${current_id}].throughput_gbr}
+        Set To Dictionary                       ${current_ue_setting}    throughput_ul    ${dict_ues[${current_id}].throughput_ul}
+        
+        Append To List                          ${list_ue}    ${current_ue_setting}
+    END
+    Dated Log New Line                          ===> ue's list is ${list_ue}
+    Check Multi Ues Setting In List             list_multi_ue=${list_ue}
+    
+    # Start SYSLOG capture
+    ${syslog}                                   SYSLOG Start    host=${GNB_DU.sys[0].M}    name=${test_name}
+    
+    # Setup wtsemu SA for all the ue's
+    Traced Sleep                                duration=60s    msg=Wtsemu SA system start-up to give radio modules time to start up
+    Critical Step                               CallSetup.Setup Wtsemu SA    nbUe=${param.total_nb_ue}
+    ...                                                             nbSaUe=${param.total_nb_ue}
+    ...                                                             shouldUseLua=${False}
+    ###...                                                          nb_cell=${param.total_nb_cell}
+    ...                                                             list_of_UE_tobe_created=${list_ue}
+    # WA to avoid degradation on cells
+    Traced Sleep                                duration=15s    msg=setting the X2 link as WA to avoid degradation on cells
+    Step                                        CallSetup.WTS Set X2 Link
+
+    # Capture Sherpa after cell setup for PRB Pooling verification
+    # ${enable_sherpa}                            Set Variable        ${True}
+   # Run Keyword If    ${enable_sherpa} == ${True}    Run Keywords    Critical Step     Activate Sherpa
+   # ...    AND    Step                          Traced Sleep    duration=10s    msg=capture after cell setup
+   # ...    AND    Critical Step                 Deactivate Sherpa and Stop Collect
+   # ...    AND    Step                          Upload and decode sherpa pcap files    Sherpa_logs_local_path=${trace_dir}    duration=0
+   # ...    AND    Step                          Calling Panda Extract Csv For PRB Pooling
+   # Run Keyword If    not ${CELL_SETUP_ONLY} and ${enable_sherpa} == ${True}    Run Keywords
+   # ...    Critical Step                        Verification of Pool Id within PRB Pooling Report    pool_id=${ID_POOL}
+   # ...                                                             subpool_id=${ID_SUBPOOL_1}
+   # ...    AND    CritIcal Step                 Verification of Pool Id within PRB Pooling Report    pool_id=${ID_POOL}
+   # ...                                                             subpool_id=${ID_SUBPOOL_2}
+    #
+   # ...    AND    Critical Step                 Verification of BB Pooling Mode within PRB Pooling Allocation Report    pool_id=${ID_POOL}
+    #                       
+   # ...    AND    Critical Step                 Verification of BB Pooling cell distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_1}
+   # ...                                                             subpool_id=${ID_SUBPOOL_1}
+   # ...    AND    Critical Step                 Verification of BB Pooling cell distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_2}
+   # ...                                                             subpool_id=${ID_SUBPOOL_2}
+   # ...    AND    Critical Step                 Verification of BB Pooling cell distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_3}
+   # ...                                                             subpool_id=${ID_SUBPOOL_1}
+    #
+   # ...    AND    Critical Step                 Verification of Stream PRB Information within PRB Pooling Report
+   # ...                                                             stream_prb_capa=1600
+   # ...                                                             alloc_stream_prb=1600
+   # ...                                                             subpool_id=${ID_SUBPOOL_1}
+   # ...                                                             check_operator===
+   # ...    AND    Critical Step                 Verification of Stream PRB Information within PRB Pooling Report
+   # ...                                                             stream_prb_capa=800
+   # ...                                                             alloc_stream_prb=800
+   # ...                                                             subpool_id=${ID_SUBPOOL_2}
+   # ...                                                             check_operator===
+    #
+   # ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+   # ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+   # ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+   # ...                                                             num_prb_alloc=200
+   # ...                                                             prereq_data=${COL_NAME_NRCELLID}
+   # ...                                                             prereq_value=${ID_NRCELL_1}
+   # ...                                                             check_operator===
+   # ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+   # ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+   # ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+   # ...                                                             num_prb_alloc=200
+   # ...                                                             prereq_data=${COL_NAME_NRCELLID}
+   # ...                                                             prereq_value=${ID_NRCELL_2}
+   # ...                                                             check_operator===
+   # ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+   # ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+   # ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+   # ...                                                             num_prb_alloc=200
+   # ...                                                             prereq_data=${COL_NAME_NRCELLID}
+   # ...                                                             prereq_value=${ID_NRCELL_3}
+   # ...                                                             check_operator===
+    #                       
+   # ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_1}
+   # ...                                                             zab_privilege=1
+   # ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_2}
+   # ...                                                             zab_privilege=0
+   # ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_3}
+   # ...                                                             zab_privilege=0
+    
+    Sleep Until PM Availability    # Wait end of PM period containing cell setup
+    
+    # WA by moving Captures Init and Start to avoid exceeded traffic
+    Step                                        Captures Init
+    Step                                        Captures Start    action_core=${is_capture.is_capture_core}
+    ...                                                             action_cprt=${is_capture.is_capture_cprt}
+    ...                                                             action_l1l2=${is_capture.is_capture_l1l2}
+    
+    # Register and launch PDU for all the ue's
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    not ${CELL_SETUP_ONLY}    Run Keywords
+        ...    Critical Step                    CallSetup.UE Register    ue=${current_elem.ue}
+        ...                                     depends=CallSetup.Setup Wtsemu SA
+        ...    AND    Critical Step             CallSetup.Launch PDU Session    ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         gw=1
+        ...                                                         nwslice=${current_elem.nwslice}
+        ...                                     depends=CallSetup.UE Register
+    END
+
+    # PDU session modify reserved for the ue's configured with GBR traffic
+    ${nb_ue_traffic_gbr}=                       Get Number Of Ue Configured With GBR Traffic    dict_ues=${list_ue}
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    not ${CELL_SETUP_ONLY} and ${current_elem.throughput_gbr} > ${NO_THROUGHPUT}    Run Keywords
+        ...    Critical Step                    CallSetup.UE PDU Session Modify    ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=2
+        ...                                                         by=amf
+        ...                                     depends=CallSetup.Launch PDU Session
+        ...    AND    Critical Step             CallSetup.UE PDU Session Modify    ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=3
+        ...                                                         by=amf
+        ...                                     depends=CallSetup.Launch PDU Session
+    END
+
+    # Start the DL GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    not ${CELL_SETUP_ONLY} and ${current_elem.throughput_gbr} > ${NO_THROUGHPUT}
+        ...    Critical Step                    DL Traffic GBR SA Not Stopped    param=${param}
+        ...                                                         current_ue_setting=${current_elem}
+        ...                                     depends=CallSetup.Launch PDU Session
+    END
+
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    not ${CELL_SETUP_ONLY} and ${current_elem.throughput} > ${NO_THROUGHPUT}
+        ...    Critical Step                    ${param.dir} Traffic Not Stopped    param=${param}    current_ue_setting=${current_elem}
+        ...                                     depends=CallSetup.Launch PDU Session
+    END
+
+    # Capture Sherpa during traffic for PRB Pooling verification
+   # ${enable_sherpa}                            Set Variable        ${True}
+   # Run Keyword If    not ${CELL_SETUP_ONLY} and ${enable_sherpa} == ${True}    Run Keywords    Critical Step     Activate Sherpa
+   # ...    AND    Step                          Traced Sleep    duration=10s    msg=call with traffic
+   # ...    AND    Critical Step                 Deactivate Sherpa and Stop Collect
+   # ...    AND    Step                          Upload and decode sherpa pcap files    Sherpa_logs_local_path=${trace_dir}    duration=0
+   # ...    AND    Step                          Calling Panda Extract Csv For PRB Pooling
+   #  Run Keyword If    not ${CELL_SETUP_ONLY} and ${enable_sherpa} == ${True}    Run Keywords
+   #  ...    Critical Step                        Verification of Stream PRB Information within PRB Pooling Report
+   #  ...                                                             stream_prb_capa=1700
+   # ...                                                             alloc_stream_prb=1700
+   # ...                                                             subpool_id=${ID_SUBPOOL_1}
+   # ...                                                             check_operator=>
+   # ...    AND    Critical Step                 Verification of Stream PRB Information within PRB Pooling Report
+   # ...                                                             stream_prb_capa=700
+   # ...                                                             alloc_stream_prb=700
+   # ...                                                             subpool_id=${ID_SUBPOOL_2}
+   # ...                                                             check_operator=<
+   # 
+   # ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+   # ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+   # ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+   # ...                                                             num_prb_alloc=273
+   # ...                                                             prereq_data=${COL_NAME_NRCELLID}
+   # ...                                                             prereq_value=${ID_NRCELL_1}
+   # ...                                                             check_operator===
+   # ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+   # ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+   # ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+   # ...                                                             num_prb_alloc=140
+   # ...                                                             prereq_data=${COL_NAME_NRCELLID}
+   # ...                                                             prereq_value=${ID_NRCELL_2}
+   # ...                                                             check_operator=>=
+   # ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+   # ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+   # ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+   # ...                                                             num_prb_alloc=190
+   # ...                                                             prereq_data=${COL_NAME_NRCELLID}
+   # ...                                                             prereq_value=${ID_NRCELL_3}
+   # ...                                                             check_operator=<=
+    #                       
+   # ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_1}
+   # ...                                                             zab_privilege=1
+   # ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_2}
+   # ...                                                             zab_privilege=0
+   # ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_3}
+   # ...                                                             zab_privilege=0
+    
+    # Capture TTI traces
+    Run Keyword If    ${AUTO_SAVE_DEBUG_DATA}    Step    Get TTI Logs
+
+   # Waiting time for counter
+   Sleep Until PM Availability
+
+    # Waiting time added for observation and allow generation of multiple count periods
+    FOR    ${iteration_pm}    IN RANGE    0    ${param.pm_waiting_period}
+        Sleep Until PM Availability
+        ${pm_path}                              Counters.Collect PM files from BTS    ${LOG_PATH}/PM    # Collect one file for checking KPI's
+        Step                                    Check Counter And KPI Constraints    ${pm_path}
+        ...                                                         ${test_name}
+	...                                                         localKpiFileName=CB010513-C_KPI_Definitions.csv
+    END
+    
+    Step                                        Traced Sleep    duration=3s    msg=deregistering    depends=CallSetup.UE Register    
+    # Deregister all the ue's
+    FOR    ${current_elem}    IN    @{list_ue}    #vbo#debug deregister#
+    #vbo#debug deregister#FOR    ${current_id}    IN RANGE    ${param.total_nb_ue}    0    -1    
+        #vbo#debug deregister#${current_ue}=                          Evaluate                ${current_id} - 1
+        Run Keyword If    not ${CELL_SETUP_ONLY}
+        ...    Step                             CallSetup.UE Deregister    id=${current_elem.ue}    #vbo#debug deregister#
+        #vbo#debug deregister#...    Step                             CallSetup.UE Deregister    id=${dict_ues[${current_ue}]}    
+        ...                                                         ue_deregister_type=switch_off
+        ...                                                         by=ue
+        ...                                     depends=CallSetup.UE Register
+    END
+    
+    Step                                        Captures Stop    action_core=${is_capture.is_capture_core}
+    ...                                                             action_cprt=${is_capture.is_capture_cprt}
+    ...                                                             action_l1l2=${is_capture.is_capture_l1l2}
+    
+    # Stop SYSLOG capture
+    SYSLOG Stop                                 syslog=${syslog}
+    
+    # Saving Snapshot as debug data
+    Run Keyword If    ${AUTO_SAVE_DEBUG_DATA}    Setup.Get Snapshot
+
+    Step                                        Compute All Counters Values For Checking    param=${param}    dict_ues=${list_ue}    
+    ...                                                             dict_counters=${dict_all_counters}
+    Sleep Until PM Availability
+    ${pm_path}                                  Counters.Collect PM files from BTS    ${LOG_PATH}/PM    # Collect one file for checking KPI's
+    ${pm_path}                                  Set Variable    ${LOG_PATH}/PM
+    Step                                        Counters.Collect PM files from BTS    ${pm_path}    # Collect all files for checking counters
+    Step                                        Check All Counters From Dict    path_pm=${pm_path}    dict_counters=${dict_all_counters}    
+    [Teardown]    Display diagnosis   
+# --------------------------------------------------------------------------------------------------------------------------------------------------

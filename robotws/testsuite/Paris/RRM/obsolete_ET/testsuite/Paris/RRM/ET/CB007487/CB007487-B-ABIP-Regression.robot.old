@@ -1,0 +1,986 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  CB007487-B - ABIP regression
+...               Scope : Performance Test regression in NSA
+...
+...               Test Case Scenario author   : Christophe.samson@nokia.com
+...               Test Case Scenario contact  : Christophe.samson@nokia.com
+...               Test Case automation contact:
+...               Creation Date               : 17-November-2022
+...               Modified Date               : 17-November-2022
+...               Last Modified by            : Christophe.samson@nokia.com
+
+Library           DateTime
+Library    		  taf.sbts.oam.coam.admin        WITH NAME       coam
+Library           taf.sbts.oam.coam.admin.interface
+Library           taf.transport.ssh              WITH NAME    ssh
+
+Library           ../../../resources/SWENG/python/StringTool.py
+Library           resources/python/Constants.py  WITH NAME       MyConstants
+Library           resources/python/tools.py                      WITH NAME    nps_7487_tools
+
+Library           ../../../resources/SWENG/python/OldMultiScf.py      WITH NAME   scf
+
+Resource          ./resources/robot/btslog.robot
+Resource          ./resources/robot/connect.robot
+Resource          ./resources/robot/CB007487_PerfKPI_Keywords.robot
+
+Variables         resources/python/Constants.py
+
+Suite Setup            Run Keywords    Fetch common OAM SW version
+...                    AND             CB007487_PerfKPI_Keywords.Test Suite Setup for CB007487
+...                    AND             Get Testline Name
+...                    AND             run keyword and ignore error   Remove RAD param for Link Adaptation on swconfig if present
+...                    AND             Get_Private_variables_Suite_setup
+...                    AND             Create Header Csv Test result
+...                    AND             btslog.Create cplane runtime file to gnb
+...                    AND             Set Global Variable    ${WAIT_5G_CELL_ONAIR}   1
+Suite Teardown                         CB007487_PerfKPI_Keywords.Test Suite Teardown for CB007487
+Test Setup             Run Keywords    CB007487_PerfKPI_Keywords.Test Setup for CB007487
+...                    AND             Update local SCF
+...                    AND             set test variable      ${2_2_nrCellType_to_update_Cell1}   ${False}
+...                    AND             set test variable      ${4_4_nrCellType_to_update_Cell1}   ${False}
+Test Teardown                          CB007487_PerfKPI_Keywords.Test Teardown for CB007487
+
+*** Variables ***
+
+${subFeature}   CB007484-B
+
+${BENCHMARK_ID}    1
+
+# auto-valorized of w/wo BF from scf during suite setup
+${BF}           False
+# auto-valorized of Higher cipher/Integrity from scf during suite setup
+${higher_cipher}         AES
+${higher_integrity}      AES
+${Test Line}           =HYPERLINK(\\"https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS\\&title=NPS3-TL034\\")
+# auto-valorized of DL Modulation from scf during suite setup
+${DL Mod}       64QAM
+${DL MCS}       Max
+${UL Mod}       64QAM
+${UL Mimo}      2X2
+${UL MCS}       Max
+
+&{BM_CB007487_B1}
+...    DL_MIMO=4x4   DL_Mod=256QAM   DL_MCS=3   UL_MIMO=2x2   UL_Mod=64QAM    UL_MCS=3    Encrypt=aes
+
+${NIDD_VERSION}                  MNL22R4_2213_100
+
+*** Test Cases ***
+
+Test Case Setup
+    [Tags]    NSA  SA  CELL1  CELL2  FULL_RUN
+    Dated log     BENCHMARK_ID is ${BENCHMARK_ID}
+    set Suite Variable    ${current_BM_CB007487_B}  ${dict_BM["${BENCHMARK_ID}"]}
+    Dated Log new line  ${consTraceColor}====> TC ${TEST NAME} running with :\n\t\t${current_BM_CB007487_B} ${defColor}
+    # test that cipher and Integrity is configured in scf as expected
+    ${cypher_OK}=   Evaluate   '${higher_cipher}'=='${current_BM_CB007487_B.Encrypt}'
+    ${msg_err}=   Catenate     ${consTraceColorRed} Cypher configured in SCF [${higher_cipher}] is not as
+    ...                                                    EXPECTED [expected=${current_BM_CB007487_B.Encrypt}]  => Need to update ${defColor}
+    Run Keyword if   '${cypher_OK}'=='False'
+    ...                       Dated log  ${msg_err}
+    ...  ELSE                 Dated log  Cypher configured in SCF [${higher_cipher}] is as Expected [expected=${current_BM_CB007487_B.Encrypt}]
+    ${integrity_OK}=   Evaluate   '${higher_Integrity}'=='${current_BM_CB007487_B.Encrypt}'
+    ${msg_err}=   Catenate     ${consTraceColorRed} Integrity configured in SCF [${higher_Integrity}] is not as
+    ...                                                    EXPECTED [expected=${current_BM_CB007487_B.Encrypt}] => Need to update ${defColor}
+    Run Keyword if  '${integrity_OK}'=='False'
+    ...                 Dated log  ${msg_err}
+    ...  ELSE           Dated log  Integrity configured in SCF [${higher_Integrity}] is as Expected [expected=${current_BM_CB007487_B.Encrypt}]
+    ${Need_to_Perform_Commissioning_1}  ${Need_to_Perform_Commissioning_2}  CB007487-B_Testline_settings   ${current_BM_CB007487_B}   CellId=1
+    ${Need_to_Perform_Commissioning_3}  ${Need_to_Perform_Commissioning_4}  CB007487-B_Testline_settings   ${current_BM_CB007487_B}   CellId=2
+    ...                                                                                                    Need_To_Update_CellMapping_Cell1=${True}
+    ${Commissioning_1}  Evaluate   ${Need_to_Perform_Commissioning_1}==${True} or ${Need_to_Perform_Commissioning_2}==${True}
+    ${Commissioning_2}  Evaluate   ${Need_to_Perform_Commissioning_3}==${True} or ${Need_to_Perform_Commissioning_4}==${True}
+    Run Keyword if   ${Commissioning_1}==${True} or ${Commissioning_2}==${True}       Commissioning SCF  ${test_scf_file}
+    Run Keyword and ignore Error    Update_Private_variables_Suite_setup
+
+CB007487_B_37_ABIP_L3_Call_TDD_eCPRI_wo_beamforming
+    [Tags]    NSA   CELL2   FULL_RUN
+    [Documentation]  TC under QC : [1][1.0] CB007487_B_37_ABIP_L3_Call_TDD_eCPRI_wo_beamforming
+    ...            => NSA Call Setup/Call Release in Cell2, with 60 seconds of low UL/DL traffic.
+    ...            5G TDD cell is in "OnAir" state.
+    ...            AES encryption is configured.
+    ...            To activate AES ciphering, under NRBTS/cipherPrefL list, set nea2_128 to 1 and other parameters to 0.
+    ...            actDl256Qam is set to True.
+    ...            MCS is forced to MCS3 through following R&D parameters:
+    ...            - rdSupportedDl64QamMcs 0x58000f
+    ...            - rdSupportedUlMCS 0x580010
+    ...            set w_UE_CSI_TM_for_4_4_DL_MIMO=True to Activate ue csi TM with cqi reported = 15 and RI reported = 3
+    ...            => BENCHMARK_ID = 1 is used for this testcase
+    ${BENCHMARK_ID}    set variable     1
+    Dated log     BENCHMARK_ID is ${BENCHMARK_ID}
+    set Test Variable      ${current_BM_CB007487_B}    ${dict_BM["${BENCHMARK_ID}"]}
+    Dated log  ====> TC ${TEST NAME} running with ${current_BM_CB007487_B}
+    ${w_UE_CSI_TM_for_4_4_DL_MIMO}=   set Variable if   '${current_BM_CB007487_B.DL_MIMO}'=='4x4'    True
+    ...                                                                                              False
+    # zuc and snow3G shall not be used for TPut higher than 25Mbps as they computationally intensive algorithms
+    # and are supported by Airphone only for functional tests.
+    ${DLTput_Target}=    set Variable if    '${current_BM_CB007487_B.Encrypt}'=='snow' or '${current_BM_CB007487_B.Encrypt}'=='zuc'    100
+    ...                                                                                                                                1100
+    ${ULTput_Target}=    set Variable if    '${current_BM_CB007487_B.Encrypt}'=='snow' or '${current_BM_CB007487_B.Encrypt}'=='zuc'    100
+    ...                                                                                                                                200
+    &{dictParam}                    Create Dictionary       loopNb=1
+    ...                                                     UEnb=1
+    ...                                                     CallType=NSA
+    ...                                                     Cell=2
+    ...                                                     TrafficDuration=60
+    ...                                                     DLthroughput=${DLTput_Target}
+    ...                                                     ULthroughput=${ULTput_Target}
+    ...                                                     deviation=10
+    ...                                                     shouldBeStop=False
+    ...                                                     shouldBeCheck=False
+    ...                                                     w_UE_CSI_TM_for_4_4_DL_MIMO=${w_UE_CSI_TM_for_4_4_DL_MIMO}
+    ...                                                     GetTtiTraceTime=0
+    ...                                                     GetL1L2TraceTime=0
+    ...                                                     num_of_cells_cellsetup=2
+    ...                                                     w_ue_detach=True
+    ...                                                     GetBtsLog=1
+    ...                                                     isOAMRebooted=False
+    ...                                                     w_Get_Mem_Usage=False
+
+    # Ue Capa update in cfg file  => to remove later !!!!
+    Modify maxNumberMIMO-LayersPDSCH Ue Capa for WTS     ue_nr_capa_value=${ue_nr_capabilities_maxNumberMIMO_4_LayersPDSCH_NSA}
+    ...                                                  ue_ue_eutra_nr_capa=${ue_ue_eutra_nr_capabilities_maxNumberMIMO_4_LayersPDSCH_NSA}
+
+    ${msg}   Catenate   "${current_BM_CB007487_B}"
+    ${tc_name}    Set variable    Test Case Setup
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    Run keyword if    '${tc_status}'!='PASS'
+    ...       Run Keywords      Testline_settings   ${current_BM_CB007487_B}   CellId=1
+    ...          AND            Testline_settings   ${current_BM_CB007487_B}   CellId=2
+    CB007487-B_Attach_Traffic      ${dictParam}   ${msg}
+
+*** Keywords ***
+
+Fetch common OAM SW version
+    [Documentation]    :
+    ...    Only used by KW "Fetch Current gNB SW Version"
+    ...    [PRIVATE]
+    [Arguments]    ${gnb_id}=0  ${bts_host}=${EMPTY}
+    ${bts_host}=  Set Variable if  '${bts_host}'=='${EMPTY}'  ${tl.gnbs[${gnb_id}].cu.oam_http_connection_details.addr}  ${bts_host}
+    admin.connect_to    bts_host=${bts_host}    name=gnb
+    ${gnb_sw_version}=    admin.get_sw_version    connection=gnb
+    admin.teardown    connection=gnb
+    ${gnb_sw_version}=    nps_7487_tools.reform_coam_sw_version    ${gnb_sw_version}
+    set global variable    ${current_gNB_sw_version}      ${gnb_sw_version}
+    ${msg}=   StringTool.getHeaderLine    Fetch Current gNB SW Version:   ${gnb_sw_version}
+    Dated log   ===========================================================================================
+    Dated log             ${msg}
+    Dated log   ===========================================================================================
+    [Return]    ${gnb_sw_version}
+
+# "TC; CallType; Cell; TrafficDuration; DLTput Reached (Mbps); ULTput Reached (Mbps); desciption "
+Create Header Csv Test result
+  [Arguments]                    ${text}=""
+    ${text}    catenate   "Subfeature; technology; BF; SA/NSA; DL Mod; downlinkMimoMode; DL MCS; UL Mimo; UL Mod; UL MCS; cipher; Integrity;
+    ...                    CellId; Test Line; TrafficDuration(s);
+    ...                    DLTput Reached (Mbps); ULTput Reached (Mbps);"
+    ...                   "physicalCellId; nrCellType; Sw version; TC Name; BMId; Test Description;"
+
+    ${timeStamp}=    DateTime.Get current date    exclude_millis=True    result_format=%Y%m%d-%H%M%S
+    ${current_BM_CB007487}=   set Variable   ${dict_BM["${BENCHMARK_ID}"]}
+    ${filename}   set Variable
+    ...               TestResults-${SUITE_NAME}-BM-${BENCHMARK_ID}-${current_BM_CB007487.Encrypt}-${current_BM_CB007487.Encrypt}-${timeStamp}.csv
+    Run Keyword And Ignore Error    OperatingSystem.touch    ${LOG_PATH}/${filename}
+    Run Keyword And Ignore Error    OperatingSystem.run      echo ${text} > ${LOG_PATH}/${filename}
+    set suite variable      ${csv_file_results}       ${LOG_PATH}/${filename}
+
+Log Test results
+  [Arguments]                    ${text}
+    Run Keyword And Ignore Error    OperatingSystem.run      echo "${text}" >> ${csv_file_results}
+
+Private Setup Wtsemu SA
+    [Documentation]                WTSEmu Setup for SA call. This is a call to keyword 'WTS Setup':
+    ...                            | WTS Setup
+    ...                            | ...   telnet_egate_addr=${tl.core.default_ssh_connection_details.addr}
+    ...                            | ...   nbUe=1
+    ...                            | ...   nbSaUe=${nbSaUe}
+    ...                            | ...   shouldUseLua=${shouldUseLua}
+    ...                            | ...   bypassX2Setup=${True}
+    ...                            | ...   bypassSIB=${False}
+    ...                            | ...   nbCell=${nbCell}
+    ...                            See keyword 'WTS Setup' for more details.
+    ...
+    ...                            *Argument details:*
+    ...                            - *nbSaUe*: number of SA UE to use (default value = 1, should be >= 1)
+    ...                            - *nbCell*: number of cell to check for SystemInformationBlock-NR (default value= 0 dynamically retrieved)
+    ...                            - *shouldUseLua*: flag to choose between cfg or lua basic-setup file (default value = False)
+    ...                            - *list_of_UE_tobe_created*: list of UEs structure to be created when using lua (default value = None)
+    ...                                 mandatory params: ue & target_cells &{my_UE_SA}     ue=1    target_cells=2
+    [Arguments]    ${nbUe}=1    ${nbCell}=1    ${nbSaUe}=1    ${shouldUseLua}=${False}    ${list_of_UE_tobe_created}=${None}   ${bypassSIB}=${False}
+    CallSetup.WTS Setup         nbUe=${nbUe}    nbSaUe=${nbSaUe}    nbCell=${nbCell}    bypassX2Setup=${True}    shouldUseLua=${shouldUseLua}
+    ...                         list_of_UE_tobe_created=${list_of_UE_tobe_created}   bypassSIB=${bypassSIB}
+
+Private Setup Wtsemu
+    [Documentation]                WTSEmu Setup for NSA call. This is a call to keyword 'WTS Setup':
+    ...                            | WTS Setup
+    ...                            | ...   telnet_egate_addr=${tl.core.default_ssh_connection_details.addr}
+    ...                            | ...   nbUe=1
+    ...                            | ...   nbSaUe=${nbSaUe}
+    ...                            | ...   shouldUseLua=${shouldUseLua}
+    ...                            | ...   bypassX2Setup=${True}
+    ...                            | ...   bypassSIB=${False}
+    ...                            | ...   nbCell=${nbCell}
+    ...                            See keyword 'WTS Setup' for more details.
+    ...
+    ...                            *Argument details:*
+    ...                            - *nbSaUe*: number of SA UE to use (default value = 1, should be >= 1)
+    ...                            - *nbCell*: number of cell to check for SystemInformationBlock-NR (default value= 0 dynamically retrieved)
+    ...                            - *shouldUseLua*: flag to choose between cfg or lua basic-setup file (default value = False)
+    ...                            - *list_of_UE_tobe_created*: list of UEs structure to be created when using lua (default value = None)
+    ...                                 mandatory params: ue & target_cells &{my_UE_SA}     ue=1    target_cells=2
+    [Arguments]    ${nbUe}=1    ${nbCell}=1    ${nbSaUe}=0    ${shouldUseLua}=${False}    ${list_of_UE_tobe_created}=${None}   ${bypassSIB}=${False}
+    CallSetup.WTS Setup         nbUe=${nbUe}    nbSaUe=${nbSaUe}   nbCell=${nbCell}    shouldUseLua=${shouldUseLua}
+    ...                         bypassSIB=${bypassSIB}
+
+CB007487-B cell setup
+    [Arguments]                     ${CallType}    ${UEsList}   ${num_of_cells}=1   ${isOAMRebooted}=False   ${bypassSIB}=${False}
+    Dated Log new line              ${consTraceColor}=== Restart TL === ${defColor}
+    Restart TL                      isOAMRebooted=${isOAMRebooted}    GNBCallback=CB007487 Start Capture After GNB Ready
+    Dated Log new line              ${consTraceColor}=== WTS setup === ${defColor}
+    ${UEnb}                         get length     ${UEsList}
+
+    # to manage the case of test with 1 Cell with 2 cells configured in SCF
+    Run Keyword If                  "${CallType}" == "NSA"     Private Setup Wtsemu     nbUe=${UEnb}   nbSaUe=0    nbCell=${num_of_cells}
+    ...                                                                           list_of_UE_tobe_created=${UEsList}    shouldUseLua=${True}
+    ...                                                                           bypassSIB=${bypassSIB}
+    Run Keyword If                  "${CallType}" == "None"     Private Setup Wtsemu     nbUe=${UEnb}   nbSaUe=0    nbCell=${num_of_cells}
+    ...                                                                           list_of_UE_tobe_created=${UEsList}    shouldUseLua=${False}
+    ...                                                                           bypassSIB=${bypassSIB}
+    Run Keyword If                  "${CallType}" == "SA"      Private Setup Wtsemu SA    nbUe=${UEnb}    nbSaUe=${UEnb}   nbCell=${num_of_cells}
+    ...                                                                           list_of_UE_tobe_created=${UEsList}    shouldUseLua=${True}
+    ...                                                                           bypassSIB=${bypassSIB}
+
+    UE Cell Setup Check       nbCell=${num_of_cells}
+    ${num_of_cells}=    Get Cell Number
+    Wait gNB cells 5g On air    num_of_cells=${num_of_cells}
+
+    [teardown]   CB007487 Capture Stop           cellSetup
+
+CB007487-B_Attach_Traffic
+    [Documentation]                 Generic KW to attach/detach n UEs, with or without traffic
+    ...                             Argument is a dictionary including following keys:
+    ...                             loopNb:           number of loops "attach/traffic/detach"
+    ...                             UEnb:             number of UEs to "attach/traffic/detach" simultaneously
+    ...                             CallType:         NSA or SA (for all UEs)
+    ...                             Cell:             Target cell (must be index 1, 2, ...)
+    ...                             TrafficDuration:  duration of traffic (0 means no traffic)
+    ...                             DLthroughput:     DL throughput
+    ...                             ULthroughput:     UL throughput
+    ...                             shouldBeStop:     To Stop or not traffic after TrafficDuration
+    ...                             shouldBeCheck:    To Check or not traffic after TrafficDuration
+    ...                             w_UE_CSI_TM_for_4_4_DL_MIMO:      with Cqi Ri airphone TestMode
+    ...                             GetTtiTraceTime:  Time of TtiTrace
+    ...                             GetL1L2TraceTime: Time of L1L2 Bip Trace
+    ...                             num_of_cells_cellsetup:   Num of cell to check after CellSetup
+    ...                             w_ue_detach:              With Or Without Ue Detach
+    ...                             GetBtsLog:                With Or Without BtsLog
+    ...                             NOTE: If both DL and UL throughput are not null,
+    ...                                   DL and UL traffic are launched simultaneously
+    [Arguments]         ${dictParam}   ${msg}=""
+
+    ${LoopNb}                  Get From Dictionary     ${dictParam}     loopNb
+    ${UEnb}                    Get From Dictionary     ${dictParam}     UEnb
+    ${CallType}                Get From Dictionary     ${dictParam}     CallType
+    ${Cell}                    Get From Dictionary     ${dictParam}     Cell
+    ${TrafficDuration}         Get From Dictionary     ${dictParam}     TrafficDuration
+    ${DLthroughput}            Get From Dictionary     ${dictParam}     DLthroughput
+    ${ULthroughput}            Get From Dictionary     ${dictParam}     ULthroughput
+    ${deviation}               Get From Dictionary     ${dictParam}     deviation
+    ${shouldBeStop}            Get From Dictionary     ${dictParam}     shouldBeStop
+    ${shouldBeCheck}           Get From Dictionary     ${dictParam}     shouldBeCheck
+    ${w_UE_CSI_TM_for_4_4_DL_MIMO}             Get From Dictionary     ${dictParam}     w_UE_CSI_TM_for_4_4_DL_MIMO
+    ${GetTtiTraceTime}         Get From Dictionary     ${dictParam}     GetTtiTraceTime
+    ${GetL1L2TraceTime}        Get From Dictionary     ${dictParam}     GetL1L2TraceTime
+    ${num_of_cells}            Get From Dictionary     ${dictParam}     num_of_cells_cellsetup
+    ${w_ue_detach}             Get From Dictionary     ${dictParam}     w_ue_detach
+    ${GetBtsLog}               Get From Dictionary     ${dictParam}     GetBtsLog
+    ${isOAMRebooted}           Get From Dictionary     ${dictParam}     isOAMRebooted
+    ${w_Get_Mem_Usage}         Get From Dictionary     ${dictParam}     w_Get_Mem_Usage
+
+    ${CellID}                   set variable            ${NRCELL_ID_LIST[${Cell}-1]}
+    ${Expected_UEnb_attached}   Evaluate                ${LoopNb} * ${UEnb}
+    ${UEnb_attached}            Evaluate                0
+
+    ${UEsList}                 CB007487 build UEs list             CallType=${CallType}    UEnb=${UEnb}    CellID=${CellID}
+
+    run Keyword if     '${GetBtsLog}' != '0' and '${WITH_BTSLOG}' == '1'    Dated log     =====> Start Btslog
+    run Keyword if     '${GetBtsLog}' != '0' and '${WITH_BTSLOG}' == '1'    btslog.Start Btslog
+    run Keyword if     '${GetBtsLog}' != '0' and '${WITH_BTSLOG}' == '1'    set Test variable     ${BtsLogStarted}    True
+
+    CB007487-B cell setup        CallType=${CallType}    UEsList=${UEsList}    num_of_cells=${num_of_cells}     isOAMRebooted=${isOAMRebooted}
+    ...                          bypassSIB=${True}
+
+    Run Keyword If             ${enable_sherpa} == ${True}         Activate Sherpa
+
+    ${aliasGNB_2}=   run Keyword if    '${w_Get_Mem_Usage}' == 'True'     connect.Connect to gNB Common Unit      gnb_id=0      du_id=0     comu_id=0
+    ...            ELSE                                                 set Variable   ${NONE}
+    set Test Variable       ${aliasGNB_2}
+
+    FOR    ${loopIND}    IN RANGE    1    ${LoopNb}+1
+        Dated Log new line     ${consTraceColorRed}##### LOOP ${loopIND} / ${LoopNb} ##### ${defColor}
+
+        run Keyword if    '${w_Get_Mem_Usage}' == 'True'    Get Mem Usage     board_id=1     period=before    connection=${aliasGNB_2}
+        ...                                                                   suffix=Mem-Usage-loop-${loopIND}-loopNb-${LoopNb}
+
+        ${UEsAttached}         CB007487 attach        UEsList=${UEsList}    CallType=${CallType}
+        ...                                           w_UE_CSI_TM_for_4_4_DL_MIMO=${w_UE_CSI_TM_for_4_4_DL_MIMO}
+        Sleep                  5s
+
+        # get ue_disp egate results
+        ${nbUE}                get length    ${UEsList}
+        run Keyword if         '${nbUE}' != '0'      Get Ue_disp
+
+        Run Keyword If         ${TrafficDuration} != 0
+        ...                    CB007487 Traffic    UEsList=${UEsAttached}
+        ...                    Duration=${TrafficDuration}    DLtput=${DLthroughput}    ULtput=${ULthroughput}   shouldBeStop=${shouldBeStop}
+        ...                    shouldBeCheck=${shouldBeCheck}
+        Sleep                  5s
+
+        run Keyword if    '${w_Get_Mem_Usage}' == 'True'    Get Mem Usage     board_id=1     period=during    connection=${aliasGNB_2}
+        ...                                                                   suffix=Mem-Usage-loop-${loopIND}-loopNb-${LoopNb}
+
+        # ue_id=1 because of PRV Kw with only 1 UE
+        ${Ue_Avg_PDSCH_Tput}    ${Ue_Avg_PUSCH_Tput}  run Keyword if    '${shouldBeStop}' == 'False' and '${TrafficDuration}' != '0'
+        ...                                                                                   Get PDSCH and PUSCH ue_stats_nr
+        ...                                                                                                ue_id=1
+        ...                                                                                                DLthroughput=${DLthroughput}
+        ...                                                                                                ULthroughput=${ULthroughput}
+        ...                                                                                                CallType=${CallType}
+
+        # "TC; CallType; Cell; TrafficDuration(s); DLTput Reached (Mbps); ULTput Reached (Mbps); desciption "
+        ${value}=    Get From Dictionary    ${dict_cells}    CellId-${CellID}
+        Dated log   CellID-${CellID} Info = ${value}
+        ${physicalCellId}=   set Variable   ${value}[1]
+        ${nrCellType}=   set Variable   ${value}[2]
+        ${DL MIMO}=   set Variable   ${value}[3]
+        ${Techno}=    set Variable   ${value}[4]
+        ${BF}=   set variable if    '${CellID}' == '1'    ${actBeamforming_cell1}
+        ...                                               ${actBeamforming_cell2}
+        ${DL Mod}=   set variable if    '${CellID}' == '1' and '${actDl256Qam_cell1.lower()}' == 'true'    256Qam
+        ...                             '${CellID}' == '1' and '${actDl256Qam_cell1.lower()}' == 'false'   64Qam
+        ...                             '${CellID}' == '2' and '${actDl256Qam_cell2.lower()}' == 'true'    256Qam
+        ...                             '${CellID}' == '2' and '${actDl256Qam_cell2.lower()}' == 'false'   64Qam
+        ...                                                                                                64Qam
+        ${text}   catenate   ${subFeature}; ${Techno}; ${BF}; ${CallType}; ${DL Mod}; ${DL MIMO}; ${DL MCS}; ${UL Mod}; ${UL Mimo}; ${UL MCS};
+        ...                  ${higher_cipher}; ${higher_Integrity}; ${CellID};${Test Line}; ${TrafficDuration};  ${Ue_Avg_PDSCH_Tput};
+        ...                  ${Ue_Avg_PUSCH_Tput}; ${physicalCellId}; ${nrCellType}; ${current_gNB_sw_version}; ${TEST_NAME}; ${BENCHMARK_ID};
+        ...                  ${msg};
+
+        Dated log             ${text}
+        Log Test results      ${text}
+
+        ${tti_trace_path}   run Keyword if   '${GetTtiTraceTime}' != '0'  Run Keyword And Ignore Error   Get TTI traces 2
+        ...                                                                                                suffix=loop-${loopIND}-loopNb-${LoopNb}
+        ...                                                                                                time=${GetTtiTraceTime}
+        ...                                                                                                w_convert_pcap_to_excelCsv=False
+        ...    ELSE         set variable   ${EMPTY}
+
+        run Keyword if    '${w_ue_detach}' == 'True'      CB007487 detach        UEsList=${UEsAttached}    CallType=${CallType}
+
+        run Keyword if    '${w_Get_Mem_Usage}' == 'True'    Get Mem Usage     board_id=1     period=after    connection=${aliasGNB_2}
+        ...                                                                   suffix=Mem-Usage-loop-${loopIND}-loopNb-${LoopNb}
+
+        ${UE_attached_loop}    get length         ${UEsAttached}
+        ${UEnb_attached}       Evaluate           ${UEnb_attached} + ${UE_attached_loop}
+    END
+
+    run Keyword if     '${GetBtsLog}' != '0' and '${WITH_BTSLOG}' == '1'    Dated log     =====> Stop Btslog
+    run Keyword if     '${GetBtsLog}' != '0' and '${WITH_BTSLOG}' == '1'    btslog.Stop Btslog    target_dir=${testCaseDir}
+    run Keyword if     '${GetBtsLog}' != '0' and '${WITH_BTSLOG}' == '1'    set Test variable     ${BtsLogStarted}      False
+
+    Run Keyword If                  ${enable_sherpa} == ${True}             Sherpa.Deactivate Sherpa and Stop Collect    keep_pcap_file=True
+
+    ${L1L2_Pcap_File}=   run Keyword if     '${Getl1l2TraceTime}' != '0'    CB007487_PerfKPI_Keywords.Get L1L2 traces Version ABIP
+    ...                                                                                                                 time=${GetL1L2TraceTime}
+    ...                                                                                                                 prefix=L1L2Bip.wDLULTput
+    run Keyword if   '${L1L2_Pcap_File}' != 'None'      Run Keywords     Dated log    gzip -f ${L1L2_Pcap_File} ...    AND
+    ...                                                                               Run    gzip -f ${L1L2_Pcap_File}
+
+    [teardown]  Teardown CB007487-B_Attach_Traffic
+
+Teardown CB007487-B_Attach_Traffic
+    run Keyword if   '${BtsLogStarted}'=='True' and '${WITH_BTSLOG}' == '1'    run Keywords    Dated log     =====> Stop Btslog
+    ...                                            AND             btslog.Stop Btslog    target_dir=${testCaseDir}
+    Run Keyword And Ignore Error    ssh.disconnect    connection=${aliasGNB_2}
+
+Update local SCF
+    ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    Set Suite Variable              ${test_scf_file}
+
+Get_Private_variables_Suite_setup
+    ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    Set Suite Variable              ${test_scf_file}
+    ${nodeType}=     set variable if   ${isAic}     Vdu
+    ...                                             Classical
+    ${actBeamforming_cell1}=   Get actBeamforming from SCF    nodeType=${nodeType}  CellId=1
+    ${status}  ${actBeamforming_cell2}=   run Keyword and ignore error    Get actBeamforming from SCF    nodeType=${nodeType}  CellId=2
+    ${actBeamforming_cell2}=   set Variable if   '${status}'=='FAIL'    False
+    ...                                                                 ${actBeamforming_cell2}
+    ${actDl256Qam_cell1}=      Get actDl256Qam from SCF    nodeType=${nodeType}  CellId=1
+    ${status}   ${actDl256Qam_cell2}=      run Keyword and ignore error    Get actDl256Qam from SCF    nodeType=${nodeType}  CellId=2
+    ${actDl256Qam_cell2}=   set Variable if   '${status}'=='FAIL'    False
+    ...                                                              ${actDl256Qam_cell2}
+    ${original_Cipher}=        Get Cipher Parameters From gNB
+    ${original_Integrity}=     Get Integrity Parameters From gNB
+    Set Suite Variable   ${actBeamforming_cell1}
+    Set Suite Variable   ${actBeamforming_cell2}
+    Set Suite Variable   ${actDl256Qam_cell1}
+    Set Suite Variable   ${actDl256Qam_cell2}
+    Set Suite Variable    ${original_Cipher}
+    Set Suite Variable    ${original_Integrity}
+    Dated log   original_Cipher_prio=${original_Cipher}
+    Dated log   original_Integrity_prio=${original_Integrity}
+    ${higher_cipher}=  get_higher_value_from_dict  ${original_Cipher}
+    # Dated log    higher_cipher algo is ${higher_cipher}
+    ${higher_integrity}=  get_higher_value_from_dict  ${original_Integrity}
+    # Dated log    higher_integrity algo is ${higher_integrity}
+    &{dict_cipher}=   Create Dictionary        nea0=no_cipher  nea1_128=snow   nea2_128=aes  nea3_128=zuc
+    &{dict_Integrity}=   Create Dictionary     nia0=no_cipher  nia1_128=snow   nia2_128=aes  nia3_128=zuc
+    ${higher_cipher}=   set Variable      ${dict_cipher["${higher_cipher}"]}
+    ${higher_Integrity}=   set Variable      ${dict_Integrity["${higher_Integrity}"]}
+    Dated log    higher_cipher algo is ${consTraceColor}${higher_cipher}${defColor}
+    Dated log    higher_Integrity algo is ${consTraceColor}${higher_Integrity}${defColor}
+    Set Suite Variable    ${higher_cipher}
+    Set Suite Variable    ${higher_Integrity}
+
+    &{dict_BM}=   Create Dictionary        1=&{BM_CB007487_B1}
+    Set Suite Variable    ${dict_BM}
+
+Update_Private_variables_Suite_setup
+    Dated log    ====> Update Globale Variables
+    ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    Set Suite Variable              ${test_scf_file}
+    ${nodeType}=     set variable if   ${isAic}     Vdu
+    ...                                             Classical
+    ${actBeamforming_cell1}=   Get actBeamforming from SCF    nodeType=${nodeType}  CellId=1
+    ${status}  ${actBeamforming_cell2}=   run Keyword and ignore error    Get actBeamforming from SCF    nodeType=${nodeType}  CellId=2
+    ${actBeamforming_cell2}=   set Variable if   ${status}!='PASSED'    False
+    ...                                                                 ${actBeamforming_cell2}
+    ${actDl256Qam_cell1}=      Get actDl256Qam from SCF    nodeType=${nodeType}  CellId=1
+    ${status}   ${actDl256Qam_cell2}=      run Keyword and ignore error    Get actDl256Qam from SCF    nodeType=${nodeType}  CellId=2
+    ${actDl256Qam_cell2}=   set Variable if   ${status}!='PASSED'    False
+    ...                                                              ${actDl256Qam_cell2}
+    ${original_Cipher}=        Get Cipher Parameters From gNB
+    ${original_Integrity}=     Get Integrity Parameters From gNB
+    Set Suite Variable   ${actBeamforming_cell1}
+    Set Suite Variable   ${actBeamforming_cell2}
+    Set Suite Variable   ${actDl256Qam_cell1}
+    Set Suite Variable   ${actDl256Qam_cell2}
+    Set Suite Variable    ${original_Cipher}
+    Set Suite Variable    ${original_Integrity}
+    Dated log   original_Cipher_prio=${original_Cipher}
+    Dated log   original_Integrity_prio=${original_Integrity}
+    ${higher_cipher}=  get_higher_value_from_dict  ${original_Cipher}
+    # Dated log    higher_cipher algo is ${higher_cipher}
+    ${higher_integrity}=  get_higher_value_from_dict  ${original_Integrity}
+    # Dated log    higher_integrity algo is ${higher_integrity}
+    &{dict_cipher}=   Create Dictionary        nea0=no_cipher  nea1_128=snow   nea2_128=aes  nea3_128=zuc
+    &{dict_Integrity}=   Create Dictionary     nia0=no_cipher  nia1_128=snow   nia2_128=aes  nia3_128=zuc
+    ${higher_cipher}=   set Variable      ${dict_cipher["${higher_cipher}"]}
+    ${higher_Integrity}=   set Variable      ${dict_Integrity["${higher_Integrity}"]}
+    Dated log    higher_cipher algo is ${consTraceColor}${higher_cipher}${defColor}
+    Dated log    higher_Integrity algo is ${consTraceColor}${higher_Integrity}${defColor}
+    Set Suite Variable    ${higher_cipher}
+    Set Suite Variable    ${higher_Integrity}
+
+Testline_settings
+    [Arguments]    ${BM_id}=${BM_CB007487_B1}   ${CellId}=1
+    # test that cipher and Integrity is configured in scf as expected
+    ${cypher_OK}=   Evaluate   '${higher_cipher}'=='${BM_id.Encrypt}'
+    ${msg_err}=   Catenate       ${consTraceColorRed} Cypher configured in SCF [${higher_cipher}] is not as
+    ...                                                    EXPECTED [expected=${BM_id.Encrypt}] ${defColor}
+    Run Keyword if   '${cypher_OK}'=='False'   Dated log  ${msg_err}
+    ...  ELSE                                  Dated log  Cypher configured in SCF [${higher_cipher}] is as Expected [expected=${BM_id.Encrypt}]
+    ${integrity_OK}=   Evaluate   '${higher_Integrity}'=='${BM_id.Encrypt}'
+    ${msg_err}=   Catenate       ${consTraceColorRed} Integrity configured in SCF [${higher_Integrity}] is not as
+    ...                                                    EXPECTED [expected=${BM_id.Encrypt}] ${defColor}
+    Run Keyword if  '${integrity_OK}'=='False'
+    ...                               Dated log  ${msg_err}
+    ...  ELSE                         Dated log  Integrity configured in SCF [${higher_Integrity}] is as Expected [expected=${BM_id.Encrypt}]
+    ${Need_to_Perform_Commissioning_1}  ${Need_to_Perform_Commissioning_2}    CB007487-B_Testline_settings   ${BM_id}   CellId=${CellId}
+    Run Keyword if   ${Need_to_Perform_Commissioning_1}==${True} or ${Need_to_Perform_Commissioning_2}==${True}
+    ...                                                                                                 Commissioning SCF  ${test_scf_file}
+    Run Keyword and ignore Error    Update_Private_variables_Suite_setup
+
+CB007487-B_Testline_settings
+    [Documentation]
+    ...                 This KW will help to set 5gnb swconfig file for mcs purpose
+    ...                 and call Set_XL_mod to set UL_mod / DL_mod in the scf
+    [Arguments]         ${BM_id}=${BM_CB007487_B1}   ${CellId}=1   ${Need_To_Update_CellMapping_Cell1}=${False}
+
+    #** 5gnb swconfig update
+    Dated Log new line    ${consTraceColor}=== CELL-${CellId} Settings value ${BM_id} === ${defColor}
+
+    #exemple in swconfig
+    # 0x58000E=0x1fffffff     #rdSupportedDl64QamMcs
+    # 0x58000F=0x1fffffff     #rdSupportedDl256QamMcs
+    # 0x580010=0x1fffffff     #rdSupportedUlMCS
+
+    # DL Case
+    ${rdSupportedDlMcs}    Set Variable if    "${BM_id.DL_MCS}" == "0"        0x01
+    ...                                       "${BM_id.DL_MCS}" == "3"        0x0F
+    ...                                       "${BM_id.DL_MCS}" == "5"        0x3F
+    ...                                                                       noRAD
+    Dated Log  RAD rdSupportedDlMcs: ${rdSupportedDlMcs}
+    set suite Variable      ${DL MCS}    ${BM_id.DL_MCS}
+
+    # UL Case
+    ${rdSupportedUlMcs}    Set Variable if    "${BM_id.UL_MCS}" == "0"        0x01
+    ...                                       "${BM_id.UL_MCS}" == "3"        0x0F
+    ...                                       "${BM_id.UL_MCS}" == "5"        0x3F
+    ...                                                                      noRAD
+    Dated Log  RAD rdSupportedUlMcs: ${rdSupportedUlMcs}
+    set suite Variable      ${UL MCS}    ${BM_id.UL_MCS}
+
+    #0x58000F rdSupportedDl256QamMcs
+    #0x58000E rdSupportedDl64QamMcs
+    ${TargetToSetforDL}   Set Variable if      "${BM_id.DL_Mod}" == "256QAM"    0x58000F    0x58000E
+    Dated Log  DBG : TargetToSetforDL ${TargetToSetforDL}
+    ${Dico1}           Create Dictionary     field=${TargetToSetforDL}    value=${rdSupportedDlMcs}
+    ${Dico2}           Create Dictionary     field=0x580010               value=${rdSupportedUlMcs}
+    # 19/10/2022 : update here gnb swconfig with 0x42005B = 1
+    # EnableFlexDeploymentForAbip_RP003279_NB_P4
+    # 0x42005B = 1
+    ${Dico3}           Create Dictionary     field=0x42005B               value=1
+    @{swconfig_gnb}        Create List
+    run Keyword if   '${rdSupportedDlMcs}' != 'noRAD'     Append To List   ${swconfig_gnb}   ${Dico1}
+    run Keyword if   '${rdSupportedUlMcs}' != 'noRAD'     Append To List   ${swconfig_gnb}   ${Dico2}
+    Append To List   ${swconfig_gnb}   ${Dico3}
+    # MaxMIMO-Layers:
+    # 0x590004=4
+    ${Dico3}           Create Dictionary     field=0x590004               value=4
+    Run Keyword if   '${BM_id.DL_MIMO}'=='4x4'   Append To List   ${swconfig_gnb}   ${Dico3}
+
+    Dated Log  Adding ${swconfig_gnb} in 5gnb-swconfig.txt (+crasign)
+    # Set Fields in swconfig DU    ${Dicolist}    ${GNB_DU.entryCard[0]}
+    Update gNB Swconfig   ${swconfig_gnb}
+
+    #** SCF update
+    ${value}    set variable if    '${BM_id.DL_Mod}' == '256QAM'    true    false
+    ${actDl256Qam}=   Get actDl256Qam from SCF   CellId=${CellId}
+    ${actDl256Qam_to_update}=   set variable if   '${actDl256Qam.lower()}'=='false' and '${BM_id.DL_Mod}'=='256QAM'   True
+    ...                                           '${actDl256Qam.lower()}'=='true' and '${BM_id.DL_Mod}'=='64QAM'     True
+    ...                                                                                                               False
+    # Run Keyword if   '${actDl256Qam_to_update}'=='True'  Set_xL_mod    actDl256Qam    ${value}    ${CellId}
+    @{OAMParam_modiflist}    Create List
+    ${OAMParam_modiflist}=  Run Keyword if   '${actDl256Qam_to_update}'=='True'    Set_XL_mod_ListParam   actDl256Qam    ${value}
+    ...                                                                                                   ${CellId}  ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    Run Keyword if   '${actDl256Qam_to_update}'=='True'               Dated log    actDl256Qam Updated in Scf
+    ${nrCellType}=  Get nrCellType from SCF   CellId=${CellId}
+    ${dlMimoMode}=  Get dlMimoMode from SCF   CellId=${CellId}
+    ${4_4_DL_MODE_to_update}=   set variable if   '${nrCellType}'!='4DL4UL' and '${BM_id.DL_MIMO}'=='4x4'   True
+    ...                                           '${dlMimoMode}'!='4x4 or 4x2 Closed Loop Spatial Multiplexing' and '${BM_id.DL_MIMO}'=='4x4'  True
+    ...                                                                                                     False
+    ${4_4_nrCellType_to_update_Cell1}=  set Variable if   '${CellId}'=='1' and '${4_4_DL_MODE_to_update}'=='True'   ${True}
+    ...                                                                                                             ${4_4_nrCellType_to_update_Cell1}
+    set test Variable   ${4_4_nrCellType_to_update_Cell1}
+    # Run Keyword if   '${4_4_DL_MODE_to_update}'=='4x4'   Set 4x4 DL Mimo Mode   ${CellId}
+    ${OAMParam_modiflist}=  Run Keyword if   '${4_4_DL_MODE_to_update}'=='True'   Set 4x4 DL Mimo Mode ListParam   ${CellId}  ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    ${2_2_DL_MODE_to_update}=   set variable if   '${nrCellType}'!='2DL2UL' and '${BM_id.DL_MIMO}'=='2x2'   True
+    ...                                           '${dlMimoMode}'!='2x2 Closed Loop Spatial Multiplexing' and '${BM_id.DL_MIMO}'=='2x2'  True
+    ...                                                                                                     False
+    ${2_2_nrCellType_to_update_Cell1}=  set Variable if   '${CellId}'=='1' and '${2_2_DL_MODE_to_update}'=='True'   ${True}
+    ...                                                                                                             ${2_2_nrCellType_to_update_Cell1}
+    set test Variable   ${2_2_nrCellType_to_update_Cell1}
+    # Run Keyword if   '${2_2_DL_MODE_to_update}'=='4x4'   Set 2x2 DL Mimo Mode   ${CellId}
+    ${OAMParam_modiflist}=  Run Keyword if   '${2_2_DL_MODE_to_update}'=='True'   Set 2x2 DL Mimo Mode ListParam   ${CellId}  ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    ${ulMimoMode}=    Get UL Mimo Mode from SCF    ${CellId}
+    ${OAMParam_modiflist}=  Run Keyword if   '${ulMimoMode}' != 'Closed loop Spatial Multiplexing (2x2)'   Set 2x2 UL Mimo Mode ListParam
+    ...                                                                                                                        ${CellId}
+    ...                                                                                                                        ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    # update Cyphering and Integrity
+    ${OAMParam_modiflist}=  Run Keyword if  '${higher_cipher}'!='${BM_id.Encrypt.lower()}' and '${BM_id.Encrypt.lower()}'=='no_cipher_aes_integrity'
+    ...                                                                                   Modify no cipherPrefL and AES integrityProtPrefL ListParam
+    ...                                                                                                                        ${CellId}
+    ...                                                                                                                        ${OAMParam_modiflist}
+    ...   ELSE           set variable   ${OAMParam_modiflist}
+
+    ${OAMParam_modiflist}=  Run Keyword if  '${higher_cipher}'!='${BM_id.Encrypt.lower()}' and '${BM_id.Encrypt.lower()}'=='no_cipher'
+    ...                                                                                   Modify no cipherPrefL and no integrityProtPrefL ListParam
+    ...                                                                                                                        ${CellId}
+    ...                                                                                                                        ${OAMParam_modiflist}
+    ...   ELSE           set variable   ${OAMParam_modiflist}
+
+    ${OAMParam_modiflist}=  Run Keyword if  '${higher_cipher}'!='${BM_id.Encrypt.lower()}' and '${BM_id.Encrypt.lower()}'=='aes'
+    ...                                                                                      Modify AES cipherPrefL and integrityProtPrefL ListParam
+    ...                                                                                                                        ${CellId}
+    ...                                                                                                                        ${OAMParam_modiflist}
+    ...   ELSE           set variable   ${OAMParam_modiflist}
+    ${OAMParam_modiflist}=  Run Keyword if  '${higher_cipher}'!='${BM_id.Encrypt.lower()}' and '${BM_id.Encrypt.lower()}'=='snow'
+    ...                                                                                     Modify SNOW cipherPrefL and integrityProtPrefL ListParam
+    ...                                                                                                                        ${CellId}
+    ...                                                                                                                        ${OAMParam_modiflist}
+    ...   ELSE           set variable   ${OAMParam_modiflist}
+    ${OAMParam_modiflist}=  Run Keyword if  '${higher_cipher}'!='${BM_id.Encrypt.lower()}' and '${BM_id.Encrypt.lower()}'=='zuc'
+    ...                                                                                     Modify ZUC cipherPrefL and integrityProtPrefL ListParam
+    ...                                                                                                                        ${CellId}
+    ...                                                                                                                        ${OAMParam_modiflist}
+    ...   ELSE           set variable   ${OAMParam_modiflist}
+
+    # required to reach max Throughput
+    ${actUnlimitedDataRateDl}=   Get actUnlimitedDataRateDl from SCF
+    ${OAMParam_modiflist}=    Run Keyword if     '${actUnlimitedDataRateDl.lower()}'=='false'     Set actUnlimitedDataRateDl ListParam
+    ...                                                                                                           true
+    ...                                                                                                           ${OAMParam_modiflist}
+    ...   ELSE           set variable   ${OAMParam_modiflist}
+
+    # dlQam256PowerBackoffSub6:  3dB  if needed (sometimes required to avoid  power saturation of DL 256QAM I/Q)
+    ${dlQam256PowerBackoffSub6}=   Get dlQam256PowerBackoffSub6 from SCF   CellId=${CellId}
+    ${OAMParam_modiflist}=   Run Keyword if     '${dlQam256PowerBackoffSub6}'!='30'     Set dlQam256PowerBackoffSub6 ListParam
+    ...                                                                                                     ${CellId}
+    ...                                                                                                     30
+    ...                                                                                                     ${OAMParam_modiflist}
+    ...   ELSE           set variable   ${OAMParam_modiflist}
+    # Need to Aligned with OTAVA
+    ${OAMParam_modiflist}=  Update OAM param to Aligned with OTAVA   cellId=${CellId}   modiflist=${OAMParam_modiflist}
+    Update gNB OAM List Param   ${OAMParam_modiflist}
+
+    ${2_2_nrCellType_to_update}=   set variable if   '${nrCellType}'!='2DL2UL' and '${BM_id.DL_MIMO}'=='2x2'   True
+    ...                                                                                                        False
+    ${4_4_nrCellType_to_update}=   set variable if   '${nrCellType}'!='4DL4UL' and '${BM_id.DL_MIMO}'=='4x4'   True
+    ...                                                                                                        False
+    # Need to update Cabling in Scf
+    # local SCF to update first
+    Update local SCF
+    scf.load_scf    ${test_scf_file}
+    Run Keyword if   ${Need_To_Update_CellMapping_Cell1}==${True} and ${2_2_nrCellType_to_update_Cell1}==${True}
+    ...                                        Run Keywords          Remove Channels to support 2DL2UL nrCellType    ${BM_id}  1
+    ...                                        AND                   scf.save_scf    ${test_scf_file}
+    ...                                        AND                   scf.load_scf    ${test_scf_file}
+    ...                                        AND                   Dated log   ====> Remove Channels to support 2DL2UL nrCellType for CellId-1
+    Run Keyword if   ${Need_To_Update_CellMapping_Cell1}==${True} and ${4_4_nrCellType_to_update_Cell1}==${True}
+    ...                                        Run Keywords          Modify Channels to support 4DL4UL nrCellType    ${BM_id}  1
+    ...                                        AND                   scf.save_scf    ${test_scf_file}
+    ...                                        AND                   scf.load_scf    ${test_scf_file}
+    ...                                        AND                   Dated log   ====> Modify Channels to support 4DL4UL nrCellType for CellId-1
+    ${Need_to_Perform_Commissioning_1}=  Run Keyword if   '${2_2_nrCellType_to_update}'=='True'
+    ...                                                        Remove Channels to support 2DL2UL nrCellType    ${BM_id}  ${CellId}
+    ...   ELSE                                                 set Variable   ${False}
+    Run Keyword if   '${2_2_nrCellType_to_update}'=='True'     Dated log  Remove Channels to support 2DL2UL nrCellType
+    ${Need_to_Perform_Commissioning_2}=  Run Keyword if   '${4_4_nrCellType_to_update}'=='True'
+    ...                                                             Modify Channels to support 4DL4UL nrCellType   ${BM_id}  ${CellId}
+    ...  ELSE                                                       set Variable   ${False}
+    Run Keyword if   '${4_4_nrCellType_to_update}'=='True'           Dated log    Modify Channels to support 4DL4UL nrCellType
+    Run Keyword if   ${Need_to_Perform_Commissioning_1}==${True} or ${Need_to_Perform_Commissioning_2}==${True}   scf.save_scf    ${test_scf_file}
+    [return]    ${Need_to_Perform_Commissioning_1}   ${Need_to_Perform_Commissioning_2}
+
+# for SNOW
+# <list name="cipherPrefL">
+#         <item>
+#          <p name="nea0">1</p>
+#          <p name="nea1_128">3</p>
+#          <p name="nea2_128">9</p>
+#          <p name="nea3_128">4</p>
+#        </item>
+#      </list>
+#    <list name="integrityProtPrefL">
+#        <item>
+#          <p name="nia0">0</p>
+#          <p name="nia1_128">3</p>
+#          <p name="nia2_128">9</p>
+#          <p name="nia3_128">4</p>
+#         </item>
+#      </list>
+
+Modify no cipherPrefL and no integrityProtPrefL ListParam
+    [Arguments]              ${cellId}   ${modiflist}
+    &{ciphering_algo}       Create Dictionary     nea0=9
+    ...                                        nea1_128=0
+    ...                                        nea2_128=0
+    ...                                        nea3_128=0
+    &{modify_param1}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'cipherPrefL','value':[&{ciphering_algo}]}
+
+    &{integrity_algo}  Create Dictionary     nia0=9
+    ...                                      nia1_128=0
+    ...                                      nia2_128=0
+    ...                                      nia3_128=0
+    &{modify_param2}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'integrityProtPrefL','value':[&{integrity_algo}]}
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    [return]   ${modiflist}
+
+Modify no cipherPrefL and AES integrityProtPrefL ListParam
+    [Arguments]              ${cellId}   ${modiflist}
+    &{ciphering_algo}       Create Dictionary     nea0=9
+    ...                                        nea1_128=0
+    ...                                        nea2_128=0
+    ...                                        nea3_128=0
+    &{modify_param1}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'cipherPrefL','value':[&{ciphering_algo}]}
+
+    &{integrity_algo}  Create Dictionary     nia0=0
+    ...                                      nia1_128=0
+    ...                                      nia2_128=9
+    ...                                      nia3_128=0
+    &{modify_param2}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'integrityProtPrefL','value':[&{integrity_algo}]}
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    [return]   ${modiflist}
+
+Modify AES cipherPrefL and integrityProtPrefL ListParam
+    [Arguments]              ${cellId}   ${modiflist}
+    &{ciphering_algo}       Create Dictionary     nea0=1
+    ...                                        nea1_128=3
+    ...                                        nea2_128=9
+    ...                                        nea3_128=4
+    &{modify_param1}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'cipherPrefL','value':[&{ciphering_algo}]}
+
+    &{integrity_algo}  Create Dictionary     nia0=1
+    ...                                      nia1_128=3
+    ...                                      nia2_128=9
+    ...                                      nia3_128=4
+    &{modify_param2}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'integrityProtPrefL','value':[&{integrity_algo}]}
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    [return]   ${modiflist}
+
+# for SNOW
+# <list name="cipherPrefL">
+#         <item>
+#          <p name="nea0">1</p>
+#          <p name="nea1_128">9</p>
+#          <p name="nea2_128">3</p>
+#          <p name="nea3_128">4</p>
+#        </item>
+#      </list>
+#    <list name="integrityProtPrefL">
+#        <item>
+#          <p name="nia0">0</p>
+#          <p name="nia1_128">9</p>
+#          <p name="nia2_128">3</p>
+#          <p name="nia3_128">4</p>
+#         </item>
+#      </list>
+
+Modify SNOW cipherPrefL and integrityProtPrefL ListParam
+    [Arguments]              ${cellId}   ${modiflist}
+    &{ciphering_algo}       Create Dictionary     nea0=1
+    ...                                        nea1_128=9
+    ...                                        nea2_128=3
+    ...                                        nea3_128=4
+    &{modify_param1}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'cipherPrefL','value':[&{ciphering_algo}]}
+
+    &{integrity_algo}  Create Dictionary     nia0=1
+    ...                                      nia1_128=9
+    ...                                      nia2_128=3
+    ...                                      nia3_128=4
+    &{modify_param2}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'integrityProtPrefL','value':[&{integrity_algo}]}
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    [return]   ${modiflist}
+
+# for ZUC
+#      <list name="cipherPrefL">
+#        <item>
+#          <p name="nea0">1</p>
+#          <p name="nea1_128">3</p>
+#          <p name="nea2_128">4</p>
+#          <p name="nea3_128">9</p>
+#        </item>
+#      </list>
+#      <list name="integrityProtPrefL">
+#        <item>
+#          <p name="nia0">0</p>
+#          <p name="nia1_128">3</p>
+#          <p name="nia2_128">4</p>
+#          <p name="nia3_128">9</p>
+#        </item>
+
+Modify ZUC cipherPrefL and integrityProtPrefL ListParam
+    [Arguments]              ${cellId}   ${modiflist}
+    &{ciphering_algo}       Create Dictionary     nea0=1
+    ...                                        nea1_128=3
+    ...                                        nea2_128=4
+    ...                                        nea3_128=9
+    &{modify_param1}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'cipherPrefL','value':[&{ciphering_algo}]}
+
+    &{integrity_algo}  Create Dictionary     nia0=1
+    ...                                      nia1_128=3
+    ...                                      nia2_128=4
+    ...                                      nia3_128=9
+    &{modify_param2}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'integrityProtPrefL','value':[&{integrity_algo}]}
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    [return]   ${modiflist}
+
+Set UE capa on EPCSim
+    [Arguments]      ${ue_nr_capa_value}=${ue_ue_eutra_nr_capabilities_maxNumberMIMO_4_LayersPDSCH_NSA}
+    ...              ${ue_ue_eutra_nr_capa}=${ue_nr_capabilities_maxNumberMIMO_4_LayersPDSCH_NSA}
+    Modify Field in WtsEmu Cfg File
+    ...                             field=ue_nr_capabilities                 value=${ue_nr_capa_value}
+    Modify Field in WtsEmu Cfg File
+    ...                             field=ue_eutra_nr_capabilities                 value=${ue_ue_eutra_nr_capa}
+
+Modify maxNumberMIMO-LayersPDSCH Ue Capa for WTS
+   [Arguments]       ${ue_nr_capa_value}=${ue_nr_capabilities_maxNumberMIMO_4_LayersPDSCH_NSA}
+   ...               ${ue_ue_eutra_nr_capa}=${ue_ue_eutra_nr_capabilities_maxNumberMIMO_4_LayersPDSCH_NSA}
+   Dated Log New Line   Set Ue capa for SA/NSA
+   Set UE capa on EPCSim   ${ue_nr_capa_value}    ${ue_ue_eutra_nr_capa}
+
+Get NRCELL Param from SCF
+    [Arguments]        ${param}   ${CellId}=1   ${nodeType}=Classical
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELL-1
+    ${param_value}	 scf.get_value_from_scf   p_name=${param}
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    ...              nodeType=${nodeType}
+    [return]     ${param_value}
+
+Set NRCELL Param ListParam
+    [Documentation]
+    ...              This KW will help to set CELL param on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}    ${param_name}   ${param_value}   ${modiflist}
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cellId}
+    &{modify_param}   Create Dictionary
+    ...                          parameter=${param_name}
+    ...                          dist_name=${dn}
+    ...                          value=${param_value}
+
+    Append To List     ${modiflist}          ${modify_param}
+    [return]    ${modiflist}
+
+Get NRCELLGRP Param from SCF
+    [Arguments]          ${param_name}  ${CellId}=1  ${nodeType}=Classical
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELLGRP-0
+    ${cellGrpId}   Evaluate    ${cellId} - 1
+    ${param_value}	 scf.get_value_from_scf   p_name=${param_name}
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-${cellGrpId}
+    ...              nodeType=${nodeType}
+    [return]     ${param_value}
+
+Set NRCELLGRP Param ListParam
+    [Documentation]
+    ...              This KW will help to set CELL param on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}    ${param_name}   ${param_value}   ${modiflist}
+    ${cellGrpId}   Evaluate    ${cellId} - 1
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-${cellGrpId}
+    &{modify_param}   Create Dictionary
+    ...                          parameter=${param_name}
+    ...                          dist_name=${dn}
+    ...                          value=${param_value}
+
+    Append To List     ${modiflist}          ${modify_param}
+    [return]    ${modiflist}
+
+Modify dlDataDmrsFdm related Parameters
+    [Documentation]                to update dlDataDmrsFdm  (For Classical Only)
+    [Arguments]                    ${cellId}   ${actDlDataDmrsFdm}   ${modiflist}
+
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cellId}
+
+    &{dlDataDmrsFdm0}    Create Dictionary     actDlDataDmrsFdm=${actDlDataDmrsFdm}
+
+    @{dlDataDmrsFdm_value}    create list
+    Append To List    ${dlDataDmrsFdm_value}    ${dlDataDmrsFdm0}
+    &{dlDataDmrsFdm_params}   Create Dictionary   dist_name=${dn}
+    ...    parameter=dlDataDmrsFdm
+    ...    value=${dlDataDmrsFdm_value}
+    dated log          dlDataDmrsFdm_params=${dlDataDmrsFdm_params}
+
+    Append To List     ${modiflist}        ${dlDataDmrsFdm_params}
+    [return]   ${modiflist}
+
+Get Testline Name
+    ${ret}    ${testline_name}=    OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    BuiltIn.Log     Testline Name: ${testline_name}      console=${True}
+    BuiltIn.Log     Testline init file is /home/ute/testline_configuration/${testline_name}/       console=${True}
+    Set Suite Metadata    Testline Name    ${testline_name}
+    Set global variable   ${testline_name}
+    # add here some info about  UTE TL
+    ${reserve_file}=    Set Variable     /opt/ute/reservation.json
+    ${file_exist}=    Run Keyword And Return Status    OperatingSystem.file_should_exist    ${reserve_file}
+    ${cmd}=   run Keyword if   "${file_exist}"=="True"    Catenate
+    ...                                           python -c 'import json;print(json.load(open("${reserve_file}"))["topology"])'
+    ${ret}    ${ret_cmd}=       run Keyword if   "${file_exist}"=="True"       OperatingSystem.Run And Return Rc And Output    ${cmd}
+    run Keyword if   "${file_exist}"=="True"     BuiltIn.Log      Topology is ${ret_cmd}       console=${True}
+    ${cmd}=   run Keyword if   "${file_exist}"=="True"    Catenate
+    ...                                           python -c 'import json;print(json.load(open("${reserve_file}"))["user"])'
+    ${ret}    ${ret_cmd}=       run Keyword if   "${file_exist}"=="True"       OperatingSystem.Run And Return Rc And Output    ${cmd}
+    run Keyword if   "${file_exist}"=="True"     BuiltIn.Log      user is ${ret_cmd}       console=${True}
+    ${cmd}=   run Keyword if   "${file_exist}"=="True"    Catenate
+    ...                                           python -c 'import json;print(json.load(open("${reserve_file}"))["enb_build"])'
+    ${ret}    ${ret_cmd}=       run Keyword if   "${file_exist}"=="True"       OperatingSystem.Run And Return Rc And Output    ${cmd}
+    run Keyword if   "${file_exist}"=="True"     BuiltIn.Log      enb_build is ${ret_cmd}       console=${True}
+    [return]    ${testline_name}
+
+Get btsName from SCF
+    [Arguments]          ${nodeType}=Classical
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1
+    ${param_value}	 scf.get_value_from_scf   p_name=btsName
+    ...              dist_name=MRBTS-${MRBTS_ID}
+    ...              nodeType=${nodeType}
+    [return]     ${param_value}
+
+Set btsName ListParam
+    [Documentation]
+    ...              This KW will help to set CELL param on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${param_value}   ${modiflist}
+    ${dn}             set variable           MRBTS-${MRBTS_ID}
+    &{modify_param}   Create Dictionary
+    ...                          parameter=btsName
+    ...                          dist_name=${dn}
+    ...                          value=${param_value}
+
+    Append To List     ${modiflist}          ${modify_param}
+    [return]    ${modiflist}
+
+Update BtsName
+    [Arguments]    ${modiflist}
+
+    ${Current_btsName}=   Get btsName from SCF
+    ${PartOfBtsName}=    set Variable   Aligned with OTAVA
+    ${FullbtsName}=      set Variable   CB007487 - ${testline_name} - ${PartOfBtsName}
+    ${modiflist}=  Run Keyword if   '${Current_btsName.lower()}'!='${FullbtsName.lower()}'
+    ...                                                                           Set btsName ListParam       param_value=${FullbtsName}
+    ...                                                                                                       modiflist=${modiflist}
+    ...   ELSE     set Variable    ${modiflist}
+    [return]   ${modiflist}
+
+Update OAM param to Aligned with OTAVA
+   [Arguments]    ${cellId}    ${modiflist}
+
+   ${modiflist}=   Update BtsName   ${modiflist}
+
+   ${actProactUlScheduling}=    Get NRCELL Param from SCF   param=actProactUlScheduling  CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actProactUlScheduling.lower()}'=='false'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=actProactUlScheduling
+   ...                                                                                                       param_value=true
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${dlDMRSAdditionalPosition}=    Get NRCELL Param from SCF   param=dlDMRSAdditionalPosition   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${dlDMRSAdditionalPosition.lower()}'!='no additional dmrs'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=dlDMRSAdditionalPosition
+   ...                                                                                                       param_value=No additional DMRS
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${actDlDataDmrsFdm}=    Get NRCELL Param from SCF   param=actDlDataDmrsFdm   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actDlDataDmrsFdm.lower()}'!='true'   Modify dlDataDmrsFdm related Parameters    cellId=${cellId}
+   ...                                                                                                       actDlDataDmrsFdm=true
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${ulDMRSAdditionalPosition}=    Get NRCELL Param from SCF   param=ulDMRSAdditionalPosition   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${ulDMRSAdditionalPosition.lower()}'!='no additional dmrs'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=ulDMRSAdditionalPosition
+   ...                                                                                                       param_value=No additional DMRS
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${maxDlHarqTx}=    Get NRCELLGRP Param from SCF   param_name=maxDlHarqTx   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${maxDlHarqTx.lower()}'!='6'   Set NRCELLGRP Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=maxDlHarqTx
+   ...                                                                                                       param_value=6
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   [return]   ${modiflist}
+
+
+
+

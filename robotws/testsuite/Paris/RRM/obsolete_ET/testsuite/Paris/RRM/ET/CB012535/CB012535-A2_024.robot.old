@@ -1,0 +1,165 @@
+*** Settings ***
+Documentation      [SUITE PURPOSE]  Template of Test cases CB012535 feature
+...                Test Case Scenario author   : francois.tourlonnias@nokia.com
+...
+...                This Template need your attention on following part of this common database
+...                Please modify as you need data value between # Modification block / # END Modification block
+
+...                Follow up to be erased:
+...                Ue_capa           =======>   done
+...                scf configuration =======>   need to be done when feature -B will be delivered
+...                Pathloss evolution  =====>   on going
+
+
+Resource           ./resources/robot/CB012535_keywords_common.robot
+Variables          ./resources/python/Constants.py
+
+Suite Setup        CB012535_keywords_common.Suite Setup 12535
+Suite Teardown     CB012535_keywords_common.Suite Teardown 12535
+Test Teardown      CB012535_Test_Teardown
+
+*** Variables ***
+${recursion_limit}   1000   # 1000 is the default value
+${NL}                Nested_List
+
+&{A1}
+...     Scfdetails=${ScfComposition}
+...     ListOfUeEngaged=${uelist}
+...     PMdod=testsuite/Paris/RRM/ET/CB012535/resources/config/PM/CB012535_Constraints_A2_xxx.csv
+...     GetTtiTraceTime=500ms
+...     Wait_RI_Alarm=720s
+...     Wait_RI_Alarm_desapear=60s
+
+# Modification block ==================================================================================================
+# Cells important for the test check SIB arrival only on following cell
+@{CellList}          1
+
+# SCF delivery  ====== This part help to dertemine how iso level need to be done ======================================
+&{ScfComposition}
+# ...     jsonFile=${TestsJsonPath}/CB012535-SR-A1_005_Trigger_of_CB012535_A_1_UE_PLthr100_64_QAM_ET_FEATURE_NOT_ACTIVATED.json
+...     jsonFile=${TestsJsonPath}/CB012535-SR-A2_024_UE_PLthr95_256_QAM_ET.json
+
+
+#swconfig Rad Parameters
+# @{radList}    ${radDic_58072d}
+# &{radDic_58072d}     field=0x58072d    value=0x3  #rdSmallestMcsATBLowSE
+# #Smallest MCS being used when shrinking PUSCH PRB in the ATB for UE scheduled with qam64LowSE-Index
+
+
+#UE corner
+&{UE_1_SA_TDD_UE_R15}
+...     ueid=1
+...     ue_nr_capabilities=${SA_TDD_UE_R15}
+...     ue_release=${EMPTY}    #${EMPTY} => basic already tuned correctly
+...     Target_cell=1          #${EMPTY} => basic already tuned correctly
+
+&{UE_2_SA_TDD_UE_R15}
+...     ueid=2
+...     ue_nr_capabilities=${SA_TDD_UE_R15}
+...     ue_release=${EMPTY}    #${EMPTY} => basic already tuned correctly
+...     Target_cell=1          #${EMPTY} => basic already tuned correctly
+
+&{UE_3_SA_TDD_UE_R15}
+...     ueid=3
+...     ue_nr_capabilities=${SA_TDD_UE_R15}
+...     ue_release=${EMPTY}    #${EMPTY} => basic already tuned correctly
+...     Target_cell=1          #${EMPTY} => basic already tuned correctly
+
+&{UE_4_SA_TDD_UE_R15}
+...     ueid=4
+...     ue_nr_capabilities=${SA_TDD_UE_R15}
+...     ue_release=${EMPTY}    #${EMPTY} => basic already tuned correctly
+...     Target_cell=1          #${EMPTY} => basic already tuned correctly
+
+@{uelist}    ${UE_1_SA_TDD_UE_R15}   ${UE_2_SA_TDD_UE_R15}   ${UE_3_SA_TDD_UE_R15}   ${UE_4_SA_TDD_UE_R15}
+
+#DOD Corner
+@{DODlist}      # list empty for now will contain all DOD corner
+${LoopNb}        1           #number of loop for robustness
+# END Modification block ==============================================================================================
+
+*** Test Cases ***
+
+[1]CB012535-SR-A2_024_Trigger_of_CB012535_4UEs_Middle_Cell_And_Cell_Edge_ET
+    # [Tags]                      CLOUD_5G_I_LO_AP_LO, SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AEQE
+
+    #Special Need for this test
+    Set Suite Variable    ${userneed_PCAP}       ${True}
+    Set Suite Variable    ${userneed_Btslog}     ${True}
+    Set Suite Variable    ${userneed_PM}         ${True}    #/!\ PM is not yet available
+    Set Suite Variable    ${DodIsSet}            ${True}
+
+    CB012535_mainKW       ${A1}
+
+*** Keywords ***
+
+CB012535_mainKW
+    [Documentation]                 CB012535-Base-
+    [Arguments]                     ${param}
+    kwmkt_dbg_log                   Global variable list DBGlogs: ${DBGlogs}          ##
+    kwmkt_dbg_log                   info we are on KeepConfig: ${KeepConfig}           # these informative line to bypass Robot 5 new sanity :-)
+    kwmkt_dbg_log                   info we are on NoSnap: ${NoSnap}                   #
+    kwmkt_dbg_log                   info we are on egatelogoutput: ${egatelogoutput}   #
+    kwmkt_dbg_log                   info we are on EnSher: ${EnSher}                   #
+    kwmkt_dbg_log                   info we are on tti: ${tti}                         #
+    kwmkt_dbg_log                   info we are on DodIsSet: ${DodIsSet}               #
+    kwmkt_dbg_log                   recursion_limit: ${recursion_limit}                #
+    kwmkt_dbg_log                   recursion_limit: ${LoopNb}                        ##
+
+    Init Sequence                   ${param}
+    Step                            kwmkt_Create_Test_Suite_Folder
+
+    Critical Step                   Set_basic_context
+    # Critical Step                   Set_RadParameters
+    Critical Step                   Set_SCF_ConfigMarket     ${param.Scfdetails}
+    Critical Step                   Restart TL
+
+    BuiltIn.sleep                   20    #to avoid capture issue at cell_setup time
+    Critical Step                   kwmkt_Cell_setup         ${CellList}
+    Run Keyword If                  not ${tti} and ${EnSher}                Activate Sherpa
+
+
+    BuiltIn.sleep    20
+
+    Dated Log new line              ******** TC_A2_024_step1 ****** Interferences *************************************
+
+    # Critical Step                   kwmkt_run_script_once    ${CURDIR}/resources/egCmd/egCmd_reteInterferenceOnVictime_ultraSoft.sce
+    Critical Step                   kwmkt_run_script_once    ${CURDIR}/resources/egCmd/egCmd_reteInterferenceOnVictime_Laurent.sce
+
+    #check every 30 sec if 7525 is reached and fail if not after "wait_RI_Alarm" seconds
+    Wait Until Keyword Succeeds    ${param.Wait_RI_Alarm}    30s    Check_Alarm_List    7525
+    Dated Log                       Check_Alarm_List done ok for alarm 7525
+
+    #L3 call corner
+    Dated Log new line              ******** TC_A2_024_step2 ****** SA L3 CALL uecapa R15 *** 2mbps DL / 140mbps UL **************
+    #as sometime is failing, a retry is eventually done again
+    Run Keyword If                 ${userneed_PCAP}          kwmkt_Capture_Start    Attach
+    ${status}=                     Run Keyword And Return Status
+    ...                            kwmkt_run_script_once     ${CURDIR}/resources/egCmd/egCmd_L3call_4_ue_DL2_UL140.sce
+    ${status}=                     Run Keyword If           '${status}'=='False'    Run Keywords
+    ...                                                      BuiltIn.sleep    10
+    ...  AND                                                 kwmkt_run_script_once     ${CURDIR}/resources/egCmd/egCmd_L3call_4_ue_DL2_UL140.sce
+    Run Keyword If                '${status}'=='False'       Run Keywords
+    ...                                                      kwmkt_Capture_Stop     Attach
+    ...  AND                                                 FAIL                   L3call failed 2 attempts
+    ...  ELSE                                                Dated Log              L3call done ok
+
+    Run Keyword If                ${userneed_PCAP}           kwmkt_Capture_Stop     Attach
+
+    BuiltIn.sleep    60
+
+    Critical Step                   kwmkt_run_script_once    ${CURDIR}/resources/egCmd/egCmd_Pathloss2set_2_AttachedUEinCellEdge.sce
+    Critical Step                   kwmkt_run_script_once    ${CURDIR}/resources/egCmd/egCmd_Pathloss2set_2_AttachedUEinMiddleOfCell.sce
+
+    Critical Step                   kwmkt_run_script_once    ${CURDIR}/resources/egCmd/egCmd_10PcentULBlerOnFirstTransOnly_multiUE.sce
+
+    ${alarm}=                       kwmkt_Alarmslist         beforeTTi
+    Dated log                       DOD_12535: Alarm present at test execution time:${alarm}
+
+    #TTI
+    Run Keyword If                  ${tti} and not ${EnSher}         kwmkt_TTI_capt    ${param.GetTtiTraceTime}
+
+
+    Dated Log new line              ******** END TC A2_024 ************************************************************
+    #Stat on DOD list if requested   voir DOD plus tard
+    Run Keyword If                 ${DodIsSet}         kwmkt_Check_For_False_In_${NL}    ${DODlist}

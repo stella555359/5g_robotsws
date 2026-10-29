@@ -1,0 +1,458 @@
+"""
+Author: Wang Yixiang
+Documentation: This file is used to define the template for NIDD parameters
+"""
+import json
+# ------------------------SCF----------------------------------
+# For cells: SCF Modify
+
+SCF_TEMPLATE_BASE_ALL_CELLS = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"actDynUlResAlloc",
+            "value":"true"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"p0NominalPucchF1F3",
+            "list_name":"ulPowerControlCommon",
+            "value":"-108"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"reqMinNumPuschPrb",
+            "value":"19"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"actDlSrsBm",
+            "value":"true"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"actUlSrsBm",
+            "value":"true"}}
+]
+'''
+
+SCF_TEMPLATE_BEAMSET2 = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"basicBeamSet",
+            "list_name":"beamSet",
+            "value":"beamSet_2"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"leftEdgeAngle",
+            "list_name":"beamSet",
+            "value":"60"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"lowerEdgeAngle",
+            "list_name":"beamSet",
+            "value":"135"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"nrBtsBeamRefinementP2",
+            "list_name":"beamSet",
+            "value":"false"}},
+     {{
+            "dist_name":"{dist_name}",
+            "p_name":"rightEdgeAngle",
+            "list_name":"beamSet",
+            "value":"60"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"upperEdgeAngle",
+            "list_name":"beamSet",
+            "value":"130"}}
+]
+'''
+
+SCF_TEMPLATE_T100M = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"chBw",
+            "value":"100MHz"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"msg1FrequencyStart",
+            "value":"19"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"0",
+            "value":"{value}/BWP_PROFILE-7"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"1",
+            "value":"{value}/BWP_PROFILE-77"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"cSRS",
+            "value":"63"}}
+]
+'''
+
+SCF_TEMPLATE_T90M = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"chBw",
+            "value":"90MHz"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"msg1FrequencyStart",
+            "value":"0"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"0",
+            "value":"{value}/BWP_PROFILE-9"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"1",
+            "value":"{value}/BWP_PROFILE-99"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"cSRS",
+            "value":"56"}}
+]
+'''
+
+SCF_TEMPLATE_T20M_1116_0ms = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"chBw",
+            "value":"20MHz"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"msg1FrequencyStart",
+            "value":"19"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"0",
+            "value":"{value}/BWP_PROFILE-3"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"1",
+            "value":"{value}/BWP_PROFILE-33"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"startCRBOfCoreset0",
+            "value":"0"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"rbAllocation",
+            "value":"BWP"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"type0CoresetConfigurationIndex",
+            "value":"12"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"cSRS",
+            "value":"13"}}
+]
+'''
+
+SCF_TEMPLATE_T40M_1116_0ms = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"chBw",
+            "value":"40MHz"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"msg1FrequencyStart",
+            "value":"19"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"0",
+            "value":"{value}/BWP_PROFILE-3"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"1",
+            "value":"{value}/BWP_PROFILE-33"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"cSRS",
+            "value":"25"}}
+]
+'''
+
+SCF_TEMPLATE_T80M = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"chBw",
+            "value":"80MHz"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"msg1FrequencyStart",
+            "value":"19"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"0",
+            "value":"{value}/BWP_PROFILE-6"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"1",
+            "value":"{value}/BWP_PROFILE-65"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"cSRS",
+            "value":"25"}}
+]
+'''
+
+SCF_TEMPLATE_T100M_1070 = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"chBw",
+            "value":"100MHz"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"msg1FrequencyStart",
+            "value":"19"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"0",
+            "value":"{value}/BWP_PROFILE-6"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"1",
+            "value":"{value}/BWP_PROFILE-65"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"cSRS",
+            "value":"25"}}
+]
+'''
+
+SCF_TEMPLATE_T60M = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"chBw",
+            "value":"60MHz"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"msg1FrequencyStart",
+            "value":"0"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"0",
+            "value":"{value}/BWP_PROFILE-8"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"1",
+            "value":"{value}/BWP_PROFILE-73"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"cSRS",
+            "value":"42"}}
+]
+'''
+
+SCF_TEMPLATE_T40M = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"chBw",
+            "value":"40MHz"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"msg1FrequencyStart",
+            "value":"19"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"0",
+            "value":"{value}/BWP_PROFILE-5"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"bwpDN",
+            "index":"1",
+            "value":"{value}/BWP_PROFILE-51"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"cSRS",
+            "value":"25"}}
+]
+'''
+
+SCF_TEMPLATE_FRAME_STRUCTURE_1116_0ms_6GP = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"frameStructureType",
+            "value":"tdLte"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"guardPeriodLength",
+            "value":"6Symbols"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"lteToNrFrameShift",
+            "value":"0ms"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"tdLteUlDlConfig",
+            "value":"tdLteConfig2"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"prachConfigurationIndex",
+            "value":"96"}}
+]
+'''
+
+SCF_TEMPLATE_FRAME_STRUCTURE_1116_3ms_4GP = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"frameStructureType",
+            "value":"tdLte"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"guardPeriodLength",
+            "value":"4Symbols"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"lteToNrFrameShift",
+            "value":"3ms"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"tdLteUlDlConfig",
+            "value":"tdLteConfig2"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"prachConfigurationIndex",
+            "value":"98"}}
+]
+'''
+
+SCF_TEMPLATE_FRAME_STRUCTURE_1116_0ms_4GP = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"frameStructureType",
+            "value":"tdLte"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"guardPeriodLength",
+            "value":"4Symbols"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"lteToNrFrameShift",
+            "value":"0ms"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"tdLteUlDlConfig",
+            "value":"tdLteConfig2"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"prachConfigurationIndex",
+            "value":"102"}}
+]
+'''
+
+SCF_TEMPLATE_FRAME_STRUCTURE_1070 = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"frameStructureType",
+            "value":"semiStatic"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"guardPeriodLength",
+            "value":"2Symbols"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"lteToNrFrameShift",
+            "value":""}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"tdLteUlDlConfig",
+            "value":""}},
+     {{
+            "dist_name":"{dist_name}",
+            "p_name":"ulDlDataSlotRatio",
+            "value":"3/7"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"prachConfigurationIndex",
+            "value":"98"}}
+]
+'''
+
+SCF_TEMPLATE_FRAME_STRUCTURE_1070_B4 = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"frameStructureType",
+            "value":"semiStatic"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"guardPeriodLength",
+            "value":"2Symbols"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"lteToNrFrameShift",
+            "value":""}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"tdLteUlDlConfig",
+            "value":""}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"ulDlDataSlotRatio",
+            "value":"3/7"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"prachConfigurationIndex",
+            "value":"157"}}
+]
+'''
+
+SCF_TEMPLATE_FRAME_STRUCTURE_1208 = '''
+[
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"frameStructureType",
+            "value":"semiStatic"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"guardPeriodLength",
+            "value":"2Symbols"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"lteToNrFrameShift",
+            "value":""}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"tdLteUlDlConfig",
+            "value":"tdLteConfig2"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"ulDlDataSlotRatio",
+            "value":"1/4"}},
+    {{
+            "dist_name":"{dist_name}",
+            "p_name":"prachConfigurationIndex",
+            "value":"159"}}
+]
+'''

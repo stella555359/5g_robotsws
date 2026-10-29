@@ -1,0 +1,105 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Keywords for 5GC001227-H
+...               Prerequisite :
+...               Scope : keywords for 5GC001227 interaction with 5GC000526 DL Interference Generation
+...
+...               Test Case Scenario author   : ilakcoumi.pareemanen@nokia.com
+...               Test Case Scenario contact  : ilakcoumi.pareemanen@nokia.com
+...               Test Case automation author : ilakcoumi.pareemanen@nokia.com
+...               Test Case automation contact: ilakcoumi.pareemanen@nokia.com
+...               Creation Date               : 04-02-2022
+...               Version History   Date            Author                          Notes
+...               0.1               04-02-2022     ilakcoumi.pareemanen@nokia.com   Creation
+...               0.2               07-02-2022     ilakcoumi.pareemanen@nokia.com   Modification
+...               0.3               15-07-2022     ilakcoumi.pareemanen@nokia.com   Modification
+
+
+Library            ../../../resources/python/luashark_tools.py
+Resource          taf/rfrl/common_resources/robot/preconditions.robot
+
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../../../resources/SWENG/robot/Container.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+
+Resource          ./Config1227.robot
+Resource          ./5GC001227-Common_keywords.robot
+Resource          ./5GC001227-A-UPD006_keywords.robot
+
+Variables           ../../../../../resources/SWENG/python/Colors.py
+
+
+*** Keywords ***
+TC 1227 DL Interference Check
+    [Documentation]        Test to check that DL interference is correclty activated with 1227 activated
+    ...                    A ratio of 24 % is applied on rdMaxNumStreamPrbL1Ratio RAD parameter
+    ...                    Check Counters M55308C00007-DL_SLOT_DUMMY_PDSCH
+    [Arguments]            ${params}        ${Vendor_Param}
+    Set Suite Variable     ${params}
+    Init Sequence          ${params}
+    Step                   Set RAD Params Of 1227 
+    Step                   Config1227.Vendor File Config With Specific Settings     argument=${Vendor_Param}         
+    Step                   Config1227.Update 1227 Params in OAM SCF
+    Step                   sleep      300s
+    Step                   Set Targettotalload to 100 on Cell 1     
+    Critical Step          Restart TL
+    Step                   Multi Cells Setup SA 1227        argument=${params.nbCell}
+    Step                   SA Call of 1 UE on Cell 1
+    Step                   Start L1L2 Capture on ASIB
+    Step                   sleep      5s
+    Step                   Stop L1L2 Capture on ASIB
+    Step                   sleep      300s
+    Step                   Collect PM Counters File
+    Step                   Check DL_SLOT_DUMMY_PDSCH on Cell 1 and Cell 2
+
+
+Set Targettotalload to 100 on Cell 1
+    &{modify_param1}    Create Dictionary
+    ...    parameter=targetTotalLoad
+    ...    dist_name=${nrcell_1_dist_name}
+    ...    value=100
+    @{modify_param}    Create List    ${modify_param1}
+    Oam.OAM Set Params                ${modify_param}
+
+Check DL_SLOT_DUMMY_PDSCH on Cell 1 and Cell 2
+    [Documentation]                 M55308C00007   DL_SLOT_DUMMY_PDSCH 
+    Dated Log New Line          =================================================================
+    Dated Log                      PM Counter: M55308C00007 
+    Dated Log                   =================================================================
+
+    ${PM_Dummy_pdsch}         Set Variable         M55308C00007
+    ${NRCELL_ID_Cell_1}       Set Variable         1
+    ${NRCELL_ID_Cell_2}       Set Variable         3
+    ${Value_PM_Dummy_pdsch_Cell1}             Counters.Retrieve Latest Single Counter Value From Pm File with CellID     
+    ...                                    ${LATEST_FILE}       ${PM_Dummy_pdsch}       ${NRCELL_ID_Cell_1}
+    Dated Log                            Value of DL_SLot_Dummy_for Cell 1 : ${Value_PM_Dummy_pdsch_Cell1}
+    should be true     ${Value_PM_Dummy_pdsch_Cell1} >= 0
+    ${Value_PM_Dummy_pdsch_Cell2}             Counters.Retrieve Latest Single Counter Value From Pm File with CellID     
+    ...                                    ${LATEST_FILE}       ${PM_Dummy_pdsch}       ${NRCELL_ID_Cell_2}
+    Dated Log                            Value of DL_SLot_Dummy_for Cell 3: ${Value_PM_Dummy_pdsch_Cell2}
+    should be true     ${Value_PM_Dummy_pdsch_Cell2} == 0
+
+
+Start L1L2 Capture on ASIB
+    ${CaptureL1L2}               Capture L1L2 Set Upon Config         airscale=${GNB_DU}
+    Set Suite Variable           ${CaptureL1L2}
+    Capture Init                 ${CaptureL1L2}                       
+    Capture Start                ${CaptureL1L2}
+    
+Stop L1L2 Capture on ASIB
+    Capture Stop    ${CaptureL1L2}
+
+SA Call of 1 UE on Cell 1
+    [Documentation]                        1  UE SA call  with ue id=1, pdu=1, gw=1 without Traffic
+    CallSetup.UE Register                  ue=${ue_1_id}
+    CallSetup.Launch PDU Session           ue=${ue_1_id}    pdu=${ue_1_pdu}   gw=${ue_1_gw}

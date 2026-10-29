@@ -1,0 +1,505 @@
+*** Settings ***
+
+Documentation     [SUITE PURPOSE]  Automated script for CNI-72046
+...               Test Case Scenario author   : yann.ah.herve@nokia.com
+...               Test Case Scenario contact  : yann.ah.herve@nokia.com / emmanuel.diatta@nokia.com
+...               Creation Date               : 9-Dec-2021
+...               Modified Date               : 
+...               Last Modified by            : Yann HERVE
+...               10-May-2022             |           Remove 22R2 tag
+  
+
+Variables         ../../../resources/SWENG/python/ReadConfig.py
+
+
+Resource          ../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../resources/SWENG/robot/Connect.robot
+Resource          ../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../resources/SWENG/robot/Sherpa.robot
+
+
+Resource            resources/robot/CNI-72046_Keywords.robot
+
+Force Tags          CA_5G_SW_FR-Villarceaux   RRM
+...   PY36
+...                 CLOUD_5G_I_LO_AP_LO_SANSA_FS_ECPRI_CMWV_TDD    master_classicalbts_all
+...                 CONFIGURED    5G_RAN    RAN_5G    CRT
+...                 SBTS00       SBTS23R1    SBTS22R4
+
+Suite Setup         Setup.Suite Setup From Scratch
+Suite Teardown      Setup.Suite Teardown
+
+Test Teardown       Test Teardown for CNI72046
+
+
+*** Variables ***
+
+${dl_tput}                      100
+${ul_tput}                      50
+
+${RD_RESOURCES_COLLECTOR}       0x590165
+
+*** Test Cases ***
+
+[1][1.0] CNI_72046-Multi UEs attach_Detach with UL_DL medium traffic_FR1
+    [Documentation]                 This is the automated TCs related to CNI-72046
+    ...                             It performs several calls to resource collector on CPRT node depending
+    ...                             if UEs is attached or if traffic is running or not
+    ...                             The results related to number of available CRNTI or free HARQ processes
+    ...                             are checked accordingly Multi UEs attach dedicated to 2 UEs on cell or Ue attach on each cell .
+
+    # Enable CNI-72046
+    ${p_resource_collector}=         Create Dictionary    field=${RD_RESOURCES_COLLECTOR}    value=1
+    ${param_list_rad_param}=         Create List          ${p_resource_collector}
+    Set Fields in swconfig DU        param_list=${param_list_rad_param}
+
+    # Restart TL anyway because of RAD param updates.
+    Restart TL
+
+    WTS Setup           nbUe=2
+    # Cellsetup is now done, Sherpa can be enabled if needed
+    Run Keyword If                  ${enable_sherpa}==${True}         Activate Sherpa
+
+    ${currentResourceStatus_No_UE}      Get L2PS Resources Usage        0
+    Dated Log                           Current L2PS resources are: ${currentResourceStatus_No_UE}
+    ${currentResourceStatus_No_UE_1}      Get L2PS Resources Usage        1
+    Dated Log                           Current L2PS resources are: ${currentResourceStatus_No_UE_1}
+
+
+    # UE profile (optional)
+    # Put here for example in case attach to another cell is needed.
+    &{my_ue_config_1}                     Copy Dictionary     ${UE_NO_PROFILE}
+    Set To Dictionary                   ${my_ue_config_1}     target_cells        1
+    Set To Dictionary                   ${my_ue_config_1}     ue        1
+
+    &{my_ue_config_2}                     Copy Dictionary     ${UE_NO_PROFILE}
+    Set To Dictionary                   ${my_ue_config_2}     target_cells        1
+    Set To Dictionary                   ${my_ue_config_2}     ue        2
+
+    # UE attach to 4G+5G (NSA)
+    SgNB Addition to ENB                ueSetting=${my_ue_config_1}
+    SgNB Addition to ENB                ueSetting=${my_ue_config_2}
+
+    Traced Sleep                        10 seconds
+    ${currentResourceStatus_1_UE}       Get L2PS Resources Usage        0
+    Dated Log                           Current L2PS resources are: ${currentResourceStatus_1_UE}
+
+    ${delta_Free_Rnti}            Evaluate        ${currentResourceStatus_No_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_1_UE}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==2
+
+
+    #################
+    # DL traffic
+    #################
+    # Don't stop traffic automatically, it will be stopped later
+    Traffic UE DL                  ueSetting=${my_ue_config_1}
+    ...                            throughput=${dl_tput}
+    ...                             shouldBeStop=False
+    ...                             shouldBeCheck=False
+    ...                             duration=20s
+
+    Traffic UE DL                  ueSetting=${my_ue_config_2}
+    ...                            throughput=${dl_tput}
+    ...                             shouldBeStop=False
+    ...                             shouldBeCheck=False
+    ...                             duration=20s
+
+    ${currentResourceStatus_1_UE_with_Dl}       Get L2PS Resources Usage        0
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_1_UE_with_Dl}
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_No_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_1_UE_with_Dl}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==2
+    # DL traffic but no UL
+    Should Be True                  ${currentResourceStatus_1_UE_with_Dl}[DlnbOfHarqPoolFree]<${currentResourceStatus_No_UE}[DlnbOfHarqPoolFree]
+    Traced Sleep                    10 seconds
+
+    ${currentResourceStatus_1_UE_with_Dl}       Get L2PS Resources Usage        0
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_1_UE_with_Dl}
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_No_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_1_UE_with_Dl}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==2
+    # DL traffic but no UL
+    Should Be True                  ${currentResourceStatus_1_UE_with_Dl}[DlnbOfHarqPoolFree]<${currentResourceStatus_No_UE}[DlnbOfHarqPoolFree]
+
+    # Stop traffic
+    Traffic Stop                    dir=dl      ueSetting=${my_ue_config_2}
+    Traffic Stop                    dir=dl      ueSetting=${my_ue_config_1}
+    Traced Sleep                    10 seconds
+
+    ${currentResourceStatus_1_UE_no_Dl}     Get L2PS Resources Usage        0
+    Dated Log                               Current L2PS resources are: ${currentResourceStatus_1_UE_no_Dl}
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_No_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_1_UE_no_Dl}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==2
+
+    #################
+    # UL traffic
+    #################
+    # Don't stop traffic automatically, it will be stopped later
+    Traffic UE UL                   ueSetting=${my_ue_config_1}
+    ...                             throughput=${ul_tput}
+    ...                             shouldBeStop=False
+    ...                             shouldBeCheck=False
+    ...                             duration=20s
+
+
+    Traffic UE UL                   ueSetting=${my_ue_config_2}
+    ...                             throughput=${ul_tput}
+    ...                             shouldBeStop=False
+    ...                             shouldBeCheck=False
+    ...                             duration=20s
+
+    ${currentResourceStatus_1_UE_with_Ul}       Get L2PS Resources Usage        0
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_1_UE_with_Ul}
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_No_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_1_UE_with_Ul}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==2
+    # UL traffic but no DL
+    Should Be True                  ${currentResourceStatus_1_UE_with_Ul}[UlnbOfHarqPoolFree]<${currentResourceStatus_No_UE}[UlnbOfHarqPoolFree]
+
+    Traced Sleep                                10 seconds
+    ${currentResourceStatus_1_UE_with_Ul}       Get L2PS Resources Usage        0
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_1_UE_with_Ul}
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_No_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_1_UE_with_Ul}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==2
+    # UL traffic but no DL
+    Should Be True                  ${currentResourceStatus_1_UE_with_Ul}[UlnbOfHarqPoolFree]<${currentResourceStatus_No_UE}[UlnbOfHarqPoolFree]
+
+    # Stop traffic
+    Traffic Stop                    dir=ul         ueSetting=${my_ue_config_1}
+    Traffic Stop                    dir=ul         ueSetting=${my_ue_config_2}
+
+    # Detach UE
+    UE Detach Enb                   ueSetting=${my_ue_config_1}
+    UE Detach Enb                   ueSetting=${my_ue_config_2}
+
+    Traced Sleep                                10 seconds
+    ${currentResourceStatus_1_UE_Detach}        Get L2PS Resources Usage        0
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_1_UE_Detach}
+
+    Should Be True                  ${currentResourceStatus_1_UE_Detach}[nbOfFreeCRNTI]==${currentResourceStatus_No_UE}[nbOfFreeCRNTI]
+    Should Be True                  ${currentResourceStatus_1_UE_Detach}[DlnbOfHarqPoolFree]<=${currentResourceStatus_No_UE}[DlnbOfHarqPoolFree]
+    Should Be True                  ${currentResourceStatus_1_UE_Detach}[UlnbOfHarqPoolFree]<=${currentResourceStatus_No_UE}[UlnbOfHarqPoolFree]
+
+
+     # UE profile (optional)
+    # Put here for example in case attach to another cell is needed.
+    &{my_ue_config_1}                     Copy Dictionary     ${UE_NO_PROFILE}
+      Set To Dictionary                   ${my_ue_config_1}     target_cells        2
+    Set To Dictionary                   ${my_ue_config_1}     ue        1
+
+    &{my_ue_config_2}                     Copy Dictionary     ${UE_NO_PROFILE}
+     Set To Dictionary                   ${my_ue_config_2}     target_cells        2
+    Set To Dictionary                   ${my_ue_config_2}     ue        2
+
+    # UE attach to 4G+5G (NSA)
+    SgNB Addition to ENB                ueSetting=${my_ue_config_1}
+    SgNB Addition to ENB                ueSetting=${my_ue_config_2}
+
+    Traced Sleep                        10 seconds
+    ${currentResourceStatus_2_UE}       Get L2PS Resources Usage        1
+    Dated Log                           Current L2PS resources are: ${currentResourceStatus_2_UE}
+
+    ${delta_Free_Rnti}            Evaluate        ${currentResourceStatus_No_UE_1}[nbOfFreeCRNTI] - ${currentResourceStatus_2_UE}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==2
+
+    #################
+    # DL traffic
+    #################
+    # Don't stop traffic automatically, it will be stopped later
+    Traffic UE DL                  ueSetting=${my_ue_config_1}
+    ...                            throughput=${dl_tput}
+    ...                             shouldBeStop=False
+    ...                             shouldBeCheck=False
+    ...                             duration=20s
+
+    Traffic UE DL                  ueSetting=${my_ue_config_2}
+    ...                            throughput=${dl_tput}
+    ...                             shouldBeStop=False
+    ...                             shouldBeCheck=False
+    ...                             duration=20s
+
+    ${currentResourceStatus_2_UE_with_Dl}       Get L2PS Resources Usage        1
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_2_UE_with_Dl}
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_No_UE_1}[nbOfFreeCRNTI] - ${currentResourceStatus_2_UE_with_Dl}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==2
+    # DL traffic but no UL
+    Should Be True                  ${currentResourceStatus_2_UE_with_Dl}[DlnbOfHarqPoolFree]<${currentResourceStatus_No_UE_1}[DlnbOfHarqPoolFree]
+    Traced Sleep                    10 seconds
+
+    ${currentResourceStatus_2_UE_with_Dl}       Get L2PS Resources Usage        1
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_2_UE_with_Dl}
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_No_UE_1}[nbOfFreeCRNTI] - ${currentResourceStatus_2_UE_with_Dl}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==2
+    # DL traffic but no UL
+    Should Be True                  ${currentResourceStatus_2_UE_with_Dl}[DlnbOfHarqPoolFree]<${currentResourceStatus_No_UE_1}[DlnbOfHarqPoolFree]
+
+    # Stop traffic
+    Traffic Stop                    dir=dl      ueSetting=${my_ue_config_2}
+    Traffic Stop                    dir=dl      ueSetting=${my_ue_config_1}
+    Traced Sleep                    10 seconds
+
+    ${currentResourceStatus_2_UE_no_Dl}     Get L2PS Resources Usage        1
+    Dated Log                               Current L2PS resources are: ${currentResourceStatus_2_UE_no_Dl}
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_No_UE_1}[nbOfFreeCRNTI] - ${currentResourceStatus_2_UE_no_Dl}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==2
+
+    #################
+    # UL traffic
+    #################
+    # Don't stop traffic automatically, it will be stopped later
+    Traffic UE UL                   ueSetting=${my_ue_config_1}
+    ...                             throughput=${ul_tput}
+    ...                             shouldBeStop=False
+    ...                             shouldBeCheck=False
+    ...                             duration=20s
+
+
+    Traffic UE UL                   ueSetting=${my_ue_config_2}
+    ...                             throughput=${ul_tput}
+    ...                             shouldBeStop=False
+    ...                             shouldBeCheck=False
+    ...                             duration=20s
+
+    ${currentResourceStatus_2_UE_with_Ul}       Get L2PS Resources Usage        1
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_2_UE_with_Ul}
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_No_UE_1}[nbOfFreeCRNTI] - ${currentResourceStatus_2_UE_with_Ul}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==2
+    # UL traffic but no DL
+    Should Be True                  ${currentResourceStatus_2_UE_with_Ul}[UlnbOfHarqPoolFree]<${currentResourceStatus_No_UE_1}[UlnbOfHarqPoolFree]
+
+    Traced Sleep                                10 seconds
+    ${currentResourceStatus_2_UE_with_Ul}       Get L2PS Resources Usage        1
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_2_UE_with_Ul}
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_No_UE_1}[nbOfFreeCRNTI] - ${currentResourceStatus_2_UE_with_Ul}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==2
+    # UL traffic but no DL
+    Should Be True                  ${currentResourceStatus_1_UE_with_Ul}[UlnbOfHarqPoolFree]<${currentResourceStatus_No_UE_1}[UlnbOfHarqPoolFree]
+
+    # Stop traffic
+    Traffic Stop                    dir=ul         ueSetting=${my_ue_config_1}
+    Traffic Stop                    dir=ul         ueSetting=${my_ue_config_2}
+
+    # Detach UE
+    UE Detach Enb                   ueSetting=${my_ue_config_1}
+    UE Detach Enb                   ueSetting=${my_ue_config_2}
+
+    Traced Sleep                                10 seconds
+    ${currentResourceStatus_2_UE_Detach}        Get L2PS Resources Usage        1
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_2_UE_Detach}
+
+    Should Be True                  ${currentResourceStatus_2_UE_Detach}[nbOfFreeCRNTI]==${currentResourceStatus_No_UE_1}[nbOfFreeCRNTI]
+    Should Be True                  ${currentResourceStatus_2_UE_Detach}[DlnbOfHarqPoolFree]<=${currentResourceStatus_No_UE_1}[DlnbOfHarqPoolFree]
+    Should Be True                  ${currentResourceStatus_2_UE_Detach}[UlnbOfHarqPoolFree]<=${currentResourceStatus_No_UE_1}[UlnbOfHarqPoolFree]
+
+
+
+    Traced Sleep                        10 seconds
+    ${currentResourceStatus_2_2_UE}       Get L2PS Resources Usage        0
+    Dated Log                           Current L2PS resources are: ${currentResourceStatus_2_2_UE}
+    
+    Traced Sleep                        10 seconds
+    ${currentResourceStatus_1_1_UE}       Get L2PS Resources Usage        1
+    Dated Log                           Current L2PS resources are: ${currentResourceStatus_1_1_UE}
+
+    # UE profile (optional)
+    # Put here for ue_1 attach cell_2 and ue_2 attach cell_1in case attach to another cell is needed.
+    &{my_ue_config_1}                     Copy Dictionary     ${UE_NO_PROFILE}
+    Set To Dictionary                   ${my_ue_config_1}     target_cells        2
+    Set To Dictionary                   ${my_ue_config_1}     ue        1
+
+    &{my_ue_config_2}                     Copy Dictionary     ${UE_NO_PROFILE}
+    Set To Dictionary                   ${my_ue_config_2}     target_cells        1
+    Set To Dictionary                   ${my_ue_config_2}     ue        2
+
+    # UE attach to 4G+5G (NSA)
+    SgNB Addition to ENB                ueSetting=${my_ue_config_1}
+    SgNB Addition to ENB                ueSetting=${my_ue_config_2}
+
+    Traced Sleep                        10 seconds
+    ${currentResourceStatus_2_0_cell}       Get L2PS Resources Usage        0
+    Dated Log                           Current L2PS resources are: ${currentResourceStatus_2_0_cell}
+
+    ${delta_Free_Rnti}            Evaluate        ${currentResourceStatus_2_2_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_2_0_cell}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==1
+
+        Traced Sleep                        10 seconds
+    ${currentResourceStatus_1_1_cell}       Get L2PS Resources Usage        1
+    Dated Log                           Current L2PS resources are: ${currentResourceStatus_1_1_cell}
+
+    ${delta_Free_Rnti}            Evaluate        ${currentResourceStatus_1_1_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_1_1_cell}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==1
+
+
+    #################
+    # DL traffic
+    #################
+    # Don't stop traffic automatically, it will be stopped later
+    Traffic UE DL                  ueSetting=${my_ue_config_1}
+    ...                            throughput=${dl_tput}
+    ...                             shouldBeStop=False
+    ...                             shouldBeCheck=False
+    ...                             duration=20s
+
+    Traffic UE DL                  ueSetting=${my_ue_config_2}
+    ...                            throughput=${dl_tput}
+    ...                             shouldBeStop=False
+    ...                             shouldBeCheck=False
+    ...                             duration=20s
+
+    ${currentResourceStatus_2_0_cell_with_Dl}       Get L2PS Resources Usage        0
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_2_0_cell_with_Dl}
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_2_2_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_2_0_cell_with_Dl}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==1
+    # DL traffic but no UL
+    Should Be True                  ${currentResourceStatus_2_0_cell_with_Dl}[DlnbOfHarqPoolFree]<${currentResourceStatus_2_2_UE}[DlnbOfHarqPoolFree]
+    Traced Sleep                    10 seconds
+
+    ${currentResourceStatus_2_0_cell_with_Dl}       Get L2PS Resources Usage        0
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_2_0_cell_with_Dl}
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_2_2_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_2_0_cell_with_Dl}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==1
+    # DL traffic but no UL
+    Should Be True                  ${currentResourceStatus_2_0_cell_with_Dl}[DlnbOfHarqPoolFree]<${currentResourceStatus_2_2_UE}[DlnbOfHarqPoolFree]
+
+      ${currentResourceStatus_1_1_cell_with_Dl}       Get L2PS Resources Usage        1
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_1_1_cell_with_Dl}
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_1_1_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_1_1_cell_with_Dl}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==1
+    # DL traffic but no UL
+    Should Be True                  ${currentResourceStatus_1_1_cell_with_Dl}[DlnbOfHarqPoolFree]<${currentResourceStatus_1_1_UE}[DlnbOfHarqPoolFree]
+    Traced Sleep                    10 seconds
+
+    ${currentResourceStatus_1_1_cell_with_Dl}       Get L2PS Resources Usage        1
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_1_1_cell_with_Dl}
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_1_1_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_1_1_cell_with_Dl}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==1
+    # DL traffic but no UL
+    Should Be True                  ${currentResourceStatus_1_1_cell_with_Dl}[DlnbOfHarqPoolFree]<${currentResourceStatus_1_1_UE}[DlnbOfHarqPoolFree]
+
+    # Stop traffic
+    Traffic Stop                    dir=dl      ueSetting=${my_ue_config_2}
+    Traffic Stop                    dir=dl      ueSetting=${my_ue_config_1}
+    Traced Sleep                    10 seconds
+
+    
+    ${currentResourceStatus_2_0_cell_no_Dl}     Get L2PS Resources Usage        0
+    Dated Log                               Current L2PS resources are: ${currentResourceStatus_2_0_cell_no_Dl}
+
+    ${currentResourceStatus_1_1_cell_no_Dl}     Get L2PS Resources Usage        1
+    Dated Log                               Current L2PS resources are: ${currentResourceStatus_1_1_cell_no_Dl}
+
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_2_2_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_2_0_cell_no_Dl}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==1
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_1_1_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_1_1_cell_no_Dl}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==1
+
+    #################
+    # UL traffic
+    #################
+    # Don't stop traffic automatically, it will be stopped later
+    Traffic UE UL                   ueSetting=${my_ue_config_1}
+    ...                             throughput=${ul_tput}
+    ...                             shouldBeStop=False
+    ...                             shouldBeCheck=False
+    ...                             duration=20s
+
+
+    Traffic UE UL                   ueSetting=${my_ue_config_2}
+    ...                             throughput=${ul_tput}
+    ...                             shouldBeStop=False
+    ...                             shouldBeCheck=False
+    ...                             duration=20s
+
+    ${currentResourceStatus_2_0_cell_with_Ul}       Get L2PS Resources Usage        0
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_2_0_cell_with_Ul}
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_2_2_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_2_0_cell_with_Ul}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==1
+    # UL traffic but no DL
+    Should Be True                  ${currentResourceStatus_2_0_cell_with_Ul}[UlnbOfHarqPoolFree]<${currentResourceStatus_2_2_UE}[UlnbOfHarqPoolFree]
+
+    Traced Sleep                                10 seconds
+    ${currentResourceStatus_2_0_cell_with_Ul}       Get L2PS Resources Usage        0
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_2_0_cell_with_Ul}
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_2_2_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_2_0_cell_with_Ul}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==1
+    # UL traffic but no DL
+    Should Be True                  ${currentResourceStatus_2_0_cell_with_Ul}[UlnbOfHarqPoolFree]<${currentResourceStatus_2_2_UE}[UlnbOfHarqPoolFree]
+
+
+    
+    ${currentResourceStatus_1_1_cell_with_Ul}       Get L2PS Resources Usage        1
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_1_1_cell_with_Ul}
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_1_1_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_1_1_cell_with_Ul}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==1
+    # UL traffic but no DL
+    Should Be True                  ${currentResourceStatus_1_1_cell_with_Ul}[UlnbOfHarqPoolFree]<${currentResourceStatus_1_1_UE}[UlnbOfHarqPoolFree]
+
+    Traced Sleep                                10 seconds
+    ${currentResourceStatus_1_1_cell_with_Ul}       Get L2PS Resources Usage        1
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_1_1_cell_with_Ul}
+
+    ${delta_Free_Rnti}              Evaluate
+    ...                             ${currentResourceStatus_1_1_UE}[nbOfFreeCRNTI] - ${currentResourceStatus_1_1_cell_with_Ul}[nbOfFreeCRNTI]
+    Should Be True                  ${delta_Free_Rnti}==1
+    # UL traffic but no DL
+    Should Be True                  ${currentResourceStatus_1_1_cell_with_Ul}[UlnbOfHarqPoolFree]<${currentResourceStatus_1_1_UE}[UlnbOfHarqPoolFree]
+
+    # Stop traffic
+    Traffic Stop                    dir=ul         ueSetting=${my_ue_config_1}
+    Traffic Stop                    dir=ul         ueSetting=${my_ue_config_2}
+
+    # Detach UE
+    UE Detach Enb                   ueSetting=${my_ue_config_1}
+    UE Detach Enb                   ueSetting=${my_ue_config_2}
+
+    Traced Sleep                                10 seconds
+    ${currentResourceStatus_2_2_UE_Detach}        Get L2PS Resources Usage        0
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_2_2_UE_Detach}
+
+    Should Be True                  ${currentResourceStatus_2_2_UE_Detach}[nbOfFreeCRNTI]==${currentResourceStatus_2_2_UE}[nbOfFreeCRNTI]
+    Should Be True                  ${currentResourceStatus_2_2_UE_Detach}[DlnbOfHarqPoolFree]<=${currentResourceStatus_2_2_UE}[DlnbOfHarqPoolFree]
+    Should Be True                  ${currentResourceStatus_2_2_UE_Detach}[UlnbOfHarqPoolFree]<=${currentResourceStatus_2_2_UE}[UlnbOfHarqPoolFree]
+
+    Traced Sleep                                10 seconds
+    ${currentResourceStatus_1_1_UE_Detach}        Get L2PS Resources Usage        1
+    Dated Log                                   Current L2PS resources are: ${currentResourceStatus_1_1_UE_Detach}
+
+    Should Be True                  ${currentResourceStatus_1_1_UE_Detach}[nbOfFreeCRNTI]==${currentResourceStatus_1_1_UE}[nbOfFreeCRNTI]
+    Should Be True                  ${currentResourceStatus_1_1_UE_Detach}[DlnbOfHarqPoolFree]<=${currentResourceStatus_1_1_UE}[DlnbOfHarqPoolFree]
+    Should Be True                  ${currentResourceStatus_1_1_UE_Detach}[UlnbOfHarqPoolFree]<=${currentResourceStatus_1_1_UE}[UlnbOfHarqPoolFree]

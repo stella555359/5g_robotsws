@@ -1,0 +1,462 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Common keyword of 5GC001227 feature
+...               Prerequisite :
+...               Scope : keywords for 5GC001227 ABIP
+...               Test execution duration     : approximately 30 minutes
+...               Test Case Scenario contact  : yann.merlin@nokia.com
+...               Test Case automation author : yann.merlin@nokia.com
+...               Test Case automation contact: yann.merlin@nokia.com
+...               Creation Date               : 03-10-2023
+...               Modified Date               : 03-10-2023
+...               Last Modified by            : yann.merlin@nokia.com
+...               Version History   Date        Author                          Notes
+...               0.1             FB2320      yann.merlin@nokia.com           Creation
+...               0.2             FB2320      yann.merlin@nokia.com           Update bbPoolCapacity ABIP
+...               0.3             FB2324    ilakcoumi.pareemanen@nokia.com    maxNumOfCAUserL2SubPool added in vendor file since SBTS00_231123_000002
+
+Library           OperatingSystem
+Library           String
+Library           BuiltIn
+Library           ute_wtssim           WITH NAME    wts
+Library           ../../../../../resources/SWENG/python/PandasCsv.py
+Library           ../../../../../resources/SWENG/python/StringTool.py
+Library           taf.analyzer.sherpa                 WITH NAME    tafSherpaCsvReader
+Resource          taf/rfrl/common_resources/robot/preconditions.robot
+Resource          ../../../resources/common/TtiTrace/ttitrace.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+Resource          ../../../CB008940/resources/robot/CB008940-Common-Keywords.robot
+Resource          ../../../CB008940/resources/robot/CB008940-Q-B2-Keywords.robot
+
+*** Variables ***
+&{Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbInitCapacity}     bbHwVariant=ABIP
+...                                                                      csSize=48
+...                                                                      direction=DL
+...                                                                      l1PoolType=NR_L1Pool_Thor_FDD_FR1_CPRI
+...                                                                      maxNumLayerPrbL1Sp=424
+...                                                                      maxNumStreamPrbL1Sp=424
+...                                                                      maxNumWbStreamPrbL1Sp=300
+
+&{Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbCapacity}         bbHwVariant=ABIP
+...                                                                      bbL1SpPrbCapacityId=28
+...                                                                      confDuplexMode=FDD
+...                                                                      csSize=48
+...                                                                      maxNumLayerPrbDlL1Sp=424
+...                                                                      maxNumLayerPrbUlL1Sp=636
+...                                                                      maxNumStreamPrbDlL1Sp=424
+...                                                                      maxNumStreamPrbUlL1Sp=1272
+
+*** Keywords ***
+
+TC 1227 MP nonGBR GBR UL and DL Traffic
+    [Documentation]
+    [Arguments]            ${param}
+    ...                    ${dict_ues}
+    Init Sequence          ${param}
+    ${test_name}           set variable    TC_5GC001227_LoadBased_MP
+    Dated Log New Line     ${test_name}
+    # BtsName / update / + ${test_name}  & Backup the original SCF
+    Backup Files
+    ${scf_suite_setup_backup}         OAM Get SCF File    file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable      ${scf_suite_setup_backup}
+    Dated Log               SCF backup file = ${scf_suite_setup_backup}
+    ${current_scf}    String.Replace string    ${scf_suite_setup_backup}    _Suite_Setup_Backup.xml    ${EMPTY}
+    ${updated_scf}    catenate    SEPARATOR=${EMPTY}    ${current_scf}_5GC001227_FDD_PRB_Pooling_Algorithm.xml
+    ${std_output}=    Run    cp ${scf_suite_setup_backup} ${updated_scf}
+    Dated Log New Line      Update scf : ${updated_scf}
+    SCF StartSession        scf_file=${updated_scf}
+    scf.load_scf    ${updated_scf}
+    # Definition of the objects dist_name
+    ${mrbts_dist_name}              Set Variable    MRBTS-${MRBTS_ID}
+    ${nrbts_dist_name}              Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ${bbmod_1_dist_name}            Set Variable    MRBTS-1/EQM-1/APEQM-1/CABINET-1/BBMOD-1
+    SCF Set element    dist_name=${mrbts_dist_name}    element_name=btsName    element_value=${test_name}    scope=Classical
+    # Alarm Faut ID=4282 will be raised if CB009215 is disabled with ABIP
+    Dated Log New Line    Checking interdependancies between feature CB09215 together with 5GC001227, 5GC002426 and CB009158
+    ${5GC001227_feature flag}     scf.get_value_from_scf    p_name=actSlowPrbPooling             dist_name=${nrbts_dist_name}
+    ${CB002426_feature flag}      scf.get_value_from_scf    p_name=actConnRrcPooling             dist_name=${nrbts_dist_name}
+    ${CB009158_feature flag}      scf.get_value_from_scf    p_name=actScheUePooling              dist_name=${nrbts_dist_name}
+    ${CB009215_feature flag}      scf.get_value_from_scf    p_name=actSlowPrbPoolingFddFr1Enh    dist_name=${nrbts_dist_name}
+    Run Keyword if  '${5GC001227_feature flag}'=='False'
+    ...          Dated log  5GC001227 FDD Baseband Pooling feature must be enabled
+    ...  ELSE    Dated log  5GC001227 FDD Baseband Pooling feature flag is set to ${5GC001227_feature flag}
+    Run Keyword if  '${CB009215_feature flag}'=='False'
+    ...          Dated log  CB009215 feature must be enabled together with 5GC001227 5GC002426 CB009158 & CB007114 with ABIP HW
+    ...  ELSE    Dated log  CB009215 feature flag is set to ${CB009158_feature flag}
+    Dated log  CB002426 Baseband Pooling of RRC connected Users feature flag is set to : ${CB002426_feature flag}
+    Dated log  CB09158 FDD PRB Pooling enahancements feature flag is set to : ${CB009158_feature flag}
+    ${fddNrCellConfigTradeoff}    scf.get_value_from_scf    p_name=fddNrCellConfigTradeoff       dist_name=${bbmod_1_dist_name}
+    Run Keyword if  '${fddNrCellConfigTradeoff}'=='Not Used'
+    ...          Dated log    FDD NRCELL Deployment shall be set to "Not Used" for ABIP Hardware
+    ...  ELSE    Dated Log    FDD NRCELL Deployment is correctly set to : ${fddNrCellConfigTradeoff}
+    Dated Log New Line    Setting Baseband board configuration type to NRFDD
+    SCF Set element        dist_name=${bbmod_1_dist_name}    element_name=bbmodBoardConfigType    element_value=NRFDD
+    ${bbmodBoardConfigType}    scf.get_value_from_scf    p_name=bbmodBoardConfigType    dist_name=${bbmod_1_dist_name}
+    Dated Log New Line    bbmodBoardConfigType is currently set to : ${bbmodBoardConfigType}
+    SCF StopSession                             scf_file=${updated_scf}
+    Update bbL1SpPrbCapacity ABIP
+    OAM Perform Full Commissioning              scf_file=${updated_scf}
+    OAM wait available
+    OAM Get SCF File      file=SCF_Updated_PRB_Pooling_Enhanced_Algorithm_enabled.xml
+    Dated Log New Line    SCF Update file : ${updated_scf}
+
+    Dated Log New Line     Configure Ue's dynamically
+    ${initial_NbOfUe}       get length          ${dict_ues}
+    Run Keyword If    ${initial_NbOfUe} < ${param.totalNbOfUe}    CB008940-Common-Keywords.Configure New Ues    ${dict_ues}
+    ...                                                                                                         ${initial_NbOfUe}
+    ...                                                                                                         ${param.totalNbOfUe}
+    ...                                                                                                         ${dict_settings_ue_default}
+    # Configure the current setting for all the ue's
+    ${param.totalNbOfUe}    get length          ${dict_ues}
+    Dated Log New Line           Configure the setting for the ${param.totalNbOfUe} ue's
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.totalNbOfUe}
+        ${current_ue}=                Evaluate                      ${current_id} + 1
+        ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          pdu                 1
+        Set To Dictionary             ${current_ueSetting}          trf_id              ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          target_gnb          ${param.targetGnb}
+        # Dispatching each ue on the requested original cell for the call establishment
+        Set To Dictionary             ${current_ueSetting}          target_cells           ${dict_ues[${current_id}].originalCell}
+        # Set the correct requested throughput per ue
+        Set To Dictionary             ${current_ueSetting}          DL_throughput          ${dict_ues[${current_id}].DL_throughput}
+        Set To Dictionary             ${current_ueSetting}          DL_throughput_GBR      ${dict_ues[${current_id}].DL_throughput_GBR}
+        Set To Dictionary             ${current_ueSetting}          UL_throughput          ${dict_ues[${current_id}].UL_throughput}
+        Append To List                ${listOfUes}                  ${current_ueSetting}
+    END
+    Dated Log New Line                UE_List=${listOfUes}
+    CB008940-Common-Keywords.Check Multi Ues Setting In List        multiUesList=${listOfUes}
+    # Setup wtsemu SA for all the ue's
+    Dated Log New Line      Setup wtsemu SA for all the ue's
+    Critical Step           CallSetup.Setup Wtsemu SA               nbUe=${param.totalNbOfUe}
+    ...                                                             nbSaUe=${param.totalNbOfUe}
+    ...                                                             shouldUseLua=${false}
+    #  ...                                                          nbCell=${param.totalNbOfCell}
+    ...                                                             list_of_UE_tobe_created=${listOfUes}
+    Traced Sleep    duration=5s    msg=setting the X2 link as WA to avoid degradation on cells
+    Step            CallSetup.WTS Set X2 Link
+    Dated Log New Line         UE's registration
+    # Register and launch PDU for all the ue's
+    FOR    ${current_elem}    IN    @{listOfUes}
+                            Critical Step       CallSetup.UE Register           ue=${current_elem.ue}
+        ...                 depends=CallSetup.Setup Wtsemu SA
+                            Critical Step       CallSetup.Launch PDU Session    ue=${current_elem.ue}
+        ...                                                                     pdu=${current_elem.pdu}
+        ...                                                                     gw=1
+        ...                 depends=CallSetup.UE Register
+    END
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        set test variable   ${current_elem}
+        ${dir}=   set Variable If    ${current_elem.DL_throughput} > ${0}    DL
+        ...                                                                  NONE
+        ${kw to run}=   Catenate   ${dir} Traffic SA Not Stopped with "${current_elem.DL_throughput}"Mbps "${param.duration}"s duration
+        ...                        and "${param.deviation}" percent deviation
+        Run Keyword If      ${current_elem.DL_throughput} > ${0}
+        ...      Critical Step     ${kw to run}       depends=CallSetup.Launch PDU Session
+
+        ${dir}=   set Variable If    ${current_elem.UL_throughput} > ${0}    UL
+        ...                                                                  NONE
+        ${kw to run}=   Catenate   ${dir} Traffic SA Not Stopped with "${current_elem.UL_throughput}"Mbps "${param.duration}"s duration
+        ...                        and "${param.deviation}" percent deviation
+        Run Keyword If      ${current_elem.UL_throughput} > ${0}
+        ...      Critical Step     ${kw to run}       depends=CallSetup.Launch PDU Session
+    END
+
+    # PDU session modify reserved for the ue's configured with GBR traffic
+    ${nbOfUe_traffic_GBR}=   CB008940-Q-B2-Keywords.Get Number Of Ue Configured With GBR Traffic    dict_ues=${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Run Keyword If    ${current_elem.DL_throughput_GBR} > ${0}    Run Keywords
+        ...                 Critical Step    CallSetup.UE PDU Session Modify
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=2
+        ...                                                         by=amf
+        ...                                  depends=CallSetup.Launch PDU Session
+        ...    AND
+        ...                 Critical Step    CallSetup.UE PDU Session Modify
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=3
+        ...                                                         by=amf
+        ...                                  depends=CallSetup.Launch PDU Session
+    END
+
+    # Start the GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        set test variable   ${current_elem}
+        ${dir}=   set Variable If    ${current_elem.DL_throughput_GBR} > ${0}    DL
+        ...                                                                      NONE
+        ${kw to run}=   Catenate    ${dir} Traffic GBR SA Not Stopped with "${current_elem.DL_throughput_GBR}"Mbps "${param.duration}"s duration
+        ...                         and "${param.deviation}" percent deviation
+        Run Keyword If      '${current_elem.DL_throughput_GBR}' != '0'
+        ...    Critical Step   ${kw to run}    depends=CallSetup.Launch PDU Session
+    END
+
+    Step    Activate Sherpa On All Cells
+    Step    sleep    1s
+    Step    Stop Sherpa Collection
+    Step    5GC001227_MP_Keywords.TTI Trace Collection
+    Step    Calling Panda Extract Csv function
+    Step    CB008940-Common-Keywords.Verification of BB Pooling Mode within PRB Pooling Allocation Report    pool_id=9
+    Step    CB008940-Common-Keywords.Verification of BB Pooling Mode within PRB Pooling Allocation Report    pool_id=12
+    Step    CB008940-Common-Keywords.Verification of Pool Id within PRB Pooling Report    pool_id=9     subpool_id=0
+    Step    CB008940-Common-Keywords.Verification of Pool Id within PRB Pooling Report    pool_id=9     subpool_id=1
+    Step    CB008940-Common-Keywords.Verification of Pool Id within PRB Pooling Report    pool_id=12    subpool_id=2
+    Step    CB008940-Common-Keywords.Verification of Pool Id within PRB Pooling Report    pool_id=12    subpool_id=3
+
+#      NRCELL distribution per L1Pool and L1SubPool for ABIP l1Deployment=Half_mode
+#      bbmodBoardConfigType=Auto  -   bbPoolCapacityId=11
+#    +----------+----------+----------------+----------+-----------+-------------------+
+#    | NRCell-1 | NRCell-4 |   NRCell-3     | NRCell-2 | NRCell-6  |      NRCell-5     |
+#    +----------+----------+----------------+----------+-----------+-------------------+
+#    |     L1 SubPoolId=0  | L1 SubPoolId=1 |    L1 SubPoolId=2    |  L1 SubPoolId= 3  |
+#    +---------------------+----------------+----------------------+-------------------|
+#    |                L1 PoolId=9           |               L1 PoolId=12               |
+#    +---------------------+----------------+----------------------+-------------------+
+
+#    Step    CB008940-Common-Keywords.Verification of BB Pooling cell distribution within PRB Pooling Report    nrCell_id=0x4001    subpool_id=0
+#    Step    CB008940-Common-Keywords.Verification of BB Pooling cell distribution within PRB Pooling Report    nrCell_id=0x4002    subpool_id=2
+#    Step    CB008940-Common-Keywords.Verification of BB Pooling cell distribution within PRB Pooling Report    nrCell_id=0x4003    subpool_id=1
+#    Step    CB008940-Common-Keywords.Verification of BB Pooling cell distribution within PRB Pooling Report    nrCell_id=0x4004    subpool_id=0
+#    Step    CB008940-Common-Keywords.Verification of BB Pooling cell distribution within PRB Pooling Report    nrCell_id=0x4005    subpool_id=3
+#    Step    CB008940-Common-Keywords.Verification of BB Pooling cell distribution within PRB Pooling Report    nrCell_id=0x4006    subpool_id=2
+    Step    Verification of Stream PRB Information within PRB Pooling Report    stream_prb_capa=1768   alloc_stream_prb=848        subpool_id=0
+    Step    Verification of Stream PRB Information within PRB Pooling Report    stream_prb_capa=1768   alloc_stream_prb=424        subpool_id=1
+    Step    Verification of Stream PRB Information within PRB Pooling Report    stream_prb_capa=1768   alloc_stream_prb=848        subpool_id=2
+    Step    Verification of Stream PRB Information within PRB Pooling Report    stream_prb_capa=1768   alloc_stream_prb=424        subpool_id=3
+    Step    5GC001227_MP_Keywords.Verify DL PRB Allocation
+
+    ${date}                 Get Current Date
+    ${date_in_dir_name}     Convert Date        ${date}             result_format=%d%m%Y_%H%M
+    ${log_path_pm}          Set Variable        ${LOG_PATH}/PM_${date_in_dir_name}
+    Step                    Traced Sleep        duration=5m         msg=collecting PM files from BTS into ${log_path_pm}
+    Step                    Collect PM files from BTS               ${log_path_pm}
+    [Teardown]              Display diagnosis
+
+Verify DL PRB Allocation
+    [Documentation]
+    [Arguments]
+#   Verification of the PRB Allocated to NRCell Id=2 (cellId=0x4002 ) in DL is within range min and max values
+    Verify PRB Allocated is within a range of min and max values
+        ...                                                         nrCell_id=0x4002
+        ...                                                         direction=Dl
+        ...                                                         min_prb_value=106
+        ...                                                         max_prb_value=106
+#   Verification of the PRB Allocated to NRCell Id=6 (cellId=0x4006) in DL is within range min and max values
+    Verify PRB Allocated is within a range of min and max values
+        ...                                                         nrCell_id=0x4006
+        ...                                                         direction=Dl
+        ...                                                         min_prb_value=106
+        ...                                                         max_prb_value=106
+#   Verification of the PRB Allocated to NRCell Id=4 (cellId=0x4004) in DL is within range min and max values
+    Verify PRB Allocated is within a range of min and max values
+        ...                                                         nrCell_id=0x4004
+        ...                                                         direction=Dl
+        ...                                                         min_prb_value=106
+        ...                                                         max_prb_value=106
+#   Verification of the PRB Allocated to NRCell Id=1 (cellId=0x4001 ) in DL is within range min and max values
+    Verify PRB Allocated is within a range of min and max values
+        ...                                                         nrCell_id=0x4001
+        ...                                                         direction=Dl
+        ...                                                         min_prb_value=106
+        ...                                                         max_prb_value=106
+#   Verification of the PRB Allocated to NRCell Id=5 (cellId=0x4005) in DL is within range min and max values
+    Verify PRB Allocated is within a range of min and max values
+        ...                                                         nrCell_id=0x4005
+        ...                                                         direction=Dl
+        ...                                                         min_prb_value=106
+        ...                                                         max_prb_value=106
+#   Verification of the PRB Allocated to NRCell Id=3 (cellId=0x4003) in DL is within range min and max values
+    Verify PRB Allocated is within a range of min and max values
+        ...                                                         nrCell_id=0x4003
+        ...                                                         direction=Dl
+        ...                                                         min_prb_value=106
+        ...                                                         max_prb_value=106
+
+Verify PRB Allocated is within a range of min and max values
+    [Documentation]
+    [Arguments]             ${nrCell_id}
+    ...                     ${direction}
+    ...                     ${min_prb_value}
+    ...                     ${max_prb_value}
+    ...                     ${result_req}=True
+    ${sherpa_file_name}     Set Variable        PrbPoolingAllocationReport_45_.csv
+    ${file_path_report}=    Catenate    ${direction}_${sherpa_file_name}
+    Dated Log   ${file_path_report}
+    Dated Log New Line      ${file_path_report}
+    Dated Log New Line      Verify the number of PRB allocated ${direction} by BBRM to NRCELLID=${nrCell_id}
+    ${min_result}           Verify value with operator in csv Files with Prerequisite
+    ...                                         CsvName=${file_path_report}
+    ...                                         ColumnName=${COL_NAME_NUMPRBALLOC}
+    ...                                         valuetocheck=${min_prb_value}
+    ...                                         check_operator=<=
+    ...                                         directory=${sherpa_output_path}
+    ...                                         colum_prereq=${COL_NAME_NRCELLID}
+    ...                                         regex_prereq=${nrCell_id}
+    ${max_result}           Verify value with operator in csv Files with Prerequisite
+    ...                                         CsvName=${file_path_report}
+    ...                                         ColumnName=${COL_NAME_NUMPRBALLOC}
+    ...                                         valuetocheck=${max_prb_value}
+    ...                                         check_operator=>=
+    ...                                         directory=${sherpa_output_path}
+    ...                                         colum_prereq=${COL_NAME_NRCELLID}
+    ...                                         regex_prereq=${nrCell_id}
+    Run Keyword If          ${min_result} == True and ${max_result} == True
+    ...    Dated Log New Line    PRB Allocated to the NRCell:${nrCell_id} in ${direction} is between:${min_prb_value} & ${max_prb_value}
+    ...    ELSE
+    ...    Dated Log New Line    PRB Allocated to the NRCell:${nrCell_id} in ${direction} is outside range:${min_prb_value} & ${max_prb_value}
+    should be true          ${min_result} == ${result_req}
+    should be true          ${max_result} == ${result_req}
+
+Update bbL1SpPrbCapacity ABIP
+    [Documentation]            Download vendor file, Modify bbL1SpPrbCapacity and save the modified vendor file
+    ...                        validated via OAM web UI
+    [Arguments]
+    ${original_vendor_file}     ${modified_vendorfile}    SetConfig.Download Vendor File
+    Dated Log  Original Vendor File Name : ${original_vendor_file}
+    Dated Log  Modified Vendor File Name will be stored under ${modified_vendor_file}
+    ScfVendorOperations.setup reader    ${original_vendor_file}
+    ${mo_dict}    ScfVendorOperations.get moelements byclass    NRBTS
+    # Default BB Pooling Period is set to 30 ms with the introduction of CB09215. 5GC001227 BBPoolPeriod must be set to 50 ms
+    @{bbPoolEvalPeriodFdd}=   Create List       bbPoolEvalPeriodFdd      50
+    @{bbPoolEvalPeriod}=    Create List     ${bbPoolEvalPeriodFdd}
+    ScfVendorOperations.replace params inMo    ${bbPoolEvalPeriod}    ${mo_dict}
+    # Update vendor file bbL1SpPrbInitCapacity
+    &{bbL1SpPrbInitCapacity_initial_values}      Create Dictionary
+    ...                                          bbHwVariant=ABIP
+    ...                                          csSize=48
+    ...                                          direction=DL
+    ...                                          l1PoolType=NR_L1Pool_Thor_FDD_FR1_CPRI
+    ...                                          maxNumLayerPrbL1Sp=1296
+    ...                                          maxNumStreamPrbL1Sp=1296
+    ...                                          maxNumWbStreamPrbL1Sp=864
+    &{bbL1SpPrbInitCapacity_new_values}          Create Dictionary
+    ...                              bbHwVariant=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbInitCapacity.bbHwVariant}
+    ...                              csSize=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbInitCapacity.csSize}
+    ...                              direction=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbInitCapacity.direction}
+    ...                              l1PoolType=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbInitCapacity.l1PoolType}
+    ...                              maxNumLayerPrbL1Sp=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbInitCapacity.maxNumLayerPrbL1Sp}
+    ...                              maxNumStreamPrbL1Sp=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbInitCapacity.maxNumStreamPrbL1Sp}
+    ...                              maxNumWbStreamPrbL1Sp=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbInitCapacity.maxNumWbStreamPrbL1Sp}
+    @{initial_bbL1SpPrbInitCapacity_items_list}=            Create List         ${bbL1SpPrbInitCapacity_initial_values}
+    @{new_bbL1SpPrbInitCapacity_items_list}=                Create List         ${bbL1SpPrbInitCapacity_new_values}
+    ${list_name}            Set Variable                  bbL1SpPrbInitCapacity
+    Dated Log  Apply new bbL1SpPrbInitCapacity with : ${bbL1SpPrbInitCapacity_new_values}
+    ${modified_mo}=         ScfVendorOperations.replace items inList    ${initial_bbL1SpPrbInitCapacity_items_list}
+    ...                                                                 ${new_bbL1SpPrbInitCapacity_items_list}
+    ...                                                                 ${list_name}
+    ...                                                                 ${mo_dict}
+
+    &{bbL1SpPrbCapacity_initial_values}    Create Dictionary
+    ...                                    bbHwVariant=ABIP
+    ...                                    bbL1SpPrbCapacityId=28
+    ...                                    confDuplexMode=FDD
+    ...                                    csSize=48
+    ...                                    maxNumLayerPrbDlL1Sp=1272
+    ...                                    maxNumLayerPrbUlL1Sp=636
+    ...                                    maxNumStreamPrbDlL1Sp=1272
+    ...                                    maxNumStreamPrbUlL1Sp=1272
+
+    &{bbL1SpPrbCapacity_new_values}      Create Dictionary
+    ...                                  bbHwVariant=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbCapacity.bbHwVariant}
+    ...                                  bbL1SpPrbCapacityId=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbCapacity.bbL1SpPrbCapacityId}
+    ...                                  confDuplexMode=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbCapacity.confDuplexMode}
+    ...                                  csSize=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbCapacity.csSize}
+    ...                                  maxNumLayerPrbDlL1Sp=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbCapacity.maxNumLayerPrbDlL1Sp}
+    ...                                  maxNumLayerPrbUlL1Sp=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbCapacity.maxNumLayerPrbUlL1Sp}
+    ...                                  maxNumStreamPrbDlL1Sp=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbCapacity.maxNumStreamPrbDlL1Sp}
+    ...                                  maxNumStreamPrbUlL1Sp=${Vendor_NR_L1Pool_Thor_FDD_FR1_CPRI_Capacity_bbL1SpPrbCapacity.maxNumStreamPrbUlL1Sp}
+
+    @{initial_bbL1SpPrbCapacity_items_list}=    Create List         ${bbL1SpPrbCapacity_initial_values}
+    @{new_bbL1SpPrbCapacity_items_list}=        Create List         ${bbL1SpPrbCapacity_new_values}
+    ${bbL1SpPrbCapacity_list_name}    Set Variable    bbL1SpPrbCapacity
+    Dated Log  Apply new ${bbL1SpPrbCapacity_list_name} with : ${new_bbL1SpPrbCapacity_items_list}
+    ${modified_bbL1SpPrbCapacity}=    ScfVendorOperations.replace items inList    ${initial_bbL1SpPrbCapacity_items_list}
+    ...                                                                           ${new_bbL1SpPrbCapacity_items_list}
+    ...                                                                           ${bbL1SpPrbCapacity_list_name}
+    ...                                                                           ${mo_dict}
+
+    &{bbPoolCapacity_initial_values}      Create Dictionary
+    ...                                   bbHwVariant=ABIP
+    ...                                   bbPoolCapacityId=11
+    ...                                   confDuplexMode=FDD
+    ...                                   l1DeploymentVariant=half_mode
+    ...                                   maxNumOfDRBL2Pool=9000
+    ...                                   maxNumOfGBRL2Pool=1440
+    ...                                   maxNumOfUserL2Pool=4500
+    ...                                   maxNumPucchF1HarqL1Pool=36
+    ...                                   maxNumPucchF1SRPerSlotL1Pool=72
+    ...                                   maxNumPucchF3HarqL1Pool=6
+    ...                                   maxNumPucchF3PCSIPerSlotL1Pool=30
+    ...                                   maxNumScheUePdschL1Pool=36
+    ...                                   maxNumScheUePdschL1Sp=24
+    ...                                   maxNumScheUePdschL2Sp=20
+    ...                                   maxNumScheUePuschL1Pool=32
+    ...                                   maxNumScheUePuschL1Sp=20
+    ...                                   maxNumScheUePuschL2Sp=16
+    ...                                   maxNumFHStreamPRBULL1Pool=65535
+    ...                                   maxNumDlSubcellL1Pool=8
+    ...                                   maxNumDlSubcellL1Sp=4
+    ...                                   maxNumUlSubcellL1Pool=8
+    ...                                   maxNumUlSubcellL1Sp=4
+    ...                                   maxNumOfCAUserL2SubPool=40
+
+    &{bbPoolCapacity_new_values}          Create Dictionary
+    ...                                   bbHwVariant=ABIP
+    ...                                   bbPoolCapacityId=11
+    ...                                   confDuplexMode=FDD
+    ...                                   l1DeploymentVariant=half_mode
+    ...                                   maxNumOfDRBL2Pool=9000
+    ...                                   maxNumOfGBRL2Pool=1440
+    ...                                   maxNumOfUserL2Pool=4500
+    ...                                   maxNumPucchF1HarqL1Pool=36
+    ...                                   maxNumPucchF1SRPerSlotL1Pool=72
+    ...                                   maxNumPucchF3HarqL1Pool=6
+    ...                                   maxNumPucchF3PCSIPerSlotL1Pool=30
+    ...                                   maxNumScheUePdschL1Pool=36
+    ...                                   maxNumScheUePdschL1Sp=24
+    ...                                   maxNumScheUePdschL2Sp=20
+    ...                                   maxNumScheUePuschL1Pool=32
+    ...                                   maxNumScheUePuschL1Sp=20
+    ...                                   maxNumScheUePuschL2Sp=16
+    ...                                   maxNumFHStreamPRBULL1Pool=65535
+    ...                                   maxNumDlSubcellL1Pool=8
+    ...                                   maxNumDlSubcellL1Sp=4
+    ...                                   maxNumUlSubcellL1Pool=8
+    ...                                   maxNumUlSubcellL1Sp=4
+    ...                                   maxNumOfCAUserL2SubPool=40
+
+    @{bbPoolCapacity_current_items_list}=            Create List         ${bbPoolCapacity_initial_values}
+    @{bbPoolCapacity_new_items_list}=                Create List         ${bbPoolCapacity_new_values}
+    Dated Log  Update bbPoolCapacity with : ${bbPoolCapacity_new_items_list}
+    ${list_name}            Set Variable                  bbPoolCapacity
+    ${modified_bbPoolCapacity}=         ScfVendorOperations.replace items inList    ${bbPoolCapacity_current_items_list}
+    ...                                                                 ${bbPoolCapacity_new_items_list}
+    ...                                                                 ${list_name}
+    ...                                                                 ${mo_dict}
+
+    ScfVendorOperations.save back toxml               ${modified_vendor_file}
+    ${Tmp_file_ls}    OperatingSystem.run    ls -altr ${modified_vendor_file}
+    Dated log      Obtained file ${Tmp_file_ls}
+    &{args}    Create Dictionary         vendor_file="${modified_vendor_file}"
+    OAM Run Command    cmd=set_vendor_file    cmd_args=${args}
+
+TTI Trace Collection
+    ${TTIdir}      Get TTI Trace Path                 dir_suffix=5GC001227-C-ABIP
+    Dated Log New Line            Start TTI traces capture
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+    Traced Sleep    2 seconds    msg=TTI capture
+    ${TTIpcap}      Stop TTI Traces in Streaming mode    tti_trace_path=${TTIdir}
+    ...                           tti_trace_filename=TTiTrace_5GC001227-C-ABIP
+    Dated Log New Line            Convert TTItrace to json and csv
+    ${TTIjson}      Convert TTItrace from pcap to others    input_file_path=${TTIpcap}
+    ${TTIcsv}       ttitrace_tools.decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson}
+    ...                           num_of_events=10000

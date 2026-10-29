@@ -1,0 +1,60 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Verification of 5GC001857-A
+...               Scope : Test number of allocated PRB to RACH Msg2
+...                       In the past there was another TC checking another value for
+...                       the number fo PRB allocated to Msg3
+...                       This TC is no more possible because it relied on mmW flexible
+...                       frame structure which is no more available.
+...                       08-10-2021              |           1857 refactoring
+...                       02-11-2021              |           FR2 classical added
+...                       25-11-2021              |           Changed to LOKI config
+...                       10-May-2022             |           Remove 22R2 tag
+...                       02-Jun-2022             |           Change expNumPrb=0x00000003 into expNumPrb=0x0003
+
+Resource          ./5GC001857-A_PRACH_CI_Common.robot
+
+Force Tags                          CA_5G_SW_FR-Villarceaux    RRM 
+...   PY36
+...                                 CONFIGURED    5G_RAN    RAN_5G    CRT
+...                                 CLOUD_5G_I_LO_AP_LO_NSA_FS_ECPRI_MMWV_TDD    master_classicalbts_all
+...                                 SBTS00       SBTS23R1    SBTS22R4
+
+Suite Setup                         Suite Setup From Scratch
+Suite Teardown                      Suite Teardown
+
+# listBackupFiles=${FD_ALL} will save and restore all configuration files
+Test Setup                          Test Setup for 1857
+Test Teardown                       Test Teardown for 1857
+
+*** Variables ***
+
+@{bipMsgfilter}                     UlData_PuschReceiveReq
+
+
+*** Test Cases ***
+[1][1.0] 5GC001857-A_20_MSG3_with_3_PRBs
+    [Documentation]                 Check if the number of PRB allocated to Msg3 has the right value
+    ...                             according to slot configuration.
+
+    Restart TL
+    Run    sed -i 's/set_ue simulated id=11 /set_ue simulated id=1 /g' ${tl.core.dir_path}/${tl.core.cfg_filename}
+    Run    sed -i 's/ue_param id=11 /ue_param id=1 /g' ${tl.core.dir_path}/${tl.core.cfg_filename}
+
+    WTS Setup
+
+    # Cellsetup is now done, Sherpa can be enabled if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}           Activate Sherpa
+
+    # UE attach to 4G+5G (NSA) and capture Msg3 to check number of allcoated PRBs.
+    ${CaptureBIP}                   Capture L1L2 Set Upon Config             airscale=${GNB_DU}
+    Capture Init                    ${CaptureBIP}                            withTN=True
+    ${CaptureBIP.filter}            Get Filter For Particular Msgs           bipMsgList=${bipMsgfilter}
+
+    SgNB Addition to ENB             ueSetting=${UE_SIMPLE}     captureCallback=Callback Capture L1L2
+    ...                              capture=${CaptureBIP}
+
+    # Check number of PRBs
+    Check Msg3 with X PRBs          ${CaptureBIP.path}           expNumPrb=3
+
+    # Detach UE
+    UE Detach Enb                   ueSetting=${UE_SIMPLE}

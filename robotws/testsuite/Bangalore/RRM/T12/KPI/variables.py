@@ -1,0 +1,5 @@
+# variables.py
+
+gNB_SWBuild1 = "SBTS00_ENB_9999_250905_000009"
+gNB_SWBuild2 = "SBTS00_ENB_9999_250906_000002"
+AP_build = "4.0.34567"

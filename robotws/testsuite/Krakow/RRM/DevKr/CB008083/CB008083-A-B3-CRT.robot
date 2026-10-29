@@ -1,0 +1,298 @@
+*** Settings ***
+Force Tags    CONFIGURED    CRT    PY36    RAN_5G    RAN_5G_TDD    SBTS00    SBTS23R4
+    ...    CLOUD_5G_I_LO_AP_LO_SANSA_FS_ECPRI_CMWV_TDD
+
+Documentation
+...
+...      INTRODUCTION: The feature CB008083 will implement the following gNB enhancements on NG-C interface:
+...      - Support of GUAMI Type IE in NG Setup Response and AMF Configuration Update messages
+...      - Maximum number of NG Setup Retries increased to 1000 (from 100)
+...      - Controlled shutdown of the NG-C link , i.e. SCTP association is gracefully shutdown when
+...          - NG-C link is locked, and NG Flex feature is not activated (currently supported when NG Flex
+...            feature is activated)
+...          - last SA cell is removed/deactivated
+...      - Support of optional RAN Node Name IE in the NG Setup Request and RAN Configuration Update messages
+...
+...      TEST SET NAME:  CB008083-A
+...
+...      TESTING SCOPE:
+...      CB008083-A Support of GUAMI Type IE in NG Setup Response and AMF Configuration Update messages
+...      - CB008083-A-B3: Successful AMF selection, the UE provides the registeredAMF IE with GUAMI-Type IE
+...                       with or without the requested NSSAI
+...
+...      CONTACTS:
+...      CFAM Leader        : Mateusz Basiejko      (Nokia - PL/Krakow) <mateusz.basiejko@nokia.com>
+...      ET owner (LPO/APO) : Karolina Zwierz       (Nokia - PL/Krakow) <karolina.zwierz@nokia.com>
+...      Entity Testing L3  : Dawid Krawczuk        (Nokia - PL/Krakow) <dawid.krawczuk@nokia.com>
+...                           Malgorzata Konior     (Nokia - PL/Krakow) <malgorzata.konior@nokia.com>
+...                           Marek Kieltyka        (Nokia - PL/Krakow) <marek.kieltyka@nokia.com>
+...                           Michal Szymakowski    (Nokia - PL/Krakow) <michal.szymakowski@nokia.com>
+...
+...      REFERENCES:    CFAM link:             https://gates.nsn-net.net/view/000263b7#o=0
+...                     FTS link:              http://nok.it/CB008083_FTS
+...                     FOT meeting minutes:   https://confluence.ext.net.nokia.com/display/M5FC/FOT+-+CB008083-SR
+...
+...       HISTORY:
+...               History, current status and TC description is available in repository:
+...               https://wrgitlab.ext.net.nokia.com/RAN/robotws/-/tree/master/testsuite/Krakow/RRM/DevKr/CB008083
+...
+...               [24.10.2022] - Created TC
+...               [09.12.2022] - Approved by (Avadora Dumitrescu, https://collab.ext.net.nokia.com/ui#review:id=868839)
+
+Resource    ./resources/CB008083_common_keywords.robot
+Resource    ./resources/CB008083_setups_and_teardowns.robot
+Variables   ./resources/amfconfigupdate_hex.py
+Library     resources/message_verifier.py
+
+Suite Setup
+...     Run Setup     number_of_amfs=3
+
+*** Variables ***
+${LUA_CFG}=   ${CURDIR}/config/SA_TDD_2c_1gNBSim_3amf_B345_common.lua
+${TA_MESSAGING_DISABLE_CSV_LOGGING}=		${True}
+
+*** Test Cases ***
+CB008083-A-B3 RegisteredAMF GuamiType mapped success case with candidates load balanced
+    [Tags]    A-B3
+    [Documentation]
+    ...
+    ...  DESCRIPTION: ToDo
+    ...
+    ...  PRECONDITION:
+    ...  - Real gNB is up and running
+    ...  - Multiple AMF1, AMF2 and AMF3 up and running
+    ...  - Established NG connections between each AMFs-gNB2
+    ...  - AMF1 is configured with 2 GUAMIs (GUAMI1:native,GUAMI2:mapped) with capacity 10
+    ...  - AMF2 is configured with 2 GUAMIs (GUAMI2:native,GUAMI3:mapped) with capacity 1 (default amf)
+    ...  - AMF3 is configured with 2 GUAMIs (GUAMI1:mapped,GUAMI2:mapped) with capacity 255
+    ...  - All GUAMIs has status set to AVAILABLE
+    ...  - AMFs are configured with include_guami_type=on
+    ...  - NRBTS.actNgcFlexSaMode = true (5GC000740)
+    ...  - NRBTS.actAmfPlannedRemoval = true
+	...	 - NRBTS.actEnhancedNgRanSupport = true
+	...  - NRBTS.SERVEDAMF-1.guAMI.guamiType set (native, mapped)
+	...  - NRBTS.SERVEDAMF-2.guAMI.guamiType set (native, mapped)
+	...  - NRBTS.SERVEDAMF-3.guAMI.guamiType set  (mapped, mapped)
+	...  - NRBTS.SERVEDAMF does not have backupamf set for any guami
+	...  - NRBTS.SERVEDAMF-3.administrativestate locked
+    ...
+    ...  POSTCONDITION:
+    ...  ToDo
+    ...
+    ...  TESTING TOOLS: AirPhone, 5GCSim, UTE
+    ...
+    ...  TEST ENVIRONMENT:
+    ...  - gNB classical BTS in SA mode
+    ...  - HARDWARE ID: gNB(ABIO + ASIL) with simulated AEQA radio module - NR_BAND: n78
+    ...
+    ...   *REQUIREMENTS COVERAGE:
+    ...       *REQUIREMENTS IN SCOPE:  5G_RAN_USR_RRM_17720; CB_FIM_31958
+    ...       *BACKLOG ID: FCA_5G_L2L3-116443
+    ...
+    ...  REQUIRED LOGS: NGAP, NRRRC, PCAP
+    ...
+    ...  CONTACTS:
+    ...  Test owner         : Dawid Krawczuk        (Nokia - PL/Krakow) <dawid.krawczuk@nokia.com>
+    ...  ET team            : I_EXT_ETK4_GMS        (Nokia - PL/Krakow) <I_EXT_ETK4@internal.nsn.com>
+    ...
+    ...  REFERENCES:
+    ...  CFAM link:             https://gates.nsn-net.net/view/000263b7#o=0
+    ...  FTS link:              http://nok.it/CB008083_FTS
+    ...  FOT meeting minutes:   https://confluence.ext.net.nokia.com/display/M5FC/FOT+-+CB008083-SR
+    ...
+    ...  HISTORY:
+    ...        History, current status and TC description is available in repository:
+    ...        https://wrgitlab.ext.net.nokia.com/RAN/robotws/-/tree/master/testsuite/Krakow/RRM/DevKr/CB008083
+    ...
+    ...        [08.11.2022] - Created TC
+    ...        [09.12.2022] - Approved by (Avadora Dumitrescu, https://collab.ext.net.nokia.com/ui#review:id=868839)
+
+
+    [Setup]         rtpm activate
+
+    Log to console      start of TC10
+    Configure actEnhancedNgRanSupport flag to True value
+    Setup AMF2 as default AMF
+    Unlock NGAP links
+
+    Reach AMF guami configuration
+    ...   AMF1
+    ...   guami:1-2-1,guami_type:native
+    ...   guami:1-2-2,guami_type:mapped
+
+    Reach AMF guami configuration
+    ...   AMF2
+    ...   guami:1-2-2,guami_type:native
+    ...   guami:1-2-3,guami_type:mapped
+
+    Reach AMF guami configuration
+    ...   AMF3
+    ...   guami:1-2-1,guami_type:mapped
+    ...   guami:1-2-2,guami_type:mapped
+
+    Trigger AMF1 to send update with RelativeCapacity 10
+    Trigger AMF2 to send update with RelativeCapacity 1
+    Trigger AMF3 to send update with RelativeCapacity 255
+    Lock NGAP link to AMF3
+    discover_bts    bts_id=1
+    Verify SERVEDAMF-1 has RelativeCapacity set to 10
+    Verify SERVEDAMF-2 has RelativeCapacity set to 1
+    Verify SERVEDAMF-3 has RelativeCapacity set to 255
+    Verify SERVEDAMFs have no backup AMFs
+
+    start rtpm collection interval   wait_for_next_minute_start=True
+
+    start collecting syslog         prefix=01_      filtered_lines=AmfSelector
+    Expect Keyword To Pass With Ratio
+    ...      10
+    ...      10
+    ...      UE1 sends amf-Identifier:1-2-2,guami-Type:mapped and AMF1 is selected
+    AMF2 is never being selected
+    AMF3 is never being selected
+    Clear selected AMFs list
+    stop collecting syslog
+
+    start collecting syslog         prefix=02_      filtered_lines=AmfSelector
+    Expect Keyword To Pass With Ratio
+    ...      10
+    ...      10
+    ...      UE2 sends amf-Identifier:1-2-2,guami-Type:native and AMF2 is selected
+    AMF1 is never being selected
+    AMF3 is never being selected
+    Clear selected AMFs list
+    stop collecting syslog
+
+    Configure actEnhancedNgRanSupport flag to False value
+    Trigger AMF1 to send update with RelativeCapacity 1
+    Trigger AMF2 to send update with RelativeCapacity 1
+    discover_bts    bts_id=1
+    Verify SERVEDAMF-1 has RelativeCapacity set to 1
+    Verify SERVEDAMF-2 has RelativeCapacity set to 1
+
+    start collecting syslog         prefix=03_      filtered_lines=AmfSelector
+    Expect Keyword To Pass With Ratio
+    ...      5
+    ...      20
+    ...      UE3 sends amf-Identifier:1-2-2,guami-Type:mapped and AMF1 is selected
+    AMF2 is being occasionally selected
+    AMF3 is never being selected
+    Clear selected AMFs list
+    stop collecting syslog
+    stop rtpm collection interval       wait_for_next_full_minute_interval=15
+
+    Wait and check RTPM counters: AMF_SELECTION_ATT 40, AMF_SELECTION_SUCC 40
+
+    # start of TC12
+    Log to console      start of TC12
+    Configure actEnhancedNgRanSupport flag to True value
+    Unlock NGAP links
+    AMF is configured with GUAMIs
+    ...   AMF1
+    ...   guami:1-2-1,guami_type:native
+    ...   guami:1-2-2,guami_type:mapped
+    AMF is configured with GUAMIs
+    ...   AMF2
+    ...   guami:1-2-2,guami_type:native
+    ...   guami:1-2-3,guami_type:mapped
+    Reach AMF guami configuration
+    ...   AMF3
+    ...   guami:1-2-1,guami_type:mapped
+    ...   guami:1-2-2,guami_type:mapped
+    Trigger AMF1 to send update with RelativeCapacity 2
+    Trigger AMF2 to send update with RelativeCapacity 1
+    Trigger AMF3 to send update with RelativeCapacity 1
+    discover_bts    bts_id=1
+    Verify SERVEDAMF-1 has RelativeCapacity set to 2
+    Verify SERVEDAMF-2 has RelativeCapacity set to 1
+    Verify SERVEDAMF-3 has RelativeCapacity set to 1
+    Verify SERVEDAMFs have no backup AMFs
+
+    start rtpm collection interval
+
+    start collecting syslog         prefix=04_      filtered_lines=AmfSelector
+    Expect Keyword To Pass With Ratio
+    ...      20
+    ...      50
+    ...      UE2 sends amf-Identifier:1-2-2,guami-Type:mapped and AMF1 is selected
+    AMF3 is being occasionally selected
+    AMF2 is never being selected
+    Clear selected AMFs list
+    stop collecting syslog
+
+    start collecting syslog         prefix=05_      filtered_lines=AmfSelector
+    Expect Keyword To Pass With Ratio
+    ...      10
+    ...      10
+    ...      UE3 sends amf-Identifier:1-2-2,guami-Type:native and AMF2 is selected
+    Clear selected AMFs list
+    stop collecting syslog
+
+    Trigger AMF1 to send update with RelativeCapacity 1
+    Trigger AMF2 to send update with RelativeCapacity 1
+    Trigger AMF3 to send update with RelativeCapacity 2
+    discover_bts    bts_id=1
+    Verify SERVEDAMF-1 has RelativeCapacity set to 1
+    Verify SERVEDAMF-2 has RelativeCapacity set to 1
+    Verify SERVEDAMF-3 has RelativeCapacity set to 2
+
+    start collecting syslog         prefix=06_      filtered_lines=AmfSelector
+    Expect Keyword To Pass With Ratio
+    ...      20
+    ...      50
+    ...      UE4 sends amf-Identifier:1-2-2,guami-Type:mapped and AMF3 is selected
+    AMF1 is being occasionally selected
+    AMF2 is never being selected
+    Clear selected AMFs list
+    stop collecting syslog
+
+    start collecting syslog         prefix=07_      filtered_lines=AmfSelector
+    Expect Keyword To Pass With Ratio
+    ...      10
+    ...      10
+    ...      UE5 sends amf-Identifier:1-2-2,guami-Type:native and AMF2 is selected
+    Clear selected AMFs list
+    stop collecting syslog
+    stop rtpm collection interval
+
+    Configure actEnhancedNgRanSupport flag to False value
+    Wait and check RTPM counters: AMF_SELECTION_ATT 120, AMF_SELECTION_SUCC 120
+
+
+    start rtpm collection interval   wait_for_next_minute_start=True
+    start collecting syslog         prefix=08_      filtered_lines=AmfSelector
+    Expect Keyword To Pass With Ratio
+    ...      20
+    ...      50
+    ...      UE6 sends amf-Identifier:1-2-1,guami-Type:mapped and AMF3 is selected
+    AMF1 is being occasionally selected
+    AMF2 is never being selected
+    Clear selected AMFs list
+    stop collecting syslog
+
+    Trigger AMF1 to send update with RelativeCapacity 2
+    Trigger AMF2 to send update with RelativeCapacity 1
+    Trigger AMF3 to send update with RelativeCapacity 1
+    discover_bts    bts_id=1
+    Verify SERVEDAMF-1 has RelativeCapacity set to 2
+    Verify SERVEDAMF-2 has RelativeCapacity set to 1
+    Verify SERVEDAMF-3 has RelativeCapacity set to 1
+
+    start collecting syslog         prefix=09_      filtered_lines=AmfSelector
+    Expect Keyword To Pass With Ratio
+    ...      20
+    ...      50
+    ...      UE6 sends amf-Identifier:1-2-1,guami-Type:native and AMF1 is selected
+    AMF3 is being occasionally selected
+    AMF2 is never being selected
+    Clear selected AMFs list
+    stop collecting syslog
+
+    stop rtpm collection interval
+
+    Wait and check RTPM counters: AMF_SELECTION_ATT 100, AMF_SELECTION_SUCC 100
+
+    [Teardown]   Run keywords
+    ...        Cleanup after test A-B3   AND
+    ...        rtpm deactivate
+
+

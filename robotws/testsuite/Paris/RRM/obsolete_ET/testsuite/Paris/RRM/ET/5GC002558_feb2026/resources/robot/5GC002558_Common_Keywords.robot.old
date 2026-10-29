@@ -1,0 +1,718 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Common Keyword for PRB blanking NSA and SA testing. In the scope of 2558-C.
+...               author   : Nasmoudine TOYB
+...               contact  : N/A
+...               Creation Date             : 27/10/2020
+...               Version   Date           Author                         Notes
+...               N/A       13/12/2022     MLLB/MH                        for ORAN
+...               N/A       30/08/2022     N/A                            Correction for MCShark of several KW
+...               N/A       23/02/2024     loic.marzin@nokia.com          Update for VRAN 2
+...               1.0       FB2411         vincent.boulet@nokia.com       Parity testing to introduce dRNIC RINLINE2 CLOUD_5GC_dRNIC_1vDU_P_AP_LO_DC
+...               1.0       18/09/2024     RDH                            Scout data
+
+Library         BuiltIn
+Library         DateTime
+
+Library         taf.sbts.oam.coam.admin       WITH NAME     coam
+Library         taf.ul.oam.selenium_coam      WITH NAME     selenium_coam
+Library         luashark_tools.analyzer       WITH NAME     analyzer
+Library         taf.config.scf                WITH NAME     cscf
+Library         taf.gnb.oam.commissioning     WITH NAME     commissioning
+Library         taf.collectors.pmcounters     WITH NAME     tafpmcounters
+Library         taf.epcsim
+Library         DateTime
+Library         OperatingSystem
+
+Library         taf.rfrl.common_resources.python.SWConfig
+Library         ../../../resources/python/luashark_tools.py
+
+Library         ../../../../../resources/SWENG/python/OsTool.py
+Library         ../../../../../resources/SWENG/python/CfgConfig.py  WITH NAME   CfgConfig
+
+Resource        ../../../../../resources/SWENG/robot/Tools.robot
+Resource        ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource        ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource        ../../../../../resources/SWENG/robot/Connect.robot
+Resource        ../../../../../resources/SWENG/robot/Restart.robot
+Resource        ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource        ../../../../../resources/SWENG/robot/Traffic.robot
+Resource        ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource        ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource        ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource        ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource        ../../../../../resources/SWENG/robot/Oam.robot
+Resource        ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource        ../../../../../resources/SWENG/robot/Capture.robot
+Resource        ../../../../../resources/SWENG/robot/Scf.robot
+Resource        ../../../../../resources/SWENG/robot/Setup.robot
+Resource        ../../../../../resources/SWENG/robot/CfgFilesTools.robot
+
+Resource        5GC001242-2558_Common_Keywords.robot
+
+Variables       ../../../../../resources/SWENG/python/ReadConfig.py
+
+*** Variables ***
+
+*** Keywords ***
+
+#****************************** Keywords for Test Line configuration ***************************************
+
+Set Context Initial Location And Bandwidth UL
+    [Documentation]   To set the cRbStart and size of the location of the dedicated BandwidthDl and BandwidthUl.
+    [Arguments]     ${crb_size_ul}   ${crb_start_ul}
+    #PDCCH_CONFIG_COMMON/coresetCommon
+    &{param_init}    Create Dictionary    cRbSizeUl=${crb_size_ul}  cRbStartUl=${crb_start_ul}
+    &{framestructure}    Evaluate    {'dist_name': '${bwp_initial_dist_name}','parameter': 'locationAndBandwidthUl','value':[&{param_init}]}
+    @{modify_param_list}     Create List     ${framestructure}
+    [Return]   ${modify_param_list}
+
+
+Commission SCF From Config Folder
+    [Documentation]  Commission SCF from config folder.
+    Dated Log    [Commissioning SCF of the feature]
+    OAM Perform Full Commissioning    ${test_scf_file_path}
+    # If gNB was rebooted after re-commissioning, wait until it's ready again.
+    Airscale Wait for Ready    ${GNB_DU}
+    Dated Log      -----> Commissioning completed
+
+Lock_Unused_Cells
+   Oam.OAM Cell Lock  cell_id=2
+#   Oam.OAM Cell Lock  cell_id=3
+#   Oam.OAM Cell Lock  cell_id=4
+#   Oam.OAM Cell Lock  cell_id=5
+#   Oam.OAM Cell Lock  cell_id=6
+
+
+#****************************** NSA and SA: Keywords for check in L2L1 ***************************************
+
+Check In L2L1 SRS Configuration Traffic UL
+    Dated Log    [Checking SRS configuration traffic UL]
+    ${pcap_filtered}    Filter Pcap     pcap_file=${capture_gnb_l1l2.path}
+    ...    messages=uldata_srsreceivereq or uldata_srsreceiverespps    name=srs_only
+    ${pdml_srs}       Generate Pdml From Pcap    pcap_file=${pcap_filtered}
+    Check In L2L1 SRS Allocation Traffic UL NSA SA  ${pdml_srs}
+
+# Keyword updated to fit MCShark pdml
+Check In L2L1 SRS Allocation Traffic UL NSA SA
+    [Documentation]    This tests check the PRB allocation of SRS send request.
+    [Arguments]    ${pdml_file}
+    Dated Log    [Checking In L2L1 SRS allocation during traffic UL]
+    Dated Log    -----> Starting check SRS allocation
+    Dated Log    -----> SRS allocation shall be outside blanked PRB: startPrB >= ${rat1_start} and crb_end <= ${rat1_end}
+    Dated Log    -----> 5 packets to checks. Please wait...
+
+    ${ues_item}                set Variable                           ${0}
+    FOR    ${packet}    IN RANGE    1    5
+         ${packetsMatchReq}           Get Packet Match List
+         ...                             pdmlFile=${pdml_file}
+         ...                             packetName=uldata_srsreceivereq
+         ...                             pathList=${listFieldSrsRcvReq}
+         ...                             startPacket=${${packet}}
+         ...                             endPacket=${${packet}}
+         ${packetMatchReq}            set variable                           ${packetsMatchReq[0]}
+
+         @{listPathBw}                Get Paths matching Field
+         ...                             packetMatch=${packetMatchReq}          field=srsBandwidthConfig
+         ${path}                      set variable                           ${listPathBw[${ues_item}]}
+         ${srs_bw}                    set variable                           ${packetMatchReq.fields['${path}'].show}
+         Dated log                    \t\tItem${ues_item}:srsBandwidthConfig=${srs_bw} PATH=${path}
+
+         @{listPathPos}               Get Paths matching Field
+         ...                              packetMatch=${packetMatchReq}      field=freqDomainPosition
+         ${path}                      set variable                           ${listPathPos[${ues_item}]}
+         ${srs_freq_pos}              set variable                           ${packetMatchReq.fields['${path}'].show}
+         Dated log                    \t\tItem${ues_item}:freqDomainPosition=${srs_freq_pos} PATH=${path}
+
+         @{listPathShift}             Get Paths matching Field
+         ...                              packetMatch=${packetMatchReq}      field=freqDomainShift
+         ${path}                      set variable                           ${listPathShift[${ues_item}]}
+         ${srs_freq_shift}            set variable                           ${packetMatchReq.fields['${path}'].show}
+         Dated log                    \t\tItem${ues_item}:field=freqDomainShift=${srs_freq_shift} PATH=${path}
+
+         ${srs_bw_int}            Convert To Integer       ${srs_bw}
+         ${srs_freq_pos_int}      Convert To Integer       ${srs_freq_pos}
+         ${srs_freq_shift_int}    Convert To Integer       ${srs_freq_shift}
+         Log To Console    ${packet}/10:
+         Log To Console     --> SRS configuration [freqDomainPos:${srs_freq_pos_int} ; freqDomShift:${srs_freq_shift_int} ; BWcsrs:${srs_bw_int}]
+        #  Should Be True     ${srs_bw_int}==${c_srs}
+         Should Be True     ${srs_freq_pos_int}==${freq_pos}
+        #  Should Be True     ${srs_freq_shift_int}==${freq_shift}
+
+         ${packetsMatchResp}          Get Packet Match List
+         ...                             pdmlFile=${pdml_file}
+         ...                             packetName=uldata_srsreceiverespps
+         ...                             pathList=${listFieldSrsRcvResp}
+         ...                             startPacket=${${packet}}
+         ...                             endPacket=${${packet}}
+         ${packetMatchResp}           set variable                           ${packetsMatchResp[0]}
+
+         @{listPathRank}              Get Paths matching Field
+         ...                             packetMatch=${packetMatchResp}      field=ulRank
+         ${nb}                        Get length                             ${listPathRank}
+         Dated log                    \t\tList Length=${nb}
+         ${path}                      set variable                           ${listPathRank[${ues_item}]}
+         ${srs_ul_rank}               set variable                           ${packetMatchResp.fields['${path}'].show}
+         Dated log                    \t\tItem${ues_item}:srsBandwidthConfig=${srs_ul_rank} PATH=${path}
+
+         @{listPathSinr}              Get Paths matching Field
+         ...                              packetMatch=${packetMatchResp}     field=ulPmiRank1Sinr
+         ${path}                      set variable                           ${listPathSinr[${ues_item}]}
+         ${srs_ul_pmi_rank1_sinr}     set variable                           ${packetMatchResp.fields['${path}'].show}
+         Dated log                    \t\tItem${ues_item}:ulPmiRank1Sinr=${srs_ul_pmi_rank1_sinr} PATH=${path}
+
+         @{listPathRank2}             Get Paths matching Field
+         ...                              packetMatch=${packetMatchResp}     field=ulPmiRank2
+         ${path}                      set variable                           ${listPathRank2[${ues_item}]}
+         ${srs_ul_pmi_rank2}          set variable                           ${packetMatchResp.fields['${path}'].show}
+         Dated log                    \t\tItem${ues_item}:ulPmiRank2=${srs_ul_pmi_rank2} PATH=${path}
+
+         @{listPathSinr2}             Get Paths matching Field
+         ...                              packetMatch=${packetMatchResp}     field=ulPmiRank2Sinr_item
+         ${nb}                        Get length                             ${listPathSinr2}
+         Dated log                    \t\tList Length=${nb}
+         ${path}                      set variable                           ${listPathSinr2[${ues_item}]}
+         ${srs_ul_pmi_rank2_sinr}     set variable                           ${packetMatchResp.fields['${path}'].show}
+         Dated log                    \t\tItem${ues_item}:ulPmiRank2Sinr_item_0=${srs_ul_pmi_rank2_sinr} PATH=${path}
+
+         @{listPathSnr}               Get Paths matching Field
+         ...                              packetMatch=${packetMatchResp}     field=snr
+         ${path}                      set variable                           ${listPathSnr[${ues_item}]}
+         ${srs_snr}                   set variable                           ${packetMatchResp.fields['${path}'].show}
+         Dated log                    \t\tItem${ues_item}:field=snr=${srs_snr} PATH=${path}
+
+         Log To Console     ----> SRS measurements received:[ulRank:${srs_ul_rank} ; ulPmiRank1Sinr:${srs_ul_pmi_rank1_sinr}\n
+         Log To Console     ----> ulPmiRank2:${srs_ul_pmi_rank2} ; ulPmiRank2Sinr:${srs_ul_pmi_rank2_sinr} ; snr:${srs_snr}]
+    END
+    Dated Log    Check of SRS allocation completed.
+
+Check In L2L1 Rat1 Allocation Pusch Traffic UL 2558-C
+    [Documentation]    This tests check the PRB allocation of pusch messages. (~1h)
+    [Arguments]    ${pusch_pdml}
+    Dated Log    [Checking In L2L1 Pusch Attach Configuration]
+    Dated Log    -----> Starting check Rat1 PUSCH allocation (test duration is around 1 hour)...
+    Dated Log    -----> RAT1 allocation of PUSCH shall be outside blanked PRB: startPrB >= ${rat1_start} and crb_end <= ${rat1_end}
+    Dated Log    -----> 10 packets to checks. Please wait... (~15min)
+    FOR    ${packet}   IN RANGE   1000   1011
+        Verify Allocation In L2L1    pdml_file=${pusch_pdml}
+        ...                          packet_name=uldata_puschreceivereq
+        ...                          xpath_start=.*/UlData_PuschReceiveReq.grants_item_.*.startPrb$
+        ...                          xpath_size=.*/UlData_PuschReceiveReq.grants_item_.*.numOfPrb$
+        ...                          limit_start=${rat1_start}
+        ...                          test_size=<=
+        ...                          limit_size=${rat1_end}
+        ...                          packet_start=${packet}
+        ...                          packet_end=${packet}
+    END
+    Dated Log    Check of RAT1 PUSCH allocation completed.\n
+
+# SA Only Keywords
+
+Check In L2L1 Pdsch Attach Configuration SA
+    Dated Log    [Checking In L2L1 Pdsch Attach Configuration in SA]
+    ${pcap_filtered}    Filter Pcap     pcap_file=${capture_gnb_l1l2.path}    messages=dldata_pdschsendreq   name=pdsch_only
+    ${pdml_pdsch}    Generate Pdml From Pcap    pcap_file=${pcap_filtered}
+    #Initital pdsch configuration
+    Check Initial Pdsch Allocation SA    pdsch_pdml=${pdml_pdsch}
+
+# Keyword updated to fit MCShark pdml
+Check Initial Pdsch Allocation SA
+    [Arguments]    ${pdsch_pdml}
+    Dated Log    [Checking initial Pdsch allocation in SA]
+    Dated Log    StartPrb shall greater or equal to ${param.nbrOfBlankedPRBsLowEdgeDL}
+    Dated Log    crb end location shall be less than ${blanking_area_crb_high}
+    ${packet_num}                set Variable                           ${1}
+    ${grant_item}                set Variable                           ${0}
+    ${packetsMatch}              Get Packet Match List
+    ...                             pdmlFile=${pdsch_pdml}
+    ...                             packetName=dldata_pdschsendreq
+    ...                             pathList=${listFieldPdsch}
+    ...                             startPacket=${${packet_num}}
+    ...                             endPacket=${${packet_num}}
+    ${packetMatch}               set variable                           ${packetsMatch[0]}
+
+    @{listPathStart}             Get Paths matching Field
+    ...                             packetMatch=${packetMatch}          field=startPrb
+    ${path}                      set variable                           ${listPathStart[${grant_item}]}
+    ${startPrb}                  set variable                           ${packetMatch.fields['${path}'].show}
+    Dated log                    \t\tItem${grant_item}:startPrb=${startPrb} PATH=${path}
+
+    @{listPathNum}               Get Paths matching Field
+    ...                              packetMatch=${packetMatch}         field=numOfPrb
+    ${path}                      set variable                           ${listPathNum[${grant_item}]}
+    ${numOfPrb}                  set variable                           ${packetMatch.fields['${path}'].show}
+    Dated log                    \t\tItem${grant_item}:numOfPrb=${numOfPrb} PATH=${path}
+
+    Verify Allocation In L2L1    start_rb_hex=${startPrb}
+    ...                          nr_of_prb_hex=${numOfPrb}
+    ...                          limit_start=${param.nbrOfBlankedPRBsLowEdgeDL}
+    ...                          limit_size=${blanking_area_crb_high}
+
+Check In Pdcch CoresetFreqDomain SA
+    [Documentation]     The bitmap of CoresetFreqDomain shall be configured outside the blanked area.
+    [Arguments]    ${pdcch_pdml}     ${coreset_0_value}=0x0000000000000000
+    Dated Log    -----> SA: Checking initial CoresetFreqDomain configuration in pdcch...
+    #Coreset0 (Initial BWP)
+    ${coreset_0_value_int}          Convert To Integer     ${coreset_0_value}
+    ${coreset_0_value_str}          Convert To String      ${coreset_0_value_int}
+    analyzer.check_list             pdmlFile=${pdcch_pdml}
+    ...                             packetName=dldata_pdcchsendreq
+    ...                             kind=show
+    ...                             path=coresetFreqDomain$
+    ...                             value=${coreset_0_value_str}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Check completed.\n
+
+# Keyword updated to fit MCShark pdml
+Check In L2L1 CSI RS Tracking Allocation
+    [Arguments]                     ${pdml_file}
+    FOR    ${packet_num}            IN RANGE    1     6
+        Dated Log New Line          Checking packet ${packet_num}/5
+        ${packetsMatch}             Get Packet Match List
+        ...                             pdmlFile=${pdml_file}
+        ...                             packetName=dldata_csirssendreq
+        ...                             pathList=${listFieldCsi}
+        ...                             startPacket=${${packet_num}}
+        ...                             endPacket=${${packet_num}}
+        Verification TRS Symbol In L2L1
+        ...                         packetMatch=${packetsMatch[0]}
+    END
+    Dated Log    Check of TRS allocation completed.\n
+
+# Keyword updated to fit MCShark pdml
+Verification TRS Symbol In L2L1
+    [Arguments]                     ${packetMatch}
+    @{listPath}                     Get Paths matching Field
+    ...                                 packetMatch=${packetMatch}
+    ...                                 field=startSymbol
+    ${nb}                           Get length                              ${listPath}
+    ${item}                         set Variable                            ${0}
+    Dated Log                       -----> Nb CSI = ${nb}.
+    Run Keyword If                  ${nb}==1
+    ...                             Run keywords
+    ...                                 Dated Log     -----> Skipping packet (length = 1).
+    ...      AND                        Return from keyword
+    FOR    ${path}         IN      @{listPath}
+        ${value}                    set variable                            ${packetMatch.fields['${path}'].show}
+        Dated log                   \tSYMBOL=${value} PATH=${path}
+        Run Keyword If              '${value}' == '6' or '${value}' == '10'
+        ...                         Verification TRS Allocation In L2L1
+        ...                             packetMatch=${packetMatch}
+        ...                             csi_item=${item}
+        ...    ELSE                 Dated Log                               \t\tItem${item}:Skipping (symbol = 13).
+        ${item}                     evaluate                                ${item} + 1
+    END
+
+# Keyword updated to fit MCShark pdml
+Verification TRS Allocation In L2L1
+    [Arguments]                     ${packetMatch}                          ${csi_item}
+    Dated log                       \t\tItem${csi_item}:Verification TRS Allocation In L2L1
+
+    @{listPathStart}                Get Paths matching Field
+    ...                                 packetMatch=${packetMatch}          field=startPrb
+    ${path}                         set variable                            ${listPathStart[${csi_item}]}
+    ${startPrb}                     set variable                            ${packetMatch.fields['${path}'].show}
+    Dated log                       \t\tItem${csi_item}:startPrb=${startPrb} PATH=${path}
+
+    @{listPathNum}                  Get Paths matching Field
+    ...                                 packetMatch=${packetMatch}          field=numOfPrb
+    ${path}                         set variable                            ${listPathNum[${csi_item}]}
+    ${numOfPrb}                     set variable                            ${packetMatch.fields['${path}'].show}
+    Dated log                       \t\tItem${csi_item}:numOfPrb=${numOfPrb} PATH=${path}
+
+    ${trs_size}    Set Variable If
+    ...            '${param.trsMutingInBlankedPRBsEnabled}' == 'true' and ${param.nbrOfBlankedPRBsHighEdgeDL} == 0    ${csi_rs_size}
+    ...            '${param.trsMutingInBlankedPRBsEnabled}' == 'true' and ${param.nbrOfBlankedPRBsHighEdgeDL} > 0     ${blanking_area_crb_high}
+    ...            '${param.trsMutingInBlankedPRBsEnabled}' == 'false'    ${csi_rs_size}
+
+    Run Keyword If  '${param.trsMutingInBlankedPRBsEnabled}' == 'true'
+    ...                       Verify Allocation In L2L1
+    ...                       start_rb_hex=${startPrb}
+    ...                       nr_of_prb_hex=${numOfPrb}
+    ...                       limit_start=${param.nbrOfBlankedPRBsLowEdgeDL}
+    ...                       limit_size=${trs_size}
+    ...   ELSE                Verify Allocation In L2L1
+    ...                       start_rb_hex=${startPrb}
+    ...                       nr_of_prb_hex=${numOfPrb}
+    ...                       limit_start=${0}
+    ...                       test_size=<=
+    ...                       limit_size=${trs_size}
+
+#****************************** Keywords for check in L3L2 ***************************************
+
+Check In L3L2 SRS User Setup
+    [Documentation]   Check in L3L2 setup that SRS is correclty configured outside the blanked area.
+    [Arguments]    ${pdml_file}    ${value_pos}    ${value_shift}     ${value_csrs}    ${value_bsrs}    ${value_bhop}
+    Dated Log    [Checking SRS configuration in l2ps_user_UserSetup_req]
+    #From SPEC: freqDomainShift =  offsetPrbUl %4  = 2, offsetPrbUl = msg1FrequencyStart
+    Dated Log    -----> Check of SRS freqDomainPosition
+    ${frequ_pos_hex}      get_unique             pdmlFile=${pdml_file}
+    ...                             packetName=itf_l2_ps_user_usersetupreq
+    ...                             path=.*/itf_l2_ps_user_UserSetupReq.srsResource_item_.*.freqDomainPosition$
+    ...                             kind=show
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    ${frequ_pos_int}     Convert To Integer     ${frequ_pos_hex}
+    Dated Log    -----> freqDomainPosition = ${frequ_pos_int}
+    Should Be True     ${frequ_pos_int}==${value_pos}
+
+    Dated Log    -----> Check of SRS freqDomainShift
+    ${frequ_shift_hex}     get_unique             pdmlFile=${pdml_file}
+    ...                             packetName=itf_l2_ps_user_usersetupreq
+    ...                             path=.*/itf_l2_ps_user_UserSetupReq.srsResource_item_.*.freqDomainShift$
+    ...                             kind=show
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    ${frequ_shift_int}     Convert To Integer     ${frequ_shift_hex}
+    Dated Log    -----> freqDomainShift = ${frequ_shift_int}
+    Should Be True     ${frequ_shift_int}>=${value_shift}
+
+    Dated Log    -----> Check of SRS freqHopping c_SRS
+    ${csrs_hex}     get_unique             pdmlFile=${pdml_file}
+    ...                             packetName=itf_l2_ps_user_usersetupreq
+    ...                             path=.*/itf_l2_ps_user_UserSetupReq.freqHopping.c_SRS
+    ...                             kind=show
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    ${csrs_int}     Convert To Integer     ${csrs_hex}
+    Dated Log    -----> freqHopping c_SRS = ${csrs_int}
+    Should Be True     ${csrs_int}==${value_csrs}
+
+    Dated Log    -----> Check of SRS freqHopping b_SRS
+    ${bsrs_hex}     get_unique             pdmlFile=${pdml_file}
+    ...                             packetName=itf_l2_ps_user_usersetupreq
+    ...                             path=.*/itf_l2_ps_user_UserSetupReq.freqHopping.b_SRS
+    ...                             kind=show
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    ${bsrs_int}     Convert To Integer     ${bsrs_hex}
+    Dated Log    -----> freqHopping b_SRS = ${bsrs_int}
+    Should Be True     ${bsrs_int}==${value_bsrs}
+
+    Dated Log    -----> Check of SRS freqHopping b_hop
+    ${bhop_hex}     get_unique             pdmlFile=${pdml_file}
+    ...                             packetName=itf_l2_ps_user_usersetupreq
+    ...                             path=.*/itf_l2_ps_user_UserSetupReq.freqHopping.b_hop$
+    ...                             kind=show
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    ${bhop_int}     Convert To Integer     ${bhop_hex}
+    Dated Log    -----> freqHopping b_hop = ${bhop_int}
+    Should Be True     ${bhop_int}==${value_bhop}
+    Dated Log    -----> Check SRS configuration completed.\n
+
+Check In L3L2 TRS Cell Setup Configuration
+    [Documentation]   Check in L2L3, in l2_ps_cell_CellSetupReq that TRS reference signal is correclty configured outside the blanked area.
+    [Arguments]    ${pdml_file}
+    Dated Log    [Checking TRS allocation in l2_ps_cell_CellSetupReq]
+    Dated Log    -----> trsmuting = ${param.trsMutingInBlankedPRBsEnabled}. (if true TRS shall not occupied the whole BW)
+    ${trs_start_hex}      get_unique     pdmlFile=${pdml_file}
+    ...                                  packetName=itf_l2_ps_cell_CellSetupReq
+    ...                                  path=.*/itf_l2_ps_cell_CellSetupReq.csirsTracking.csirsTrackingStartingPrb$
+    ...                                  kind=show
+    ...                                  startPacket=${1}
+    ...                                  endPacket=${1}
+    ${trs_start_int}     Convert To Integer     ${trs_start_hex}
+    ${trs_numprb_hex}     get_unique     pdmlFile=${pdml_file}
+    ...                                  packetName=itf_l2_ps_cell_CellSetupReq
+    ...                                  path=.*/itf_l2_ps_cell_CellSetupReq.csirsTracking.csirsTrackingNumOfPrbs$
+    ...                                  kind=show
+    ...                                  startPacket=${1}
+    ...                                  endPacket=${1}
+    ${trs_numprb_int}     Convert To Integer     ${trs_numprb_hex}
+
+    # need to subtract 1 from trs_crb_end to have the high frequence index (which starts from 0)
+    ${trs_crb_end}     Evaluate    ${trs_start_int}+${trs_numprb_int}-1
+
+    Dated Log    -----> TRS allocation:[startingPrb:${trs_start_int} ; NumOfPrbs: ${trs_numprb_int}]
+    Run keyword If    '${param.trsMutingInBlankedPRBsEnabled}'=='false'    Should Be True     ${trs_start_int} == ${0}
+    Run keyword If    '${param.trsMutingInBlankedPRBsEnabled}'=='false'    Should Be True     ${trs_crb_end} <= ${csi_rs_size}
+    Run keyword If    '${param.trsMutingInBlankedPRBsEnabled}'=='true'     Should Be True     ${trs_start_int} >= ${param.nbrOfBlankedPRBsLowEdgeDL}
+    Run keyword If    '${param.trsMutingInBlankedPRBsEnabled}'=='true' and ${param.nbrOfBlankedPRBsHighEdgeDL} == 0
+    ...                Should Be True     ${trs_crb_end} <= ${csi_rs_size}
+    Run keyword If    '${param.trsMutingInBlankedPRBsEnabled}'=='true' and ${param.nbrOfBlankedPRBsHighEdgeDL} > 0
+    ...                Should Be True     ${trs_crb_end} < ${blanking_area_crb_high}
+
+#****************************** Keywords for setup and teardown ***************************************
+
+Test Suite Setup 2558-C
+    [Documentation]    Configure common SCF parameters.
+    ...                Saved original configuration.
+    ...                Upload feature configuration.
+    Dated Log    [Test Suite Setup for 2558-C]
+    Setup.Suite Setup From Scratch    keepAllUeDataInCfgFile=${True}
+
+Test Suite Teardown 2558-C
+    [Documentation]          Test suite teardown for all 2558-C TCs.
+    ...                      Restore existing configuration files.
+
+    # Restore Original Configuration
+    Dated Log    "Test Suite teardown"
+    Suite Teardown
+
+
+Test Teardown 2558-C
+    Dated Log     Test Teardown : test 2558-C is ending
+    Produce Scout Data
+    Run Keyword If      not ${isAic}
+    ...           Test Teardown 2558-C Steps
+
+Test Teardown 2558-C Steps
+    Dated Log     Test Teardown : test 2558-C non Aic ending steps ...
+    Creation Directory For Logs
+    Move Pcap Into Log Folder
+    Save Tested Configuration
+    Get WTS logs
+
+    # Scripts executed by below KW are not run correctly (timeout due to fixed ASIK/ABIL addresses ???)
+    # Get Journal gNB And AP
+
+    Run Keyword If Test Failed    Run Keywords
+    ...    Get GNB Snapshot
+    ...    AND Collect Sos Report
+
+    # kill edaemon and egate to avoid having "cell setup" state after rebooting the TL
+    ${output}    SSH Wait For Connect and Cmd    sudo pkill edaemon; sudo pkill egate    ${HOST_EPCSIM}
+
+
+
+#****************************** Keywords for config files setup ***************************************
+
+Set MRBTSID and NRBTSID 2558-C
+    ${nrbts_dist_name}              Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ${nrcell_dist_name}             Set Variable    ${nrbts_dist_name}/NRCELL-${FDD_Cell_list[0].nrCellId}
+    ${nrcell_fdd_ch_dist_name}      Set Variable    ${nrcell_dist_name}/NRCELL_FDD-1
+    ${nrcellgrp_dist_name}          Set Variable    ${nrbts_dist_name}/NRCELLGRP-1
+    ${bwp4_dist_name}    Run Keyword If    not ${isAic}    Set Variable    ${nrbts_dist_name}/BWP_PROFILE-4/
+    ...                              ELSE                  Set Variable    ${nrbts_dist_name}/BWP_PROFILE-10/
+    Set Suite Variable              ${nrbts_dist_name}
+    Set Suite Variable              ${nrcell_dist_name}
+    Set Suite Variable              ${nrcell_fdd_ch_dist_name}
+    Set Suite Variable              ${nrcellgrp_dist_name}
+    Set Suite Variable              ${bwp4_dist_name}
+
+
+Setup Config Files
+    [Documentation]   Update config files (gNB SCF, AP iphy.xml, gNB swconfig.txt and WTS basic_setup.cfg) with needed information
+
+    [Arguments]    ${test_name}
+    ...            ${test_param}
+    ...            ${mod_K2Min_K1Min}=${False}
+
+    Set MRBTSID and NRBTSID 2558-C
+
+    # copy the initial SCF_Setup.xml (previously backup by Suite Setup From Scratch)
+    Set Suite Variable    ${test_scf_file_path}    ${LOG_PATH}/SCF_Test.xml
+    ${output}    run    cp ${SCF_SETUP_PATH} ${test_scf_file_path}
+
+    # XML config file where to take data to be inserted in SCF
+    # (file name = <test name without '[1][1.0] ' prefix>.xml, "+" is not accepted as filename in CI --> replace it by "_")
+    #${test_cfg_file_name}    run    echo ${test_name}.xml | sed s/^\\\\[1\\\\]// | sed s/+/_/g
+    ${test_cfg_file_name}     run    echo ${test_name}.xml
+    ${test_cfg_file_name}     Remove String Using Regexp    ${test_cfg_file_name}    \\[1\\]\\[\\d[.]\\d\\]
+    ${test_cfg_file_name}     Remove String     ${test_cfg_file_name}    ${SPACE}
+    ${test_cfg_file_name}     Replace String    ${test_cfg_file_name}    +    _
+    ${test_cfg_file_path}     Set Variable    ${CURDIR}/../config/${test_cfg_file_name}
+
+    # Add objects needed for the test to the copied SCF
+    Get Data From Config Xml File And Add to Scf    ${test_cfg_file_path}    ${test_scf_file_path}
+
+    Update WTS Cfg File    ${test_param.nrarfcnUl}
+    ...                    ${test_param.nrarfcnDl}
+    ...                    ${test_param.ue_nr_capa}
+
+    Update Iphy Xml Cfg File    ${test_param.gscn}
+
+    Run Keyword If    ${mod_K2Min_K1Min}    Update K2min K1min
+
+    Set Specific Parameters In SCF    scf_file=${test_scf_file_path}
+    ...                               test_param=${test_param}
+    ...                               nrbts_dname=${nrbts_dist_name}
+    ...                               nrcellgrp_dname=${nrcellgrp_dist_name}
+    ...                               nrcell_dname=${nrcell_dist_name}
+    ...                               nrcell_fdd_dname=${nrcell_fdd_ch_dist_name}
+
+
+Set Specific Parameters In SCF
+    [Arguments]    ${scf_file}
+    ...            ${test_param}
+    ...            ${nrbts_dname}
+    ...            ${nrcellgrp_dname}
+    ...            ${nrcell_dname}
+    ...            ${nrcell_fdd_dname}
+
+    SCF StartSession    scf_file=${scf_file}
+
+    # Update BWP list to use the objects define in the configuration XML files
+    ${list_name}               Set Variable    cellBwpList
+
+    SCF Remove List            dist_name=${nrcell_dname}
+    ...                        list_name=${list_name}
+
+    SCF Add List               dist_name=${nrcell_dname}
+    ...                        list_name=${list_name}
+
+    ${item_dict}               Create Dictionary
+    Set To Dictionary          ${item_dict}    actPdcchCceFragmentControl=${test_param.firstActPdcchCceFragmentControl}
+    Set To Dictionary          ${item_dict}    actUpperThrAckNackFiltering=${test_param.firstActUpperThrAckNackFiltering}
+    Set To Dictionary          ${item_dict}    actUpperThrAckNackHrFiltering=${test_param.firstActUpperThrAckNackHrFiltering}
+    Set To Dictionary          ${item_dict}    bwpDN=${test_param.firstBwpDN}
+    Set To Dictionary          ${item_dict}    cellBwpId=${test_param.firstCellBwpId}
+    Set To Dictionary          ${item_dict}    pdcchResourcePreference=${test_param.firstPdcchResourcePreference}
+    SCF Add Items To List      dist_name=${nrcell_dname}
+    ...                        list_name=${list_name}
+    ...                        elements=${item_dict}
+
+    ${item_dict}               Create Dictionary
+    Set To Dictionary          ${item_dict}    actPdcchCceFragmentControl=${test_param.secondActPdcchCceFragmentControl}
+    Set To Dictionary          ${item_dict}    actUpperThrAckNackFiltering=${test_param.secondActUpperThrAckNackFiltering}
+    Set To Dictionary          ${item_dict}    actUpperThrAckNackHrFiltering=${test_param.secondActUpperThrAckNackHrFiltering}
+    Set To Dictionary          ${item_dict}    bwpDN=${test_param.secondBwpDN}
+    Set To Dictionary          ${item_dict}    cellBwpId=${test_param.secondCellBwpId}
+    Set To Dictionary          ${item_dict}    pdcchResourcePreference=${test_param.secondPdcchResourcePreference}
+    SCF Add Items To List      dist_name=${nrcell_dname}
+    ...                        list_name=${list_name}
+    ...                        elements=${item_dict}
+
+    # nrbts update
+
+    SCF Set element    dist_name=${nrbts_dname}
+    ...                element_name=actLteNrDss
+    ...                element_value=${test_param.actLteNrDss}
+
+    SCF Set element    dist_name=${nrbts_dname}
+    ...                element_name=actGeneralConnectivitySilver
+    ...                element_value=${test_param.actGeneralConnectivitySilver}
+
+    SCF Set element    dist_name=${nrbts_dname}
+    ...                element_name=actGeneralConnectivityGold
+    ...                element_value=${test_param.actGeneralConnectivityGold}
+
+    # nrcell group update
+
+    SCF Set element    dist_name=${nrcellgrp_dname}
+    ...                element_name=scs
+    ...                element_value=${test_param.scs}
+
+    # nrcell update
+
+    SCF Set element    dist_name=${nrcell_fdd_dname}
+    ...                element_name=nrarfcnDl
+    ...                element_value=${test_param.nrarfcnDl}
+
+    SCF Set element    dist_name=${nrcell_fdd_dname}
+    ...                element_name=chBwUl
+    ...                element_value=${test_param.chBwUl}
+
+    SCF Set element    dist_name=${nrcell_fdd_dname}
+    ...                element_name=nrarfcnUl
+    ...                element_value=${test_param.nrarfcnUl}
+
+    SCF Set element    dist_name=${nrcell_fdd_dname}
+    ...                element_name=chBwDl
+    ...                element_value=${test_param.chBwDl}
+
+    SCF Set element    dist_name=${nrcell_dname}
+    ...                element_name=${gscnParameterName}
+    ...                element_value=${test_param.gscn}
+
+    SCF Set element    dist_name=${nrcell_dname}
+    ...                element_name=ssbScs
+    ...                element_value=${test_param.ssbScs}
+
+    SCF Set element    dist_name=${nrcell_dname}
+    ...                element_name=type0CoresetConfigurationIndex
+    ...                element_value=${test_param.type0CoresetConfigurationIndex}
+
+    SCF Set element    dist_name=${nrcell_dname}
+    ...                element_name=lteNrDssMode
+    ...                element_value=${test_param.lteNrDssMode}
+
+    SCF Set element    dist_name=${nrcell_dname}
+    ...                element_name=aggregationLevel
+    ...                element_value=${test_param.aggregationLevel}
+
+    SCF Set element    dist_name=${nrcell_dname}
+    ...                element_name=actPRBBlanking
+    ...                element_value=${test_param.actPRBBlanking}
+
+    SCF Set element    dist_name=${nrcell_dname}
+    ...                element_name=nbrOfBlankedPRBsHighEdgeDL
+    ...                element_value=${test_param.nbrOfBlankedPRBsHighEdgeDL}
+
+    SCF Set element    dist_name=${nrcell_dname}
+    ...                element_name=nbrOfBlankedPRBsHighEdgeUL
+    ...                element_value=${test_param.nbrOfBlankedPRBsHighEdgeUL}
+
+    SCF Set element    dist_name=${nrcell_dname}
+    ...                element_name=nbrOfBlankedPRBsLowEdgeDL
+    ...                element_value=${test_param.nbrOfBlankedPRBsLowEdgeDL}
+
+    SCF Set element    dist_name=${nrcell_dname}
+    ...                element_name=nbrOfBlankedPRBsLowEdgeUL
+    ...                element_value=${test_param.nbrOfBlankedPRBsLowEdgeUL}
+
+    SCF Set element    dist_name=${nrcell_dname}
+    ...                element_name=msg1FrequencyStart
+    ...                element_value=${test_param.msg1FrequencyStart}
+
+    SCF Set element    dist_name=${nrcell_dname}
+    ...                element_name=dmrsTypeAPosition
+    ...                element_value=${test_param.dmrsTypeAPosition}
+
+    SCF Set element    dist_name=${nrcell_dname}
+    ...                element_name=trsMutingInBlankedPRBsEnabled
+    ...                element_value=${test_param.trsMutingInBlankedPRBsEnabled}
+
+    # ADT - temporary set "shortPucch" instead of default "longPucch"
+
+    SCF Set element    dist_name=${nrcell_dname}
+    ...                element_name=pucchModeSelect
+    ...                element_value=longPucch
+
+    SCF StopSession    scf_file=${scf_file}
+
+Update gNB swconfig
+    [Documentation]                 Generic service to set a list of parameters into swconfig file
+    ...                             param_list should be a list od dictionaries, each containing a "field" and a "value"
+    [Arguments]                     ${param_list}                           ${host}=192.168.255.1
+    ${local_file}                   set variable                            ${LOG_PATH}/swconfig.txt
+    ${remote_file}                  set variable                            /ffs/run/swconfig.txt
+
+    ${alias}                        SSH Wait For Connect                    ${GNB_DU.sys[0].M}
+    csn.download_file               remote_path=${remote_file}
+    ...                             local_path=${local_file}
+    ...                             connection=${alias}
+    # Adding newline at the end of the file to avoid appending data on the same line
+    # (this happens if the last line does not have newline char at the end)
+    run                             echo "" >> ${local_file}
+    setFieldsInFile                 srcFile=${local_file}                   paramList=${param_list}
+    csn.upload_file                 local_path=${local_file}
+    ...                             remote_path=${remote_file}
+    ...                             connection=${alias}
+    SSH Exec                        command=crasign ${remote_file}          alias=${alias}
+
+Update K2min K1min
+    ${rdParamK2Min}=         create dictionary    field=0x58012d    value=2
+    ${rdParamK1Min}=         create dictionary    field=0x5800f4    value=2
+    ${swconfig_list}=        Create List    ${rdParamK2Min}    ${rdParamK1Min}
+    Collect gNB swconfig
+    Update gNB swconfig      param_list=${swconfig_list}
+    Collect gNB swconfig     ${True}
+
+Collect gNB swconfig
+    [Documentation]    This keyword is used to collect gNB swconfig.txt from the /ffs/run/ folder
+    ...                This is collected in the Test Log Folder
+    [Arguments]                  ${is_mod}=${False}
+    ${FilePrefix}                set Variable                            gnb_swconfig_
+    ${OriFileSuffix}             set Variable                            ori.txt
+    ${ModFileSuffix}             set Variable                            mod.txt
+    ${FileName}=                 set Variable If    ${is_mod}
+    ...                          ${FilePrefix}${ModFileSuffix}
+    ...                          ${FilePrefix}${OriFileSuffix}
+    ${alias_gnb}                 SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    Dated Log      Collecting gNB /ffs/run/swconfig.txt...
+    csn.download_file               remote_path=/ffs/run/swconfig.txt
+    ...                             local_path=${LOG_PATH}/${FileName}
+    ...                             connection=${alias_gnb}
+    Dated Log                  ${FileName} file stored to ${LOG_PATH}

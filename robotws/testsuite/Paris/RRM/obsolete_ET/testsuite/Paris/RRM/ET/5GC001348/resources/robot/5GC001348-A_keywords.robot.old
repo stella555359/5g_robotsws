@@ -1,0 +1,133 @@
+*** Settings ***
+Resource           5GC001348-TDM_Common_keywords.robot
+Resource           5GC001348-FDM_Common_keywords.robot
+
+*** Variables ***
+${gNB_Mplane_IP}                    10.0.1.111
+${Udp_Receiver_wts_IP}              10.0.1.1
+${Destination_port}                 5678
+${Sherpa_logs_local_path}
+
+
+# List of fields to catch per packet
+@{MSG_FIELDS_SLOT_SFN}              slot    sfn
+@{ULDATA_PUCCH_REQ_FIELDS}          rnti$       pucchFormat$    startPrb$    numOfPrb$    nANPucch$    numOfSymbols$    firstSymbol$
+...                                 numOfBitsOfUciInformation$
+@{ULDATA_PUCCH_RESP_HARQD_FIELDS}   rnti$       pucchFormat$    startPrb$    ackNack$     dtx$         crc$
+@{ULDATA_PUCCH_RESP_PS_FIELDS}      rnti$       pucchFormat$    startPrb$    uciBits$     dtx$         crc$
+@{DLDATA_PDCCH_SEND_REQ_FIELDS}     rnti$       
+@{ULDATA_PUSCH_REQ_FIELDS}          rnti$       startPrb$       numOfPrb$    numOfPuschSymbols$    startSymbol$
+@{ULDATA_PUSCH_RESP_HARQU_FIELDS}   rnti$   dtx$         crc$
+@{ULDATA_PUSCH_RESP_PS_FIELDS}      rnti$   dtx$
+# Response definition : packet name and list of fields to collect for each message
+&{ULDATA_PUCCH_REQ}                    msg=uldata_pucchreceivereq          fields=${ULDATA_PUCCH_REQ_FIELDS}
+&{ULDATA_PUCCH_RESP_HARQD}             msg=uldata_pucchreceiverespharqd    fields=${ULDATA_PUCCH_RESP_HARQD_FIELDS}
+&{ULDATA_PUCCH_RESP_PS}                msg=uldata_pucchreceiverespps       fields=${ULDATA_PUCCH_RESP_PS_FIELDS}
+&{DLDATA_PDCCH_SEND_REQ}               msg=dldata_pdcchsendreq             fields=${DLDATA_PDCCH_SEND_REQ_FIELDS}
+&{ULDATA_PUSCH_RECEIVE_Req}            msg=uldata_puschreceivereq          fields=${ULDATA_PUSCH_REQ_FIELDS}
+&{ULDATA_PUSCH_RECEIVE_RESP_HARQU}     msg=uldata_puschreceiverespharqu    fields=${ULDATA_PUSCH_RESP_HARQU_FIELDS}
+&{ULDATA_PUSCH_RECEIVE_RESP_PS}        msg=uldata_puschreceiverespps       fields=${ULDATA_PUSCH_RESP_PS_FIELDS}
+
+# Global response definition for UL Data Prach
+@{UlDataPrachRespDefList_PUCCH}           ${ULDATA_PUCCH_REQ}             ${ULDATA_PUCCH_RESP_HARQD}              ${ULDATA_PUCCH_RESP_PS}
+@{UlDataPrachRespDefList_PUSCH}           ${ULDATA_PUSCH_RECEIVE_Req}     ${ULDATA_PUSCH_RECEIVE_RESP_HARQU}      ${ULDATA_PUSCH_RECEIVE_RESP_PS}
+@{UlDataPrachReceiveIndDefList}           ${ULDATA_PUCCH_REQ}             ${ULDATA_PUSCH_RECEIVE_Req}
+
+@{TrafficFilter}                    UlData_PuschReceiveReq    
+...                                 UlData_PrachReceiveReq    
+...                                 UlData_PuschReceiveRespHarqU
+...                                 UlData_PucchReceiveReq
+...                                 UlData_PrachReceiveReq
+...                                 UlData_PucchReceiveRespHarqD
+...                                 UlData_PucchReceiveRespPs
+...                                 UlData_PrachReceiveInd
+
+@{AttachFilter}                     UlData_PucchReceiveReq
+...                                 UlData_PrachReceiveReq
+...                                 UlData_PucchReceiveRespHarqD
+...                                 UlData_PucchReceiveRespPs
+...                                 UlData_PrachReceiveInd
+...                                 DlData_PdschSendReq
+...                                 DlData_PdcchSendReq
+...                                 DlData_PdschPayloadTbSendReq
+...                                 UlData_PuschReceiveReq
+...                                 UlData_PuschReceiveRespHarqU
+...                                 UlData_PuschReceiveRespPs
+...                                 UlData_PuschReceiveRespLo
+
+*** Keywords ***
+TC 5GC001348-A-Kw
+    [Arguments]            ${param}
+    Set Suite Variable     ${param}
+    Init Sequence          ${param}
+    Step                   Set MRBTSID and NRBTSID
+#    Step                   Update gNB Swconfig                    argument=${param}
+    Step                   Update gNB Scf                         argument=${param}
+    Critical Step          Restart TL
+	Step                   setup Mirroring for BIP capture
+    Critical Step          Start Capture CPRT                     depends=Restart gNB and Ap
+    Step                   Cell Setup                             argument=${param}
+    Step                   Stop Capture CPRT
+    Run Keyword If       not ${isAic} 
+    ...			   Step                   Lock_Cell_2 
+    Run Keyword If       not ${isAic}
+    ...            Step    Check actPrachMultiplexing and get prachPrbOffset values in ps_CellSetupReq    argument=${param}    depends=Cell Setup
+    run keyword if         "${param.multiUe}"=="${False}"
+    ...                    Step                                    Capture Start GNB
+    Step                   UE attach                               argument=${param}               depends=Cell Setup
+    run keyword if         "${param.multiUe}"=="${False}"
+    ...                    Step                                    Capture Stop GNB
+    Step                   Capture Start GNB                       argument=gNB_UL_DL_Traffic
+    Step                   Launch DL UL Traffic                    argument=${param}               depends=UE attach
+    Run Keyword If         ${enable_sherpa}==${True} and not ${isAic}
+    ...                    run keyword and ignore error
+                           ...        Step                         Activate Sherpa                 depends=Cell Setup
+    #Step                   Capture Start GNB                       argument=gNB_UL_DL_Traffic    
+#    Step                   sleep                                   argument=1s
+    run keyword if         "${param.TC}"=="A_27"
+    ...                    Step                                     UE attach Ue id     argument=2     depends=Launch DL UL Traffic
+    run keyword if         "${param.TC}"=="A_27"
+    ...                    Step                              sleep               argument=2s
+    Step                   Capture Stop GNB
+#    Step                   sleep                                   argument=2s
+    Run Keyword If         ${enable_sherpa}==${True} and not ${isAic}
+    ...                    run keyword and ignore error
+    ...        Step                         Deactivate Sherpa and Stop Collect     depends=Activate Sherpa
+#    run keyword if         "${param.TC}"=="A_27"
+#    ...                    Step             Check Pucch Ue1 And Prach Ue2 in rach slot       argument=${Capture_BIP_GNB.path} 
+#    Pass Execution If      "${param.TC}"=="A_27"          Check Pucch Ue1 And Prach Ue2
+    run keyword if         "${param.TdmSchedMode}"=="${True}"
+    ...                    Step            A-Tdm Checks    argument=${param}     depends=Launch DL UL Traffic
+    run keyword if         "${param.TdmSchedMode}"=="${False}"
+    ...                    Step            A-Fdm Checks    argument=${param}     depends=Launch DL UL Traffic
+
+    [Teardown]                      Teardown TC
+
+
+Update gNB Swconfig
+    [Arguments]               ${testParam}
+    ${590076}=                create dictionary      field=0x590076     value=${testParam.RadParamCprt1348}
+    ${swconfig_gnb}=          Create List            ${590076} 
+    Set Fields in swconfig DU       param_list=${swconfig_gnb}
+    Dated log          RadParams to modify:\n ${swconfig_gnb}
+
+A-Tdm Checks
+    [Arguments]               ${testParam}
+    Get Triggers and responses UL Data Prach                    pcapFile=${Capture_BIP_GNB.path}
+    ...                                                         respDefList=${UlDataPrachRespDefList_PUCCH}
+#    Check Pucch Resp HarqD Is In Rach Slot                      ${testParam}
+     Check Pucch AN In Rach Slots                                ${testParam}
+#    Check Pucch Resp HarqD DTX CRC                              ${testParam}
+#    Check Pucch Resp Ps DTX CRC                                 ${testParam}
+#    Check Prioritize Pucch For CSI                              ${testParam}
+#    Check Symbol Guard In Rach Slots                            ${testParam}
+
+A-Fdm Checks
+    [Arguments]               ${testParam}
+    #Get Triggers and responses UL Data Prach                     pcapFile=${Capture_BIP_GNB.path}
+    #...                                                          respDefList=${UlDataPrachRespDefList_PUSCH}
+    #Check Pusch Receive Req Is In Rach Slot                      ${testParam}
+    Check Feature Counters
+#    Check Pusch Resp HarqU Is In Rach Slot                       ${testParam}
+#    Check Pusch Receive Req Match Resp HarqU In Rach Slot        ${testParam}
+#    Check Pusch Resp HarqU DTX CRC                               ${testParam} 

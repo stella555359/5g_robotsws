@@ -1,0 +1,17 @@
+class bcolors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    SUCCESS = '\033[92m'
+    WARNING = '\033[93m'
+    ERROR = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    WHITE = '\033[97m'
+
+    WARNING_MSG = '[ ' + WARNING + 'WARNING' + ENDC + ' ] '
+    ERROR_MSG = '[ ' + ERROR + 'ERROR' + ENDC + ' ] '
+    SUCCESS_MSG = '[ ' + SUCCESS + 'SUCCESS' + ENDC + ' ] '
+    INFO_MSG = '[ ' + WHITE + 'INFO' + ENDC + ' ] '
+    DEBUG_MSG = '[ ' + CYAN + 'DEBUG' + ENDC + ' ] '

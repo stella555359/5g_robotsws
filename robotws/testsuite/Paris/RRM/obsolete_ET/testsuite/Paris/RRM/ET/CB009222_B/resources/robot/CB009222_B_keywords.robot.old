@@ -1,0 +1,296 @@
+*** Settings ***
+Documentation
+...               Last Modification           : 24-september-2024 - richard.duthu@nokia.com: Produce Scout Data + some RF50 fixes
+
+Library             OperatingSystem
+Library             Collections
+Library             DateTime
+Library             taf.transport.ssh    WITH NAME    csn
+Library             taf.config.scf       WITH NAME    scf
+Library             taf.sbts.oam.coam.admin           WITH NAME    coam
+Library             taf.lteemu           WITH NAME    lteemu
+Library             ute_wtssim           WITH NAME    wts
+Library             ../../../resources/python/luashark_tools.py
+Library             luashark_tools.analyzer       WITH NAME       analyzer
+Library             ../../../../../resources/SWENG/python/StringTool.py
+Library             ../../../../../resources/SWENG/python/OsTool.py
+
+Resource             ../../../../../resources/SWENG/robot/Counters.robot
+Resource             ../../../../../resources/SWENG/robot/Capture.robot
+
+Resource          ../../../../../resources/SWENG/robot/Connect.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+
+
+
+
+*** Variables ***
+${reporting_time_interval}    1
+${ru_mode}    NR_Only
+${digital_output_rate}     Bitrate_115dot2K
+${BB_selector}    0
+${PRB_offset}    0
+${test_type}    PUSCH
+@{Beam_ID}          0
+${Digital_out_type}     SerialRs
+${FRC_index}    G_FR2_A3_4
+${ul_dmrs_mapping_type}    A
+${timeout}    5
+*** Keywords ***
+
+    # Start Keyword for TCs
+
+CB009222_TDD_test_model_pusch_performance
+    [Arguments]           ${param}
+    [Documentation]       Test Model for PUSCH Performance
+    Set Suite Variable     ${param}
+    Init Sequence          ${param}
+    Critical Step          Restart TL
+    Critical Step          Activate Test dedicated Mode           depends=Restart TL
+	Step                   setup Mirroring for BIP capture
+    Critical Step          Start Capture CPRT                     depends=Activate Test dedicated Mode
+    Step                   Start PUSCH Performance Test           argument=${param}
+    Step                   Stop Capture CPRT                      depends=Start Capture CPRT
+    Step                   Stop PUSCH Performance Test            argument=${param}
+    Step                   Check digitalOutputEnable flag In CpRtCm_StartConformanceTestReq   argument=${param}
+    [Teardown]            Teardown TC
+
+
+CB009222_TDD_test_model_pusch_performance_all_FrcIndex
+    [Arguments]           ${param}
+    [Documentation]       Test Model for PUSCH Performance
+    Set Suite Variable     ${param}
+    Init Sequence          ${param}
+    Critical Step          Restart TL
+    Critical Step          Activate Test dedicated Mode           depends=Restart TL
+    Step                   Start PUSCH Performance Test All frcIndex            argument=${param}
+    [Teardown]            Teardown TC
+
+
+Teardown TC
+    Dated log           Test ending
+    Produce Scout Data
+    [Teardown]          GenericTest.Display diagnosis
+
+
+Teardown If TC Failed
+    #vbo#adding message for debugging wo/ other action
+    Dated log           Teardown because TC Failed
+    Run Keyword If    not ${isAic}    Setup.Get Sos Report
+
+Get Coam Alias
+    coam.Connect To   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   bts_port=3600  name=cOAM
+    ${rtId}                         Get Runtime Id
+    ${tCellId}                      Set Variable    1
+    ${cOAM}                         Set Variable    cOAM
+    Set Suite Variable    ${rtId}
+    Set Suite Variable    ${tCellId}
+    Set Suite Variable    ${cOAM}
+
+
+Start PUSCH Performance Test
+    [Documentation]         Prepare capture CPRT and gNB, start and stop downlink Test
+    [Arguments]             ${param}
+
+    coam.Connect To   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   bts_port=3600  name=cOAM
+    ${rtId}                         Get Runtime Id
+    ${tCellId}                      Set Variable    1
+
+    ${my_response}=    coam.start_5g_uplink_ccm_test_pusch
+    ...                dist_name=/MRBTS-1/RAT-1/RUNTIME_VIEW-${rtId}/MRBTS_R-${rtId}/NRBTS_R-${tCellId}/NRCELL_R-${tCellId}
+    ...                interval=${param.reporting_time_interval}
+    ...                beam_pattern_id=${Beam_ID}
+    ...                ru_mode=${param.RU_mode}
+    ...                nrarfcn_ul=${param.nrarfcn}
+    ...                nrarfcn_dl=${param.nrarfcn}
+    ...                phys_cell_id=${param.phys_cell_id}
+    ...                digital_out_type=${param.digital_out_type}
+    ...                prb_offset=${param.PRB_offset}
+    ...                digital_out_rate=${param.digital_out_rate}
+    ...                frc_index=${param.frc_index}
+    ...                is_ptrs_fr2_enabled=false
+    ...                ul_dmrs_mapping_type=${param.mapping_type}
+    ...                digital_output_enable=${param.digital_Output_Enable}
+    ...                act_high_speed_cell=${param.Act_high_speed_cell}
+    ...                connection=cOAM
+
+    # ${my_response}=    coam.start_5g_uplink_ccm_test_pusch
+    # ...                dist_name=/MRBTS-1/RAT-1/RUNTIME_VIEW-${rtId}/MRBTS_R-${rtId}/NRBTS_R-${tCellId}/NRCELL_R-${tCellId}
+    # ...                interval=${param.reporting_time_interval}
+    # ...                beam_pattern_id=${Beam_ID}
+    # ...                ru_mode=${param.RU_mode}
+    # ...                nrarfcn_ul=${param.nrarfcn}
+    # ...                nrarfcn_dl=${param.nrarfcn}
+    # ...                phys_cell_id=${param.phys_cell_id}
+    # ...                digital_out_type=${param.digital_out_type}
+    # ...                prb_offset=${param.PRB_offset}
+    # ...                digital_out_rate=${param.digital_out_rate}
+    # ...                frc_index=${param.frc_index}
+    # ...                is_ptrs_fr2_enabled=false
+    # ...                ul_dmrs_mapping_type=${param.mapping_type}
+    # ...                digital_output_enable=${param.digital_Output_Enable}
+    # ...                act_high_speed_cell=${param.Act_high_speed_cell}
+    # ...                connection=cOAM
+
+
+    # ${my_response}=      coam.start_5g_uplink_ccm_test_pusch
+	# ...                            dist_name=/MRBTS-1/RAT-1/RUNTIME_VIEW-${rtId}/MRBTS_R-${rtId}/NRBTS_R-${tCellId}/NRCELL_R-${tCellId}
+	# ...                            frc_index=${FRC_index}
+	# ...                             interval=${reporting_time_interval}
+	# ...                     digital_out_rate=${digital_output_rate}
+	# ...                     digital_out_type=${Digital_out_type}
+	# ...                      beam_pattern_id=${Beam_ID}
+	# ...                              ru_mode=${ru_mode}
+	# ...                         phys_cell_id=${param.phys_cell_id}
+	# ...                          bb_selector=${BB_selector}
+	# ...                           prb_offset=${PRB_offset}
+	# ...                              nrarfcn_ul=${param.nrarfcn}
+    # ...                              nrarfcn_dl=${param.nrarfcn}
+	# ...                      ul_dmrs_mapping_type=${ul_dmrs_mapping_type}
+	# ...                    is_ptrs_fr2_enabled=false
+    # ...                   act_high_speed_cell=${param.Act_high_speed_cell}
+	# ...                           connection=cOAM
+
+    # Dated Log    dist_name="MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1"
+
+    # Dated Log          start_5g_uplink_ccm_test_pusch
+    # ${cmd}             Set Variable    start_5g_uplink_ccm_test_pusch
+    # &{args}            Create Dictionary
+    # ...                dist_name=/MRBTS-1/RAT-1/RUNTIME_VIEW-${rtId}/MRBTS_R-${rtId}/NRBTS_R-${tCellId}/NRCELL_R-${tCellId}
+    # ...                interval="${param.reporting_time_interval}"
+    # ...                beam_pattern_id=${Beam_ID}
+    # ...                ru_mode="${param.RU_mode}"
+    # ...                nrarfcn_ul="${param.nrarfcn}"
+    # ...                nrarfcn_dl="${param.nrarfcn}"
+    # ...                phys_cell_id="${param.phys_cell_id}"
+    # ...                digital_out_type="${param.digital_out_type}"
+    # ...                prb_offset="${param.PRB_offset}"
+    # ...                digital_out_rate="${param.digital_out_rate}"
+    # ...                frc_index="${param.frc_index}"
+    # ...                is_ptrs_fr2_enabled="false"
+    # ...                ul_dmrs_mapping_type="${param.mapping_type}"
+    # ...                digital_output_enable="${param.digital_Output_Enable}"
+    # ...                act_high_speed_cell="${param.Act_high_speed_cell}"
+
+    # ${result}         SBTS OAM Run Command    oam=${TGNB_DU[0].oam}   cmd=${cmd}    cmd_args=${args}
+
+
+
+    ${my_result_node}=    Get From Dictionary    ${my_response}        resultNode
+    ${my_parameters}=     Get From Dictionary    ${my_result_node}     parameters
+    ${status}=            Get From Dictionary    ${my_parameters}      status
+    Log to console        ${status}
+    Should Contain        ${status}    Succeeded
+
+
+Stop PUSCH Performance Test
+    [Documentation]         Prepare capture CPRT and gNB, start and stop downlink Test
+    [Arguments]             ${param}
+    ${rtId}                         Get Runtime Id
+    ${tCellId}                      Set Variable    1
+    coam.Connect To   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   bts_port=3600  name=cOAM
+    ${my_response}=    coam.Stop 5g Uplink Ccm Test
+    ...                dist_name=/MRBTS-1/RAT-1/RUNTIME_VIEW-${rtId}/MRBTS_R-${rtId}/NRBTS_R-${tCellId}/NRCELL_R-${tCellId}
+    ...                connection=cOAM
+
+    Dated Log             Response=:${my_response}
+
+    ${my_result_node}=    Get From Dictionary    ${my_response}        resultNode
+    ${my_parameters}=     Get From Dictionary    ${my_result_node}     parameters
+    ${status}=            Get From Dictionary    ${my_parameters}      status
+    Log to console        ${status}
+    Should Contain        ${status}    Succeeded
+
+
+Check digitalOutputEnable flag In CpRtCm_StartConformanceTestReq
+    [Documentation]
+    ...     Check the following ramater values in CpRtCm_StartConformanceTestReq
+    ...    - harqEnable: digitalOutputEnable value set on WebEm
+    ...    - frcIndex: frcIndex value set on WebEm
+    ...
+
+    [Arguments]             ${param}
+    ...                     ${frc_index}=G_FR1_A3_12
+    Dated log                      path: ${CaptureCPRT.path}
+    ${pdmlFile}=                   analyzer.pcap_to_pdml           ${CaptureCPRT.path}
+
+    @{msg_field}    Create List     frcIndex
+    ...                             harqEnable
+
+    @{listPacketMatch}              Get Packet Match List
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_tm_cell_startconformancetestreq_t
+    ...                             pathList=@{msg_field}
+
+    ${packet}                       set variable                  ${listPacketMatch[0]}
+
+    ${output_frcIndex}              Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=frcIndex
+    ...                             kind=showname
+    Dated log                      output_frcIndex: ${output_frcIndex}
+    Should contain                  ${output_frcIndex}        ${frc_index}
+
+    ${output_harqEnable}            Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=harqEnable
+    ...                             kind=showname
+
+    Dated log                       harqEnable: ${output_harqEnable}
+    Should contain                  ${output_harqEnable}        ${param.digital_Output_Enable}
+
+
+
+Start PUSCH Performance Test All frcIndex
+
+     [Documentation]
+    ...     Check the following ramater values in CpRtCm_StartConformanceTestReq
+    ...    - harqEnable: digitalOutputEnable value set on WebEm
+    ...    - frcIndex: frcIndex value set on WebEm
+    ...
+
+    [Arguments]             ${param}
+    FOR     ${frx_index_mode}    IN     @{frc_index_TDD_full_list}
+        Dated log                    frx_index_mode: ${frx_index_mode}
+        Start Capture CPRT    frc_index}=${frx_index_mode}
+        ${param.frc_index}    Set Variable    ${frx_index_mode}
+        Start PUSCH Performance Test    ${param}
+        Sleep     10
+        Stop PUSCH Performance Test    ${param}
+        sleep     10
+        Stop Capture CPRT
+        Check digitalOutputEnable flag In CpRtCm_StartConformanceTestReq     ${param}    frc_index=${frx_index_mode}
+    END
+
+
+
+
+
+
+setup Mirroring for BIP capture
+    [Tags]    ActivateL1L2traces
+    ${Capture_BIP_GNB}    Run Keyword If    not ${isAic}
+    ...                                     Capture L1L2 Set Upon Config
+    ...                               ELSE
+    ...                                     Capture L1L2 Set Upon Config        airscale=${GNB_DU}
+    ${Capture_BIP_AP}                       Capture L1L2 Set Upon Config        ${AP_DU}
+    Run Keyword If    ${isAic}              Capture Init    ${Capture_BIP_GNB}  withTN=True
+    set suite variable                      ${Capture_BIP_GNB}
+    set suite variable                      ${Capture_BIP_AP}
+
+
+
+Start Capture CPRT
+     [Arguments]             ${frc_index}=G_FR1_A3_12
+
+    ${CaptureCPRT}                  Capture CPRT Set Upon Config            airscale=${GNB_DU}
+    ${CaptureCPRT.filter}           Get Filter For SCTP
+
+    Capture Init    ${CaptureCPRT}
+    ${CaptureCPRT.prefix}           set Variable              ${frc_index}
+
+    Capture Start                   ${CaptureCPRT}
+    Set Suite Variable              ${CaptureCPRT}
+
+Stop Capture CPRT
+    Capture Stop                    ${CaptureCPRT}

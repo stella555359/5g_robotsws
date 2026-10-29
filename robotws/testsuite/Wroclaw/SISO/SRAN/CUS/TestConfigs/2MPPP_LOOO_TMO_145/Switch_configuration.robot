@@ -1,0 +1,91 @@
+*** Settings ***
+Documentation    responsible tester: daniel.grzebelec@nokia.com
+...              UUF
+...              TMO evolution #145_North Star 3sector configuration coverage
+...              https://jiradc.ext.net.nokia.com/browse/FCA_VRF_SISO-17741
+
+Library    Collections
+Library     taf/rfrl/csv4all/CSV4AllTestCases.py
+Library     taf/rfrl/csv4all/resources/utilities/utilities.py
+Resource    ../../resources/setup_and_teardown.robot
+Resource    ../../resources/test_cases.robot
+Resource    ../../resources/test_cases_loop.robot
+Resource    ./variables.robot
+
+Force Tags      CA_VRF_SiSo
+
+Suite Setup       CUS Setup Test Set Without Reset Configuration    ${SCFC_REFERENCE_FILE_PATH}
+Suite Teardown    CUS Teardown Test Set
+
+*** Variables ***
+${SCFC_REFERENCE_FILE_PATH}=            ${CURDIR}/config/SCFC_SBTS00_CUS.xml
+${BIG_CONFIG_PATH}=			            CUS/2MPPP_LOOO_TMO_145/SCFC_SBTS00_CUS.xml
+${CUSINI_FILE_PATH}=                	${CURDIR}/config/cus.ini
+${EPCSIM_FILE_PATH}=                	${CURDIR}/config/epc.lua
+${CONFIGURATION_NAME}=              	TMO_145_North_Star
+${SKIP_TRUCK_ROLL}=                     ${True}
+@{SWCONFIG_FLAGS}=                      0x10041=2
+
+#UUF_varriables
+${UPDATE_TEST_ITERATION}        5
+${ACTIVATION_RESET_TEST_ITERATION}    100
+${CA_SUPPORTED_BANDS}=          41:a:a+71:a
+${SUPPORTED_BANDS}=             41:false,71:false
+
+${RP_CA}                        VRF_SiSo
+${RP_LOCATION}                  VRF_WRO3
+${RP_ORGANIZATION}              VRF_WRO3_T06
+${QC_DOMAIN}=                   MN_RAN
+${QC_PROJECT}=                  RAN_VRF
+${EMAIL_RECIPIENTS}             daniel.grzebelec@nokia.com
+@{CUSTOMERS}                    TMO US
+
+${INITIAL_SW}=                  ${EMPTY}
+${TARGET_SW}=                   ${EMPTY}
+${REPORT}=                      ${True}
+@{CUSTOM_ALARMS}                2403  61675
+&{NODE1}                        node_vm=${tl.test_pcs[0].default_ssh_connection_details.addr}
+...                             source_sw=${INITIAL_SW}
+...                             target_sw=${TARGET_SW}
+...                             custom_allowed_alarms=@{ALLOWED_ALARMS_ONAIR}
+@{NODES}                        ${NODE1}
+
+*** Test Cases ***
+[TMO_145][1.0] E2E_TL_SW_upgrade_rollback_with_OAM_KPI
+    [Setup]  CUS Check And Perform Template Commissioning If Needed
+    ...  scfc_file_path=${SCFC_REFERENCE_FILE_PATH}
+    ...  list_of_cus_ips=${LIST_OF_CUS_IPS}
+    Stop Enb Syslog
+    ...  logs_dir_path=${SUITE_LOGS_DIR_PATH}
+    [Timeout]   24h
+    Set Initial And Candidate
+    E2E TL SW UPGRADE ROLLBACK WITH OAM KPI    ${NODES}  ${NODE1}  ${UPDATE_TEST_ITERATION}
+    ...     customers_list=${CUSTOMERS}
+    ...     report=${REPORT}
+    ...     qc_domain=${QC_DOMAIN}
+    ...     qc_project=${QC_PROJECT}
+    ...     qc_id=${175438}
+    [Teardown]  Test Case QC Mapping  sw_version=${CFG.enb_sw_release}
+
+[TMO_145][1.0] E2E_TL_Activation_Reset_with_OAM_KPI
+    [Setup]  CUS Check And Perform Template Commissioning If Needed
+    ...  scfc_file_path=${SCFC_REFERENCE_FILE_PATH}
+    ...  list_of_cus_ips=${LIST_OF_CUS_IPS}
+    Stop Enb Syslog
+    ...  logs_dir_path=${SUITE_LOGS_DIR_PATH}
+    [Timeout]   24h
+    E2E TL ACTIVATION RESET TEST    ${NODES}  ${NODES}  ${ACTIVATION_RESET_TEST_ITERATION}
+    ...     customers_list=${CUSTOMERS}
+    ...     report=${REPORT}
+    ...     qc_domain=${QC_DOMAIN}
+    ...     qc_project=${QC_PROJECT}
+    ...     qc_id=${175439}
+    [Teardown]  Test Case QC Mapping  sw_version=${CFG.enb_sw_release}
+
+*** Keywords ***
+Set Initial And Candidate
+    ${initial_sw}=    run keyword if  '${INITIAL_SW}'=='${EMPTY}'  Get Source SW
+    ...   ELSE  set variable  ${INITIAL_SW}
+    ${candidate_sw}=    run keyword if  '${TARGET_SW}'=='${EMPTY}'  Get Target SW
+    ...   ELSE  set variable  ${TARGET_SW}
+    Set to dictionary    ${NODE1}    source_sw=${initial_sw}    target_sw=${candidate_sw}

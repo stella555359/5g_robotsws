@@ -1,0 +1,278 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB008238 step F
+...
+...               Test Case Scenario author   : jing.tian@nokia.com
+...               Test Case Scenario contact  : jing.tian@nokia.com
+...               Test Case automation author : yann.ah.herve@nokia.com
+...               Test Case automation contact: yann.ah.herve@nokia.com
+...               Creation Date               : 21-Apr-2022
+...               Modified Date               : 15-April-2025
+...               Last Modified by            : Yann HERVE
+...               Modification:
+...                       21-Apr-2022         | Creation
+...                       10-May-2022         | Modification
+...                       06-Jun-2022         | Modification
+...                       15-April-2025       | Update expected string for BWP switch
+...                                           | and add a tempo before checking BWP switch after attach
+
+
+Resource                         ./CB008238_keywords.robot
+Resource                         ../../../resources/common/TtiTrace/ttitrace.robot
+Resource                         ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource                         ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Library                          ../../../../../resources/SWENG/python/CoamParameter.py     WITH NAME   coam_parameter
+Library                          taf.sbts.oam.coam.admin                                    WITH NAME   sbts_coam
+Library                          ute_wtssim
+
+
+*** Variables ***
+${DL_duration}                   30
+${DL_trace_duration}             2
+
+${TputVolMargin}                 5
+
+${gnb_alias}                     gnb_under_test
+${ps_bwp_delta_file}             testsuite/Paris/RRM/ET/CB008238/resources/config/Delta_Configuration_scf_Add_BWP_PS.json
+
+# UE-NR capabilities including support for PDSCH-mapping-TypeA needed for PS BWP
+${nr_capas_with_PDSCH_TypeA}     SEPARATOR=
+...                              "FDA0000001475803030000A4D1800260D09003100D0098040621803546C4DD618C21A0C54083E50480A2D93
+...                              1542C09F21CFA023C639F30C7942C0E070F022AA8AAA130000E0541B11B58630868315020F9412024B64C550
+...                              50E7D811E31CF9863CA160703878127809E009800070005C1E230007134000000480BFFFFFFFFE006026C046
+...                              F413003800281C1401C0C025007000600480080C05002000002012013400073E618F2858181F004010010000
+...                              08040080000100995359535840001040200001009D749410000175D2400B4AAAA954530828480640228140A0
+...                              5028140A050280000101002004040100218A0304414246400"
+
+
+
+*** Keywords ***
+
+CB008238 CellSetup with PS BWP
+    [Documentation]               Dedicated KW to add PS BWP by using a delta commissioning file
+    ...                           This delta file also update DTX related parameters (feature activation, retention timer)
+    ...                           It will lead a a RAT update
+    ...                           !!! Dist names are hardcoded inside JSON file. To be improved ???
+
+    # Open connection towards cOAM
+    sbts_coam.connect_to          name=${gnb_alias}
+
+    # Check if PS BWP is already enabled. Otherwise, adding BWP_PROFILE structures will fail
+    # as they are already there.
+    ${is_ps_bwp_enabled}          coam_parameter.get_single_value_from_scf_file
+    ...                           parameter=actPowerSavingBWP
+    ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...                           connection=${gnb_alias}
+
+    Dated Log                     PS BWP activation flag is set to ${is_ps_bwp_enabled}
+
+    Run Keyword If                '${is_ps_bwp_enabled}'=='false'           Run Keywords
+    ...                           coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${ps_bwp_delta_file}
+    ...                           connection=${gnb_alias}
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+
+    sbts_coam.teardown            connection=${gnb_alias}
+
+    # Update IPHY GSCN to new value
+    WtsXmlConfig.startSession           file=iphy
+    WtsXmlConfig.setListEltText         //GSCN                          7853
+    WtsXmlConfig.stopSession            file=iphy
+
+    # Update UE-NR capabilities
+    Modify Field in WtsEmu Cfg File     field=ue_nr_capabilities    value=${nr_capas_with_PDSCH_TypeA}
+
+    Dated Log new line                  ${trcColor}--- Restart TL ${defColor}
+    Restart TL                          GNBCallback=CB008238 Start Capture After GNB Ready
+    Dated Log new line                  ${trcColor}--- WTS setup SA ${defColor}
+    Setup Wtsemu SA                     nbUe=1       nbSaUe=1     shouldUseLua=${True}
+    CB008238 Capture Stop               cellSetup
+
+CB008238_Check_From_Large_BWP_To_PS
+    # Flush egate console
+    # Empty Buffer For Egate
+    Flush Egate Console Buffer
+    # Backup of egate_console.log file:
+    ${current_date}=                    DateTime.Get Current Date       result_format=%Y%m%d-%H%M%S
+    ${filename}                         set variable                    ${current_date}_egate_console_Check_From_Large_BWP_To_PS.log
+    ${cmd}                              Catenate
+    ...                                 cd ${tl.core.dir_path};
+    ...                                 cp ${tl.core.dir_path}/egate_console.log ${LOG_PATH}/${filename}
+    ${output}                           SSH Wait For Connect and Cmd
+    ...                                 command=${cmd}
+    ...                                 host=${HOST_EPCSIM}
+    # Check egate_console.log file:
+    ${cmd}                              Catenate
+    ...                                 cd ${tl.core.dir_path};
+    ...                                 grep -i "Bwp switch received from bwpId 1 to 2" ${tl.core.dir_path}/egate_console.log | tail -1
+    ${output}                           SSH Wait For Connect and Cmd
+    ...                                 command=${cmd}
+    ...                                 host=${HOST_EPCSIM}
+    Dated Log New Line                  grep returns: >>${output}<<
+    should contain                      ${output}        Bwp switch received from bwpId 1 to 2
+    Dated Log New Line                  ${okColor}UE is now moved from large BWP to PS BWP => OK${defColor}
+
+CB008238_Check_From_PS_BWP_To_Large
+    # Flush egate console
+    # Empty Buffer For Egate
+    Flush Egate Console Buffer
+    # Backup of egate_console.log file:
+    ${current_date}=                    DateTime.Get Current Date       result_format=%Y%m%d-%H%M%S
+    ${filename}                         set variable                    ${current_date}_egate_console_Check_From_PS_BWP_To_Large.log
+    ${cmd}                              Catenate
+    ...                                 cd ${tl.core.dir_path};
+    ...                                 cp ${tl.core.dir_path}/egate_console.log ${LOG_PATH}/${filename}
+    ${output}                           SSH Wait For Connect and Cmd
+    ...                                 command=${cmd}
+    ...                                 host=${HOST_EPCSIM}
+    # Check egate_console.log file:
+    ${cmd}                              Catenate
+    ...                                 cd ${tl.core.dir_path};
+    ...                                 grep "Bwp switch received from bwpId 2 to 1" egate_console.log | tail -1
+    ${output}                           SSH Wait For Connect and Cmd
+    ...                                 command=${cmd}
+    ...                                 host=${HOST_EPCSIM}
+
+    should contain                      ${output}       Bwp switch received from bwpId 2 to 1
+    Dated Log New Line                  ${okColor}UE is now moved from PS BWP to large BWP => OK${defColor}
+
+CB008238_F_02_Single_UE_no_PS_BWP_switching_TDD_SA
+    [Documentation]               The aim of this test is to check that DTX inactivity timer may prevent the IE
+    ...                           to switch to power saving BWP because of non empty buffer.
+    ...                           UE activity is based on the ratio dtx_retention_timer_duration / packet_period.
+    ...                           If this value is higher than dlBufferEmptyRatioFromPsBwp, UE should exit from PS BWP
+    ...                           On the contrary, if inactivity value is higher then dlBufferEmptyRatioToPsBwp, UE should
+    ...                           be moved to PS BWP.
+    ...                           Move to PS BWP is checked by looking at egate ouput. Strings like
+    ...                           "UEC-1: L2: <DL CHANNEL> [UeId:0,SubcellId:1,PhyCellId:50][RNTI:54350] Bwp Switched from bwpId 2 to 1"
+    ...                           are expected.
+
+    CB008238 CellSetup with PS BWP
+
+    CB008238 Attach SA                  ueSetting=${BASIC_UE_SA}
+
+    Traced Sleep                        duration=30s                   msg=Waiting UE for BWP switch
+
+    # Check that, because there is no traffic, UE is moved to power saving BWP.
+    CB008238_Check_From_Large_BWP_To_PS
+
+    Dated Log New Line                  ${trcColor}=== Start to send DL packets leading to large BWP switch${defColor}
+    ${pktPeriod}                        Evaluate    18
+    ${pktSize}                          Evaluate    100
+    ${pktBurst}                         Evaluate    1
+    Send UE DL packets                  ueSetting=${BASIC_UE_SA}
+    ...                                 duration=${DL_duration}
+    ...                                 period_ms=${pktPeriod}
+    ...                                 size=${pktSize}
+    ...                                 burst=${pktBurst}
+    ...                                 shouldBeStop=${False}
+
+    # Check that, because inactivity threshold is reached, UE is moved to large BWP.
+    # As packet period is set to 18 ms and because retention timer is set to 10 ms, dl buffer empty ratio time is:
+    # (18-10)/18 = 44 % > dlBufferEmptyRatioFromPsBwp
+    CB008238_Check_From_PS_BWP_To_Large
+
+    Dated Log New Line                  ${trcColor}=== Start to send DL packets leading to PS BWP switch${defColor}
+    ${pktPeriod}                        Evaluate    50
+    ${pktSize}                          Evaluate    100
+    ${pktBurst}                         Evaluate    1
+    Send UE DL packets                  ueSetting=${BASIC_UE_SA}
+    ...                                 duration=${DL_duration}
+    ...                                 period_ms=${pktPeriod}
+    ...                                 size=${pktSize}
+    ...                                 burst=${pktBurst}
+    ...                                 shouldBeStop=${False}
+
+    # Check that, because inactivity threshold is below threshold, UE is moved to PS BWP.
+    # As packet period is set to 50 ms and because retention timer is set to 10 ms, dl buffer empty ratio time is:
+    # (50-10)/50 = 80 % > dlBufferEmptyRatioToPsBwp
+    CB008238_Check_From_Large_BWP_To_PS
+
+    Dated Log New Line                  ${trcColor}=== Start to send DL packets leading to large BWP switch${defColor}
+    ${pktPeriod}                        Evaluate    18
+    ${pktSize}                          Evaluate    100
+    ${pktBurst}                         Evaluate    1
+    Send UE DL packets                  ueSetting=${BASIC_UE_SA}
+    ...                                 duration=${DL_duration}
+    ...                                 period_ms=${pktPeriod}
+    ...                                 size=${pktSize}
+    ...                                 burst=${pktBurst}
+    ...                                 shouldBeStop=${False}
+
+    # Check that, because inactivity threshold is reached, UE is moved to large BWP.
+    # As packet period is set to 18 ms and because retention timer is set to 10 ms, dl buffer empty ratio time is:
+    # (18-10)/18 = 44 % > dlBufferEmptyRatioFromPsBwp
+    CB008238_Check_From_PS_BWP_To_Large
+
+    Dated Log New Line                  ${trcColor}=== Stop packets sending and detach UE ${defColor}
+    ${timeStopTraffic}                  Get Current Date
+    Traffic Stop                        ueSetting=${BASIC_UE_SA}           dir=dl
+    UE Deregister                       id=${BASIC_UE_SA.ue}
+
+
+CB008238_F_03_Packet_period_higher_than_dtxDelaySinceLastScheduling_TDD_SA
+    CB008238 CellSetup            actDtxOptimzedScheduler=true       MaxRetentionDelay=10
+    ...                           dtxDelaySinceLastScheduling=50     CallType=SA
+    ...                           actDl256Qam=false
+    CB008238 Attach SA            ueSetting=${BASIC_UE_SA}
+
+    # L1/L2 capture configuration
+    ${CaptureBIP_DL}              Capture L1L2 Set Upon Config       airscale=${GNB_DU}
+    Capture Init                  ${CaptureBIP_DL}                   suffix=_F03
+
+    # TTI capture configuration
+    ${TTIdir}                     Get TTI Trace Path                 dir_suffix=F03
+
+    Dated Log New Line            ${trcColor}=== Start packets sending ${defColor}
+    ${pktPeriod}                  Evaluate    70
+    ${pktSize}                    Evaluate    100
+    ${pktBurst}                   Evaluate    1
+    Send UE DL packets            ueSetting=${BASIC_UE_SA}
+    ...                           duration=0
+    ...                           period_ms=${pktPeriod}
+    ...                           size=${pktSize}
+    ...                           burst=${pktBurst}
+    ...                           shouldBeStop=${False}
+    ...                           deviation=${TputVolMargin}
+    ${timeStartTraffic}           Get Current Date
+
+    # start TTI capture
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+
+    # start L1/L2 capture
+    Callback Capture L1L2         capture=${CaptureBIP_DL}           Action=START
+
+    Traced Sleep                  ${DL_trace_duration}               msg=DL traffic capture
+
+    # stop L1/L2 capture
+    Callback Capture L1L2         capture=${CaptureBIP_DL}           Action=STOP
+
+    # stop TTI capture
+    ${TTIpcap}                    Stop TTI Traces in Streaming mode
+    ...                           tti_trace_path=${TTIdir}
+    ...                           tti_trace_filename=TTITrace_F03
+
+    Traced Sleep                  ${DL_duration}                     msg=DL traffic
+
+    Dated Log New Line            ${trcColor}=== Stop packets sending and detach UE ${defColor}
+    ${timeStopTraffic}            Get Current Date
+    Traffic Stop                  ueSetting=${BASIC_UE_SA}           dir=dl
+    UE Deregister                 id=${BASIC_UE_SA.ue}
+
+    ${TTIjson}                    Convert TTItrace from pcap to others
+    ...                           input_file_path=${TTIpcap}
+    ${TTIcsv}                     decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson}    num_of_events=10000
+
+    CB008238 get PM files
+
+    Dated Log New Line            ${trcColor}=== Check using counters ${defColor}
+    ${timeDiff}                   Subtract Date From Date    ${timeStopTraffic}    ${timeStartTraffic}
+    ${trafficDuration}            Convert To Integer    ${timeDiff}
+    ${DLtput}                     Evaluate       ${pktSize}*${pktBurst}*8*1000/${pktPeriod}
+    ${expectedDataVol}            Evaluate       ${DLtput}*${trafficDuration}/8
+    ${expectedDataVolMargin}      Evaluate       ${expectedDataVol} - ${expectedDataVol}*${TputVolMargin}/100
+    ${status_DL_dataVolume}       CB008238 check DL Data Volume    QCI=QCI6    expectedDataVol=${expectedDataVolMargin}
+    ${status_DL_BLER}             CB008238 check DL BLER    maxBLER=2
+    ${uDTX_OPTIMIZED}    ${uDTX_NO_BUNDLING}        CB008238 get uDTX counters
+    Should be True                ${status_DL_dataVolume} and ${status_DL_BLER} and ${uDTX_OPTIMIZED}==0 and ${uDTX_NO_BUNDLING}==0

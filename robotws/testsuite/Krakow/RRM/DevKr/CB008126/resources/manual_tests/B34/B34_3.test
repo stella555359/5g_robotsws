@@ -1,0 +1,70 @@
+# ; first value after semicolon means sleep after action command
+# ; parameter 'o' after semicolon means, that output of the command is required
+
+# CB008126-A-B34 5QI modification for 5QI-2 without GBR resType
+# Test verifies that:
+# When CB008379 is deactivated, then 5QI2 is mapped to 5QI128 configuration and is treated as non-GBR 5QI.
+# It is possible to modify Qos Flow and change 5QI2 to other non-GBR 5QI
+
+# use lua SA_TDD_2c_1gNBSim.lua
+
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/5QI_1_2_3_4_71_72_76_128_170_212_254.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/vonr_gbr_activation.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/disable_ciphering.yaml
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/CB008126_enable.yaml
+pause
+# Setup NRDRB related to 5QI128 to meet PDL rules with CB008379 deactivated
+% [{'MOC': 'NRDRB', 'ID': '22', 'nrDrbRlcUmDN': 'MRBTS-1/NRBTS-1/NRDRB_RLC_UM-1', 'rlcMode': 'RLC_UM'}]
+% [{'MOC': 'NRCELL', 'actNonVoNRGBRService': 'false'}]
+pause
+!python /home/ute/MN/UTE/robotws/testsuite/Krakow/RRM/resources/Python/pdu_session_qosflow_modification.py save
+
+# attach UE1 with 5QI5, 5QI1, 5QI2
+qosflow_modify qos_flow=11 ue=all default=on
+ue_change_location id=1 enb=2 cell=1
+ue_register id=1;2
+set_pdu_param ue=1 pdu=1 trf_type=internal
+ue_pdu_session_setup pdu=1 ue=1 gw=1 nwslice=1;2
+ue_pdu_session_modify ue=1 pdu=1 qosflows_to_add=1,2
+# Verify in NGAP:PDUSessionResourceModifyRequest, that 5QI-2 is setup with QFI-3
+# Verify in RRCConnectionReconfiguration that DRB, RLC bearer related with QFI-3 are setup with config from NRDRB-22, NRDRB_MAC-11 (5QI128)
+# rlc-BearerToAddModList.RLC-BearerConfig(DRB-Identity=6).mac-LogicalChannelConfig.ul-SpecificParameters.priority: 13
+pause
+
+trf_data_start ue=1 pdu=1 qfi=1 dir=dl mbps=30 trf_id=1;1
+trf_data_start ue=1 pdu=1 qfi=1 dir=ul mbps=10 trf_id=1;1
+trf_data_start ue=1 pdu=1 qfi=2 dir=dl mbps=30 trf_id=1;1
+trf_data_start ue=1 pdu=1 qfi=2 dir=ul mbps=10 trf_id=1;1
+trf_data_start ue=1 pdu=1 qfi=3 dir=dl mbps=30 trf_id=1;1
+trf_data_start ue=1 pdu=1 qfi=3 dir=ul mbps=10 trf_id=1;5
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;o
+bearer_stats ue=1 pdu=1 qfi=2 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=2 dir=ul;o
+bearer_stats ue=1 pdu=1 qfi=3 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=3 dir=ul;o
+pause
+
+# Modify 5QI2->5QI6
+!python /home/ute/MN/UTE/robotws/testsuite/Krakow/RRM/resources/Python/pdu_session_qosflow_modification.py m "2(5QI2->5QI6)";1
+ue_pdu_session_modify ue=1 pdu=1 qosflows_to_modify=2 by=amf;1
+# Verify in RRCConnectionReconfiguration that DRB, RLC bearer is set with config from NRDRB-11, NRDRB_MAC-7 (5QI6)
+# rlc-BearerToAddModList.RLC-BearerConfig(DRB-Identity=7).mac-LogicalChannelConfig.ul-SpecificParameters.priority: 9
+# Verify, that gNB sent PDUSessionResourceModifyResponse with PDUSessionResourceModifyListModRes to AMF
+pause
+
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;o
+bearer_stats ue=1 pdu=1 qfi=2 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=2 dir=ul;o
+bearer_stats ue=1 pdu=1 qfi=3 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=3 dir=ul;o
+pause
+
+#cleanup after test
+ue_kill id=1
+% [{'MOC': 'NRCELL', 'actNonVoNRGBRService': 'true'}]
+% [{'MOC': 'NRDRB', 'ID': '22', 'rlcMode': 'RLC_AM'}]
+!python /home/ute/MN/UTE/robotws/testsuite/Krakow/RRM/resources/Python/pdu_session_qosflow_modification.py restore
+pause
+exit

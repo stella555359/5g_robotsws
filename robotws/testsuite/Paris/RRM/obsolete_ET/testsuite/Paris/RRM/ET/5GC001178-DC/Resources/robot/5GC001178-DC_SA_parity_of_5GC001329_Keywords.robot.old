@@ -1,0 +1,188 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]   [SUITE PURPOSE]  verification of 5GC001336-A feature,
+...               Test Case Scenario author:
+...               Test Case Scenario contact:
+...               Test Case automation author:
+...               Test Case automation contact:
+...               Creation Date:
+...               Modified Date:
+...               Last Modified by:
+Library           OperatingSystem
+Library           Collections
+Library           taf.lteemu    WITH NAME    lteemu
+
+Library           ../../../resources/python/luashark_tools.py
+Library           luashark_tools.analyzer       WITH NAME       analyzer
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+
+
+*** Keywords ***
+Set SCF config
+    ${scf_file}          OAM Get SCF File
+    ${default_scf_file_path}    Copy file    source=${scf_file}     destination=${LOG_PATH}/SCF_1329_SA/
+    ${scf_file_name}    Fetch from right     ${default_scf_file_path}    /
+    ${file_name_without_extention}    String.Replace string    ${scf_file_name}    .xml    ${EMPTY}
+    ${scf_name_for_1329}    catenate    SEPARATOR=${EMPTY}    ${file_name_without_extention}
+    ...    _1329_SA.xml
+
+    SCF StartSession     scf_file=${default_scf_file_path}
+    ${nrbts_version_scf}     scf.get_mo_attribute     MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}     version
+    Dated Log   ----> Version of NRBTS is ${nrbts_version_scf}
+    ${dist_name}       Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-0
+    ${dist_name_nrcell}       Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+
+    SCF Set element    dist_name=${dist_name_nrcell}    element_name=actBeamforming   element_value=true
+    SCF Set element    dist_name=${dist_name_nrcell}    element_name=actEirpControl   element_value=true
+	SCF Add element	   dist_name=${dist_name_nrcell}    element_name=antennaMechanicalDowntilt   element_value=30
+    SCF Set element    dist_name=${dist_name_nrcell}    element_name=pMax   element_value=320
+	SCF Set element    dist_name=${dist_name_nrcell}    element_name=ssPbchBlockPower   element_value=6
+	SCF Set element    dist_name=${dist_name_nrcell}     element_name=targetTotalLoad   element_value=100
+	SCF Set element    dist_name=${dist_name_nrcell}     element_name=type0SearchSpaceConfigurationIndex            element_value=5
+	SCF Set element in List    dist_name=${dist_name_nrcell}    list_name=beamSet     element_name=basicBeamSet     element_value=beamSet_6
+    SCF Set element in List    dist_name=${dist_name_nrcell}    list_name=beamSet     element_name=leftEdgeAngle    element_value=60
+   
+    
+    ${beamSetElements}         Create Dictionary                lowerEdgeAngle=120        tiltOffset=0        upperEdgeAngle=60        
+	
+    SCF Add elements to list   dist_name=${dist_name_nrcell}      list_name=beamSet     elements=${beamSetElements}
+	SCF Set element in List    dist_name=${dist_name_nrcell}      list_name=beamSet     element_name=rightEdgeAngle          element_value=60
+    SCF Set element in List    dist_name=${dist_name_nrcell}      list_name=beamSet     element_name=nrBtsBeamRefinementP2   element_value=false
+
+	SCF Remove list            dist_name=${dist_name_nrcell}     list_name=eirpControl
+    SCF Add list               dist_name=${dist_name_nrcell}     list_name=eirpControl
+	
+	${eirpControlElements}     Create Dictionary                 eirpControlTimeAveragingWindow=1           minGuaranteedBudgetRatio=50
+	...                        minGuaranteedBudgetRatioMode=actualEirpBudgetRatio                           minSignificantNormalizedBeamGain=-13
+	...                        numOfSegmentAzimuthEdges=3                                                   numOfSegmentElevationEdges=3
+	...                        numOfSegmentElevationEdges=5                                                 schedulWeightFactorEnabled=false
+	...                        segmentAzimuthEdge0=-60                                                      segmentAzimuthEdge1=0
+	...                        segmentAzimuthEdge2=60                                                       segmentElevationEdge3=10
+	...                        segmentElevationEdge4=40
+	...                        segmentElevationEdge0=-40 													 segmentElevationEdge1=-10
+	... 					   segmentElevationEdge2=0
+	
+
+	SCF Add items to list      dist_name=${dist_name_nrcell}     list_name=eirpControl 
+	...                        elements=${eirpControlElements}
+	
+    SCF Remove list            dist_name=${dist_name_nrcell}    list_name=eirpControlPowerReductionFactorList
+    SCF Add list               dist_name=${dist_name_nrcell}    list_name=eirpControlPowerReductionFactorList
+    ${eirpControlPowerList}     Create List     0   0   0   0   0   -30   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+    SCF Add elements to list   dist_name=${dist_name_nrcell}    list_name=eirpControlPowerReductionFactorList   elements=${eirpControlPowerList}
+
+
+    ${dist_name}       Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-0
+    SCF Set element    dist_name=${dist_name}    element_name=numberOfTransmittedSsBlocks   element_value=6 beams
+
+    SCF Remove list            dist_name=${dist_name}    list_name=beamIndexListForArtificialLoad
+    SCF Add list               dist_name=${dist_name}    list_name=beamIndexListForArtificialLoad
+    ${beamIndexListForArtificialLoad}     Create List     1
+    SCF Add elements to list   dist_name=${dist_name}    list_name=beamIndexListForArtificialLoad   elements=${beamIndexListForArtificialLoad}
+
+    SCF Set element    dist_name=MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/PMCADM-1   element_name=reportingIntervalPm   element_value=5min
+
+    ${dist_name}       Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRPMRNL-1
+    SCF Set element    dist_name=${dist_name}    element_name=miNrCellUtilization    element_value=5min
+	
+	
+	
+    ${scf_name_for_1329}            set variable         ${LOG_PATH}/SCF_1329_SA/${scf_name_for_1329}
+    SCF StopSession      scf_file=${scf_name_for_1329}
+    Dated Log            ----> Modifications completed.\n
+    Oam.OAM Perform Full Commissioning                  scf_file=${scf_name_for_1329}
+
+Collect all logs
+    Get Sos Report
+    OAM Get Snapshot
+
+Check ASP
+    ${LogL2PS}                      Get Log                                 name=L2RT
+    ${alias}                        SSH Connect                             ${LogL2PS.node.host}
+    ${ZipLog}                       Set variable                            ${LogL2PS.path.replace('.log','.zip')}
+    Dated log                       Check ASP:ZIPLOG=${ZipLog}
+    ${output}                       SSH Cmd
+    ...                             ls -lrt ${ZipLog}                       alias=${alias}
+    ${len}                          Get Length                              ${output}
+    Run Keyword If                  ${len} != 0
+    ...                             SSH Cmd
+    ...                             unzip -o -d $(dirname ${ZipLog}) ${ZipLog}              alias=${alias}
+    ${output}                       SSH Cmd
+    ...                             grep "transmittedPowerMaxBeam:100237.446725" ${LogL2PS.path}
+    ...                             alias=${alias}
+    Should Not Be Empty             ${output}
+
+Check_EIRP_Flags_In_L2_Ps_Cell_Setup
+    [Documentation]                 Check in a pcap file that in l2_ps_cell_CellSetupReq the Eirp Elements are activated
+    ...                             itf_l2_ps_cell_CellSetupReq.CellSetupReq.actEirpControl : should be 0x01(01)
+    ...                             itf_l2_ps_cell_CellSetupReq.eirpControl_item_0.numberOfCellSegments : is > 0
+    ...                             itf_l2_ps_cell_CellSetupReq.eirpControl_item_0.maxBeamGain  :   is not null
+    ...                             itf_l2_ps_cell_CellSetupReq.normalizedBeamGain-Length : is not 0
+    [Arguments]                     ${pcapFile}
+    Dated log new line              Filtering ${pcapFile} upon itf_l2_ps_cell_CellSetupReq and translate into pdml
+    #${pcapFiltered}=                analyzer.filter_pcap                    pcapInFile=${pcapFile}
+    #...                             filterName=CellSetupReq                 filterExp=itf_l2_ps_cell_cellsetupreq
+    #${pdmlFile}=                    analyzer.pcap_to_pdml                   ${pcapFiltered}
+    ${pdmlFile}=                    analyzer.pcap_to_pdml                   ${pcapFile}
+
+    ${actEirpControl}=              set variable                            itf_l2_ps_cell_CellSetupReq.CellSetupReq.actEirpControl
+    ${numberOfCellSegments}=        set variable                            itf_l2_ps_cell_CellSetupReq.eirpControl_item_0.numberOfCellSegments
+    ${maxBeamGain}=                 set variable                            itf_l2_ps_cell_CellSetupReq.eirpControl_item_0.maxBeamGain
+    ${normalizedBeamGainLength}=    set variable                            itf_l2_ps_cell_CellSetupReq.normalizedBeamGain-Length
+
+    #Check that actEirpControl is 0x01 (Eirp activated)
+    Dated log                       Check ${actEirpControl}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_CellSetupReq
+    ...                             path=${actEirpControl}$
+    ...                             value=01
+    ...                             kind=value
+    ...                             test=MATCH
+    Dated log                       Check ${numberOfCellSegments}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_CellSetupReq
+    ...                             path=${numberOfCellSegments}$
+    ...                             value=^numberOfCellSegments*
+    ...                             kind=showname
+    ...                             test=MATCH
+    Dated log                       Check ${maxBeamGain}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_CellSetupReq
+    ...                             path=${maxBeamGain}$
+    ...                             value=^maxBeamGain
+    ...                             kind=showname
+    ...                             test=MATCH
+    Dated log                       Check ${normalizedBeamGainLength}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_CellSetupReq
+    ...                             path=${normalizedBeamGainLength}
+    ...                             value=^normalizedBeamGain-Length*
+    ...                             kind=showname
+    ...                             test=MATCH
+
+Check_CPRT_Testmode
+    [Arguments]                     ${activated}=${True}
+    ${LogCPRT}                      Get Log                                 name=CPRT
+    ${alias}                        SSH Connect                             ${LogCPRT.node.host}
+    ${ZipLog}                       set variable                            ${LogCPRT.path.replace('.log','.xz')}
+    Dated log                       Check_CPRT_Testmode:ZipLog=${ZipLog}
+    ${output}                       SSH Cmd
+    ...                             ls -ltr ${ZipLog}                       alias=${alias}
+    ${len}                          Get Length                              ${output}
+    Dated log                       Check_CPRT_Testmode:len=${len}
+    Run Keyword If                  ${len} != 0
+    ...                             SSH Cmd
+    ...                             xz -d ${ZipLog}                         alias=${alias}
+    ${msg}                          set variable if                         ${activated}
+    ...                             EIRP test mode activated                EIRP test mode not activated
+    ${output}                       SSH Cmd
+    ...                             grep -i "${msg}" ${LogCPRT.path}
+    ...                             alias=${alias}
+    Should Contain                  ${output}                               ${msg}
+    run keyword if                  ${activated}
+    ...                             run keywords
+    ...                                 ${output}                           SSH Cmd
+    ...                                 grep -i "The parsing of gain in file" ${LogCPRT.path}
+    ...                                 alias=${alias}
+    ...     AND                         Should Not Be Empty                 ${output}

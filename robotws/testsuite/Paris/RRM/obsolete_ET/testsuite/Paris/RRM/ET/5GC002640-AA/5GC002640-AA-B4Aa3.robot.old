@@ -1,0 +1,204 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]
+...   This suite tests the scenario of configuring PUCCH Format 3 (PF3) resources in the FDD PCell to carry
+...   UCI data for each configured SCell. It assumes FDD PCell + 1 TDD SCell + 1 FDD SCell. The test is performed on a
+...   5G Classical SA CMWV L1Bypass cloud test line with a SANSA FS CPRI CMWV FDD+ECPRI CMWV TDD AZQJ variant. It uses
+...   a configuration with 6 cells, 3CC CA and 8 UEs. This User Scenario is not end to end but provides more details
+...   related to pCSI configuration in the context of Single UE Call and SCell Addition.
+
+Force Tags    CONFIGURED    CRT    PY39    RAN_5G    RAN_5G_TDD    SBTS00
+    ...    CLOUD_5G_I_LO_AP_LO
+    ...    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AZQJ
+
+Resource      resources/5GC002640_resources.robot
+
+Suite Setup    Run Keywords    Prepare suite environment  egate_config=${lua_cfg_file}  rad_params=@{SWCONFIG_FLAGS_LIST}
+...                            ap_xml=${ap_xml}  scfc=${scfc}
+...            AND  Activate Beamforming on Cell 6
+...            AND  Activate Beam Refinement on Cell 6
+...            AND  Create aliases
+...            AND  Setup eNB Fsm Access  alias=gNB2
+Suite Teardown  Clean suite environment
+
+*** Variables ***
+${lua_cfg_file}=  ${CFG_DIR}/egate_config_FDD_TDD_6Cells_SANSA_3CC_CA_8UEs.cfg
+${ap_xml}=        ${CFG_DIR}/5GC002640-AA-B4Aa-FFT/iphy_AHLOA_AHCA_AHFIB_AEQE_AEQE_6Cells.xml
+${scfc}=          ${CFG_DIR}/5GC002640-AA-B4Aa-FFT/SCFC_FDD_TDD_6Cells_L1B_SANSA_3CC_CA_FFT_BF_OFF.xml
+
+*** Test Cases ***
+5GC002640-AA-B4Aa3_Single_UE_Call-FDD_and_TDD_SCell_with_selective_Beamforming_enabling_and_selective_Beam_Refinement_activation_BR_ON
+   [Documentation]
+   ...     1.Description:
+   ...         This user scenario describes the configuration of PUCCH Format 3 (PF3) resources in the FDD PCell to
+   ...         carry UCI data for each configured SCell. This user scenario assumes FDD PCell + 1 TDD SCell + 1 FDD
+   ...         SCell. Note this User Scenario is not end to end but provides more details related to pCSI configuration
+   ...         in the context of Single UE Call and SCell Addition.
+   ...
+   ...     2.Test Environment and Settings:
+   ...         This item is testing in UTE environment:
+   ...         * 5G Classical SA CMWV L1Bypass cloud test line (CLOUD_5G_I_BOO_AP_KLLL_SANSA_L1B_ECPRI_CMWV_TDD)
+   ...         * gNB (ASIB, 2xABIO, AMIA), UE simulator (Airphone ASIK + 3xABIL), WTS 5G core simulator (Egate)
+   ...         * gNB has configured 3CC for Carrier Aggregation: 1 Cell FDD and 2 Cells TDD (CA relations created)
+   ...         * simulated Radio (AHLOA, AHFIB, AEQE, AEQE, AHCA)
+   ...
+   ...     2.1 Testing Tools:
+   ...         gNB - Nokia 5G BTS
+   ...         Airphone (AP) - UEs simulator
+   ...         WTS - ePC simulator - 5G core network simulator
+   ...         Tcpdump & Wireshark - tools for capturing messages
+   ...         BTSLog (cli) for collecting gNB & AP remote syslog
+   ...         Robot Framework and Python runtime environment to automate the testing process
+   ...         Web Element Manager
+   ...
+   ...     2.2 Test Automation
+   ...         Robot Framework
+   ...
+   ...    3. Definitions from the test set
+   ...         Test case covers: 5G_RAN_USR_RRM_4537
+   ...
+   ...    3.1 Definitions from the Test Plan
+   ...         PCell - Primary Cell
+   ...         SCell - Secondary Cell
+   ...
+   ...    3.2 Required Logs
+   ...         Wireshark/TCPdump Logs (NGAP, NR-RRC, E1AP, F1AP)
+   ...         TTI Trace
+   ...         Counters
+   ...         Default gNB & AP SysLog
+   ...         BTS Snapshot
+   ...         BIP logs
+   ...         Sherpa Trace
+   ...         AP sosReport
+   ...
+   ...     4.Testing instructions
+   ...
+   ...     4.1 Preconditions:
+   ...         gNB configuration is given in US 5GC002640-AA#B1 Feature activation of 3CC DL CA
+   ...
+   ...         gNB configuration:
+   ...         -  New L2RT architecture (CB007736) is enabled:
+   ...         			NRBTS/NRDU.flexibleCAMode = 2 (ConfigurationIndependent)
+   ...         -  Mobility support for mixed carrier aggregation (CB008015) is enabled:
+   ...         		NRBTS/NRDU.actConnectedModeMobilityCA = True
+   ...         -  All FDD cells are configured to allow SA access:
+   ...         		MRBTS/NRBTS.gNbCuType = SA+NSA
+   ...         		Each FDD Cell has configured MRBTS/NRBTS/NRCELL.cellDepType = SA
+   ...         -  Inter-band FDD + TDD FR1 DL CA feature (5GC002640) is activated and legacy CA features are activated too:
+   ...         		NRBTS/NRDU.carrierAggregationSupportList contains elements equal to value 600 (ca_Fdd_Any_Sa), 200 (ca_Fdd_Fr1Tdd_Sa)
+   ...                 and 3 (ca_Fdd_Fdd)
+   ...         -  CA relations are configured for each FDD cell by NRRELs pointing to:
+   ...         		2 TDD FR1 Cells: Cell-3 and Cell-6
+   ...         -  SCell Addition method is set to blind:
+   ...         		each NRREL object NRBTS/NRCELL/NRREL.SCellAdditionMethod parameter is set to 0 (blind)
+   ...         -  SCell activation method is set to blind:
+   ...         		NRBTS.SCellActivationMethod = 0 (blind)
+   ...         -  5GC002255 is activated:
+   ...         		NRBTS/NRDU.actInterNumerologyCa = True
+   ...         -  DRX is disabled in both FDD and TDD FR1 Cells:
+   ...         		NRBTS/NRCELL.actCDrx = False
+   ...         -  DSS features are disabled in FDD Cells:
+   ...         		NRBTS.actLteNrDss = False
+   ...         -  Aperiodic CSI is disabled in all Cells:
+   ...         		NRBTS/NRCELL.actAperCsi = False
+   ...         -  TDD Cells are configured with subframe configuration according to 5GC001116-B (TD LTE config 2 SSF6 starting from SFN 0):
+   ...         		frameStructureType = tdLte
+   ...         		guardPeriodLength = 6 symbols (SSF6)
+   ...         		lteToNrFrameShift = 0ms
+   ...         		prachConfiguration = 97 (format A2 in subframe 7)
+   ...         		ssBurstSetPeriod = 20ms
+   ...         -  TDD Cells are configured without beamforming:
+   ...         		NRBTS/NRCELL.actBeamforming = False
+   ...         		NRBTS/NRCELL.pucchF3MaxCodeRate = 0.08
+   ...         		NRBTS/NRCELL.pucchF3ModulationScheme = pi2BPSK
+   ...         -  TDD Cells are configured without 5GC002200:
+   ...         		NRBTS/NRCELL.dlMimoMode <> 70 (8x4 Closed Loop Spatial Multiplexing)
+   ...         -  Long PUCCH is enabled:
+   ...         		NRBTS/NRCELL.pucchModeSelect = longPucch
+   ...         -  FDM scheduling is enabled:
+   ...         		NRBTS.actFdmScheduling = True
+   ...         		NRBTS/NRCELL.actIncreasedFdmUsersPerSlot = True
+   ...         -  FDD and TDD Cells are configured and On-Air, FDD Cell-1 and 2 TDD Cells are active, FDD Cells 2, 4 and 5 are inactive
+   ...         -  NR-UE1 supports FDD-TDD 3CC CA with band combinations:
+   ...         		CA_n41A-n66A-n71A (FDD n71+ FDD n66 + TDD n41),
+   ...         		CA_n41(2A)-n71A (FDD n71 + TDD n41 + TDD n41),
+   ...         		CA_n41C-n71A (FDD n71 + TDD n41 + TDD n41),
+   ...         		CA_n41A-n71A-n77A (FDD n71+ TDD n41 + TDD n77)
+   ...
+   ...		  During ICS, a format 3 PUCCH resource from Set1 was configured for pCSI reporting of the PCell or
+   ...        multiplexed pCSI & HARQ AN reporting.
+   ...
+   ...     4.2 Test steps:
+   ...      Description:
+   ...		    a)	Activation of Beamforming and Beam Refinement with:
+   ...		    	o	NRBTS/NRCELL.actBeamforming = True
+   ...		    	o	NRBTS/NRCELL.nrBtsBeamRefinementP2 = True
+   ... 		    	o	NRBTS/NRCELL.pucchF3MaxCodeRate = 0.15
+   ...		    b)	3CC capable NR-UE1 is registered to PCell ( Cell-1 )
+   ...  	    c)	PDU session is setup for NR-UE1 to trigger SCell Addition.
+   ...	    	c)	Verification of F1AP messaging and RRC Reconfiguration procedure.
+   ...		    d)	250mbps DL UDP  traffic is started ( not full buffer )
+   ...	    	e)	Collect TTITrace and verify pCSI and beam reports.
+   ...	    	f)	Verification of traffic shouldn`t be degraded.
+   ...	    	g)	Release of PDU Session and deregistration of NR-UE1.
+   ...		Expected:
+   ...		a)	Verification of F1AP messaging and RRC Reconfiguration procedure:
+   ...			a.	Cell 2 and Cell 6 are in the SCell-ToBeSetupMod-List within F1AP: UE CONTEXT MODIFICATION REQUEST
+   ...			b.	Selected band combination in F1AP: UE CONTEXT MODIFICATION is CA_n41A-n66A-n71A
+   ...			c.	F1AP: UE CONTEXT MODIFICATION REQUEST is sent
+   ...			d.	F1AP: UE CONTEXT MODIFICATION RESPONSE is sent and contains CSI-RS, PUCCH pCSI, HARQ ACK/NACK reporting configuration,
+   ...              MaxMIMO-Layers configuration for each CCC, SelectedBandCombinationIndex and SelectedFeatureSetEntryIndex
+   ...			e.	RRCReconfiguration is sent in F1AP: DL RRC MESSAGE TRANSFER
+   ...			f.	RRCReconfigurationComplete is sent in F1AP: UL RRC MESSAGE TRANSFER
+   ...		b) Verification of pCSI and beam reports:
+   ...			a.	Two additional PF3 resources are configured for HARQ AN in resource set1.
+   ...			b.	On FDD SCell one PF3 PUCCH resource for multiplexed HARQ AN and periodic CSI (pCSI) report of Channel acquisition
+   ...              is added.
+   ...			c.	On TDD SCell one resource for CSI report of Channel acquisition is added.
+   ...			d.	An additional PF3 resource from Set2 is allocated at SCell Addition for Beam Management reports with beam refinement reports
+   ...			e.	Beam reports with beam refinement reports are sent.
+   ...
+   ...
+   ...     4.3 Postconditions:
+   ...          UE is configured with one FDD FR1 cell(F1) as PCell and 1 FDD and 1 TDD cells as SCells
+   ...     	    The scheduling of CSI-RS for Channel acquisition starts in the SCell for the CA UE
+   ...          right after the MAC SCell activation process is completed successfully.
+   ...     	    UE is configured to perform CSI Measurements and reports CQI measurements via PUCCH on the PCell for all carriers:
+   ...     	        - UE periodically reports CQI measurements of PCell via dedicated PUCCH Format3 resource on PCell.
+   ...     	        - UE periodically reports CQI measurements of each SCell via dedicated PUCCH Format3 resource on PCell.
+    ...     5. References
+    ...         [1] CFAM for 5GC002640 - [LINK]
+    ...
+    ...    6. History
+    ...     v0.1 2021.07.22 Marcin Gorczyca - test case draft
+    ...     v0.2 2021.08.30 Marcin Gorczyca - first IODT update
+    ...     v0.3 2021.09.10 Marcin Gorczyca - Adjustment to new template, second IODT update.
+    ...     v0.4 2021.10.15 Marcin Gorczyca - Test plan corrected to address comments from the review.
+    ...     v0.5 2021.11.05 Marcin Gorczyca - IODT tests removed, minor errors corrected.
+    ...     v0.5 2021.11.08 Marcin Gorczyca - Review completed
+
+    Change NR-UE1 3CC CA capabilities to support band combination CA_n41A-n66A-n77A with BR enabled on all cells
+    Register 3CC CA capable NR-UE1 to gNB-2 Cell-1
+    Establish PDU session for NR-UE1 to trigger successful 3CC CA
+
+    Verify SCell-ToBeSetupMod-List IE whether TDD Cell and FDD Cell were selected to 3CC CA for NR-UE1
+    Verify allowedBC-ListMRDC IE whether CA_n71A-n66A-n77A band combination was selected to 3CC CA for NR-UE1
+    Verify sCellToAddModList IE whether TDD Cell and FDD Cell were added as SCells for NR-UE1
+    Verify iE-Extensions IE whether Selected Band Combination and Feature Set Entry Indexes were correct for FFT 3CC CA NR-UE1
+    Verify spCellConfig and sCellToAddModList IEs whether maxMIMO-Layers DL and UL configuration was correct for NR-UE1
+
+    Verify whether pCSI and HARQ AN and CRI of the best CSI-RS reporting configuration was sent for SCell-2 for FFT 3CC CA NR-UE1
+    Verify resourceSetToAddModList IE whether PUCCH resources were allocated correctly for BF enabled for FFT 3CC CA NR-UE1
+
+    Start SA traffic  ue=1  dir=dl  traffic_rate=250Mbps
+    Wait 10s for throughput stable
+    Collect TTI Traces during 5 seconds and save to directory 5GC002640_B4Aa_Step3_BF_ON_BR_ON
+    Verify if csi rs is present after scell activation   expected_csi_rs_config=4.0   cell_id=55
+    Verify if csi rs is present after scell activation   expected_csi_rs_config=3.0   cell_id=51
+    Verify csi reports dtx ratio	phys_cells_ids=50,51,55		accepted_ratio=20
+    Verify if Ue performs csi measurement reports on all carriers  phys_cells_ids=50,51,55
+    Verify If Csi Measurement Reports Are Done Via Dedicated Pucch Format3  pcell=50  scells=51,55
+    Verify that beam reports with beam refinement are sent for cell    cell_id=55
+
+    [Teardown]  Run keywords  Produce Scout Data    AND
+    ...                       Deregister NR-UE1
+

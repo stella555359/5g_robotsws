@@ -1,0 +1,323 @@
+import os.path
+import subprocess
+from time import sleep
+
+from testsuite.Paris.RRM.ET.resources_KRK.python.utilities import (
+    logger_console, logger_warning, logger_console_info
+)
+from testsuite.Paris.RRM.ET.resources_KRK.python.common_gnb import *
+from testsuite.Paris.RRM.ET.resources_KRK.python.common_airphone import *
+from testsuite.Paris.RRM.ET.resources_KRK.python.file_management import create_dir_at_output_dir, \
+    upload_files_to_gnb, copy_files_from_gnb
+import testsuite.Paris.RRM.ET.resources_KRK.python.pm_counters as pm_counters
+from ta5g_global_var import DEFAULT_ALIAS
+from testsuite.Paris.RRM.ET.resources_KRK.python.common_wts import (
+    start_wts_and_wait_for_ready_state,
+    copy_egate_console_log_to_specified_dir,
+    copy_wts_files_to_epcsim_dir_path,
+    stop_wts_and_collect_its_logs,
+    collect_sos_report_log,
+    start_traffic_for_multiple_ues
+)
+
+from robot.errors import ExecutionFailed
+from robot.libraries.OperatingSystem import OperatingSystem
+from variables import *
+import shutil
+
+
+def set_variables_based_on_deployment_and_release():
+    capacity_unit = get_capability_unit_name()
+    release = get_gnb_build_release(convert_to_trunk=True)
+    release_no_conv = get_gnb_build_release(convert_to_trunk=False)
+    BuiltIn().set_suite_variable("${UNIT_NAME}", capacity_unit)
+    BuiltIn().set_suite_variable("${RELEASE}", release)
+    BuiltIn().set_suite_variable("${RELEASE_NO_CONV}", release_no_conv)
+    if AP_HARDWARE == "ASIL":
+        logger_console_info("Running on BOO_LOO TL")
+        BuiltIn().set_suite_variable("${WTS_CONFIG_FILENAME}", "wts_2640_AD_APoABIO.cfg")
+        BuiltIn().set_suite_variable("${WTS_CONFIG_8533_FILENAME}", "wts_8533_APoABIO.cfg")
+        BuiltIn().set_suite_variable("${PCELL_ID}", "16385")
+        BuiltIn().set_suite_variable("${SCELLS_FTF}", ("16387", "16388"))
+        BuiltIn().set_suite_variable("${LCR_ID}", "4")
+        BuiltIn().set_suite_variable("${SCELL_BEAMSWITCH}", "1")
+    else:
+        logger_console_info("Running on BOO_KLLL TL")
+        BuiltIn().set_suite_variable("${WTS_CONFIG_FILENAME}", "wts_2640_AD_APoABIL.cfg")
+        BuiltIn().set_suite_variable("${WTS_CONFIG_8533_FILENAME}", "wts_8533_APoABIL.cfg")
+        BuiltIn().set_suite_variable("${PCELL_ID}", "16388")
+        BuiltIn().set_suite_variable("${SCELLS_FTF}", ("16386", "16387"))
+        BuiltIn().set_suite_variable("${LCR_ID}", "2")
+        BuiltIn().set_suite_variable("${SCELL_BEAMSWITCH}", "2")
+
+
+def get_test_prefix():
+    tc_name = ta5g_interface_tools().get_robot_test_name()
+    match = re.search(r'\[1\](?P<feature>(2640|CB008533))_([A-Z]*_[A-Z]+\d+)?(?P<tc>\w+_\d+)_.*', tc_name)
+    return "{}_{}".format(match.group("feature"), match.group("tc")) if match else tc_name
+
+
+def wait_for_oam_config_update(sleep_time=60):
+    logger_console("Waiting for OAM config update")
+    sleep(sleep_time)
+
+
+def prepare_environment(wts_config_filename=None, sib1_reception_dict=None):
+    if sib1_reception_dict is None:
+        sib1_reception_dict = CELLS_6xREAL
+    delete_localhost_ssh_key_from_known_hosts()
+    ta5g_testline_management().wait_for_testline_icmp_echo_replies_and_ssh_services()
+    ensure_gnb_files_flags_are_in_order()
+    log_gnb_build()
+    log_airphone_build()
+    copy_wts_files_to_epcsim_dir_path(wts_config_filename=wts_config_filename)
+    ru_tries = mib_sib_tries = 0
+    ru_tries_max = mib_sib_tries_max = 4
+    while ru_tries < ru_tries_max and mib_sib_tries < mib_sib_tries_max:
+        if ru_tries != 0 or mib_sib_tries != 0:
+            logger_console_info("Restarting environment preparation")
+        try:
+            reset_units_and_wait_for_radio_head_online()
+            start_wts_and_wait_for_ready_state(
+                wts_config_filename=wts_config_filename,
+                sib_reception_dict=sib1_reception_dict,
+                edaemon_port=30000,
+                timeout=720
+            )
+        except RadioHeadTimeoutException:
+            logger_warning("RadioHeadTimeoutException occurred")
+            ru_tries += 1
+        except (ValueError, ExecutionFailed) as e:
+            logger_warning("MibSibAcquisitionFailed exception occurred")
+            ta5g_egate_instance = BuiltIn().get_library_instance('ta5g_egate')
+            ta5g_egate_instance._ute_wtssim_instance.teardown_all_aliases_for_wts()
+            mib_sib_tries += 1
+        else:
+            break
+
+        if ru_tries >= ru_tries_max:
+            raise RadioHeadTimeoutException("RadioHeadTimeoutException occurred over {} times".format(ru_tries_max))
+        elif mib_sib_tries >= mib_sib_tries_max:
+            raise MibSibAcquisitionFailed("MIB-SIB Acquisition failed over {} retries".format(mib_sib_tries))
+
+
+def start_collecting_logs(prefix=""):
+    log_dirpath = ta5g_interface_tools().get_robot_output_dir()
+    if not prefix:
+        prefix = get_test_prefix()
+
+    collect_scf_file(prefix="before", subdir=prefix, name=prefix)
+    ta5g_syslog = BuiltIn().get_library_instance('ta5g_syslog')
+    ta5g_tshark = BuiltIn().get_library_instance('ta5g_tshark')
+    ta5g_syslog.start_syslog_for_enb(logs_dirpath=log_dirpath + '/' + prefix,
+                                     log_filename_prefix="syslog_gnb_{}_".format(prefix),
+                                     alias=SYSLOG_ALIAS)
+    ta5g_tshark.start_tshark(alias=BuiltIn().get_variable_value("${ALIAS_TSHARK_WTS}"),
+                             log_filename="tcpdump_WTS_" + prefix + ".pcap",
+                             log_dirpath=log_dirpath + "/" + prefix,
+                             capture_filter="sctp",
+                             eth_interface='any')
+    ta5g_tshark.start_tcpdump_on_remote_interface(log_filename_prefix="tcpdump_GNB_" + prefix,
+                                                  log_dirpath=log_dirpath + "/" + prefix,
+                                                  alias=BuiltIn().get_variable_value("${ALIAS_TCPDUMP_GNB}"))
+    sleep(2)
+
+
+def start_remote_tcpdump_bip_collecting(prefix=""):
+    log_dirpath = ta5g_interface_tools().get_robot_output_dir()
+    if not prefix:
+        prefix = get_test_prefix()
+    ta5g_tshark = BuiltIn().get_library_instance('ta5g_tshark')
+    ta5g_tshark.start_tcpdump_on_remote_interface(log_filename_prefix="bip_remote_" + prefix,
+                                                  log_dirpath=log_dirpath + "/" + prefix,
+                                                  alias="bip_tcpdump",
+                                                  eth_interface="eths2")
+
+
+def prepare_env_and_start_collecting_logs(wts_config_filename=None, sib1_reception_dict=None):
+    prepare_environment(wts_config_filename, sib1_reception_dict)
+    start_collecting_logs()
+
+
+def teardown_collecting_logs():
+    prefix = get_test_prefix()
+    ta5g_syslog = BuiltIn().get_library_instance('ta5g_syslog')
+    ta5g_egate = BuiltIn().get_library_instance('ta5g_egate')
+    ta5g_syslog.collect_syslog_results()
+    ta5g_syslog.teardown_all_aliases_for_syslog()
+    ta5g_egate._ute_wtssim_instance.teardown_all_aliases_for_wts()
+    test_prefix = get_test_prefix()
+    copy_egate_console_log_to_specified_dir(subdirectory=test_prefix, prefix=test_prefix)
+    collect_scf_file(prefix="after", subdir=test_prefix, name=test_prefix)
+    # stop_pcap_collecting()
+
+
+def stop_pcap_collecting():
+    ta5g_tshark = BuiltIn().get_library_instance('ta5g_tshark')
+    ta5g_tshark.stop_tcpdump_on_remote_interface()
+    ute_tshark = BuiltIn().get_library_instance('ute_tshark')
+    ute_tshark.teardown_all_aliases_for_tshark()
+
+
+def wait_for_throughput_stable(sec=10):
+    sleep(sec)
+
+
+def configure_vm_interfaces():
+    add_ip_addr_on_vm(ip_addr="10.0.1.112", interface="eth3")
+    add_ip_addr_on_vm(ip_addr="10.0.1.131", interface="eth3")
+    add_ip_addr_on_vm(ip_addr="10.0.1.132", interface="eth3")
+    add_ip_addr_on_vm(ip_addr="10.0.1.133", interface="eth3")
+    add_ip_addr_on_vm(ip_addr="10.0.1.134", interface="eth3")
+    add_ip_addr_on_vm(ip_addr="10.0.1.135", interface="eth3")
+    add_ip_addr_on_vm(ip_addr="10.0.1.136", interface="eth3")
+    add_ip_addr_on_vm(ip_addr="10.0.1.137", interface="eth3")
+
+
+def ensure_tti_trace_flags_existence_in_swconfig():
+    flags = ['0x590072=1']
+    GnbSwconfigManager().ensure_flags_existence_in_swconfig(flags=flags)
+
+
+def ensure_gnb_files_flags_are_in_order():
+    ensure_syslog_flags_existence_in_swconfig()
+    ensure_cplane_flags_existence_in_swconfig()
+    ensure_cp_runtime_ini_has_LoggingSeverity_set_on_trace()
+    ensure_tti_trace_flags_existence_in_swconfig()
+    GnbSwconfigManager().log_swconfig_contents()
+
+
+def adjust_parameters_using_delta(delta):
+    perform_recomissioning_with_delta(path_to_delta=json.dumps(delta))
+
+
+def cleanup_parameters_after_testcase(delta):
+    adjust_parameters_using_delta(delta)
+
+
+def set_lcrId(value=4):
+    logger_console_info("Set lcrId to {}".format(value))
+    if AP_HARDWARE == 'ASIL':
+        update_parameter_value(parameter="lcrId", value=value, dist_name="MRBTS-1/NRBTS-1/NRCELL-1/NRREL-1")
+    else:
+        update_parameter_value(parameter="lcrId", value=value, dist_name="MRBTS-1/NRBTS-1/NRCELL-4/NRREL-1")
+
+
+def get_drx_config_query(inactivity_timer=None, on_duration_timer=None, retransmission_timer_dl=None,
+                         retransmission_timer_ul=None, long_cycle_start_offset=None, slot_offset=None):
+    drx_config_template = """
+    drx-Config is present
+    and
+    drx-Config contains
+    (
+        {}
+    )
+    """
+    checkers_list = []
+    if inactivity_timer:
+        checkers_list.append("drx-InactivityTimer eq 'ms{}'".format(inactivity_timer))
+    if on_duration_timer:
+        checkers_list.append("drx-onDurationTimer contains (milliSeconds eq 'ms{}')".format(on_duration_timer))
+    if retransmission_timer_dl:
+        checkers_list.append("drx-RetransmissionTimerDL eq 'sl{}'".format(retransmission_timer_dl))
+    if retransmission_timer_ul:
+        checkers_list.append("drx-RetransmissionTimerUL eq 'sl{}'".format(retransmission_timer_ul))
+    if long_cycle_start_offset:
+        checkers_list.append("drx-LongCycleStartOffset contains (ms{} eq 0)".format(long_cycle_start_offset))
+    if slot_offset:
+        checkers_list.append("drx-SlotOffset eq 0".format(slot_offset))
+
+    return drx_config_template.format("\n        and\n        ".join(checkers_list))
+
+
+def get_pucch_resource_ids_in_resource_to_add_mod_list_query(resource_ids):
+    pucch_config_template = """
+    spCellConfig contains
+    (
+        pucch-Config contains
+        (
+            {}
+        )
+    )
+    """
+    resource_to_add_mod_list_query_template = """
+            resourceToAddModList contains
+            (
+                pucch-ResourceId eq {}
+            )
+    """
+    resource_ids_elements = [resource_to_add_mod_list_query_template.format(_id) for _id in resource_ids]
+    return pucch_config_template.format("\n            and\n            ".join(resource_ids_elements))
+
+
+def cleanup_logs_dir_at_teardown():
+    dest_dir = create_dir_at_output_dir(dir_name=get_test_prefix() + "/ta_messaging_processing")
+    log_output_dir = ta5g_interface_tools().get_robot_output_dir()
+    files = [file for prefix in ['csv*', 'messaging*', 'PARSED*'] for file in
+             glob.glob(os.path.join(log_output_dir, prefix))]
+    for file in files:
+        logger.info("Move {} to {}".format(file, dest_dir))
+        shutil.move(file, dest_dir)
+
+
+def get_cells_converted_to_phycellid(scells, pcell_id="16388"):
+    phycellmap = BuiltIn().get_variable_value("${PHYCELLID_MAP}")
+    tdd_scells_filter = BuiltIn().get_variable_value("${TDD_SCELLS}")
+    pcell_id = phycellmap[pcell_id]
+    scells = [phycellmap[scell] for scell in scells]
+    all_cells = [pcell_id] + scells
+    tdd_scells = [cell for cell in scells if cell in tdd_scells_filter]
+    logger.debug("{} {} {} {}".format(pcell_id, scells, all_cells, tdd_scells))
+    return pcell_id, scells, all_cells, tdd_scells
+
+
+def enable_port_mirroring_for_bips():
+    bip_script_path = BuiltIn().get_variable_value("${RESOURCES_DIR}")
+    bip_script_name = BuiltIn().get_variable_value("${BIP_SCRIPT}")
+    sshpass_cmd = 'sshpass -p "oZPS0POrRieRtu" ssh -o StrictHostKeyChecking=no  -o GlobalKnownHostsFile=/dev/null -o\
+     UserKnownHostsFile=/dev/null -q toor4nsn@192.168.255.129  \'{}\''
+    upload_files_to_gnb(remote_path="/user/toor4nsn/", files=[os.path.join(bip_script_path, bip_script_name)])
+    run_on_gnb('chmod +x {}'.format(bip_script_name))
+    subprocess.Popen(sshpass_cmd.format("./{}".format(bip_script_name)), shell=True, stdout=subprocess.PIPE)
+    BuiltIn().set_test_variable("${BIP_COLLECTION_RUNNING}", True)
+
+
+def compress_bip_logs():
+    bip_collection_running = BuiltIn().get_variable_value("${BIP_COLLECTION_RUNNING}")
+    if bip_collection_running:
+        prefix = get_test_prefix()
+        log_dirpath = ta5g_interface_tools().get_robot_output_dir()
+        file_path = os.path.join(log_dirpath, prefix, "bip_remote_{}.pcap".format(prefix))
+        compressed_file_path = file_path + ".tar.gz"
+        if os.path.exists(file_path):
+            OperatingSystem().run('tar -czvf {} {}'.format(compressed_file_path, file_path))
+        if os.path.exists(compressed_file_path) and os.path.getsize(compressed_file_path) > 50:
+            OperatingSystem().run("rm -f {}".format(file_path))
+
+        BuiltIn().set_test_variable("${BIP_COLLECTION_RUNNING}", False)
+
+
+def adjust_iphy_parameters():
+    logger_console_info("Attempting to change iphy")
+    # aeqe_2nd_optlink = '<optlink>\n' \
+    #                    '<physicalId>1.8</physicalId>\n' \
+    #                    '<virtualId>2</virtualId>\n' \
+    #                    '<linkRate>25</linkRate>\n' \
+    #                    '<rat>5G</rat>\n' \
+    #                    '</optlink>\n'
+
+    # iphy_value_aeqe_optlink = {'CPRI-Config/CPRI-RP1-RE_List/RE[4]/hardware/optlink_List': aeqe_2nd_optlink}
+
+    iphy_value_ahfib_aeqe_optlink = {
+        'CPRI-Config/CPRI-RP1-RE_List/RE[3]/hardware/optlink_List/optlink/physicalId': '2.1',
+        'CPRI-Config/CPRI-RP1-RE_List/RE[4]/hardware/optlink_List/optlink[1]/physicalId': '1.7',
+        # 'CPRI-Config/CPRI-RP1-RE_List/RE[4]/hardware/optlink_List/optlink[2]/physicalId': '1.8'
+    }
+
+    # add_iphy_parameters(iphy_value_aeqe_optlink, logs_dir='/tmp', iphy_prefix='', index=0)
+    modify_iphy_parameters(params_dict=iphy_value_ahfib_aeqe_optlink, iphy_prefix='')
+    logger_console_info("Modified IPHY")
+
+
+def add_debug_mctrl_to_swconfig():
+    ensure_debug_mctrl_flags_existence_in_swconfig()

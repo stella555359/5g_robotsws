@@ -1,0 +1,25 @@
+-- Copyright 2021 Nokia
+-- Created with MuLTI version: v0.27.1 aa1f9b4ca0ac779706ce54adc873c585cfe4dc52 EXPERIMENTAL!
+-- Type repository checksum:   100182fedaadec7651a8ab34708d388f03513b4b
+
+local fields = require("message")
+local xp_dss_DlResourceSharingAlgo = require("xp/dss/DlResourceSharingAlgo")
+local xp_dss_EnDssDlCrmSfInfoExtension1Extensions = require("xp/dss/EnDssDlCrmSfInfoExtension1Extensions")
+
+
+function EnDssDlCrmSfInfoExtension1 (fieldName, position)
+    return
+        fields.Structure({name="EnDssDlCrmSfInfoExtension1", fieldName=fieldName, position=position, size=24}, {
+            fields.StaticVariableSizedArray({name="superfastAllocationEnabled", position=0, size=8, numSizePaddingBytes=0, numItems=1, numPaddingBytes=3},
+                fields.uint32, fields.boolean({name="item", position=0})
+            ),
+            fields.StaticVariableSizedArray({name="dlResourceSharingAlgo", position=8, size=8, numSizePaddingBytes=0, numItems=1, numPaddingBytes=0},
+                fields.uint32, fields.enumeration(
+                    {name="item", position=8, enumTerm=xp_dss_DlResourceSharingAlgo},
+                    ProtoField.int32, 4, "int32")
+            ),
+            xp_dss_EnDssDlCrmSfInfoExtension1Extensions("extensions", 16),
+        })
+end
+
+return EnDssDlCrmSfInfoExtension1

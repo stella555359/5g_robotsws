@@ -1,0 +1,1874 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for CB007738 feature FDD tests cases, updated for 7738
+...
+...               Automation author           : christophe.samson@nokia.com
+...               Automation contact          : christophe.samson@nokia.com
+...               Creation Date               : 15-June-2021
+...               Modified Date               : 15-Novembre-2021
+...               Last Modified by            : denis.taupin@nokia.com
+
+Resource                            ../../../../../resources/SWENG/robot/Tools.robot
+Resource                            ../../../../../resources/SWENG/robot/PacketSearch.robot
+Resource                            ../../../../../resources/SWENG/robot/Restart.robot
+Resource                            ../../../../../resources/SWENG/robot/Capture.robot
+Resource                            ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource                            ../../../../../resources/SWENG/robot/Traffic.robot
+Resource                            ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource                            ../../../../../resources/SWENG/robot/Setup.robot
+Resource                            ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource                            ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource                            ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Library                             ../../../resources/python/luashark_tools.py
+Library                             luashark_tools.analyzer       WITH NAME       analyzer
+Library                             taf.config.wts                WITH NAME       wts_cfg
+Library                             ../../../../../resources/SWENG/python/CoamParameter.py      WITH NAME     coam_parameter
+
+Variables                           ../../../../../resources/SWENG/python/ReadConfig.py
+
+# to use the 7738 Constants.py file (from resources/python dir)
+Variables                           ../python/Constants.py
+
+*** Variables ***
+
+${dlMimoMode_2DL2UL_delta_file_cell1}     ${CURDIR}/../../../resources/DSS/config/Delta_Configuration_scf_MRBTS-1_2DL_2UL_Cell1.json
+${PDCCHProfile_actSlowPrbPoolingFddFr1Enh_delta_file_cell1}
+...                     ${CURDIR}/../../../resources/DSS/config/Delta_Configuration_scf_MRBTS-1_PDCCH_Update_PRBPoolingActivated_Cell1.json
+
+${ASIK_LMP_IP}              ${tl.gnbs[0].dus[0].airscale.common_units[0].lmp_connection.addr}
+${GNB_IP}                  ${tl.gnbs[0].cu.oam_ssh_connection_details.addr}
+${ASIK_USER}                ${tl.gnbs[0].dus[0].airscale.common_units[0].lmp_connection.username}
+${ASIK_PASSWORD}            ${tl.gnbs[0].dus[0].airscale.common_units[0].lmp_connection.password}
+
+${PB_ASIK_IP}               ${tl.gnbs[0].dus[0].airscale.common_units[0].pdu_port.pdu.addr}
+${PB_ASIK_PORT}             ${tl.gnbs[0].dus[0].airscale.common_units[0].pdu_port.port_no}
+
+${OAM_TYPE}           coam
+
+${WEBUI_IP}                 ${tl.gnbs[0].cu.oam_http_connection_details.addr}
+${WEBUI_USERNAME}           ${tl.gnbs[0].cu.oam_http_connection_details.username}
+${WEBUI_PASSWORD}           ${tl.gnbs[0].cu.oam_http_connection_details.password}
+${WEBUI_URL}                https://${tl.gnbs[0].cu.oam_http_connection_details.addr}
+
+${L1bypass_NodeId_WtsXml}           21066
+${Fullstack_NodeId_WtsXml}          21085
+
+# variables for PM counters
+${PM_Counter_EN_DSS_MAX_RTT_TO_CRM}         M55332C03002       # EN_DSS_MAX_RTT_TO_CRM
+${PM_Counter_EN_DSS_SUM_RTT_TO_CRM}         M55332C03003       # EN_DSS_SUM_RTT_TO_CRM
+${PM_Counter_EN_DSS_KEEP_ALIVE_RESP}        M55332C03004       # EN_DSS_KEEP_ALIVE_RESP
+
+${CellID}                            1
+&{PM_Counter_Status_Cell_M55332C03002}          counter=${PM_Counter_EN_DSS_MAX_RTT_TO_CRM}        objId=${CellID}
+&{PM_Counter_Status_Cell_M55332C03003}          counter=${PM_Counter_EN_DSS_SUM_RTT_TO_CRM}        objId=${CellID}
+&{PM_Counter_Status_Cell_M55332C03004}          counter=${PM_Counter_EN_DSS_KEEP_ALIVE_RESP}       objId=${CellID}
+
+# MRBTS-1/NRBTS-1
+&{NRBTS_FDD_DSS}       actLteNrDss=true
+...                    mcc=311
+...                    mnc=489
+...                    mncLength=3
+...                    actFdmScheduling=true
+...                    actInactDetNSAUe=false
+# ...                    actGeneralConnectivityGold=true
+...                    drbInactivityTimerSA=600
+...                    srbInactivityTimerSA=600
+&{NRBTS_FDD_DSS_FDM}   actLteNrDss=true
+...                    mcc=311
+...                    mnc=489
+...                    mncLength=3
+...                    actFdmScheduling=true
+...                    actInactDetNSAUe=false
+# ...                    actGeneralConnectivityGold=true
+...                    drbInactivityTimerSA=600
+...                    srbInactivityTimerSA=600
+&{NRBTS_TRBLCADM}      actInternalTrace=true
+&{NRBTS_FEATCADM}      actCli=true
+&{NRBTS_FDD_NoDSS}     actLteNrDss=false
+# NIDD param NRBTS.tmpParam7 ( 0 = disabled [default]; 1 = enabled )
+# NRBTS.tmpParam7=1    for 1586-M (742)
+&{NRBTS_FDD_DSS_742_ON}       tmpParam7=1
+&{NRBTS_FDD_DSS_742_OFF}       tmpParam7=0
+# MRBTS-1/NRBTS-1/NRCELL-1/NRCELL_FDD-1
+&{NRCELL_FDD5MHz}      chBwDl=5MHz
+...                    chBwUl=5MHz
+...                    nrarfcnDl=125900
+...                    nrarfcnUl=135100
+&{NRCELL_FDD10MHz}     chBwDl=10MHz
+...                    chBwUl=10MHz
+...                    nrarfcnDl=127100
+...                    nrarfcnUl=136300
+&{NRCELL_FDD10MHz_DSS_Ph3}     chBwDl=10MHz
+...                    chBwUl=10MHz
+...                    nrarfcnDl=127100
+...                    nrarfcnUl=136300
+# MRBTS-1/NRBTS-1/NRCELLGRP-0
+&{NRCELLGRP_5MHz}      csiReportPeriodicity=slots320
+&{NRCELLGRP_10MHz}     csiReportPeriodicity=slots160
+# MRBTS-1/NRBTS-1/NRCELL-1
+&{NRCELL5MHz}          gscn=1
+...                    type0CoresetConfigurationIndex=0
+...                    dlDMRSAdditionalPosition=No additional DMRS
+...                    ulDMRSAdditionalPosition=No additional DMRS
+...                    cellName=Cell1
+...                    dmrsTypeAPosition=pos2
+...                    lteNrDssMode=none
+...                    msg1FrequencyStart=0
+...                    ullaIniMcs=0
+...                    actPRBBlanking=false
+...                    trsMutingInBlankedPRBsEnabled=false
+...                    prachConfigurationIndex=12
+...                    type0SearchSpaceConfigurationIndex=15
+&{NRCELL10MHz_DSS_Ph3}         gscn=1588
+...                    type0CoresetConfigurationIndex=6
+# ...                    dlDMRSAdditionalPosition=Automatic
+# ...                    ulDMRSAdditionalPosition=Automatic
+...                    dlDMRSAdditionalPosition=No additional DMRS
+...                    ulDMRSAdditionalPosition=No additional DMRS
+...                    cellName=DSS-Ph3 SSB Pos1 Cell1
+...                    dmrsTypeAPosition=pos3
+...                    lteNrDssMode=DSS_Phase_3
+...                    msg1FrequencyStart=5
+...                    ullaIniMcs=3
+...                    actPRBBlanking=false
+...                    trsMutingInBlankedPRBsEnabled=false
+...                    tmpActFeat1=32
+...                    prachConfigurationIndex=12
+...                    type0SearchSpaceConfigurationIndex=15
+&{NRCELL10MHz_DSS_Ph3_SSBPos6}         gscn=1588
+...                    type0CoresetConfigurationIndex=6
+...                    dlDMRSAdditionalPosition=No additional DMRS
+...                    ulDMRSAdditionalPosition=No additional DMRS
+...                    cellName=DSS-Ph3 SSB Pos6 Cell1
+...                    dmrsTypeAPosition=pos3
+...                    lteNrDssMode=DSS_Phase_3
+...                    msg1FrequencyStart=5
+...                    ullaIniMcs=3
+...                    actPRBBlanking=false
+...                    trsMutingInBlankedPRBsEnabled=false
+...                    tmpActFeat1=32
+...                    prachConfigurationIndex=13
+...                    type0SearchSpaceConfigurationIndex=11
+&{NRCELL10MHz}         gscn=1592
+...                    type0CoresetConfigurationIndex=7
+...                    dlDMRSAdditionalPosition=Automatic
+...                    ulDMRSAdditionalPosition=Automatic
+...                    cellName=DSS Cell1
+...                    dmrsTypeAPosition=pos3
+...                    lteNrDssMode=DL_CRS_TDM_UL_FDM
+...                    msg1FrequencyStart=4
+...                    ullaIniMcs=8
+...                    actPRBBlanking=false
+...                    trsMutingInBlankedPRBsEnabled=false
+...                    prachConfigurationIndex=12
+...                    type0SearchSpaceConfigurationIndex=15
+&{NRCELL10MHzNoDSS}     gscn=1592
+...                    type0CoresetConfigurationIndex=7
+...                    dlDMRSAdditionalPosition=Automatic
+...                    ulDMRSAdditionalPosition=Automatic
+...                    cellName=Cell1
+...                    dmrsTypeAPosition=pos3
+...                    lteNrDssMode=none
+...                    msg1FrequencyStart=0
+...                    ullaIniMcs=8
+...                    actPRBBlanking=false
+...                    trsMutingInBlankedPRBsEnabled=false
+...                    prachConfigurationIndex=12
+...                    type0SearchSpaceConfigurationIndex=15
+
+# MRBTS-1/NRBTS-1/NRPMRNL-1
+&{NRPMRNL_5MHz}        miNrEnDssPerCell=15min
+...                    miNrCellUtilization=15min
+&{NRPMRNL_10MHz}       miNrEnDssPerCell=5min
+...                    miNrCellUtilization=5min
+&{NRPMRNL_10MHz_NoDSS}       miNrEnDssPerCell=15min
+...                          miNrCellUtilization=15min
+
+# MRBTS-1
+&{MRBTS5MHz}           btsName="NPS TL 5MHz"
+&{MRBTS10MHzNoDSS}     btsName="NPS TL 10MHz Without Feature DSS"
+&{MRBTS10MHz}          btsName="NPS TL 10MHz Feature DSS On"
+&{MRBTS10MHz_DSS_Ph3}          btsName=- NPS TL 10MHz Feature DSS Phase3 On - 7738 -
+
+
+# MRBTS-1/NRBTS-1/NRCELL-1/NRDSSLTE-1
+&{NRCELL_NRDSSLTE}         dssDlTPollRetr=ms80
+...                    dssDlTProhib=ms0
+...                    dssUlTPollRetr=ms5
+...                    dssUlTProhib=ms0
+...                    eNodeBId=1
+...                    lcrId=1
+...                    ltePhyCellId=11
+...                    ssbPosition=pos1
+...                    dssMaxNumberOfDlDcis=1
+...                    actLteNrDssFastAlloc=false
+...                    actRateMatchedCsiIm=false
+...                    actLteNrDssLteCatM=false
+...                    lteNrDssFastAllocPerfEnh=disabled
+...                    actUlAdaptReTxEnhDss=false
+&{NRCELL_NRDSSLTE_DSS_Ph3}          dssDlTPollRetr=ms80
+...                                 dssDlTProhib=ms0
+...                                 dssUlTPollRetr=ms5
+...                                 dssUlTProhib=ms0
+...                                 eNodeBId=1
+...                                 lcrId=1
+...                                 ltePhyCellId=11
+...                                 ssbPosition=pos1
+...                                 dssMaxNumberOfDlDcis=1
+...                                 actLteNrDssFastAlloc=true
+...                                 actRateMatchedCsiIm=false
+...                                 actLteNrDssLteCatM=false
+...                                 lteNrDssFastAllocPerfEnh=disabled
+...                                 actUlAdaptReTxEnhDss=false
+&{NRCELL_NRDSSLTE_SSB_POS6}         dssDlTPollRetr=ms80
+...                                 dssDlTProhib=ms0
+...                                 dssUlTPollRetr=ms5
+...                                 dssUlTProhib=ms0
+...                                 eNodeBId=1
+...                                 lcrId=1
+...                                 ltePhyCellId=11
+...                                 ssbPosition=pos6
+...                                 dssMaxNumberOfDlDcis=1
+...                                 actLteNrDssFastAlloc=true
+...                                 actRateMatchedCsiIm=false
+...                                 actLteNrDssLteCatM=false
+...                                 lteNrDssFastAllocPerfEnh=disabled
+...                                 actUlAdaptReTxEnhDss=false
+
+&{NRCELL_NRDSSLTE_enbPlmn}         mcc=311
+...                    mnc=489
+...                    mncLength=3
+&{NRCELL_NRDSSLTE_lteNrDssDlRatio}         maxNrDssRatio=100
+...                    minNrDssRatio=30
+...                    dlResourceSharingAlgo=DL buffer level based
+&{NRCELL_NRDSSLTE_lteNrDssMbsfnRatio}         maxValue=50
+...                    minValue=50
+&{NRCELL_NRDSSLTE_lteNrDssUlRatio}         maxNrDssRatio=70
+...                    minNrDssRatio=20
+
+${IPIF-XP-ID}                                          1
+${XPIF_XPIFREMOTE}                                  10.0.1.137
+${IPIF}                                             10.0.1.111
+
+# ${XPIF_XPIFREMOTE}                                  10.0.1.1
+# ${IPIF}                                             10.0.1.2
+
+# MRBTS-1/MNL-1/MNLENT-1/XPAP-1/XPIF-1
+&{MRBTS_XPIF}         sctpAssocMaxRetrans=7
+...                    sctpDscp=46
+...                    sctpHeartbeatInterval=20
+...                    sctpMaxPayloadSize=1395
+...                    sctpRtoMax=30000
+...                    sctpRtoMin=1000
+...                    sctpSackDelay=200
+...                    sctpSackFreq=2
+...                    sctpWaitTimeInitSeqRetry=240
+...                    udpDscp=18
+...                    ipV4AddressDN1=MRBTS-1/TNLSVC-1/TNL-1/IPNO-1/IPIF-6/IPADDRESSV4-1
+...                    localNeDN=MRBTS-1/NRBTS-1
+
+# MRBTS-1/MNL-1/MNLENT-1/XPAP-1/XPIF-1/XPIFREMOTE-1
+&{MRBTS_XPIF_XPIFREMOTE}         ipAddress=${XPIF_XPIFREMOTE}
+
+# MRBTS-1/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1
+&{MRBTS_IPIF}         localIpAddr=${IPIF}
+
+# MRBTS-1/NRBTS-1/NRDRB-1
+# MRBTS-1/NRBTS-1/NRDRB-2
+# MRBTS-1/NRBTS-1/NRDRB-3
+# .....
+# MRBTS-1/NRBTS-1/NRDRB-14
+# nsaDrbParam ulDataPath
+&{NRDRB_DSS}        ulDataPath=ulOverNr
+...                 ulDataSplitThreshold=infinity
+...                 dlDataSplitMode=dlOverF1U
+&{NRDRB}            ulDataPath=uloverltenr
+...                 ulDataSplitThreshold=b102400
+...                 dlDataSplitMode=dloverf1ux2u
+
+# NIDD param NRBTS.tmpParam7 ( 0 = disabled [default]; 1 = enabled )
+# NRBTS.tmpParam7=1    for 1586-M
+&{NRBTS_1586M_ON}     tmpParam7=1
+&{NRBTS_1586M_OFF}     tmpParam7=0
+
+#----------------------------------------------------------------------------------------------------------------------------------------------------
+#                  WA to reach Cellsetup with UTE TL !!!
+#----------------------------------------------------------------------------------------------------------------------------------------------------
+
+# NRCELL	Parameter=actDl256Qam		                                                     true
+# NRCELL	Parameter=msg1FrequencyStart	                                                 3
+# NRCELL	Parameter=numOfPagingFrames	                                                     quatert
+# NRCELL	Parameter=pagingOffset			                                                 2
+# NRCELL	Parameter=pucchModeSelect			                                             longpucch
+# NRCELL	Parameter=raResponseWindow	                                                     sl80
+# NRCELL	Parameter=type0SearchSpaceConfigurationIndex		                             15
+# NRCELL	Parameter=csirsTrackingPeriod	               ListName=csirsForTracking         80ms
+# NRCELL	Parameter=actDlDataDmrsFdm   	               ListName=dlDataDmrsFdm		     true
+# NRCELL	Parameter=csiReportPeriodicity	               ListName=periodicCsiAcquisition	 slots160
+
+&{NRCELL_WA}           actDl256Qam=true
+...                    msg1FrequencyStart=3
+...                    numOfPagingFrames=quaterT
+...                    pagingOffset=2
+...                    pucchModeSelect=longPucch
+...                    raResponseWindow=sl80
+...                    type0SearchSpaceConfigurationIndex=15
+...                    csirsTrackingPeriod=80ms
+...                    actDlDataDmrsFdm=true
+...                    csiReportPeriodicity=slots160
+
+&{NRSYSINFO_PROFILE_WA}   sibPeriodicity=rf64
+...                       siWindowLength=s160
+
+#----------------------------------------------------------------------------------------------------------------------------
+#                  PDCCH Configuration for DSS Phase3
+#----------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Input parameters names	Selected parameter value	Description
+# NRCELL.cellDepType	SA or both
+# NRCELL.cellTechnology 	FDD
+# NRCELL.actPRBBlanking **	FALSE	only for FDD
+# NRCELL.lteNrDssMode **	DSS_Phase_3	only for FDD
+# Expected Aggregation Level *	4:4CCEs	Not a NIDD Parameter
+# NRCELL_FDD.chBwDl	10:10MHz	only for FDD
+# NRCELL.nrarfcn (FR1 or FR2)	< 2016667	only for TDD
+# NRCELL.tddFrameStructure.frameStructureType	semiStatic	only for TDD
+# NRCELL.tddFrameStructure.ulDlDataSlotRatio	3/7	only for TDD semiStatic
+# NRCELL.tddFrameStructure.lteToNrFrameShift	3ms	only for TDD tdlte
+# NRCELL.chBw	40:40MHz	only for TDD
+# CORESET#0 related parameters
+# NRCELL.freqBandIndicatorNR	<>n79
+# NRCELL.type0CoresetConfigurationIndex*	7	CORESET0: #PRB/Symbols
+# NRCELL.type0SearchSpaceConfigurationIndex*	5	SIB1 SS starting/ending symbol
+
+# MRBTS-1/NRBTS-1/BWP_PROFILE-161
+# bwp initial setting same as BWP_Profile-1
+
+# MRBTS-1/NRBTS-1/BWP_PROFILE-161/PDCCH-1
+&{BWP_PROFILE_161_PDCCH_1}            alSelection=static
+...                                 dciDedicatedAggregationLevel=AL4
+...                                 dciPagingAggregationLevel=AL4
+...                                 dciRaCompletionAggregationLevel=AL4
+...                                 dciRaMsg2AggregationLevel=AL4
+...                                 dciSiAggregationLevel=AL4
+...                                 downgradeAL16toAL8=notAllowed
+
+# MRBTS-1/NRBTS-1/BWP_PROFILE-161/PDCCH-1/PDCCH_CONFIG_COMMON-1
+&{BWP_PROFILE_161_PDCCH_1_CONFIG_COMMON_1_SSCommon_1_10MHz}            coresetId=0
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n0
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl80
+...                                                 searchSpaceId=1
+...                                                 searchSpaceType=Type0A
+...                                                 slotOffset=47
+&{BWP_PROFILE_161_PDCCH_1_CONFIG_COMMON_1_SSCommon_2_10MHz}            coresetId=0
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n0
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl10
+...                                                 searchSpaceId=2
+...                                                 searchSpaceType=Type1
+...                                                 slotOffset=6
+&{BWP_PROFILE_161_PDCCH_1_CONFIG_COMMON_1_SSCommon_3_10MHz}            coresetId=0
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n0
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl40
+...                                                 searchSpaceId=3
+...                                                 searchSpaceType=Type2
+...                                                 slotOffset=27
+
+&{BWP_PROFILE_161_PDCCH_1_CONFIG_COMMON_1_SSCommon_1_10MHz_SSBPos6}            coresetId=0
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n0
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl80
+...                                                 searchSpaceId=1
+...                                                 searchSpaceType=Type0A
+...                                                 slotOffset=42
+&{BWP_PROFILE_161_PDCCH_1_CONFIG_COMMON_1_SSCommon_2_10MHz_SSBPos6}            coresetId=0
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n0
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl10
+...                                                 searchSpaceId=2
+...                                                 searchSpaceType=Type1
+...                                                 slotOffset=8
+&{BWP_PROFILE_161_PDCCH_1_CONFIG_COMMON_1_SSCommon_3_10MHz_SSBPos6}            coresetId=0
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n0
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl40
+...                                                 searchSpaceId=3
+...                                                 searchSpaceType=Type2
+...                                                 slotOffset=22
+
+# MRBTS-1/NRBTS-1/BWP_PROFILE-170
+# bwp dedicated setting same as BWP_Profile-2
+
+# MRBTS-1/NRBTS-1/BWP_PROFILE-170/PDCCH-1
+&{BWP_PROFILE_170_PDCCH_1}                          alSelection=dynamic
+...                                                 dciDedicatedAggregationLevel=AL2
+...                                                 dciPagingAggregationLevel=AL4
+...                                                 dciRaCompletionAggregationLevel=AL4
+...                                                 dciRaMsg2AggregationLevel=AL4
+...                                                 dciSiAggregationLevel=AL4
+...                                                 downgradeAL16toAL8=notAllowed
+
+
+&{BWP_PROFILE_170_PDCCH_1_DynAggLevSet}           aggregationLevelList=AL1_AL2_AL4
+...                                               cqiCorrectionUp=5
+...                                               cqiDciCssAl1=81
+...                                               cqiDciCssAl16=0
+...                                               cqiDciCssAl2=59
+...                                               cqiDciCssAl4=33
+...                                               cqiDciCssAl8=1
+...                                               highOlcCqiOffset=1
+...                                               lowOlcCqiOffset=1
+...                                               pCqiErasureActTimer=160
+...                                               pCqiErasureReduction=1
+
+# MRBTS-1/NRBTS-1/BWP_PROFILE-170/PDCCH-1/PDCCH_CONFIG_COMMON-1
+# coresetCommon empty !!!!
+
+&{BWP_PROFILE_170_PDCCH_1_CONFIG_COMMON_1_SSCommon_1_10MHz}            coresetId=0
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n0
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl80
+...                                                 searchSpaceId=4
+...                                                 searchSpaceType=Type0A
+...                                                 slotOffset=47
+&{BWP_PROFILE_170_PDCCH_1_CONFIG_COMMON_1_SSCommon_2_10MHz}            coresetId=0
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n0
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl10
+...                                                 searchSpaceId=5
+...                                                 searchSpaceType=Type1
+...                                                 slotOffset=6
+&{BWP_PROFILE_170_PDCCH_1_CONFIG_COMMON_1_SSCommon_3_10MHz}            coresetId=0
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n0
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl40
+...                                                 searchSpaceId=6
+...                                                 searchSpaceType=Type2
+...                                                 slotOffset=27
+
+&{BWP_PROFILE_170_PDCCH_1_CONFIG_COMMON_1_SSCommon_1_10MHz_SSBPos6}            coresetId=0
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n0
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl80
+...                                                 searchSpaceId=4
+...                                                 searchSpaceType=Type0A
+...                                                 slotOffset=42
+&{BWP_PROFILE_170_PDCCH_1_CONFIG_COMMON_1_SSCommon_2_10MHz_SSBPos6}            coresetId=0
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n0
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl10
+...                                                 searchSpaceId=5
+...                                                 searchSpaceType=Type1
+...                                                 slotOffset=8
+&{BWP_PROFILE_170_PDCCH_1_CONFIG_COMMON_1_SSCommon_3_10MHz_SSBPos6}            coresetId=0
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n0
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl40
+...                                                 searchSpaceId=6
+...                                                 searchSpaceType=Type2
+...                                                 slotOffset=22
+
+#DTN ...                    searchSpaceCommon=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_searchSpaceCommon_10MHz}
+&{BWP_PROFILE_170_PDCCH_1_CONFIG_Dedicated_1_coresetDedicated_10MHz}        cceToRegMapping=noninterleaved
+...                                                 coresetId=4
+...                                                 cRbStart=0
+...                                                 duration=1
+...                                                 interleaverSize=none
+...                                                 regBundleSize=n6
+...                                                 size=48
+&{BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_1_10MHz}            coresetId=0
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=3
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL1=n2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n2
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl10
+...                                                 searchSpaceId=7
+...                                                 searchSpaceType=Type3
+...                                                 slotOffset=2
+&{BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_2_10MHz}            coresetId=0
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=3
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL1=n2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n2
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl10
+...                                                 searchSpaceId=8
+...                                                 searchSpaceType=Type3
+...                                                 slotOffset=6
+&{BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_3_10MHz}            coresetId=0
+...                                                 dciFormat=formats0-1-And-1-1
+...                                                 duration=3
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL1=n2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n2
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl10
+...                                                 searchSpaceId=9
+...                                                 searchSpaceType=UE-Specific
+...                                                 slotOffset=2
+&{BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_4_10MHz}            coresetId=0
+...                                                 dciFormat=formats0-1-And-1-1
+...                                                 duration=3
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL1=n2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n2
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl10
+...                                                 searchSpaceId=10
+...                                                 searchSpaceType=UE-Specific
+...                                                 slotOffset=6
+&{BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_5_10MHz}            coresetId=4
+...                                                 dciFormat=formats0-1-And-1-1
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL1=n2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n2
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl10
+...                                                 searchSpaceId=11
+...                                                 searchSpaceType=UE-Specific
+...                                                 slotOffset=5
+&{BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_6_10MHz}            coresetId=4
+...                                                 dciFormat=formats0-1-And-1-1
+...                                                 duration=3
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL1=n2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n2
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl10
+...                                                 searchSpaceId=12
+...                                                 searchSpaceType=UE-Specific
+...                                                 slotOffset=9
+#&{BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_7_10MHz}            coresetId=4
+#...                                                 dciFormat=formats0-1-And-1-1
+#...                                                 duration=3
+#...                                                 monitoringSymbolWithinSlot=symbol_2
+#...                                                 numOfPdcchCandidatesInAL1=n2
+#...                                                 numOfPdcchCandidatesInAL16=n0
+#...                                                 numOfPdcchCandidatesInAL2=n2
+#...                                                 numOfPdcchCandidatesInAL4=n2
+#...                                                 numOfPdcchCandidatesInAL8=n0
+#...                                                 periodicity=sl10
+#...                                                 searchSpaceId=13
+#...                                                 searchSpaceType=UE-Specific
+#...                                                 slotOffset=9
+
+
+
+# MRBTS-1/NRBTS-1/BWP_PROFILE-161
+&{bwpType_Initial_locationAndBandwidthDl}        cRbSizeDl=coreset0
+...                                              cRbStartDl=coreset0
+&{bwpType_Initial_locationAndBandwidthUl}        cRbSizeUl=allRb
+...                                              cRbStartUl=crb0
+
+# MRBTS-1/NRBTS-1/BWP_PROFILE-161/PDCCH-1
+&{BWP_PROFILE_1_PDCCH_1}            alSelection=static
+...                                 dciDedicatedAggregationLevel=AL4
+...                                 dciPagingAggregationLevel=AL4
+...                                 dciRaCompletionAggregationLevel=AL4
+...                                 dciRaMsg2AggregationLevel=AL4
+...                                 dciSiAggregationLevel=AL4
+
+# MRBTS-1/NRBTS-1/BWP_PROFILE-161/PDCCH-1/PDCCH_CONFIG_COMMON-1
+# empty !!!!
+
+# MRBTS-1/NRBTS-1/BWP_PROFILE-170
+&{bwpType_dedicated_locationAndBandwidthDl}        cRbSizeDl=allRb
+...                                                cRbStartDl=crb0
+&{bwpType_dedicated_locationAndBandwidthUl}        cRbSizeUl=allRb
+...                                                cRbStartUl=crb0
+
+
+
+# MRBTS-1/NRBTS-1/BWP_PROFILE-170/PDCCH-1
+&{BWP_PROFILE_2_PDCCH_1}                            alSelection=static
+...                                                 dciDedicatedAggregationLevel=AL4
+...                                                 dciPagingAggregationLevel=AL4
+...                                                 dciRaCompletionAggregationLevel=AL4
+...                                                 dciRaMsg2AggregationLevel=AL4
+...                                                 dciSiAggregationLevel=AL4
+&{BWP_PROFILE_2_PDCCH_1_CONFIG_COMMON_1_coresetCommon_10MHz}            cceToRegMapping=interleaved
+...                                                 coresetId=4
+...                                                 cRbStart=0
+...                                                 duration=1
+...                                                 interleaverSize=n3
+...                                                 regBundleSize=n2
+...                                                 size=48
+
+&{BWP_PROFILE_2_PDCCH_1_CONFIG_COMMON_1_searchSpaceCommon_10MHz}            coresetId=4
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl1
+...                                                 searchSpaceId=1
+...                                                 searchSpaceType=Type1
+...                                                 slotOffset=0
+
+
+&{BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_searchSpaceDedicated_1_10MHz}            coresetId=4
+...                                                 dciFormat=formats0-0-And-1-0
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL1=n0
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n0
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl1
+...                                                 searchSpaceId=2
+...                                                 searchSpaceType=Type3
+...                                                 slotOffset=0
+
+&{BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_searchSpaceDedicated_2_10MHz}            coresetId=4
+...                                                 dciFormat=formats0-1-And-1-1
+...                                                 duration=1
+...                                                 monitoringSymbolWithinSlot=symbol_2
+...                                                 numOfPdcchCandidatesInAL1=n0
+...                                                 numOfPdcchCandidatesInAL16=n0
+...                                                 numOfPdcchCandidatesInAL2=n4
+...                                                 numOfPdcchCandidatesInAL4=n2
+...                                                 numOfPdcchCandidatesInAL8=n0
+...                                                 periodicity=sl1
+...                                                 searchSpaceId=3
+...                                                 searchSpaceType=UE-Specific
+...                                                 slotOffset=0
+
+
+# MRBTS-1/NRBTS-1/NRCELL-1
+&{NRCELL_cellBwpList_Item1}         bwpDN=MRBTS-1/NRBTS-1/BWP_PROFILE-1
+...                                 cellBwpId=0
+&{NRCELL_cellBwpList_Item2}         bwpDN=MRBTS-1/NRBTS-1/BWP_PROFILE-2
+...                                 cellBwpId=1
+&{NRCELL_cellBwpList_Item161}       bwpDN=MRBTS-1/NRBTS-1/BWP_PROFILE-161
+...                                 cellBwpId=0
+&{NRCELL_cellBwpList_Item170}       bwpDN=MRBTS-1/NRBTS-1/BWP_PROFILE-170
+...                                 cellBwpId=1
+
+#      <list name="cellBwpList">
+#        <item>
+#          <p name="bwpDN">MRBTS-1/NRBTS-1/BWP_PROFILE-161</p>
+#          <p name="cellBwpId">0</p>
+#        </item>
+#        <item>
+#          <p name="bwpDN">MRBTS-1/NRBTS-1/BWP_PROFILE-170</p>
+#          <p name="cellBwpId">1</p>
+#        </item>
+#      </list>
+
+
+
+# Used by 1586-M2
+@{ListOfMsg_ULDL}         UlData_PuschReceiveReq      DlData_PdschSendReq         DlData_CsiRsSendReq         DlData_PdcchSendReq
+
+#----------------------------------------------------------------------------------------------------------------------------------------------------
+&{Scf5MHz}             mrbts=${MRBTS5MHz}      nrbts=${NRBTS_FDD_NoDSS}    nrbts_trblcadm=${NRBTS_TRBLCADM}
+...                    nrcellfdd=${NRCELL_FDD5MHz}      nrcell=${NRCELL5MHz}     nrbts_featcadm=${NRBTS_FEATCADM}
+...                    nrcellgrp=${NRCELLGRP_5MHz}      nrpmrnl=${NRPMRNL_5MHz}    nrdrb=${NRDRB}    apSwconfig=0
+&{Scf10MHzDSS}         mrbts=${MRBTS10MHz}     nrbts=${NRBTS_FDD_DSS}    nrbts_trblcadm=${NRBTS_TRBLCADM}    nrcellfdd=${NRCELL_FDD10MHz}
+...                    nrcell=${NRCELL10MHz}     ipif=${MRBTS_IPIF}
+...                    nrcellgrp=${NRCELLGRP_10MHz}     nrpmrnl=${NRPMRNL_10MHz}    nrdrb=${NRDRB_DSS}    nrdsslte=${NRCELL_NRDSSLTE}
+...                    enbPlmn=${NRCELL_NRDSSLTE_enbPlmn}     lteNrDssDlRatio=${NRCELL_NRDSSLTE_lteNrDssDlRatio}
+...                    lteNrDssMbsfnRatio=${NRCELL_NRDSSLTE_lteNrDssMbsfnRatio}    lteNrDssUlRatio=${NRCELL_NRDSSLTE_lteNrDssUlRatio}
+...                    xpif=${MRBTS_XPIF}    xpif_xpifremote=${MRBTS_XPIF_XPIFREMOTE}   nrbts742=${NRBTS_FDD_DSS_742_OFF}    apSwconfig=0
+...                    Bwp_Profile1_locationAndBandwidthDl=${bwpType_Initial_locationAndBandwidthDl}
+...                    Bwp_Profile1_locationAndBandwidthUl=${bwpType_Initial_locationAndBandwidthUl}
+...                    Bwp_Profile1_pdcch1=${BWP_PROFILE_1_PDCCH_1}
+...                    Bwp_Profile2_locationAndBandwidthDl=${bwpType_dedicated_locationAndBandwidthDl}
+...                    Bwp_Profile2_locationAndBandwidthUl=${bwpType_dedicated_locationAndBandwidthUl}
+...                    Bwp_Profile2_pdcch_1=${BWP_PROFILE_2_PDCCH_1}
+...                    coresetCommon=${BWP_PROFILE_2_PDCCH_1_CONFIG_COMMON_1_coresetCommon_10Mhz}
+...                    searchSpaceCommon=${BWP_PROFILE_2_PDCCH_1_CONFIG_COMMON_1_searchSpaceCommon_10MHz}
+...                    searchSpaceDedicated=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_searchSpaceDedicated_1_10MHz}
+...                    bwp_Profile2_pdcch1_dedicated1_searchSpaceDedicated2=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_searchSpaceDedicated_2_10MHz}
+...                    cellBwpList_Item1=${NRCELL_cellBwpList_Item1}     cellBwpList_Item2=${NRCELL_cellBwpList_Item2}
+
+
+&{Scf10MHzDSS_7738}         mrbts=${MRBTS10MHz_DSS_Ph3}     nrbts=${NRBTS_FDD_DSS}    nrbts_trblcadm=${NRBTS_TRBLCADM}
+...                    nrcellfdd=${NRCELL_FDD10MHz_DSS_Ph3}   nrcell=${NRCELL10MHz_DSS_Ph3}      nrbts_featcadm=${NRBTS_FEATCADM}
+...                    ipif=${MRBTS_IPIF}   nrcellgrp=${NRCELLGRP_10MHz}     nrpmrnl=${NRPMRNL_10MHz}    nrdrb=${NRDRB_DSS}
+...                    nrdsslte=${NRCELL_NRDSSLTE_DSS_Ph3}   enbPlmn=${NRCELL_NRDSSLTE_enbPlmn}   lteNrDssDlRatio=${NRCELL_NRDSSLTE_lteNrDssDlRatio}
+...                    lteNrDssMbsfnRatio=${NRCELL_NRDSSLTE_lteNrDssMbsfnRatio}
+...                    lteNrDssUlRatio=${NRCELL_NRDSSLTE_lteNrDssUlRatio}
+...                    xpif=${MRBTS_XPIF}    xpif_xpifremote=${MRBTS_XPIF_XPIFREMOTE}   apSwconfig=0
+...                    Bwp_Profile1_locationAndBandwidthDl=${bwpType_Initial_locationAndBandwidthDl}
+...                    Bwp_Profile1_locationAndBandwidthUl=${bwpType_Initial_locationAndBandwidthUl}
+...                    Bwp_Profile1_pdcch1=${BWP_PROFILE_161_PDCCH_1}
+...                    Bwp_Profile1_searchSpaceCommon_1=${BWP_PROFILE_161_PDCCH_1_CONFIG_COMMON_1_SSCommon_1_10MHz}
+...                    Bwp_Profile1_searchSpaceCommon_2=${BWP_PROFILE_161_PDCCH_1_CONFIG_COMMON_1_SSCommon_2_10MHz}
+...                    Bwp_Profile1_searchSpaceCommon_3=${BWP_PROFILE_161_PDCCH_1_CONFIG_COMMON_1_SSCommon_3_10MHz}
+...                    Bwp_Profile2_locationAndBandwidthDl=${bwpType_dedicated_locationAndBandwidthDl}
+...                    Bwp_Profile2_locationAndBandwidthUl=${bwpType_dedicated_locationAndBandwidthUl}
+...                    Bwp_Profile2_pdcch_1=${BWP_PROFILE_170_PDCCH_1}
+...                    Bwp_Profile2_pdcch_1_DynAggLevSet=${BWP_PROFILE_170_PDCCH_1_DynAggLevSet}
+...                    coresetCommon=${BWP_PROFILE_2_PDCCH_1_CONFIG_COMMON_1_coresetCommon_10MHz}
+...                    searchSpaceCommonProf2_1=${BWP_PROFILE_170_PDCCH_1_CONFIG_COMMON_1_SSCommon_1_10MHz}
+...                    searchSpaceCommonProf2_2=${BWP_PROFILE_170_PDCCH_1_CONFIG_COMMON_1_SSCommon_2_10MHz}
+...                    searchSpaceCommonProf2_3=${BWP_PROFILE_170_PDCCH_1_CONFIG_COMMON_1_SSCommon_3_10MHz}
+...                    Bwp_Profile2_pdcch_1_coresetDedicated=${BWP_PROFILE_170_PDCCH_1_CONFIG_Dedicated_1_coresetDedicated_10MHz}
+...                    searchSpaceDedicatedProf2_1=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_1_10MHz}
+...                    searchSpaceDedicatedProf2_2=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_2_10MHz}
+...                    searchSpaceDedicatedProf2_3=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_3_10MHz}
+...                    searchSpaceDedicatedProf2_4=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_4_10MHz}
+...                    searchSpaceDedicatedProf2_5=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_5_10MHz}
+...                    searchSpaceDedicatedProf2_6=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_6_10MHz}
+# ...                    searchSpaceDedicatedProf2_7=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_7_10MHz}
+...                    cellBwpList_Item1=${NRCELL_cellBwpList_Item161}     cellBwpList_Item2=${NRCELL_cellBwpList_Item170}
+...                    nrcell_wa=${NRCELL_WA}      nrsysinfo_profile_wa=${NRSYSINFO_PROFILE_WA}
+...                    aggregationLevel=4CCEs      actPRBBlanking=false      BlankedPRBs=${NRCELL10MHz_wo_BLE_AL4}
+...                    trsMutingInBlankedPRBsEnabled=false
+
+&{Scf10MHzDSS_7738_SSBPos6}         mrbts=${MRBTS10MHz_DSS_Ph3}     nrbts=${NRBTS_FDD_DSS}    nrbts_trblcadm=${NRBTS_TRBLCADM}
+...                    nrcellfdd=${NRCELL_FDD10MHz_DSS_Ph3}   nrcell=${NRCELL10MHz_DSS_Ph3_SSBPos6}      nrbts_featcadm=${NRBTS_FEATCADM}
+...                    ipif=${MRBTS_IPIF}   nrcellgrp=${NRCELLGRP_10MHz}     nrpmrnl=${NRPMRNL_10MHz}    nrdrb=${NRDRB_DSS}
+...                    nrdsslte=${NRCELL_NRDSSLTE_SSB_POS6}   enbPlmn=${NRCELL_NRDSSLTE_enbPlmn}  lteNrDssDlRatio=${NRCELL_NRDSSLTE_lteNrDssDlRatio}
+...                    lteNrDssMbsfnRatio=${NRCELL_NRDSSLTE_lteNrDssMbsfnRatio}
+...                    lteNrDssUlRatio=${NRCELL_NRDSSLTE_lteNrDssUlRatio}
+...                    xpif=${MRBTS_XPIF}    xpif_xpifremote=${MRBTS_XPIF_XPIFREMOTE}   apSwconfig=0
+...                    Bwp_Profile1_locationAndBandwidthDl=${bwpType_Initial_locationAndBandwidthDl}
+...                    Bwp_Profile1_locationAndBandwidthUl=${bwpType_Initial_locationAndBandwidthUl}
+...                    Bwp_Profile1_pdcch1=${BWP_PROFILE_161_PDCCH_1}
+...                    Bwp_Profile1_searchSpaceCommon_1=${BWP_PROFILE_161_PDCCH_1_CONFIG_COMMON_1_SSCommon_1_10MHz_SSBPos6}
+...                    Bwp_Profile1_searchSpaceCommon_2=${BWP_PROFILE_161_PDCCH_1_CONFIG_COMMON_1_SSCommon_2_10MHz_SSBPos6}
+...                    Bwp_Profile1_searchSpaceCommon_3=${BWP_PROFILE_161_PDCCH_1_CONFIG_COMMON_1_SSCommon_3_10MHz_SSBPos6}
+...                    Bwp_Profile2_locationAndBandwidthDl=${bwpType_dedicated_locationAndBandwidthDl}
+...                    Bwp_Profile2_locationAndBandwidthUl=${bwpType_dedicated_locationAndBandwidthUl}
+...                    Bwp_Profile2_pdcch_1=${BWP_PROFILE_170_PDCCH_1}
+...                    Bwp_Profile2_pdcch_1_DynAggLevSet=${BWP_PROFILE_170_PDCCH_1_DynAggLevSet}
+...                    coresetCommon=${BWP_PROFILE_2_PDCCH_1_CONFIG_COMMON_1_coresetCommon_10MHz}
+...                    searchSpaceCommonProf2_1=${BWP_PROFILE_170_PDCCH_1_CONFIG_COMMON_1_SSCommon_1_10MHz_SSBPos6}
+...                    searchSpaceCommonProf2_2=${BWP_PROFILE_170_PDCCH_1_CONFIG_COMMON_1_SSCommon_2_10MHz_SSBPos6}
+...                    searchSpaceCommonProf2_3=${BWP_PROFILE_170_PDCCH_1_CONFIG_COMMON_1_SSCommon_3_10MHz_SSBPos6}
+...                    Bwp_Profile2_pdcch_1_coresetDedicated=${BWP_PROFILE_170_PDCCH_1_CONFIG_Dedicated_1_coresetDedicated_10MHz}
+...                    searchSpaceDedicatedProf2_1=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_1_10MHz}
+...                    searchSpaceDedicatedProf2_2=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_2_10MHz}
+...                    searchSpaceDedicatedProf2_3=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_3_10MHz}
+...                    searchSpaceDedicatedProf2_4=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_4_10MHz}
+...                    searchSpaceDedicatedProf2_5=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_5_10MHz}
+...                    searchSpaceDedicatedProf2_6=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_6_10MHz}
+# ...                    searchSpaceDedicatedProf2_7=${BWP_PROFILE_2_PDCCH_1_CONFIG_DEDICATED_1_SSDedicated_7_10MHz}
+...                    cellBwpList_Item1=${NRCELL_cellBwpList_Item161}     cellBwpList_Item2=${NRCELL_cellBwpList_Item170}
+...                    nrcell_wa=${NRCELL_WA}      nrsysinfo_profile_wa=${NRSYSINFO_PROFILE_WA}
+...                    aggregationLevel=4CCEs      actPRBBlanking=false      BlankedPRBs=${NRCELL10MHz_wo_BLE_AL4}
+...                    trsMutingInBlankedPRBsEnabled=false
+
+&{NRCELL10MHz_wo_BLE_AL4}      nbrOfBlankedPRBsHighEdgeDL=0
+...                         nbrOfBlankedPRBsHighEdgeUL=0
+...                         nbrOfBlankedPRBsLowEdgeDL=0
+...                         nbrOfBlankedPRBsLowEdgeUL=0
+...                         msg=
+
+
+&{Scf10MHzNoDSS}       mrbts=${MRBTS10MHzNoDSS}     nrbts=${NRBTS_FDD_NoDSS}   nrbts_trblcadm=${NRBTS_TRBLCADM}
+...                    nrcellfdd=${NRCELL_FDD10MHz}    nrbts_featcadm=${NRBTS_FEATCADM}    ipif=${MRBTS_IPIF}
+...                    nrcell=${NRCELL10MHzNoDSS}       nrcellgrp=${NRCELLGRP_10MHz}     nrpmrnl=${NRPMRNL_10MHz_NoDSS}    nrdrb=${NRDRB}
+...                    apSwconfig=0
+
+&{wtsXml5MHz}          dlNrArfcn=125900      ulNrArfcn=135100     dlUlBandwidth=25     ssBlockPrbOffset=3    bw=5MHz
+&{wtsXml10MHz}         dlNrArfcn=127100      ulNrArfcn=136300     dlUlBandwidth=52     ssBlockPrbOffset=16    bw=10MHz
+&{wtsXml15MHz}         dlNrArfcn=127100      ulNrArfcn=136300     dlUlBandwidth=79     ssBlockPrbOffset=46    bw=15MHz
+&{wtsXml20MHz}         dlNrArfcn=127100      ulNrArfcn=136300     dlUlBandwidth=106    ssBlockPrbOffset=73    bw=20MHz
+
+# UlData_PuschReceiveReq
+@{ListOfMsg_UL}                  UlData_PuschReceiveReq
+
+#----------------------------------------------------------------------------------------------------------------------------------------------------
+# DSS Cell 5G part:                                                          ulSR                   20%	          30%	           40%
+#                               Customer	                    case #	    Num_Carrier	         tput_DSS_p1	tput_DSS_p2	     tput_DSS_p3
+#		5G_FDD_FR1,UL_DL,1x10,MIMO1x1,64qam,-	            ULDL_dlSR70%		1	               4,2          	6,3	           8,4
+#       5G_FDD_FR1,UL_DL,1x15,MIMO1x1,64qam,-	            ULDL_dlSR70%		1	               6,3	            9,3	           12,7
+# 		5G_FDD_FR1,UL_DL,1x20,MIMO1x1,64qam,-	             ULDL_dlSR70%		1	               8,4	            12,7	       16,9
+# DSS Cell 5G part:                                                             ulSR            50%	           60%	           70%
+#                               Customer	                                              tput_DSS_p4      tput_DSS_p5	 tput_DSS_p6  	tputL1_ENDC#
+#		5G_FDD_FR1,UL_DL,1x10,MIMO1x1,64qam,-	            ULDL_dlSR70%		1	           10,7	          12,7	         14,3	         30,7
+#       5G_FDD_FR1,UL_DL,1x15,MIMO1x1,64qam,-	            ULDL_dlSR70%		1	           15,6     	  19,2           22,1            46,1
+# 		5G_FDD_FR1,UL_DL,1x20,MIMO1x1,64qam,-	             ULDL_dlSR70%		1	           21,4	          25,3	         29,9	         61,5
+#
+#----------------------------------------------------------------------------------------------------------------------------------------------------
+
+# DL pattern 100 % : 1011111111-1111111111-1011111111-1111111111-1011111111-1111111111-1011111111-1111111111
+# DL pattern 70 % :  0011101110-0111101110-0011101110-0111101110-0011101110-0111101110-0011101110-0111101110
+
+&{T1}                 feature1745=${true}      totalUE=1    loop=1      bandwidth=10MHz    technology=FDD    ul_throughput=15    dl_throughput=40
+...                   timeDuration=3s    stopTraffic=${False}  shouldBeCheck=${False}     dirTraffic=ul    CellLTEId=1   CellNRId=2
+...                   ULNbrOfPrb=35
+...                   dl_allocated_normal_subframes=1011111111-1111111111-1011111111-1111111111-1011111111-1111111111-1011111111-1111111111
+...                   ul_allocation_type=max_share
+...                   dl_allocation_type=max_share
+...                   Dl_MeasuredNgbrNnbrLoad=64   Ul_MeasuredNgbrNnbrLoad=64   dl_qos_load_meas_timer=200    ul_qos_load_meas_timer=200
+...                   filtermsg=@{ListOfMsg_UL}
+#CSI tracking value to check for ssb position in l2 - settings for SSB Pos1
+...                   SlotOffsetValue_1=0x00000001
+...                   SlotOffsetValue_2=0x00000002
+...                   SymbolValue_1=10
+...                   SymbolValue_2=6
+#CSI tracking value to check for ssb position in RRC Reconf - settings for SSB Pos1
+...                   row1Value_1=10
+...                   row1Value_2=10
+...                   slots80Value_1=1
+...                   slots80Value_2=2
+#Adding 1745 specific params
+...                    assigned_dl_minimum_share_to_nr=30
+...                    assigned_dl_maximum_share_to_nr=100
+...                    assigned_ul_minimum_share_to_nr=20
+...                    assigned_ul_maximum_share_to_nr=70
+#Adding 7738 specific NIDD params
+# ...                    actLteNrDssFastAlloc=true
+...                    dlResourceSharingAlgo=DL buffer level based
+...                    wtsDlResourceSharingAlgo=dl_buffer_level_based
+#...                    DssFastAllocValue=0x00000001
+...                    DssFastAllocValue=0x01
+# ...                    SharingAlgoValue=0x00000001
+...                    SharingAlgoValue=01
+...                    xpSharingAlgoValue=01000000
+...                    ue_nr_capa_value=${ue_nr_capabilities_DSSPH3_10MHz}   ue_ue_eutra_nr_capa=${ue_ue_eutra_nr_capabilities_DSSPH3_10MHz}
+
+
+&{T2}                 feature1745=${true}      totalUE=1    loop=1      bandwidth=10MHz    technology=FDD    ul_throughput=15    dl_throughput=40
+...                   timeDuration=3s    stopTraffic=${False}  shouldBeCheck=${False}     dirTraffic=ul    CellLTEId=1   CellNRId=2
+...                   ULNbrOfPrb=35
+...                   dl_allocated_normal_subframes=1011111111-1111111111-1011111111-1111111111-1011111111-1111111111-1011111111-1111111111
+...                   ul_allocation_type=max_share
+...                   dl_allocation_type=max_share
+...                   Dl_MeasuredNgbrNnbrLoad=64   Ul_MeasuredNgbrNnbrLoad=64   dl_qos_load_meas_timer=200    ul_qos_load_meas_timer=200
+...                   filtermsg=@{ListOfMsg_UL}
+#CSI tracking value to check for ssb position in l2 - settings for SSB Pos1
+...                   SlotOffsetValue_1=0x00000001
+...                   SlotOffsetValue_2=0x00000002
+...                   SymbolValue_1=10
+...                   SymbolValue_2=6
+#CSI tracking value to check for ssb position in RRC Reconf - settings for SSB Pos1
+...                   row1Value_1=10
+...                   row1Value_2=10
+...                   slots80Value_1=1
+...                   slots80Value_2=2
+#Adding 7738 specific NIDD params
+# ...                    actLteNrDssFastAlloc=true
+...                    dlResourceSharingAlgo=DL PRB load based
+...                    wtsDlResourceSharingAlgo=dl_prb_load_based
+#...                    DssFastAllocValue=0x00000001
+...                    DssFastAllocValue=0x01
+# ...                    SharingAlgoValue=0x00000000
+# ...                    00000000 = PRB load based
+# ...                    01000000 = Buffer level based
+...                    SharingAlgoValue=01
+...                    xpSharingAlgoValue=01000000
+...                    assigned_dl_minimum_share_to_nr=30
+...                    assigned_dl_maximum_share_to_nr=100
+...                    assigned_ul_minimum_share_to_nr=20
+...                    assigned_ul_maximum_share_to_nr=70
+...                    ue_nr_capa_value=${ue_nr_capabilities_DSSPH3_10MHz}   ue_ue_eutra_nr_capa=${ue_ue_eutra_nr_capabilities_DSSPH3_10MHz}
+
+&{T2_SSBPos6}         feature1745=${true}      totalUE=1    loop=1      bandwidth=10MHz    technology=FDD    ul_throughput=15    dl_throughput=40
+...                   timeDuration=3s    stopTraffic=${False}  shouldBeCheck=${False}     dirTraffic=ul    CellLTEId=1   CellNRId=2
+...                   ULNbrOfPrb=35
+# for SSB POS6 test
+...                   dl_allocated_normal_subframes=1111110111-1111111111-1111110111-1111111111-1111110111-1111111111-1111110111-1111111111
+...                   ul_allocation_type=max_share
+...                   dl_allocation_type=max_share
+...                   Dl_MeasuredNgbrNnbrLoad=64   Ul_MeasuredNgbrNnbrLoad=64   dl_qos_load_meas_timer=200    ul_qos_load_meas_timer=200
+...                   filtermsg=@{ListOfMsg_UL}
+#CSI tracking value to check for ssb position in l2 - settings for SSB Pos1
+...                   SlotOffsetValue_1=0x00000001
+...                   SlotOffsetValue_2=0x00000002
+...                   SymbolValue_1=10
+...                   SymbolValue_2=6
+#CSI tracking value to check for ssb position in RRC Reconf - settings for SSB Pos1
+...                   row1Value_1=10
+...                   row1Value_2=10
+...                   slots80Value_1=1
+...                   slots80Value_2=2
+#Adding 7738 specific NIDD params
+# ...                    actLteNrDssFastAlloc=true
+...                    dlResourceSharingAlgo=DL PRB load based
+...                    wtsDlResourceSharingAlgo=dl_prb_load_based
+#...                    DssFastAllocValue=0x00000001
+...                    DssFastAllocValue=0x01
+# ...                    SharingAlgoValue=0x00000000
+# ...                    00000000 = PRB load based
+# ...                    01000000 = Buffer level based
+...                    SharingAlgoValue=01
+...                    xpSharingAlgoValue=01000000
+...                    assigned_dl_minimum_share_to_nr=30
+...                    assigned_dl_maximum_share_to_nr=100
+...                    assigned_ul_minimum_share_to_nr=20
+...                    assigned_ul_maximum_share_to_nr=70
+...                    ue_nr_capa_value=${ue_nr_capabilities_DSSPH3_10MHz}   ue_ue_eutra_nr_capa=${ue_ue_eutra_nr_capabilities_DSSPH3_10MHz}
+
+&{T9}                 feature1745=${true}      totalUE=1    loop=1      bandwidth=10MHz    technology=FDD    ul_throughput=15    dl_throughput=40
+...                   timeDuration=3s    stopTraffic=${False}  shouldBeCheck=${False}     dirTraffic=ul    CellLTEId=1   CellNRId=2
+...                   ULNbrOfPrb=35
+...                   dl_allocated_normal_subframes=1011111111-1111111111-1011111111-1111111111-1011111111-1111111111-1011111111-1111111111
+#...                   dl_allocated_normal_subframes=1001110011-1111111111-1011110011-1111111111-1011110011-1111111111-1011110011-1111111111
+...                   ul_allocation_type=max_share
+...                   dl_allocation_type=max_share
+...                   Dl_MeasuredNgbrNnbrLoad=64   Ul_MeasuredNgbrNnbrLoad=64   dl_qos_load_meas_timer=200    ul_qos_load_meas_timer=200
+...                   filtermsg=@{ListOfMsg_UL}
+#CSI tracking value to check for ssb position in l2 - settings for SSB Pos1
+...                   SlotOffsetValue_1=0x00000001
+...                   SlotOffsetValue_2=0x00000002
+...                   SymbolValue_1=10
+...                   SymbolValue_2=6
+#CSI tracking value to check for ssb position in RRC Reconf - settings for SSB Pos1
+...                   row1Value_1=10
+...                   row1Value_2=10
+...                   slots80Value_1=1
+...                   slots80Value_2=2
+#Adding 1745 specific params
+...                    assigned_dl_minimum_share_to_nr=30
+...                    assigned_dl_maximum_share_to_nr=100
+...                    assigned_ul_minimum_share_to_nr=20
+...                    assigned_ul_maximum_share_to_nr=70
+#Adding 7738 specific NIDD params
+# ...                    actLteNrDssFastAlloc=true
+...                    dlResourceSharingAlgo=DL buffer level based
+...                    wtsDlResourceSharingAlgo=dl_buffer_level_based
+#...                    DssFastAllocValue=0x00000001
+...                    DssFastAllocValue=0x01
+# ...                    SharingAlgoValue=0x00000001
+...                    SharingAlgoValue=01
+...                    xpSharingAlgoValue=01000000
+...                    ue_nr_capa_value=${ue_nr_capabilities_DSSPH3_10MHz}   ue_ue_eutra_nr_capa=${ue_ue_eutra_nr_capabilities_DSSPH3_10MHz}
+
+&{T10}                 feature1745=${true}      totalUE=1    loop=1      bandwidth=10MHz    technology=FDD    ul_throughput=15    dl_throughput=40
+...                   timeDuration=3s    stopTraffic=${False}  shouldBeCheck=${False}     dirTraffic=ul    CellLTEId=1   CellNRId=2
+...                   ULNbrOfPrb=35
+...                   dl_allocated_normal_subframes=1011111111-1111111111-1011111111-1111111111-1011111111-1111111111-1011111111-1111111111
+#...                   dl_allocated_normal_subframes=1001110011-1111111111-1011110011-1111111111-1011110011-1111111111-1011110011-1111111111
+...                   ul_allocation_type=max_share
+...                   dl_allocation_type=max_share
+...                   Dl_MeasuredNgbrNnbrLoad=64   Ul_MeasuredNgbrNnbrLoad=64   dl_qos_load_meas_timer=200    ul_qos_load_meas_timer=200
+...                   filtermsg=@{ListOfMsg_UL}
+#CSI tracking value to check for ssb position in l2 - settings for SSB Pos1
+...                   SlotOffsetValue_1=0x00000001
+...                   SlotOffsetValue_2=0x00000002
+...                   SymbolValue_1=10
+...                   SymbolValue_2=6
+#CSI tracking value to check for ssb position in RRC Reconf - settings for SSB Pos1
+...                   row1Value_1=10
+...                   row1Value_2=10
+...                   slots80Value_1=1
+...                   slots80Value_2=2
+#Adding 1745 specific params
+...                    assigned_dl_minimum_share_to_nr=30
+...                    assigned_dl_maximum_share_to_nr=100
+...                    assigned_ul_minimum_share_to_nr=20
+...                    assigned_ul_maximum_share_to_nr=70
+#Adding 7738 specific NIDD params
+# ...                    actLteNrDssFastAlloc=true
+...                    dlResourceSharingAlgo=DL buffer level based
+...                    wtsDlResourceSharingAlgo=dl_buffer_level_based
+#...                    DssFastAllocValue=0x00000001
+...                    DssFastAllocValue=0x01
+# ...                    SharingAlgoValue=0x00000001
+...                    SharingAlgoValue=01
+...                    xpSharingAlgoValue=01000000
+...                    ue_nr_capa_value=${ue_nr_capabilities_DSSPH3_10MHz}   ue_ue_eutra_nr_capa=${ue_ue_eutra_nr_capabilities_DSSPH3_10MHz}
+
+
+# Test parameters for DSS
+
+&{Context}            cellDepType=SA+NSA    eNBId=1  eNBId_cellid=1  gNBId=2   gNBId_cellid=1  UeId1=1    UeId2=2    UeId3=3    DSS_Phase=Phase-3
+...                   lte_dlNrArfcn=133307      lte_ulNrArfcn=68771   superfast_allocation=on
+...                   WtsWaitingPattern=Received DSS DL Resource Area Allocation Response
+...                   nrCellType=2DL2UL
+
+&{TestDSS10Mhz}       seq=${T1}       wtsXmlFile=${wtsXml10MHz}     scfFile=${Scf10MHzDSS}      Context=${Context}
+...                   rdEnableFDMPdschDmrs_0x5801a6=1     RadParamcprt679_A_0x590050=0
+...                   RadParam_cprtrd742isPdcchPatternActivated_0x5801a1=0   RadParam_rdDynamicPdcchConfigActivation_0x59005d=0
+...                   RadParam_rdSupportedUlMCS_0x580010=0x1fffffff
+
+
+# Test parameters for 7738 [10MHz]
+&{TestDSS10Mhz_7738_A1}       seq=${T1}       wtsXmlFile=${wtsXml10MHz}     scfFile=${Scf10MHzDSS_7738}       Context=${Context}
+...                       rdEnableFDMPdschDmrs_0x5801a6=1     RadParamcprt679_A_0x590050=0
+...                       RadParam_rdSupportedUlMCS_0x580010=0x1fffffff    RadParam_rdLteFlexibleRateMatchingEnabled_0x5900a6=1
+...                       RadParam_rdLteFlexibleRateMatchingAltModeEnabled_0x5900a7=1
+
+&{TestDSS10Mhz_7738_A2}       seq=${T2}       wtsXmlFile=${wtsXml10MHz}     scfFile=${Scf10MHzDSS_7738}       Context=${Context}
+...                       rdEnableFDMPdschDmrs_0x5801a6=1     RadParamcprt679_A_0x590050=0
+...                       RadParam_rdSupportedUlMCS_0x580010=0x1fffffff    RadParam_rdLteFlexibleRateMatchingEnabled_0x5900a6=1
+...                       RadParam_rdLteFlexibleRateMatchingAltModeEnabled_0x5900a7=1
+
+&{TestDSS10Mhz_7738_A3}       seq=${T2}       wtsXmlFile=${wtsXml10MHz}     scfFile=${Scf10MHzDSS_7738}       Context=${Context}
+...                       rdEnableFDMPdschDmrs_0x5801a6=1     RadParamcprt679_A_0x590050=0
+...                       RadParam_rdSupportedUlMCS_0x580010=0x1fffffff    RadParam_rdLteFlexibleRateMatchingEnabled_0x5900a6=1
+...                       RadParam_rdLteFlexibleRateMatchingAltModeEnabled_0x5900a7=1
+
+&{TestDSS10Mhz_7738_A3_SSBPos6}       seq=${T2_SSBPos6}    wtsXmlFile=${wtsXml10MHz}     scfFile=${Scf10MHzDSS_7738_SSBPos6}     Context=${Context}
+...                       rdEnableFDMPdschDmrs_0x5801a6=1     RadParamcprt679_A_0x590050=0
+...                       RadParam_rdSupportedUlMCS_0x580010=0x1fffffff    RadParam_rdLteFlexibleRateMatchingEnabled_0x5900a6=1
+...                       RadParam_rdLteFlexibleRateMatchingAltModeEnabled_0x5900a7=1
+
+&{TestDSS10Mhz_7738_A4}       seq=${T2}       wtsXmlFile=${wtsXml10MHz}     scfFile=${Scf10MHzDSS_7738}       Context=${Context}
+...                       rdEnableFDMPdschDmrs_0x5801a6=1     RadParam_rdLteFlexibleRateMatchingEnabled_0x5900a6=1
+...                       RadParam_rdSupportedUlMCS_0x580010=0x1fffffff     RadParam_rdLteFlexibleRateMatchingAltModeEnabled_0x5900a7=1
+
+&{TestDSS10Mhz_7738_B9}       seq=${T9}       wtsXmlFile=${wtsXml10MHz}     scfFile=${Scf10MHzDSS_7738}       Context=${Context}
+...                       rdEnableFDMPdschDmrs_0x5801a6=1     RadParamcprt679_A_0x590050=0
+...                       RadParam_rdSupportedUlMCS_0x580010=0x1fffffff    RadParam_rdLteFlexibleRateMatchingEnabled_0x5900a6=1
+...                       RadParam_rdLteFlexibleRateMatchingAltModeEnabled_0x5900a7=1
+
+&{TestDSS10Mhz_7738_B10}       seq=${T10}       wtsXmlFile=${wtsXml10MHz}     scfFile=${Scf10MHzDSS_7738}       Context=${Context}
+...                       rdEnableFDMPdschDmrs_0x5801a6=1     RadParamcprt679_A_0x590050=0
+...                       RadParam_rdSupportedUlMCS_0x580010=0x1fffffff    RadParam_rdLteFlexibleRateMatchingEnabled_0x5900a6=1
+...                       RadParam_rdLteFlexibleRateMatchingAltModeEnabled_0x5900a7=1
+
+*** Keywords ***
+# robocop: off=unused-argument
+# robocop: off=possible-variable-overwriting
+
+#----------------------------------------------------------------------------------------------------------------------------------------------------
+#         PDCCH CONFIGURATION (SA 10MHz FDD wo PRB Blanking) Procedure
+#----------------------------------------------------------------------------------------------------------------------------------------------------
+
+Set SCF 7738
+    [Arguments]          ${testParam}
+    Dated log New Line                       NRCELL_DIST_NAME=${NRCELL_DIST_NAME}
+#      TestParam is ${testParam}
+    &{bwpp1_locationAndBandwidthUl}     Create Dictionary
+    ...                 cRbSizeUl=${testParam.scfFile.Bwp_Profile1_locationAndBandwidthUl.cRbSizeUl}
+    ...                 cRbStartUl=${testParam.scfFile.Bwp_Profile1_locationAndBandwidthUl.cRbStartUl}
+    ${dist}=   Catenate      MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-161
+    &{modify_param3}    Evaluate    {'dist_name': '${dist}','parameter': 'locationAndBandwidthUl','value':[&{bwpp1_locationAndBandwidthUl}]}
+
+    &{bwpp1_locationAndBandwidthDl}     Create Dictionary
+    ...                 cRbSizeDl=${testParam.scfFile.Bwp_Profile1_locationAndBandwidthDl.cRbSizeDl}
+    ...                 cRbStartDl=${testParam.scfFile.Bwp_Profile1_locationAndBandwidthDl.cRbStartDl}
+    ${dist}=   Catenate      MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-161
+    &{modify_param4}    Evaluate    {'dist_name': '${dist}','parameter': 'locationAndBandwidthDl','value':[&{bwpp1_locationAndBandwidthDl}]}
+
+    &{modify_param5}    Create Dictionary
+    ...    parameter=dciDedicatedAggregationLevel
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-170/PDCCH-1
+    ...    value=${testParam.scfFile.Bwp_Profile2_pdcch_1.dciDedicatedAggregationLevel}
+
+    &{modify_param6}    Create Dictionary
+    ...    parameter=dciRaCompletionAggregationLevel
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-170/PDCCH-1
+    ...    value=${testParam.scfFile.Bwp_Profile2_pdcch_1.dciRaCompletionAggregationLevel}
+
+    &{modify_param7}    Create Dictionary
+    ...    parameter=dciRaMsg2AggregationLevel
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-170/PDCCH-1
+    ...    value=${testParam.scfFile.Bwp_Profile2_pdcch_1.dciRaMsg2AggregationLevel}
+
+   &{modify_param8}    Create Dictionary
+    ...    parameter=nbrOfBlankedPRBsHighEdgeDL
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=0
+
+    &{modify_param9}    Create Dictionary
+    ...    parameter=nbrOfBlankedPRBsHighEdgeUL
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=0
+
+    &{modify_param10}    Create Dictionary
+    ...    parameter=nbrOfBlankedPRBsLowEdgeDL
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=0
+
+    &{modify_param11}    Create Dictionary
+    ...    parameter=nbrOfBlankedPRBsLowEdgeUL
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=0
+    #Adding 7738 specific params
+    &{modify_param12}    Create Dictionary
+    ...    parameter=actLteNrDssFastAlloc
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1/NRDSSLTE-1
+    ...    value=${testParam.scfFile.nrdsslte.actLteNrDssFastAlloc}
+
+    &{lteNrDssDlRatio}   Create Dictionary       dlResourceSharingAlgo=${testParam.scfFile.lteNrDssDlRatio.dlResourceSharingAlgo}
+    ...                                         maxNrDssRatio=${testParam.scfFile.lteNrDssDlRatio.maxNrDssRatio}
+    ...                                        minNrDssRatio=${testParam.scfFile.lteNrDssDlRatio.minNrDssRatio}
+    ${dist}=   Catenate   MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1/NRDSSLTE-1
+    &{modify_param13}    Evaluate    {'dist_name': '${dist}','parameter': 'lteNrDssDlRatio','value':[&{lteNrDssDlRatio}]}
+
+    #&{modify_param13}    Create Dictionary
+    #...    parameter=dlResourceSharingAlgo
+    #...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1/NRDSSLTE-1
+    #...    value=${testParam.seq.dlResourceSharingAlgo}
+
+    &{coresetCommon}    Create Dictionary     coresetId=${testParam.scfFile.coresetCommon.coresetId}
+    ...                 cceToRegMapping=${testParam.scfFile.coresetCommon.cceToRegMapping}
+    ...                 cRbStart=${testParam.scfFile.coresetCommon.cRbStart}
+    ...                 duration=${testParam.scfFile.coresetCommon.duration}
+    ...                 interleaverSize=${testParam.scfFile.coresetCommon.interleaverSize}
+    ...                 regBundleSize=${testParam.scfFile.coresetCommon.regBundleSize}
+    ...                 size=${testParam.scfFile.coresetCommon.size}
+    ${dist}=    Catenate    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-170/PDCCH-1/PDCCH_CONFIG_COMMON-1
+    &{modify_param}    Evaluate    {'dist_name': '${dist}','parameter': 'coresetCommon','value':[&{coresetCommon}]}
+    # &{modify_param}    Evaluate    {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-2/PDCCH-1/PDCCH_CONFIG_COMMON-1',
+    # ...                   'parameter': 'coresetCommon','value':[&{coresetCommon}]}
+
+    &{searchSpaceCommon_1}    Create Dictionary     coresetId=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_1.coresetId}
+    ...                 dciFormat=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_1.dciFormat}
+    ...                 duration=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_1.duration}
+    ...                 monitoringSymbolWithinSlot=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_1.monitoringSymbolWithinSlot}
+    ...                 numOfPdcchCandidatesInAL16=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_1.numOfPdcchCandidatesInAL16}
+    ...                 numOfPdcchCandidatesInAL4=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_1.numOfPdcchCandidatesInAL4}
+    ...                 numOfPdcchCandidatesInAL8=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_1.numOfPdcchCandidatesInAL8}
+    ...                 periodicity=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_1.periodicity}
+    ...                 searchSpaceId=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_1.searchSpaceId}
+    ...                 searchSpaceType=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_1.searchSpaceType}
+    ...                 slotOffset=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_1.slotOffset}
+    ${dist}=    Catenate    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-161/PDCCH-1/PDCCH_CONFIG_COMMON-1
+    # &{modify_param0}    Evaluate    {'dist_name': '${dist}','parameter': 'searchSpaceCommon','value':[&{searchSpaceCommon}]}
+
+    &{searchSpaceCommon_2}    Create Dictionary     coresetId=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_2.coresetId}
+    ...                 dciFormat=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_2.dciFormat}
+    ...                 duration=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_2.duration}
+    ...                 monitoringSymbolWithinSlot=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_2.monitoringSymbolWithinSlot}
+    ...                 numOfPdcchCandidatesInAL16=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_2.numOfPdcchCandidatesInAL16}
+    ...                 numOfPdcchCandidatesInAL4=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_2.numOfPdcchCandidatesInAL4}
+    ...                 numOfPdcchCandidatesInAL8=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_2.numOfPdcchCandidatesInAL8}
+    ...                 periodicity=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_2.periodicity}
+    ...                 searchSpaceId=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_2.searchSpaceId}
+    ...                 searchSpaceType=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_2.searchSpaceType}
+    ...                 slotOffset=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_2.slotOffset}
+    ${dist}=    Catenate    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-161/PDCCH-1/PDCCH_CONFIG_COMMON-1
+    # &{modify_param0_1}    Evaluate    {'dist_name': '${dist}','parameter': 'searchSpaceCommon','value':[&{searchSpaceCommon}]}
+
+    &{searchSpaceCommon_3}    Create Dictionary     coresetId=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_3.coresetId}
+    ...                 dciFormat=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_3.dciFormat}
+    ...                 duration=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_3.duration}
+    ...                 monitoringSymbolWithinSlot=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_3.monitoringSymbolWithinSlot}
+    ...                 numOfPdcchCandidatesInAL16=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_3.numOfPdcchCandidatesInAL16}
+    ...                 numOfPdcchCandidatesInAL4=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_3.numOfPdcchCandidatesInAL4}
+    ...                 numOfPdcchCandidatesInAL8=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_3.numOfPdcchCandidatesInAL8}
+    ...                 periodicity=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_3.periodicity}
+    ...                 searchSpaceId=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_3.searchSpaceId}
+    ...                 searchSpaceType=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_3.searchSpaceType}
+    ...                 slotOffset=${testParam.scfFile.Bwp_Profile1_searchSpaceCommon_3.slotOffset}
+    ${dist}=    Catenate    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-161/PDCCH-1/PDCCH_CONFIG_COMMON-1
+    # &{modify_param0_2}    Evaluate    {'dist_name': '${dist}','parameter': 'searchSpaceCommon','value':[&{searchSpaceCommon}]}
+    @{searchSpaceCommon_values}    create list
+    Append To List    ${searchSpaceCommon_values}    ${searchSpaceCommon_1}    ${searchSpaceCommon_2}    ${searchSpaceCommon_3}
+    &{searchSpaceCommon_Profile_161_params}   Create Dictionary   dist_name=${dist}
+    ...    parameter=searchSpaceCommon
+    ...    value=${searchSpaceCommon_values}
+    dated log          searchSpaceCommon_Profile_161_params=${searchSpaceCommon_Profile_161_params}
+
+    &{searchSpaceCommon_1}    Create Dictionary     coresetId=${testParam.scfFile.searchSpaceCommonProf2_1.coresetId}
+    ...                 dciFormat=${testParam.scfFile.searchSpaceCommonProf2_1.dciFormat}
+    ...                 duration=${testParam.scfFile.searchSpaceCommonProf2_1.duration}
+    ...                 monitoringSymbolWithinSlot=${testParam.scfFile.searchSpaceCommonProf2_1.monitoringSymbolWithinSlot}
+    ...                 numOfPdcchCandidatesInAL16=${testParam.scfFile.searchSpaceCommonProf2_1.numOfPdcchCandidatesInAL16}
+    ...                 numOfPdcchCandidatesInAL4=${testParam.scfFile.searchSpaceCommonProf2_1.numOfPdcchCandidatesInAL4}
+    ...                 numOfPdcchCandidatesInAL8=${testParam.scfFile.searchSpaceCommonProf2_1.numOfPdcchCandidatesInAL8}
+    ...                 periodicity=${testParam.scfFile.searchSpaceCommonProf2_1.periodicity}
+    ...                 searchSpaceId=${testParam.scfFile.searchSpaceCommonProf2_1.searchSpaceId}
+    ...                 searchSpaceType=${testParam.scfFile.searchSpaceCommonProf2_1.searchSpaceType}
+    ...                 slotOffset=${testParam.scfFile.searchSpaceCommonProf2_1.slotOffset}
+    ${dist}=    Catenate    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-170/PDCCH-1/PDCCH_CONFIG_COMMON-1
+    # &{modify_param1}    Evaluate    {'dist_name': '${dist}','parameter': 'searchSpaceCommon','value':[&{searchSpaceCommon}]}
+#    &{modify_param1}    Evaluate    {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-2/PDCCH-1/PDCCH_CONFIG_COMMON-1',
+#    ...      'parameter': 'searchSpaceCommon','value':[&{searchSpaceCommon}]}
+
+    &{searchSpaceCommon_2}    Create Dictionary     coresetId=${testParam.scfFile.searchSpaceCommonProf2_2.coresetId}
+    ...                 dciFormat=${testParam.scfFile.searchSpaceCommonProf2_2.dciFormat}
+    ...                 duration=${testParam.scfFile.searchSpaceCommonProf2_2.duration}
+    ...                 monitoringSymbolWithinSlot=${testParam.scfFile.searchSpaceCommonProf2_2.monitoringSymbolWithinSlot}
+    ...                 numOfPdcchCandidatesInAL16=${testParam.scfFile.searchSpaceCommonProf2_2.numOfPdcchCandidatesInAL16}
+    ...                 numOfPdcchCandidatesInAL4=${testParam.scfFile.searchSpaceCommonProf2_2.numOfPdcchCandidatesInAL4}
+    ...                 numOfPdcchCandidatesInAL8=${testParam.scfFile.searchSpaceCommonProf2_2.numOfPdcchCandidatesInAL8}
+    ...                 periodicity=${testParam.scfFile.searchSpaceCommonProf2_2.periodicity}
+    ...                 searchSpaceId=${testParam.scfFile.searchSpaceCommonProf2_2.searchSpaceId}
+    ...                 searchSpaceType=${testParam.scfFile.searchSpaceCommonProf2_2.searchSpaceType}
+    ...                 slotOffset=${testParam.scfFile.searchSpaceCommonProf2_2.slotOffset}
+    ${dist}=    Catenate    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-170/PDCCH-1/PDCCH_CONFIG_COMMON-1
+    # &{modify_param1_1}    Evaluate    {'dist_name': '${dist}','parameter': 'searchSpaceCommon','value':[&{searchSpaceCommon}]}
+
+    &{searchSpaceCommon_3}    Create Dictionary     coresetId=${testParam.scfFile.searchSpaceCommonProf2_3.coresetId}
+    ...                 dciFormat=${testParam.scfFile.searchSpaceCommonProf2_3.dciFormat}
+    ...                 duration=${testParam.scfFile.searchSpaceCommonProf2_3.duration}
+    ...                 monitoringSymbolWithinSlot=${testParam.scfFile.searchSpaceCommonProf2_3.monitoringSymbolWithinSlot}
+    ...                 numOfPdcchCandidatesInAL16=${testParam.scfFile.searchSpaceCommonProf2_3.numOfPdcchCandidatesInAL16}
+    ...                 numOfPdcchCandidatesInAL4=${testParam.scfFile.searchSpaceCommonProf2_3.numOfPdcchCandidatesInAL4}
+    ...                 numOfPdcchCandidatesInAL8=${testParam.scfFile.searchSpaceCommonProf2_3.numOfPdcchCandidatesInAL8}
+    ...                 periodicity=${testParam.scfFile.searchSpaceCommonProf2_3.periodicity}
+    ...                 searchSpaceId=${testParam.scfFile.searchSpaceCommonProf2_3.searchSpaceId}
+    ...                 searchSpaceType=${testParam.scfFile.searchSpaceCommonProf2_3.searchSpaceType}
+    ...                 slotOffset=${testParam.scfFile.searchSpaceCommonProf2_3.slotOffset}
+    ${dist}=    Catenate    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-170/PDCCH-1/PDCCH_CONFIG_COMMON-1
+    # &{modify_param1_2}    Evaluate    {'dist_name': '${dist}','parameter': 'searchSpaceCommon','value':[&{searchSpaceCommon}]}
+    @{searchSpaceCommon_Profile_170_values}    create list
+    Append To List    ${searchSpaceCommon_Profile_170_values}    ${searchSpaceCommon_1}    ${searchSpaceCommon_2}    ${searchSpaceCommon_3}
+    &{searchSpaceCommon_Profile_170_params}   Create Dictionary   dist_name=${dist}
+    ...    parameter=searchSpaceCommon
+    ...    value=${searchSpaceCommon_Profile_170_values}
+    dated log          searchSpaceCommon_Profile_170_params=${searchSpaceCommon_Profile_170_params}
+
+    &{searchSpaceDedicated}    Create Dictionary     coresetId=${testParam.scfFile.searchSpaceDedicatedProf2_1.coresetId}
+    ...                 dciFormat=${testParam.scfFile.searchSpaceDedicatedProf2_1.dciFormat}
+    ...                 duration=${testParam.scfFile.searchSpaceDedicatedProf2_1.duration}
+    ...                 monitoringSymbolWithinSlot=${testParam.scfFile.searchSpaceDedicatedProf2_1.monitoringSymbolWithinSlot}
+    ...                 numOfPdcchCandidatesInAL1=${testParam.scfFile.searchSpaceDedicatedProf2_1.numOfPdcchCandidatesInAL1}
+    ...                 numOfPdcchCandidatesInAL16=${testParam.scfFile.searchSpaceDedicatedProf2_1.numOfPdcchCandidatesInAL16}
+    ...                 numOfPdcchCandidatesInAL2=${testParam.scfFile.searchSpaceDedicatedProf2_1.numOfPdcchCandidatesInAL2}
+    ...                 numOfPdcchCandidatesInAL4=${testParam.scfFile.searchSpaceDedicatedProf2_1.numOfPdcchCandidatesInAL4}
+    ...                 numOfPdcchCandidatesInAL8=${testParam.scfFile.searchSpaceDedicatedProf2_1.numOfPdcchCandidatesInAL8}
+    ...                 periodicity=${testParam.scfFile.searchSpaceDedicatedProf2_1.periodicity}
+    ...                 searchSpaceId=${testParam.scfFile.searchSpaceDedicatedProf2_1.searchSpaceId}
+    ...                 searchSpaceType=${testParam.scfFile.searchSpaceDedicatedProf2_1.searchSpaceType}
+    ...                 slotOffset=${testParam.scfFile.searchSpaceDedicatedProf2_1.slotOffset}
+    ${dist}=    Catenate      MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-170/PDCCH-1/PDCCH_CONFIG_DEDICATED-1
+    &{modify_param2}    Evaluate    {'dist_name': '${dist}','parameter': 'searchSpaceDedicated','value':[&{searchSpaceDedicated}]}
+    # &{modify_param2}    Evaluate    {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-2/PDCCH-1/PDCCH_CONFIG_DEDICATED-1',
+    # ...                              'parameter': 'searchSpaceDedicated','value':[&{searchSpaceDedicated}]}
+
+    # &{cellBwpList}    Create Dictionary     bwpDN=${testParam.scfFile.cellBwpList_Item1.bwpDN}
+    # ...                 cellBwpId=${testParam.scfFile.cellBwpList_Item1.cellBwpId}
+    # &{modify_param3}    Evaluate    {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1',
+    # ...                              'parameter': 'cellBwpList','value':[&{cellBwpList}]}
+
+    # &{cellBwpList2}    Create Dictionary     bwpDN=${testParam.scfFile.cellBwpList_Item2.bwpDN}
+    # ...                 cellBwpId=${testParam.scfFile.cellBwpList_Item2.cellBwpId}
+    # &{modify_param4}    Evaluate    {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1',
+    # ...                              'parameter': 'cellBwpList','value':[&{cellBwpList2}]}
+
+    &{modify_param0}    Create Dictionary
+    ...    parameter=prachConfigurationIndex
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scfFile.nrcell.prachConfigurationIndex}
+
+    &{modify_param1}    Create Dictionary
+    ...    parameter=type0SearchSpaceConfigurationIndex
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scfFile.nrcell.type0SearchSpaceConfigurationIndex}
+
+#     @{modify_param}    Create List    ${modify_param}
+    @{modify_param}    Create List    ${searchSpaceCommon_Profile_161_params}
+    ...                ${searchSpaceCommon_Profile_170_params}
+    ...                ${modify_param0}
+    ...                ${modify_param1}
+    ...                ${modify_param2}
+    ...                ${modify_param3}
+    ...                ${modify_param4}
+    ...                ${modify_param5}
+    ...                ${modify_param6}
+    ...                ${modify_param7}
+    ...                ${modify_param8}
+    ...                ${modify_param9}
+    ...                ${modify_param10}
+    ...                ${modify_param11}
+    ...                ${modify_param12}
+    ...                ${modify_param13}
+
+    BuiltIn.Log      \nParameters to modify:\n @{modify_param}   console=yes
+    # 1) coam_gnb_classical.Modify COAM parameters    modify_param=@{modify_param}
+    # 2) coam_gnb_classical.Modify COAM parameters with rest API     modify_param=@{modify_param}
+    OAM Set Params      modify_param=@{modify_param}
+
+Modify 7738 searchSpaceDedicated related Parameters
+    [Documentation]                to update searchSpaceDedicated
+    [Arguments]                    ${testParam}     ${alias}=default
+
+    &{searchSpaceDedicated0}    Create Dictionary     coresetId=${testParam.scfFile.searchSpaceDedicatedProf2_1.coresetId}
+    ...                 dciFormat=${testParam.scfFile.searchSpaceDedicatedProf2_1.dciFormat}
+    ...                 duration=${testParam.scfFile.searchSpaceDedicatedProf2_1.duration}
+    ...                 monitoringSymbolWithinSlot=${testParam.scfFile.searchSpaceDedicatedProf2_1.monitoringSymbolWithinSlot}
+    ...                 numOfPdcchCandidatesInAL1=${testParam.scfFile.searchSpaceDedicatedProf2_1.numOfPdcchCandidatesInAL1}
+    ...                 numOfPdcchCandidatesInAL16=${testParam.scfFile.searchSpaceDedicatedProf2_1.numOfPdcchCandidatesInAL16}
+    ...                 numOfPdcchCandidatesInAL2=${testParam.scfFile.searchSpaceDedicatedProf2_1.numOfPdcchCandidatesInAL2}
+    ...                 numOfPdcchCandidatesInAL4=${testParam.scfFile.searchSpaceDedicatedProf2_1.numOfPdcchCandidatesInAL4}
+    ...                 numOfPdcchCandidatesInAL8=${testParam.scfFile.searchSpaceDedicatedProf2_1.numOfPdcchCandidatesInAL8}
+    ...                 periodicity=${testParam.scfFile.searchSpaceDedicatedProf2_1.periodicity}
+    ...                 searchSpaceId=${testParam.scfFile.searchSpaceDedicatedProf2_1.searchSpaceId}
+    ...                 searchSpaceType=${testParam.scfFile.searchSpaceDedicatedProf2_1.searchSpaceType}
+    ...                 slotOffset=${testParam.scfFile.searchSpaceDedicatedProf2_1.slotOffset}
+
+    &{searchSpaceDedicated1}    Create Dictionary     coresetId=${testParam.scfFile.searchSpaceDedicatedProf2_2.coresetId}
+    ...               dciFormat=${testParam.scfFile.searchSpaceDedicatedProf2_2.dciFormat}
+    ...               duration=${testParam.scfFile.searchSpaceDedicatedProf2_2.duration}
+    ...               monitoringSymbolWithinSlot=${testParam.scfFile.searchSpaceDedicatedProf2_2.monitoringSymbolWithinSlot}
+    ...               numOfPdcchCandidatesInAL1=${testParam.scfFile.searchSpaceDedicatedProf2_2.numOfPdcchCandidatesInAL1}
+    ...               numOfPdcchCandidatesInAL16=${testParam.scfFile.searchSpaceDedicatedProf2_2.numOfPdcchCandidatesInAL16}
+    ...               numOfPdcchCandidatesInAL2=${testParam.scfFile.searchSpaceDedicatedProf2_2.numOfPdcchCandidatesInAL2}
+    ...               numOfPdcchCandidatesInAL4=${testParam.scfFile.searchSpaceDedicatedProf2_2.numOfPdcchCandidatesInAL4}
+    ...               numOfPdcchCandidatesInAL8=${testParam.scfFile.searchSpaceDedicatedProf2_2.numOfPdcchCandidatesInAL8}
+    ...               periodicity=${testParam.scfFile.searchSpaceDedicatedProf2_2.periodicity}
+    ...               searchSpaceId=${testParam.scfFile.searchSpaceDedicatedProf2_2.searchSpaceId}
+    ...               searchSpaceType=${testParam.scfFile.searchSpaceDedicatedProf2_2.searchSpaceType}
+    ...               slotOffset=${testParam.scfFile.searchSpaceDedicatedProf2_2.slotOffset}
+
+    &{searchSpaceDedicated2}    Create Dictionary     coresetId=${testParam.scfFile.searchSpaceDedicatedProf2_3.coresetId}
+    ...               dciFormat=${testParam.scfFile.searchSpaceDedicatedProf2_3.dciFormat}
+    ...               duration=${testParam.scfFile.searchSpaceDedicatedProf2_3.duration}
+    ...               monitoringSymbolWithinSlot=${testParam.scfFile.searchSpaceDedicatedProf2_3.monitoringSymbolWithinSlot}
+    ...               numOfPdcchCandidatesInAL1=${testParam.scfFile.searchSpaceDedicatedProf2_3.numOfPdcchCandidatesInAL1}
+    ...               numOfPdcchCandidatesInAL16=${testParam.scfFile.searchSpaceDedicatedProf2_3.numOfPdcchCandidatesInAL16}
+    ...               numOfPdcchCandidatesInAL2=${testParam.scfFile.searchSpaceDedicatedProf2_3.numOfPdcchCandidatesInAL2}
+    ...               numOfPdcchCandidatesInAL4=${testParam.scfFile.searchSpaceDedicatedProf2_3.numOfPdcchCandidatesInAL4}
+    ...               numOfPdcchCandidatesInAL8=${testParam.scfFile.searchSpaceDedicatedProf2_3.numOfPdcchCandidatesInAL8}
+    ...               periodicity=${testParam.scfFile.searchSpaceDedicatedProf2_3.periodicity}
+    ...               searchSpaceId=${testParam.scfFile.searchSpaceDedicatedProf2_3.searchSpaceId}
+    ...               searchSpaceType=${testParam.scfFile.searchSpaceDedicatedProf2_3.searchSpaceType}
+    ...               slotOffset=${testParam.scfFile.searchSpaceDedicatedProf2_3.slotOffset}
+
+    &{searchSpaceDedicated3}    Create Dictionary     coresetId=${testParam.scfFile.searchSpaceDedicatedProf2_4.coresetId}
+    ...               dciFormat=${testParam.scfFile.searchSpaceDedicatedProf2_4.dciFormat}
+    ...               duration=${testParam.scfFile.searchSpaceDedicatedProf2_4.duration}
+    ...               monitoringSymbolWithinSlot=${testParam.scfFile.searchSpaceDedicatedProf2_4.monitoringSymbolWithinSlot}
+    ...               numOfPdcchCandidatesInAL1=${testParam.scfFile.searchSpaceDedicatedProf2_4.numOfPdcchCandidatesInAL1}
+    ...               numOfPdcchCandidatesInAL16=${testParam.scfFile.searchSpaceDedicatedProf2_4.numOfPdcchCandidatesInAL16}
+    ...               numOfPdcchCandidatesInAL2=${testParam.scfFile.searchSpaceDedicatedProf2_4.numOfPdcchCandidatesInAL2}
+    ...               numOfPdcchCandidatesInAL4=${testParam.scfFile.searchSpaceDedicatedProf2_4.numOfPdcchCandidatesInAL4}
+    ...               numOfPdcchCandidatesInAL8=${testParam.scfFile.searchSpaceDedicatedProf2_4.numOfPdcchCandidatesInAL8}
+    ...               periodicity=${testParam.scfFile.searchSpaceDedicatedProf2_4.periodicity}
+    ...               searchSpaceId=${testParam.scfFile.searchSpaceDedicatedProf2_4.searchSpaceId}
+    ...               searchSpaceType=${testParam.scfFile.searchSpaceDedicatedProf2_4.searchSpaceType}
+    ...               slotOffset=${testParam.scfFile.searchSpaceDedicatedProf2_4.slotOffset}
+
+    &{searchSpaceDedicated4}    Create Dictionary     coresetId=${testParam.scfFile.searchSpaceDedicatedProf2_5.coresetId}
+    ...               dciFormat=${testParam.scfFile.searchSpaceDedicatedProf2_5.dciFormat}
+    ...               duration=${testParam.scfFile.searchSpaceDedicatedProf2_5.duration}
+    ...               monitoringSymbolWithinSlot=${testParam.scfFile.searchSpaceDedicatedProf2_5.monitoringSymbolWithinSlot}
+    ...               numOfPdcchCandidatesInAL1=${testParam.scfFile.searchSpaceDedicatedProf2_5.numOfPdcchCandidatesInAL1}
+    ...               numOfPdcchCandidatesInAL16=${testParam.scfFile.searchSpaceDedicatedProf2_5.numOfPdcchCandidatesInAL16}
+    ...               numOfPdcchCandidatesInAL2=${testParam.scfFile.searchSpaceDedicatedProf2_5.numOfPdcchCandidatesInAL2}
+    ...               numOfPdcchCandidatesInAL4=${testParam.scfFile.searchSpaceDedicatedProf2_5.numOfPdcchCandidatesInAL4}
+    ...               numOfPdcchCandidatesInAL8=${testParam.scfFile.searchSpaceDedicatedProf2_5.numOfPdcchCandidatesInAL8}
+    ...               periodicity=${testParam.scfFile.searchSpaceDedicatedProf2_5.periodicity}
+    ...               searchSpaceId=${testParam.scfFile.searchSpaceDedicatedProf2_5.searchSpaceId}
+    ...               searchSpaceType=${testParam.scfFile.searchSpaceDedicatedProf2_5.searchSpaceType}
+    ...               slotOffset=${testParam.scfFile.searchSpaceDedicatedProf2_5.slotOffset}
+
+    &{searchSpaceDedicated5}    Create Dictionary     coresetId=${testParam.scfFile.searchSpaceDedicatedProf2_6.coresetId}
+    ...               dciFormat=${testParam.scfFile.searchSpaceDedicatedProf2_6.dciFormat}
+    ...               duration=${testParam.scfFile.searchSpaceDedicatedProf2_6.duration}
+    ...               monitoringSymbolWithinSlot=${testParam.scfFile.searchSpaceDedicatedProf2_6.monitoringSymbolWithinSlot}
+    ...               numOfPdcchCandidatesInAL1=${testParam.scfFile.searchSpaceDedicatedProf2_6.numOfPdcchCandidatesInAL1}
+    ...               numOfPdcchCandidatesInAL16=${testParam.scfFile.searchSpaceDedicatedProf2_6.numOfPdcchCandidatesInAL16}
+    ...               numOfPdcchCandidatesInAL2=${testParam.scfFile.searchSpaceDedicatedProf2_6.numOfPdcchCandidatesInAL2}
+    ...               numOfPdcchCandidatesInAL4=${testParam.scfFile.searchSpaceDedicatedProf2_6.numOfPdcchCandidatesInAL4}
+    ...               numOfPdcchCandidatesInAL8=${testParam.scfFile.searchSpaceDedicatedProf2_6.numOfPdcchCandidatesInAL8}
+    ...               periodicity=${testParam.scfFile.searchSpaceDedicatedProf2_6.periodicity}
+    ...               searchSpaceId=${testParam.scfFile.searchSpaceDedicatedProf2_6.searchSpaceId}
+    ...               searchSpaceType=${testParam.scfFile.searchSpaceDedicatedProf2_6.searchSpaceType}
+    ...               slotOffset=${testParam.scfFile.searchSpaceDedicatedProf2_6.slotOffset}
+
+    # &{searchSpaceDedicated6}    Create Dictionary     coresetId=${testParam.scfFile.searchSpaceDedicatedProf2_7.coresetId}
+    # ...               dciFormat=${testParam.scfFile.searchSpaceDedicatedProf2_7.dciFormat}
+    # ...               duration=${testParam.scfFile.searchSpaceDedicatedProf2_7.duration}
+    # ...               monitoringSymbolWithinSlot=${testParam.scfFile.searchSpaceDedicatedProf2_7.monitoringSymbolWithinSlot}
+    # ...               numOfPdcchCandidatesInAL1=${testParam.scfFile.searchSpaceDedicatedProf2_7.numOfPdcchCandidatesInAL1}
+    # ...               numOfPdcchCandidatesInAL16=${testParam.scfFile.searchSpaceDedicatedProf2_7.numOfPdcchCandidatesInAL16}
+    # ...               numOfPdcchCandidatesInAL2=${testParam.scfFile.searchSpaceDedicatedProf2_7.numOfPdcchCandidatesInAL2}
+    # ...               numOfPdcchCandidatesInAL4=${testParam.scfFile.searchSpaceDedicatedProf2_7.numOfPdcchCandidatesInAL4}
+    # ...               numOfPdcchCandidatesInAL8=${testParam.scfFile.searchSpaceDedicatedProf2_7.numOfPdcchCandidatesInAL8}
+    # ...               periodicity=${testParam.scfFile.searchSpaceDedicatedProf2_7.periodicity}
+    # ...               searchSpaceId=${testParam.scfFile.searchSpaceDedicatedProf2_7.searchSpaceId}
+    # ...               searchSpaceType=${testParam.scfFile.searchSpaceDedicatedProf2_7.searchSpaceType}
+    # ...               slotOffset=${testParam.scfFile.searchSpaceDedicatedProf2_7.slotOffset}
+
+    @{searchSpaceDedicated_value}    create list
+    Append To List    ${searchSpaceDedicated_value}    ${searchSpaceDedicated0}    ${searchSpaceDedicated1}   ${searchSpaceDedicated2}
+    Append To List    ${searchSpaceDedicated_value}    ${searchSpaceDedicated3}    ${searchSpaceDedicated4}   ${searchSpaceDedicated5}
+    # Append To List    ${searchSpaceDedicated_value}    ${searchSpaceDedicated6}
+    &{searchSpaceDedicated_params}  Create Dictionary  dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/BWP_PROFILE-170/PDCCH-1/PDCCH_CONFIG_DEDICATED-1
+    ...    parameter=searchSpaceDedicated
+    ...    value=${searchSpaceDedicated_value}
+    dated log          searchSpaceDedicated_params=${searchSpaceDedicated_params}
+
+    @{modify_param}    Create List    ${searchSpaceDedicated_params}
+    OAM Set Params      modify_param=@{modify_param}
+
+Set SCF NRCELL WA for 7738
+    [Arguments]          ${testParam}
+    Dated log New Line                       NRCELL_DIST_NAME=${NRCELL_DIST_NAME}
+#      TestParam is ${testParam}
+
+   &{modify_param}    Create Dictionary
+    ...    parameter=actDl256Qam
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scfFile.nrcell_wa.actDl256Qam}
+
+    &{modify_param1}    Create Dictionary
+    ...    parameter=msg1FrequencyStart
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scfFile.nrcell_wa.msg1FrequencyStart}
+
+    &{modify_param2}    Create Dictionary
+    ...    parameter=numOfPagingFrames
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scfFile.nrcell_wa.numOfPagingFrames}
+
+    &{modify_param3}    Create Dictionary
+    ...    parameter=pagingOffset
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scfFile.nrcell_wa.pagingOffset}
+
+    &{modify_param4}    Create Dictionary
+    ...    parameter=pucchModeSelect
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scfFile.nrcell_wa.pucchModeSelect}
+
+    &{modify_param5}    Create Dictionary
+    ...    parameter=raResponseWindow
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scfFile.nrcell_wa.raResponseWindow}
+
+    &{modify_param6}    Create Dictionary
+    ...    parameter=type0SearchSpaceConfigurationIndex
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scfFile.nrcell_wa.type0SearchSpaceConfigurationIndex}
+
+    &{csirsForTracking}    Create Dictionary     csirsTrackingPeriod=${testParam.scfFile.nrcell_wa.csirsTrackingPeriod}
+    ${dist}=   Catenate      MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    &{modify_param7}    Evaluate    {'dist_name': '${dist}','parameter': 'csirsForTracking','value':[&{csirsForTracking}]}
+
+    &{dlDataDmrsFdm}    Create Dictionary     actDlDataDmrsFdm=${testParam.scfFile.nrcell_wa.actDlDataDmrsFdm}
+    &{modify_param8}    Evaluate    {'dist_name': '${dist}','parameter': 'dlDataDmrsFdm','value':[&{dlDataDmrsFdm}]}
+
+    &{periodicCsiAcquisition}    Create Dictionary     csiReportPeriodicity=${testParam.scfFile.nrcell_wa.csiReportPeriodicity}
+    &{modify_param9}    Evaluate    {'dist_name': '${dist}','parameter': 'periodicCsiAcquisition','value':[&{periodicCsiAcquisition}]}
+
+    &{modify_param10}    Create Dictionary
+    ...    parameter=siWindowLength
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRSYSINFO_PROFILE-1
+    ...    value=${testParam.scfFile.nrsysinfo_profile_wa.siWindowLength}
+
+    &{sibSchedulingListItem1}    Create Dictionary     sibPeriodicity=${testParam.scfFile.nrsysinfo_profile_wa.sibPeriodicity}
+    &{sibSchedulingListItem2}    Create Dictionary     sibPeriodicity=${testParam.scfFile.nrsysinfo_profile_wa.sibPeriodicity}
+    &{sibSchedulingListItem3}    Create Dictionary     sibPeriodicity=${testParam.scfFile.nrsysinfo_profile_wa.sibPeriodicity}
+    &{sibSchedulingListItem4}    Create Dictionary     sibPeriodicity=${testParam.scfFile.nrsysinfo_profile_wa.sibPeriodicity}
+    &{sibSchedulingListItem5}    Create Dictionary     sibPeriodicity=${testParam.scfFile.nrsysinfo_profile_wa.sibPeriodicity}
+    &{sibSchedulingListItem6}    Create Dictionary     sibPeriodicity=${testParam.scfFile.nrsysinfo_profile_wa.sibPeriodicity}
+    @{sibSchedulingList_value}    create list
+    Append To List    ${sibSchedulingList_value}    ${sibSchedulingListItem1}    ${sibSchedulingListItem2}   ${sibSchedulingListItem3}
+    Append To List    ${sibSchedulingList_value}    ${sibSchedulingListItem4}    ${sibSchedulingListItem5}
+    #    ${sibSchedulingListItem6}
+    &{sibSchedulingList_params}  Create Dictionary  dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRSYSINFO_PROFILE-1
+    ...    parameter=sibSchedulingList
+    ...    value=${sibSchedulingList_value}
+    dated log          sibSchedulingList_value=${sibSchedulingList_params}
+    @{modify_param11}    Create List    ${sibSchedulingList_params}
+
+    @{modify_param}    Create List    ${modify_param}
+    ...                ${modify_param1}
+    ...                ${modify_param2}
+    ...                ${modify_param3}
+    ...                ${modify_param4}
+    ...                ${modify_param5}
+    #  BEWARE that type0SearchSpaceConfigurationIndex is not updated in SCF here anymore
+    # ...                ${modify_param6}
+    ...                ${modify_param7}
+    ...                ${modify_param8}
+    ...                ${modify_param9}
+    ...                ${modify_param10}
+
+    BuiltIn.Log      \nParameters to modify:\n @{modify_param}   console=yes
+    # 1) coam_gnb_classical.Modify COAM parameters    modify_param=@{modify_param}
+    # 2) coam_gnb_classical.Modify COAM parameters with rest API     modify_param=@{modify_param}
+    OAM Set Params      modify_param=@{modify_param}
+
+    BuiltIn.Log      \nParameters to modify:\n @{modify_param11}   console=yes
+    # 1) coam_gnb_classical.Modify COAM parameters    modify_param=@{modify_param}
+    # 2) coam_gnb_classical.Modify COAM parameters with rest API     modify_param=@{modify_param}
+    OAM Set Params      modify_param=@{modify_param11}
+
+
+
+#----------------------------------------------------------------------------------------------------------------------------------------------------
+#         Other Procedures
+#----------------------------------------------------------------------------------------------------------------------------------------------------
+
+get cellDepType from SCF
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${LOG_PATH}/SCF.xml
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELL-1
+    ${cellDepType}	 scf.get_value_from_scf   p_name=cellDepType
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    [return]     ${cellDepType}
+
+set UEId in Context
+    [Arguments]           ${testParam}     ${UeId1}=1      ${UeId2}=2     ${UeId3}=3
+    ${testParam.Context.UeId1}     set Variable    ${UeId1}
+    ${testParam.Context.UeId2}     set Variable    ${UeId2}
+    ${testParam.Context.UeId3}     set Variable    ${UeId3}
+
+
+update eNBId and gNBId In Context
+    [Arguments]           ${testParam}     ${eNBId}=1     ${gNBId}=2
+    ${testParam.seq.eNBId}        set Variable     ${eNBId}
+    ${testParam.seq.gNBId}        set Variable     ${gNBId}
+    ${testParam.Context.eNBId}    set Variable     ${eNBId}
+    ${testParam.Context.gNBId}    set Variable     ${gNBId}
+    # 1745 is tested only with SA
+    run Keyword if   '${testParam.Context.cellDepType}' == 'SA+NSA'  CB007738_Kw_TestSetup.set UEId in Context    ${testParam}    1    2    3
+
+Backup Iphy AirphoneConfig
+    [Documentation]                 Backup current iphy file on AP
+
+    ${alias}                        SSH Connect                          ${AP_DU.sys[0].M}
+
+    ${file}                         SSH Cmd                              command=readlink -f /rom/simmode/iphy.xml
+    ...                             alias=${alias}
+    Dated log                       On Airphone, backing up file ${file}
+    ${file}                         Strip String                         ${file}
+    ${iphy_backup_exists}=          SSH Cmd                              command=test -f ${file}.backup && echo -n "okman" || echo -n "noway"
+    ...                             alias=${alias}
+    ${iphy_file_exist}              SSH Cmd                              command=test -f ${file} && echo -n "okman" || echo -n "noway"
+    ...                             alias=${alias}
+    run keyword if                  '${iphy_file_exist}'=='okman' and '${iphy_backup_exists}'!='okman'
+    ...                             SSH Cmd                              command=cp ${file} ${file}.backup     alias=${alias}
+    Dated log                       On Airphone, ${file} is backed up
+
+Set Context_Cell IPHY
+    [Arguments]          ${testParam}
+    CB007738_Kw_TestSetup.Backup Iphy AirphoneConfig
+    WtsXmlConfig.startSession           file=iphy
+    #set cell, below syntax is ok for 1 cell config only
+    # WtsXmlConfig.setListEltText         //cell                          ${testParam.Context.gNBId}.1
+    #set cell, for cell1 and cell2, tested ok in case one cell only in iphy file
+    Dated log                       Update cell value for cell 1 in iphy.xml ${testParam.Context.gNBId}.1
+    WtsXmlConfig.setListEltText         //RE[1]//cell                          ${testParam.Context.gNBId}.1
+    Dated log                       Update cell value for cell 2 in iphy.xml ${testParam.Context.gNBId}.2
+    WtsXmlConfig.setListEltText         //RE[2]//cell                          ${testParam.Context.gNBId}.2
+    WtsXmlConfig.stopSession            file=iphy
+
+
+Test Setup 7738
+    [Arguments]         ${testParam}
+
+    Log to Console like Next Step     0     CB007738_Kw_TestSetup.Test Setup 7738 BW=${testParam.seq.bandwidth}
+
+    run keyword and ignore error      Remove RAD param for Link Adaptation on swconfig if present
+
+    Run Keyword If   '${SHOULD_UPDATE_SCF_AND_RAD}' == '1'   Update Scf and RAD   ${testParam}
+
+    ${l2ps_debug_swconfig_gnb}=      Set DSS L2PS Debug Specific RAD    ${testParam}
+    Update gNB Swconfig     ${l2ps_debug_swconfig_gnb}
+
+    # iPHY gscn update depending of chBwDl
+    Dated Log      iPHY gscn update with ${testParam.scfFile.nrcell.gscn} : chBwDl=${testParam.scfFile.nrcellfdd.chBwDl}
+    Set Context_AP IPHY    ${testParam}
+
+    # iPHY Cell update
+    Dated Log      iPHY Cell update with ${testParam.Context.gNBId}.1
+    CB007738_Kw_TestSetup.Set Context_Cell IPHY    ${testParam}
+
+    # default configuration is 10MHz case , nothing to do in this case
+    # Run Keyword If   '${testParam.seq.bandwidth}'!='10MHz'   Modify Bandwidth Parameters for WTS   ${testParam}
+    # csamson : specific ue capa for dss PH3
+    # 12/15/2022 : tempory WA for CB008325 (ABIP)
+    # => UTE Cloud TL : only nrCellType = 4DL4UL is supported for ABIP for the moment
+    # and Ue capa delevered by UTE Cloud allow to support only 2 DL Layers => so in case of ABIP; the Ue capa are not forced for the moment
+    # => to change when ABIP gNB will support nrCellType = 2DL2UL
+    # ${w_force_ue_capa}=   set Variable if    '${GNB_DU.bb[0].M.boardType}'=='ABIP'    False
+    # ...                                                                               True
+    Modify Bandwidth Parameters for WTS   ${testParam}  w_force_ue_capa=True
+
+    ${isOAMRebooted}    Run Keyword If      '${SHOULD_UPDATE_SCF_AND_RAD}' == '1'    SSH Was OAM Rebooted     ${GNB_DU}          timeout=60
+
+    # SCF.xml is used by procedure verifyFeatureActivation
+    ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    Set Suite Variable              ${test_scf_file}
+    Dated Log                  Current 7738 SCF file stored to ${test_scf_file}
+
+    # Save current SCF file used during test cases
+    ${current_scf_file}             OAM Get SCF File            dir=${testCaseDir}      file=SCF_used_for_7738_${testParam.seq.bandwidth}_Tests.xml
+    Set Suite Variable              ${current_scf_file}
+    Dated Log New Line         Current 7738 SCF file stored to ${current_scf_file}
+
+    # 19092023 => Bypassed for the moment !!!
+    # Get swconfig file that will be used during 7738 tests
+    # ${alias_gnb}                    SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    ${alias_gnb}=  Wait until keyword succeeds     10 min     10 sec
+    ...                    common_Dss_Keywords.Connect to gNB Common Unit  gnb_id=0  du_id=0    comu_id=0
+    csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${testCaseDir}/swconfig_used_for_7738_${testParam.seq.bandwidth}_Tests.txt
+    ...                             connection=${alias_gnb}
+    Dated Log                  Current 7738 swconfig file stored to ${LOG_PATH}/swconfig_used_for_7738_${testParam.seq.bandwidth}_Tests.txt
+
+    # Get EPC file configuration that will be used during 7738 tests
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${testCaseDir}/basic_wts_used_for_7738_${testParam.seq.bandwidth}_Tests.cfg
+    ...                             connection=${alias_epc}
+
+    # Get AP configuration file that will be used during 7738 tests
+    ${ap_configfile}                Get XML AirPhoneConfig Path
+    run Keyword if      '${ap_configfile}' != '${empty}'     csn.download_file        remote_path=${tl.core.dir_path}/${ap_configfile}
+    ...                             local_path=${testCaseDir}/ApOamConfig_used_for_7738_${testParam.seq.bandwidth}_Tests.xml
+    ...                             connection=${alias_epc}
+
+    ${msg}=   Catenate      Current 7738 basic file ${tl.core.cfg_filename} stored
+    ...                        to ${testCaseDir}/basic_wts_used_for_7738_${testParam.seq.bandwidth}_Tests.cfg
+    Dated Log  ${msg}
+    Dated Log  Current 7738 ApOamConfig file stored to ${testCaseDir}/ApOamConfig_used_for_7738_${testParam.seq.bandwidth}_Tests.xml
+
+
+Set 7738 Specific RAD
+    [Documentation]   Author: Ch SAMSON , set Rad parameters for 7738
+    [Arguments]                      ${testParam}
+
+    ${l2ps_rdEnableFDMPdschDmrs_0x5801a6}=      create dictionary          field=0x5801a6     value=${testParam.rdEnableFDMPdschDmrs_0x5801a6}
+
+    ${cprt_log_level_0x590072}=       create dictionary                  field=0x590072          value=1
+    ${l2ps_rdSupportedUlMCS_0x580010}=      create dictionary   field=0x580010        value=${testParam.RadParam_rdSupportedUlMCS_0x580010}
+
+    # ${l2ps_rdLteFlexibleRateMatchingEnabled_0x5900a6}=      create dictionary   field=0x5900a6
+    # ...                                                                     value=${testParam.RadParam_rdLteFlexibleRateMatchingEnabled_0x5900a6}
+    # ${l2ps_rrdLteFlexibleRateMatchingAltModeEnabled_0x5900a7}=      create dictionary   field=0x5900a7
+    # ...                                                               value=${testParam.RadParam_rdLteFlexibleRateMatchingAltModeEnabled_0x5900a7}
+
+    ${swconfig_gnb}=       run Keyword if    '${SHOULD_UPDATE_RAD}' == '1'          Create List           ${l2ps_rdEnableFDMPdschDmrs_0x5801a6}
+    ...                                                                                                   ${cprt_log_level_0x590072}
+    ...                                                                                                   ${l2ps_rdSupportedUlMCS_0x580010}
+    # ...                                                    ${l2ps_rdLteFlexibleRateMatchingEnabled_0x5900a6}
+    # ...                                                    ${l2ps_rrdLteFlexibleRateMatchingAltModeEnabled_0x5900a7}
+    ...   ELSE                                                                      Create List
+
+    [return]    ${swconfig_gnb}
+
+Update Scf and RAD
+    [Arguments]    ${testParam}
+    CB007738_Kw_TestSetup.Set SCF 7738   ${testParam}
+    CB007738_Kw_TestSetup.Set SCF NRCELL WA for 7738   ${testParam}
+    CB007738_Kw_TestSetup.Modify 7738 searchSpaceDedicated related Parameters  ${testParam}
+    ${7738_swconfig_gnb}=       Set 7738 Specific RAD      ${testParam}
+    common_Dss_Keywords.Set Specific RAD & scf parameters  ${testParam}    swconfig_gnb=${7738_swconfig_gnb}
+    CB007738_Kw_TestSetup.Set 7738 Specifc Scf Param  ${testParam}
+
+gNB_ModifySCFwithNewGNBID
+    [Arguments]    ${scf_path}    ${gnbID}=NRBTS-1
+    run    command=sed -i 's|NRBTS-1|${gnbID}|g' ${scf_path}
+
+gNB_ModifySCFwithNewMRBTSID_2
+    [Arguments]    ${scf_path}    ${mrbtsID_original}=MRBTS-1     ${mrbtsID_new}=MRBTS-1
+    run    command=sed -i 's|${mrbtsID_original}|${mrbtsID_new}|g' ${scf_path}
+
+gNB_ModifySCFwithNewNRBTS
+    [Arguments]    ${scf_path}    ${nrbtsID_original}=NRBTS-1     ${nrbtsID_new}=NRBTS-1
+    run    command=sed -i 's|${nrbtsID_original}|${nrbtsID_new}|g' ${scf_path}
+
+Commissioning SCF wo TL restart
+    [Tags]                          INIT_AND_TEST
+    [Arguments]                     ${ScfFile}
+    Dated log                       Commisioning SCF : ${ScfFile}
+    File should exist               ${ScfFile}                              SCF file ${ScfFile} not found
+    OAM Perform Full Commissioning  scf_file=${ScfFile}
+    Dated Log    End commissioning, wait for OAM to come back
+    OAM wait available
+    ${isOAMRebooted}     SSH Was OAM Rebooted        ${GNB_DU}          timeout=60
+    # If gNB was rebooted after re-commissioning, wait until it's ready again.
+    Run Keyword If                  '${isOAMRebooted}' == 'True'        Airscale Wait for Ready         ${GNB_DU}
+    # Restart       isOAMRebooted=${isOAMRebooted}    OwnTLReset=${true}
+
+# ln -s source_file myfile
+# ln -s classicalbts_log_collector_151020.sh classicalbts_log_collector.sh into Git
+Install classicalbts log collector into gNB
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist    {CURDIR}/../scripts/classicalbts_log_collector.sh
+    ${Myalias}                        SSH Wait For Connect                    ${CAPTURE_L1L2_GNB_FS_GNB_DSS.scriptDef.host}
+    Dated log     Upload classicalbts_log_collector.sh in gNB
+    SSH Upload Script           alias=${Myalias}        localPath=${CURDIR}/../scripts
+    ...                         scriptFile=classicalbts_log_collector.sh      remotePath=/ffs/run/config/scripts
+
+Install classicalbts log collector into Airphone
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist    {CURDIR}/../scripts/classicalbts_log_collector.sh
+    ${Myalias}                        SSH Wait For Connect                    ${AP_DU.sys[0].M}
+    Dated log     Upload classicalbts_log_collector.sh in Airphone
+    SSH Upload Script           alias=${Myalias}        localPath=${CURDIR}/../scripts
+    ...                         scriptFile=classicalbts_log_collector.sh      remotePath=/ffs/run/config/scripts
+
+Test Line Preparation
+   [Arguments]       ${testParam}
+
+   Log to Console like Next Step    0    ${SUITE NAME} - ${TEST NAME.replace(" ", "_")}
+
+   PrintTLInformation
+   gNB BackupSCF
+   common_Dss_Keywords.Get Testline Name
+
+   ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+   Set Suite Variable              ${test_scf_file}
+   ${cellDepType}=   CB007738_Kw_TestSetup.get cellDepType from SCF
+   ${testParam.Context.cellDepType}      set variable    ${cellDepType}
+   # BEWARE : line commented here to keep eNBId=1 and gNBId=2 defined into ${testParam} to be able to perform SA and NSA 5g Call
+   # run Keyword if   '${testParam.Context.cellDepType}' == 'SA+NSA'  CB007738_Kw_TestSetup.update eNbId and gNBId In Context   ${testParam}   2   1
+   ${cellDepType}=      set variable      ${testParam.Context.cellDepType}
+   set suite variable     ${NWtype}      ${cellDepType}
+
+   # Get current  SCF file
+   ${local_path_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF_used_for_7738_Tests_FirstCommissioning.xml
+   ${default_local_scf_file_path}    Copy file    source=${local_path_scf_file}    destination=${LOG_PATH}/DSS_delete/
+
+   Dated Log   =====> Lock in scf all RU and Cells Except CellId 1
+   ${status}   ${modified_scf_file_path}   run Keyword and ignore error    common_Dss_Keywords.Lock in scf all RU and Cells Except CellId
+   ...                                                                                                 Cell=1
+   ...                                                                                                 test_scf_file=${default_local_scf_file_path}
+   ${modified_scf_file_path} =    run Keyword if   '${status}'!='PASS'     set variable   ${default_local_scf_file_path}
+   ...   ELSE                                                              set variable   ${modified_scf_file_path}
+
+   ${default_local_scf_file_path}    Copy file    source=${modified_scf_file_path}    destination=${LOG_PATH}/DSS_delete/
+
+   Set Suite Variable              ${default_local_scf_file_path}
+
+   # needed for DELETE and ADD DSS obj
+   Dated Log New Line  gNB_ModifySCFwithNewNRBTS with nrbtsID_original=NRBTS-${NRBTS_ID} and nrbtsID_new=NRBTS-1
+   CB007738_Kw_TestSetup.gNB_ModifySCFwithNewNRBTS   ${default_local_scf_file_path}    nrbtsID_original=NRBTS-${NRBTS_ID}   nrbtsID_new=NRBTS-1
+
+   ${local_path_dss_scf_file}      common_Dss_Keywords.Delete DSS Information If Exist     ${default_local_scf_file_path}
+   Set Suite Variable              ${local_path_dss_scf_file}
+
+   ${local_path_dss_scf_file}      common_Dss_Keywords.Delete DSS Cell1 Information If Exist      ${local_path_dss_scf_file}
+
+   ${local_path_dss_scf_file_with_dss_info}   common_Dss_Keywords.Add DSS information to scf    ${local_path_dss_scf_file}
+
+   ${local_path_dss_scf_file_with_dss_info}   common_Dss_Keywords.Add DSS information Cell1 to scf    ${local_path_dss_scf_file_with_dss_info}
+   ...                                                                                                cellId=${1}
+   Set Suite Variable              ${local_path_dss_scf_file_with_dss_info}
+
+#    run Keyword if     '${cellDepType}' == 'SA+NSA'      common_Dss_Keywords.add SA cellBwpList to SCF     ${local_path_dss_scf_file_with_dss_info}
+#    ...      ELSE          common_Dss_Keywords.add NSA cellBwpList to SCF     ${local_path_dss_scf_file_with_dss_info}
+
+   # we need to change GNBID with NRBTS-2 into all scf file (DSS purpose)
+   Dated Log  gNB_ModifySCFwithNewGNBID with NRBTS-2
+   CB007738_Kw_TestSetup.gNB_ModifySCFwithNewGNBID    ${local_path_dss_scf_file_with_dss_info}    NRBTS-2
+
+   Run Keyword If     '${SHOULD_BE_COMMISSIONED_GNB_FIRST}' == '1'  common_Dss_Keywords.Commissioning SCF  ${local_path_dss_scf_file_with_dss_info}
+   ...     ELSE        Dated log     gNB not Commissioning because SHOULD_BE_COMMISSIONED_GNB_FIRST==0
+   Run Keyword If     '${SHOULD_BE_COMMISSIONED_GNB_FIRST}' == '1'  common_Dss_Keywords.Get GNB BTS Info
+
+   # needed for DELETE and ADD DSS obj
+   Dated Log New Line  gNB_ModifySCFwithNewNRBTS with nrbtsID_original=NRBTS-${NRBTS_ID} and nrbtsID_new=NRBTS-1
+   CB007738_Kw_TestSetup.gNB_ModifySCFwithNewNRBTS   ${local_path_dss_scf_file_with_dss_info}    nrbtsID_original=NRBTS-${NRBTS_ID}
+   ...                                                                                           nrbtsID_new=NRBTS-1
+   run Keyword if     '${cellDepType}' == 'SA+NSA'      common_Dss_Keywords.add SA cellBwpList to SCF     ${local_path_dss_scf_file_with_dss_info}
+   ...      ELSE          common_Dss_Keywords.add NSA cellBwpList to SCF     ${local_path_dss_scf_file_with_dss_info}
+
+   # we need to change GNBID with NRBTS-2 into all scf file (DSS purpose)
+   Dated Log  gNB_ModifySCFwithNewGNBID with NRBTS-2
+   CB007738_Kw_TestSetup.gNB_ModifySCFwithNewGNBID    ${local_path_dss_scf_file_with_dss_info}    NRBTS-2
+
+   Run Keyword If     '${SHOULD_BE_COMMISSIONED_GNB_FIRST}' == '1'  Commissioning SCF wo TL restart  ${local_path_dss_scf_file_with_dss_info}
+   ...     ELSE        Dated log     gNB not Commissioning for SA/NSA cellBwpList change because SHOULD_BE_COMMISSIONED_GNB_FIRST==0
+
+   return From Keyword If     '${SHOULD_BE_COMMISSIONED_GNB_FIRST}' == '0'
+   # 10/06/2023 : need to change 4DL4UL to 2DL2UL for Cell1 if Needed
+   ${dlMimoMode}          coam_parameter.get_single_value_from_scf_file
+   ...                           parameter=dlMimoMode
+   ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+   ...                           connection=coam_gnb
+   Dated Log                     dlMimoMode is set to ${dlMimoMode}
+   # Run Keyword If  '${dlMimoMode}'!='2x2 Closed Loop Spatial Multiplexing' and '${dlMimoMode}'!='2x2 Open Loop Spatial Multiplexing'
+   ${cond}=    Evaluate     '${dlMimoMode}'!='2x2 Closed Loop Spatial Multiplexing' and '${dlMimoMode}'!='2x2 Open Loop Spatial Multiplexing'
+   Run Keyword If     ${cond}
+   ...       Run Keywords
+   ...                           dated log      => performing scf delta commission to configure cell1 with 2DL2UL...
+   ...         AND               coam_parameter.perform_scf_delta_commission
+   ...                              delta_file=${dlMimoMode_2DL2UL_delta_file_cell1}
+   ...                              connection=coam_gnb
+   # Wait end of commissioning
+   ...         AND               OAM wait available
+   # End of need to change 4DL4UL to 2DL2UL for Cell1 if Needed
+   ${actSlowPrbPoolingFddFr1Enh}          coam_parameter.get_single_value_from_scf_file
+   ...                                            parameter=actSlowPrbPoolingFddFr1Enh
+   ...                                            dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+   ...                                            connection=coam_gnb
+   Dated Log                     actSlowPrbPoolingFddFr1Enh is set to ${actSlowPrbPoolingFddFr1Enh}
+   ${cond}=    Evaluate     '${actSlowPrbPoolingFddFr1Enh}'=='true'
+   Run Keyword If     ${cond}
+   ...       Run Keywords        dated log      => performing scf delta commission to update PDCCH Profile...
+   ...         AND               coam_parameter.perform_scf_delta_commission
+   ...                              delta_file=${PDCCHProfile_actSlowPrbPoolingFddFr1Enh_delta_file_cell1}
+   ...                              connection=coam_gnb
+   # Wait end of commissioning
+   ...         AND               OAM wait available
+
+Set 7738 Specifc Scf Param
+    [Arguments]          ${testParam}     ${trunk}=False
+    [documentation]
+    ...                CCE split is still not activated on all TLs need to tmpActFeat1 => BIT 5 should be set to 1 (for each cell)
+    ...                info from Bastien Massie 2021 Aug 27th
+    Dated log New Line                       NRCELL_DIST_NAME=${NRCELL_DIST_NAME}
+    &{modify_param}    Create Dictionary
+    ...    parameter=tmpActFeat1
+    ...    dist_name=${NRCELL_DIST_NAME}
+    ...    value=${testParam.scfFile.nrcell.tmpActFeat1}
+    @{modify_param}    Create List    ${modify_param}
+    BuiltIn.Log      \nParameters to modify:\n @{modify_param}   console=yes
+    OAM Set Params      modify_param=@{modify_param}
+
+

@@ -1,0 +1,79 @@
+heat_template_version: 2016-04-08
+description: Template to create network interface
+
+parameters:
+  role:
+    type: string
+    description: Usage role for the port
+    default: internal
+    constraints:
+      - allowed_values: [internal, external, oam]
+  networks:
+    type: json
+  name_prefix:
+    type: string
+    description: Prefix name of ports
+  mtu:
+    type: number
+    description: MTU value for the port
+    default: 1500
+    constraints:
+      - range: {min: 1280, max: 9000}
+  pmtu:
+    type: number
+    description: Maximum MTU value supported by the port, i.e. provider network MTU
+    default: 9000
+    constraints:
+      - range: {min: 1280, max: 9000}
+resources:
+  port:
+    type: OS::Neutron::Port
+    properties:
+      name:
+        str_replace:
+          template: $prefix-$name
+          params:
+            $prefix: {get_param: name_prefix}
+            $name: {get_param: [networks, name]}
+      network: {get_param: [networks, uuid]}
+      fixed_ips:
+        - ip_address: {get_param: [networks, ip_address]}
+
+outputs:
+  ip_address:
+    value: {get_attr: [port, fixed_ips, 0, ip_address]}
+  ip_prefix:
+    value: {str_split: ['/', {get_attr: [port, subnets, 0, cidr]}, 1]}
+  gw_address:
+    value: {get_attr: [port, subnets, 0, gateway_ip]}
+  port:
+    value: {get_resource: port}
+#  port:
+#    value:
+#      - {port: {get_resource: port}, vif-model: {get_param: [networks, vif_model]}}
+  ip-info:
+    value:
+      map_merge:
+        repeat:
+          for_each:
+            <%name%>: [{get_param: [networks, name]}]
+          template:
+            ip-info.<%name%>.mac: {get_attr: [port, mac_address]}
+            ip-info.<%name%>.role: {get_param: role}
+            ip-info.<%name%>.ip_addrs:
+              -
+                str_replace:
+                  template: <%ip%>/<%prefix%>
+                  params:
+                    <%ip%>: {get_attr: [port, fixed_ips, 0, ip_address]}
+                    <%prefix%>: {str_split: ['/', {get_attr: [port, subnets, 0, cidr]}, 1]}
+            ip-info.<%name%>.mtu:
+              str_replace:
+                template: <%mtu%>
+                params:
+                  <%mtu%>: {get_param: mtu}
+            ip-info.<%name%>.provider-network-mtu:
+              str_replace:
+                template: <%mtu%>
+                params:
+                  <%mtu%>: {get_param: pmtu}

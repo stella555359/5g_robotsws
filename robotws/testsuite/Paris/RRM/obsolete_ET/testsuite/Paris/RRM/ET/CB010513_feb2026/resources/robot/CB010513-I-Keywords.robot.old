@@ -1,0 +1,605 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   Configuration related keywords for feature CB010513-I ...
+...               Prerequisite : commissioning is managed by custom-config and basic_setup.cfg must be properly configured
+...               Scope : keywords for CB010513-I
+...
+...               Test Case Scenario author   : vincent.boulet@nokia.com
+...               Creation Date               : 2023-07-07
+...               Modified Date               : 2023-07-07
+
+...               Last Modified by            : vincent.boulet@nokia.com
+...               Version    Date      Author                                Notes
+...               0.1        FB2314    vincent.boulet@nokia.com              Creation robot
+...                                                                          Introduce new parameter on ue settings for throughput ul
+...               1.0        FB2314    vincent.boulet@nokia.com              Collect PM files from BTS
+...                                                                          Use CB010513-C_KPI_Definitions.csv for private KPI
+...               1.1        FB2419    richard.duthu@nokia.com               Scout data + some fixes for RF50
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+#vbo#debug deregister#
+
+# Libraries
+
+# Resources
+Resource                                        ./CB010513-Common-Keywords.robot
+
+*** Variables ***
+# Now, the TestLine is configured during Suite Setup
+# Custom Config File to be used during "Suite Setup"
+${custom_config_file}       ${CURDIR}/../../../../../../../custom-config/POOLING/CB010513/CB010513_I/custom_config_10513_I.yaml
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+*** Keywords ***
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+CB010513_I_TC_9
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${test_name} ${vendor_custom} ${dict_ues} ${is_capture}
+    ...     Actions:        it performs the call setup for multi-ues with traffic on different cells
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        calls for multi ues with traffic and PRB pooling are passed
+    [Arguments]             ${param}
+    ...                     ${test_name}
+    ...                     ${vendor_custom}
+    ...                     ${dict_ues}
+    ...                     ${is_capture}
+
+    Init Sequence                               ${param}
+    Dated Log New Line                          ===> test name is ${test_name}
+    Run Keyword If    ${SUITE_DEBUG_MODE}       Set Debug Mode
+    Step                                        Set RAD Parameters for CB010513
+    Critical Step                               Deploy Vendor File Config    vendor_param=${vendor_custom}    is_perform_full_commissioning=${False}
+    Critical Step                               Perform Full Commissioning for 10513-I   param=${param}    nb_cell=3    test_name=${test_name}
+    # Configure new ue's dynamically
+    ${initial_nb_ue}                            get length    ${dict_ues}
+    Run Keyword If    ${initial_nb_ue} < ${param.total_nb_ue}    Configure New Ues    ${dict_ues}
+    ...                                                             ${initial_nb_ue}
+    ...                                                             ${param.total_nb_ue}
+    ...                                                             ${dict_settings_ue_default}
+
+    # Configure the current setting for all the ue's
+    ${param.total_nb_ue}                        get length    ${dict_ues}
+
+    Dated Log New Line                          ===> configure the setting for all the ${param.total_nb_ue} ue's
+    @{list_ue}                                  Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.total_nb_ue}
+        ${current_ue}=                          Evaluate                ${current_id} + 1
+        ${current_ue_setting}=                  Copy Dictionary         ${BASIC_UE_SA}
+        Set To Dictionary                       ${current_ue_setting}    ue    ${current_ue}
+        Set To Dictionary                       ${current_ue_setting}    pdu    1
+        Set To Dictionary                       ${current_ue_setting}    trf_id    1
+        Set To Dictionary                       ${current_ue_setting}    target_gnb    ${param.target_gnb}
+
+        # Dispatching the ue on the requested original cell for the call establishment
+        Set To Dictionary                       ${current_ue_setting}    target_cells    ${dict_ues[${current_id}].original_cell}
+        # Set the correct requested throughput per ue
+        Set To Dictionary                       ${current_ue_setting}    throughput    ${dict_ues[${current_id}].throughput}
+        Set To Dictionary                       ${current_ue_setting}    throughput_gbr    ${dict_ues[${current_id}].throughput_gbr}
+        Set To Dictionary                       ${current_ue_setting}    throughput_ul    ${dict_ues[${current_id}].throughput_ul}
+
+        Append To List                          ${list_ue}    ${current_ue_setting}
+    END
+    Dated Log New Line                          ===> ue's list is ${list_ue}
+    Check Multi Ues Setting In List             list_multi_ue=${list_ue}
+
+    # Start SYSLOG capture
+    ${syslog}                                   SYSLOG Start    host=${GNB_DU.sys[0].M}    name=${test_name}
+
+    # Setup wtsemu SA for all the ue's
+    Traced Sleep                                duration=60s    msg=Wtsemu SA system start-up to give radio modules time to start up
+    Critical Step                               CallSetup.Setup Wtsemu SA    nbUe=${param.total_nb_ue}
+    ...                                                             nbSaUe=${param.total_nb_ue}
+    ...                                                             shouldUseLua=${False}
+    ###...                                                          nb_cell=${param.total_nb_cell}
+    ...                                                             list_of_UE_tobe_created=${list_ue}
+    # WA to avoid degradation on cells
+    Traced Sleep                                duration=15s    msg=setting the X2 link as WA to avoid degradation on cells
+    Step                                        CallSetup.WTS Set X2 Link
+
+    # Capture Sherpa after cell setup for PRB Pooling verification
+    ${enable_sherpa}                            Set Variable        ${False}
+    Run Keyword If    ${enable_sherpa} == ${True}    Run Keywords    Critical Step     Activate Sherpa
+    ...    AND    Step                          Traced Sleep    duration=10s    msg=capture after cell setup
+    ...    AND    Critical Step                 Deactivate Sherpa and Stop Collect
+    ...    AND    Step                          Upload and decode sherpa pcap files    Sherpa_logs_local_path=${trace_dir}    duration=0
+    ...    AND    Step                          Calling Panda Extract Csv For PRB Pooling
+    Run Keyword If    not ${CELL_SETUP_ONLY} and ${enable_sherpa} == ${True}    Run Keywords
+    ...    Critical Step                        Verification of Pool Id within PRB Pooling Report    pool_id=${ID_POOL}
+    ...                                                             subpool_id=${ID_SUBPOOL_1}
+    ...    AND    CritIcal Step                 Verification of Pool Id within PRB Pooling Report    pool_id=${ID_POOL}
+    ...                                                             subpool_id=${ID_SUBPOOL_2}
+    #
+    ...    AND    Critical Step                 Verification of BB Pooling Mode within PRB Pooling Allocation Report    pool_id=${ID_POOL}
+    #
+    ...    AND    Critical Step                 Verification of BB Pooling cell distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_1}
+    ...                                                             subpool_id=${ID_SUBPOOL_1}
+    ...    AND    Critical Step                 Verification of BB Pooling cell distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_2}
+    ...                                                             subpool_id=${ID_SUBPOOL_1}
+    ...    AND    Critical Step                 Verification of BB Pooling cell distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_3}
+    ...                                                             subpool_id=${ID_SUBPOOL_2}
+    #
+    ...    AND    Critical Step                 Verification of Stream PRB Information within PRB Pooling Report
+    ...                                                             stream_prb_capa=1248
+    ...                                                             alloc_stream_prb=1188
+    ...                                                             subpool_id=${ID_SUBPOOL_1}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Stream PRB Information within PRB Pooling Report
+    ...                                                             stream_prb_capa=1152
+    ...                                                             alloc_stream_prb=1092
+    ...                                                             subpool_id=${ID_SUBPOOL_2}
+    ...                                                             check_operator===
+    #
+    ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=24
+    ...                                                             num_max_prb=24
+    ...                                                             num_prb_alloc=24
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=${ID_NRCELL_1}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+    ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+    ...                                                             num_prb_alloc=273
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=${ID_NRCELL_2}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+    ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+    ...                                                             num_prb_alloc=273
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=${ID_NRCELL_3}
+    ...                                                             check_operator===
+    #
+    ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_1}
+    ...                                                             zab_privilege=1
+    ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_2}
+    ...                                                             zab_privilege=1
+    ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_3}
+    ...                                                             zab_privilege=0
+
+    Sleep Until PM Availability    # Wait end of PM period containing cell setup
+
+    # WA by moving Captures Init and Start to avoid exceeded traffic
+    Step                                        Captures Init
+    Step                                        Captures Start    action_core=${is_capture.is_capture_core}
+    ...                                                             action_cprt=${is_capture.is_capture_cprt}
+    ...                                                             action_l1l2=${is_capture.is_capture_l1l2}
+
+    # Register and launch PDU for all the ue's
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    not ${CELL_SETUP_ONLY}    Run Keywords
+        ...    Critical Step                    CallSetup.UE Register    ue=${current_elem.ue}
+        ...                                     depends=CallSetup.Setup Wtsemu SA
+        ...    AND    Critical Step             CallSetup.Launch PDU Session    ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         gw=1
+        ...                                     depends=CallSetup.UE Register
+    END
+
+    # PDU session modify reserved for the ue's configured with GBR traffic
+    ${nb_ue_traffic_gbr}=                       Get Number Of Ue Configured With GBR Traffic    dict_ues=${list_ue}
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    not ${CELL_SETUP_ONLY} and ${current_elem.throughput_gbr} > ${NO_THROUGHPUT}    Run Keywords
+        ...    Critical Step                    CallSetup.UE PDU Session Modify    ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=2
+        ...                                                         by=amf
+        ...                                     depends=CallSetup.Launch PDU Session
+        ...    AND    Critical Step             CallSetup.UE PDU Session Modify    ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=3
+        ...                                                         by=amf
+        ...                                     depends=CallSetup.Launch PDU Session
+    END
+
+    # Start the DL GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    not ${CELL_SETUP_ONLY} and ${current_elem.throughput_gbr} > ${NO_THROUGHPUT}
+        ...    Critical Step                    DL Traffic GBR SA Not Stopped    param=${param}
+        ...                                                         current_ue_setting=${current_elem}
+        ...                                     depends=CallSetup.Launch PDU Session
+    END
+
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    not ${CELL_SETUP_ONLY} and ${current_elem.throughput} > ${NO_THROUGHPUT}
+        ...    Critical Step                    ${param.dir} Traffic Not Stopped    param=${param}    current_ue_setting=${current_elem}
+        ...                                     depends=CallSetup.Launch PDU Session
+    END
+
+    # Capture Sherpa during traffic for PRB Pooling verification
+    ${enable_sherpa}                            Set Variable        ${False}
+    Run Keyword If    not ${CELL_SETUP_ONLY} and ${enable_sherpa} == ${True}    Run Keywords    Critical Step     Activate Sherpa
+    ...    AND    Step                          Traced Sleep    duration=10s    msg=call with traffic
+    ...    AND    Critical Step                 Deactivate Sherpa and Stop Collect
+    ...    AND    Step                          Upload and decode sherpa pcap files    Sherpa_logs_local_path=${trace_dir}    duration=0
+    ...    AND    Step                          Calling Panda Extract Csv For PRB Pooling
+    Run Keyword If    not ${CELL_SETUP_ONLY} and ${enable_sherpa} == ${True}    Run Keywords
+    ...    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_1}
+    ...                                                             zab_privilege=1
+    ...    AND    Critical Step          Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=24
+    ...                                                             num_max_prb=24
+    ...                                                             num_prb_alloc=24
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=${ID_NRCELL_1}
+    ...                                                             check_operator===
+    ...    AND    Critical Step          Verification of Stream PRB Information within PRB Pooling Report
+    ...                                                             stream_prb_capa=1248
+    ...                                                             alloc_stream_prb=1188
+    ...                                                             subpool_id=${ID_SUBPOOL_1}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Stream PRB Information within PRB Pooling Report
+    ...                                                             stream_prb_capa=1152
+    ...                                                             alloc_stream_prb=1092
+    ...                                                             subpool_id=${ID_SUBPOOL_2}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=24
+    ...                                                             num_max_prb=24
+    ...                                                             num_prb_alloc=24
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=${ID_NRCELL_1}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+    ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+    ...                                                             num_prb_alloc=273
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=${ID_NRCELL_2}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+    ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+    ...                                                             num_prb_alloc=273
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=${ID_NRCELL_3}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_1}
+    ...                                                             zab_privilege=1
+    ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_2}
+    ...                                                             zab_privilege=1
+    ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_3}
+    ...                                                             zab_privilege=0
+
+    # Capture TTI traces
+    Run Keyword If    ${AUTO_SAVE_DEBUG_DATA}    Step    Get TTI Logs
+
+    # Checks the correct usage of the searchSpaceId associated with each slot
+    Dated Log       Start check the correct usage of searchspaceId associated with each slot
+    Run Keyword     check_search_space_id       json_path_name=${TTIjson}
+
+    # Waiting time added for observation and allow generation of multiple count periods
+    # FOR    ${iteration_pm}    IN RANGE    0    ${param.pm_waiting_period}
+    #     Sleep Until PM Availability
+    #     ${pm_path}                              Counters.Collect PM files from BTS    ${LOG_PATH}/PM    # Collect one file for checking KPI's
+    #     Step                                    Check Counter And KPI Constraints    ${pm_path}
+    #     ...                                                         ${test_name}
+    #     ...                                                         localKpiFileName=CB010513-C_KPI_Definitions.csv
+    # END
+
+    Step                                        Traced Sleep    duration=3s    msg=deregistering    depends=CallSetup.UE Register
+    # Deregister all the ue's
+    FOR    ${current_elem}    IN    @{list_ue}    #vbo#debug deregister#
+    #vbo#debug deregister#FOR    ${current_id}    IN RANGE    ${param.total_nb_ue}    0    -1
+        #vbo#debug deregister#${current_ue}=                          Evaluate                ${current_id} - 1
+        Run Keyword If    not ${CELL_SETUP_ONLY}
+        ...    Step                             CallSetup.UE Deregister    id=${current_elem.ue}    #vbo#debug deregister#
+        #vbo#debug deregister#...    Step                             CallSetup.UE Deregister    id=${dict_ues[${current_ue}]}
+        ...                                                         ue_deregister_type=switch_off
+        ...                                                         by=ue
+        ...                                     depends=CallSetup.UE Register
+    END
+    Step                                        Captures Stop    action_core=${is_capture.is_capture_core}
+    ...                                                             action_cprt=${is_capture.is_capture_cprt}
+    ...                                                             action_l1l2=${is_capture.is_capture_l1l2}
+    # Stop SYSLOG capture
+    SYSLOG Stop                                 syslog=${syslog}
+    # Saving Snapshot as debug data
+    #Run Keyword If    ${AUTO_SAVE_DEBUG_DATA}    Setup.Get Snapshot
+    Sleep Until PM Availability
+    ${pm_path}                                  Set Variable    ${LOG_PATH}/PM
+    Step                                        Counters.Collect PM files from BTS    ${pm_path}    # Collect all files for checking counters
+    [Teardown]      Display diagnosis
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+CB010513_I_TC_9_bis
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${test_name} ${vendor_custom} ${dict_ues} ${is_capture}
+    ...     Actions:        it performs the call setup for multi-ues with traffic on different cells
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        calls for multi ues with traffic and PRB pooling are passed
+    [Arguments]             ${param}
+    ...                     ${test_name}
+    ...                     ${vendor_custom}
+    ...                     ${dict_ues}
+    ...                     ${is_capture}
+    Init Sequence                               ${param}
+    Dated Log New Line                          ===> test name is ${test_name}
+    Run Keyword If    ${SUITE_DEBUG_MODE}       Set Debug Mode
+    Step                                        Set RAD Parameters for CB010513
+    Critical Step                               Deploy Vendor File Config    vendor_param=${vendor_custom}    is_perform_full_commissioning=${True}
+    # Configure new ue's dynamically
+    ${initial_nb_ue}                            get length    ${dict_ues}
+    Run Keyword If    ${initial_nb_ue} < ${param.total_nb_ue}    Configure New Ues    ${dict_ues}
+    ...                                                             ${initial_nb_ue}
+    ...                                                             ${param.total_nb_ue}
+    ...                                                             ${dict_settings_ue_default}
+    # Configure the current setting for all the ue's
+    ${param.total_nb_ue}                        get length    ${dict_ues}
+    Dated Log New Line                          ===> configure the setting for all the ${param.total_nb_ue} ue's
+    @{list_ue}                                  Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.total_nb_ue}
+        ${current_ue}=                          Evaluate                ${current_id} + 1
+        ${current_ue_setting}=                  Copy Dictionary         ${BASIC_UE_SA}
+        Set To Dictionary                       ${current_ue_setting}    ue    ${current_ue}
+        Set To Dictionary                       ${current_ue_setting}    pdu    1
+        Set To Dictionary                       ${current_ue_setting}    trf_id    1
+        Set To Dictionary                       ${current_ue_setting}    target_gnb    ${param.target_gnb}
+        # Dispatching the ue on the requested original cell for the call establishment
+        Set To Dictionary                       ${current_ue_setting}    target_cells    ${dict_ues[${current_id}].original_cell}
+        # Set the correct requested throughput per ue
+        Set To Dictionary                       ${current_ue_setting}    throughput    ${dict_ues[${current_id}].throughput}
+        Set To Dictionary                       ${current_ue_setting}    throughput_gbr    ${dict_ues[${current_id}].throughput_gbr}
+        Set To Dictionary                       ${current_ue_setting}    throughput_ul    ${dict_ues[${current_id}].throughput_ul}
+        Append To List                          ${list_ue}    ${current_ue_setting}
+    END
+    Dated Log New Line                          ===> ue's list is ${list_ue}
+    Check Multi Ues Setting In List             list_multi_ue=${list_ue}
+    # Start SYSLOG capture
+    ${syslog}                                   SYSLOG Start    host=${GNB_DU.sys[0].M}    name=${test_name}
+    # Setup wtsemu SA for all the ue's
+    Traced Sleep                                duration=60s    msg=Wtsemu SA system start-up to give radio modules time to start up
+    Critical Step                               CallSetup.Setup Wtsemu SA    nbUe=${param.total_nb_ue}
+    ...                                                             nbSaUe=${param.total_nb_ue}
+    ...                                                             shouldUseLua=${False}
+    ###...                                                          nb_cell=${param.total_nb_cell}
+    ...                                                             list_of_UE_tobe_created=${list_ue}
+    # WA to avoid degradation on cells
+    Traced Sleep                                duration=15s    msg=setting the X2 link as WA to avoid degradation on cells
+    Step                                        CallSetup.WTS Set X2 Link
+    # Capture Sherpa after cell setup for PRB Pooling verification
+    ${enable_sherpa}                            Set Variable        ${False}
+    Run Keyword If    ${enable_sherpa} == ${True}    Run Keywords    Critical Step     Activate Sherpa
+    ...    AND    Step                          Traced Sleep    duration=10s    msg=capture after cell setup
+    ...    AND    Critical Step                 Deactivate Sherpa and Stop Collect
+    ...    AND    Step                          Upload and decode sherpa pcap files    Sherpa_logs_local_path=${trace_dir}    duration=0
+    ...    AND    Step                          Calling Panda Extract Csv For PRB Pooling
+    Run Keyword If    not ${CELL_SETUP_ONLY} and ${enable_sherpa} == ${True}    Run Keywords
+    ...    Critical Step                        Verification of Pool Id within PRB Pooling Report    pool_id=${ID_POOL}
+    ...                                                             subpool_id=${ID_SUBPOOL_1}
+    ...    AND    CritIcal Step                 Verification of Pool Id within PRB Pooling Report    pool_id=${ID_POOL}
+    ...                                                             subpool_id=${ID_SUBPOOL_2}
+    ...    AND    Critical Step                 Verification of BB Pooling Mode within PRB Pooling Allocation Report    pool_id=${ID_POOL}
+    ...    AND    Critical Step                 Verification of BB Pooling cell distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_1}
+    ...                                                             subpool_id=${ID_SUBPOOL_1}
+    ...    AND    Critical Step                 Verification of BB Pooling cell distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_2}
+    ...                                                             subpool_id=${ID_SUBPOOL_1}
+    ...    AND    Critical Step                 Verification of BB Pooling cell distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_3}
+    ...                                                             subpool_id=${ID_SUBPOOL_2}
+    ...    AND    Critical Step                 Verification of Stream PRB Information within PRB Pooling Report
+    ...                                                             stream_prb_capa=1248
+    ...                                                             alloc_stream_prb=1188
+    ...                                                             subpool_id=${ID_SUBPOOL_1}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Stream PRB Information within PRB Pooling Report
+    ...                                                             stream_prb_capa=1152
+    ...                                                             alloc_stream_prb=1092
+    ...                                                             subpool_id=${ID_SUBPOOL_2}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=24
+    ...                                                             num_max_prb=24
+    ...                                                             num_prb_alloc=24
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=${ID_NRCELL_1}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+    ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+    ...                                                             num_prb_alloc=273
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=${ID_NRCELL_2}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+    ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+    ...                                                             num_prb_alloc=273
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=${ID_NRCELL_3}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_1}
+    ...                                                             zab_privilege=1
+    ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_2}
+    ...                                                             zab_privilege=1
+    ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_3}
+    ...                                                             zab_privilege=0
+    Sleep Until PM Availability    # Wait end of PM period containing cell setup
+    # WA by moving Captures Init and Start to avoid exceeded traffic
+    Step                                        Captures Init
+    Step                                        Captures Start    action_core=${is_capture.is_capture_core}
+    ...                                                             action_cprt=${is_capture.is_capture_cprt}
+    ...                                                             action_l1l2=${is_capture.is_capture_l1l2}
+    # Register and launch PDU for all the ue's
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    not ${CELL_SETUP_ONLY}    Run Keywords
+        ...    Critical Step                    CallSetup.UE Register    ue=${current_elem.ue}
+        ...                                     depends=CallSetup.Setup Wtsemu SA
+        ...    AND    Critical Step             CallSetup.Launch PDU Session    ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         gw=1
+        ...                                     depends=CallSetup.UE Register
+    END
+    # PDU session modify reserved for the ue's configured with GBR traffic
+    ${nb_ue_traffic_gbr}=                       Get Number Of Ue Configured With GBR Traffic    dict_ues=${list_ue}
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    not ${CELL_SETUP_ONLY} and ${current_elem.throughput_gbr} > ${NO_THROUGHPUT}    Run Keywords
+        ...    Critical Step                    CallSetup.UE PDU Session Modify    ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=2
+        ...                                                         by=amf
+        ...                                     depends=CallSetup.Launch PDU Session
+        ...    AND    Critical Step             CallSetup.UE PDU Session Modify    ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=3
+        ...                                                         by=amf
+        ...                                     depends=CallSetup.Launch PDU Session
+    END
+    # Start the DL GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    not ${CELL_SETUP_ONLY} and ${current_elem.throughput_gbr} > ${NO_THROUGHPUT}
+        ...    Critical Step                    DL Traffic GBR SA Not Stopped    param=${param}
+        ...                                                         current_ue_setting=${current_elem}
+        ...                                     depends=CallSetup.Launch PDU Session
+    END
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    not ${CELL_SETUP_ONLY} and ${current_elem.throughput} > ${NO_THROUGHPUT}
+        ...    Critical Step                    ${param.dir} Traffic Not Stopped    param=${param}    current_ue_setting=${current_elem}
+        ...                                     depends=CallSetup.Launch PDU Session
+    END
+    # Capture Sherpa during traffic for PRB Pooling verification
+    ${enable_sherpa}                            Set Variable        ${False}
+    Run Keyword If    not ${CELL_SETUP_ONLY} and ${enable_sherpa} == ${True}    Run Keywords    Critical Step     Activate Sherpa
+    ...    AND    Step                          Traced Sleep    duration=10s    msg=call with traffic
+    ...    AND    Critical Step                 Deactivate Sherpa and Stop Collect
+    ...    AND    Step                          Upload and decode sherpa pcap files    Sherpa_logs_local_path=${trace_dir}    duration=0
+    ...    AND    Step                          Calling Panda Extract Csv For PRB Pooling
+    Run Keyword If    not ${CELL_SETUP_ONLY} and ${enable_sherpa} == ${True}    Run Keywords
+    ...    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_1}
+    ...                                                             zab_privilege=1
+    ...    AND    Critical Step          Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=24
+    ...                                                             num_max_prb=24
+    ...                                                             num_prb_alloc=24
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=${ID_NRCELL_1}
+    ...                                                             check_operator===
+    ...    AND    Critical Step          Verification of Stream PRB Information within PRB Pooling Report
+    ...                                                             stream_prb_capa=1248
+    ...                                                             alloc_stream_prb=1188
+    ...                                                             subpool_id=${ID_SUBPOOL_1}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Stream PRB Information within PRB Pooling Report
+    ...                                                             stream_prb_capa=1152
+    ...                                                             alloc_stream_prb=1092
+    ...                                                             subpool_id=${ID_SUBPOOL_2}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=24
+    ...                                                             num_max_prb=24
+    ...                                                             num_prb_alloc=24
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=${ID_NRCELL_1}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+    ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+    ...                                                             num_prb_alloc=273
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=${ID_NRCELL_2}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+    ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+    ...                                                             num_prb_alloc=273
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=${ID_NRCELL_3}
+    ...                                                             check_operator===
+    ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_1}
+    ...                                                             zab_privilege=1
+    ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_2}
+    ...                                                             zab_privilege=1
+    ...    AND    Critical Step                 Verification of BB Pooling ZAB distribution within PRB Pooling Report    nr_cell_id=${ID_NRCELL_3}
+    ...                                                             zab_privilege=0
+    # Capture TTI traces
+    Run Keyword If    ${AUTO_SAVE_DEBUG_DATA}    Step    Get TTI Logs
+    # Checks the correct usage of the searchSpaceId associated with each slot
+    Dated Log       Start check the correct usage of searchspaceId associated with each slot
+    Run Keyword     check_search_space_id       json_path_name=${TTIjson}
+    # Waiting time added for observation and allow generation of multiple count periods
+    # FOR    ${iteration_pm}    IN RANGE    0    ${param.pm_waiting_period}
+    #     Sleep Until PM Availability
+    #     ${pm_path}                              Counters.Collect PM files from BTS    ${LOG_PATH}/PM    # Collect one file for checking KPI's
+    #     Step                                    Check Counter And KPI Constraints    ${pm_path}
+    #     ...                                                         ${test_name}
+    #     ...                                                         localKpiFileName=CB010513-C_KPI_Definitions.csv
+    # END
+    Step                                        Traced Sleep    duration=3s    msg=deregistering    depends=CallSetup.UE Register
+    # Deregister all the ue's
+    FOR    ${current_elem}    IN    @{list_ue}    #vbo#debug deregister#
+    #vbo#debug deregister#FOR    ${current_id}    IN RANGE    ${param.total_nb_ue}    0    -1
+        #vbo#debug deregister#${current_ue}=                          Evaluate                ${current_id} - 1
+        Run Keyword If    not ${CELL_SETUP_ONLY}
+        ...    Step                             CallSetup.UE Deregister    id=${current_elem.ue}    #vbo#debug deregister#
+        #vbo#debug deregister#...    Step                             CallSetup.UE Deregister    id=${dict_ues[${current_ue}]}
+        ...                                                         ue_deregister_type=switch_off
+        ...                                                         by=ue
+        ...                                     depends=CallSetup.UE Register
+    END
+    Step                                        Captures Stop    action_core=${is_capture.is_capture_core}
+    ...                                                             action_cprt=${is_capture.is_capture_cprt}
+    ...                                                             action_l1l2=${is_capture.is_capture_l1l2}
+    # Stop SYSLOG capture
+    SYSLOG Stop                                 syslog=${syslog}
+    # Saving Snapshot as debug data
+    #Run Keyword If    ${AUTO_SAVE_DEBUG_DATA}    Setup.Get Snapshot
+    Sleep Until PM Availability
+    ${pm_path}                                  Set Variable    ${LOG_PATH}/PM
+    Step                                        Counters.Collect PM files from BTS    ${pm_path}    # Collect all files for checking counters
+    [Teardown]      Display diagnosis
+
+Suite Setup CB010513-I
+    [Documentation]
+    ...     Conditions:    it needs no conditions
+    ...     Actions:       it performs the generic suite setup and backup the configurations files
+    ...     Checks:        it checks nothing more than already done on lib.
+    ...     Verdict:       suite setup is passed
+    Setup.Suite Setup From Scratch
+    ...                    keepAllUeDataInCfgFile=${True}
+    ...                    automaticTeardown=${True}
+    ...                    yamlPathname=${custom_config_file}
+    Backup Files
+    ${scf_suite_setup_backup}        OAM Get SCF File           file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable               ${scf_suite_setup_backup}
+    Dated Log                        SCF backup file = ${scf_suite_setup_backup}
+
+Perform Full Commissioning for 10513-I
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${nb_cell} ${test_name}
+    ...     Actions:        it performs the full commissioning to support the slicing for SA and NSA
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        the parameters for the objects are configured
+    [Arguments]             ${param}
+    ...                     ${nb_cell}
+    ...                     ${test_name}
+    ${current_scf}                              String.Replace string    ${scf_suite_setup_backup}    _Suite_Setup_Backup.xml    ${EMPTY}
+    ${updated_scf}                              catenate    SEPARATOR=${EMPTY}    ${current_scf}_Activated_For_10513_I.xml
+    ${std_output}=                              Run    cp ${scf_suite_setup_backup} ${updated_scf}
+    SCF StartSession                            scf_file=${updated_scf}
+    #definition of the objects dist_name
+    ${dist_name_mrbts}                          Set Variable    MRBTS-${TMRBTS_ID[0]}
+    Dated log                                   dist_name_mrbts is ${dist_name_mrbts}
+    ${dist_name_nrbts}                          Set Variable    ${dist_name_mrbts}/NRBTS-${TNRBTS_ID[0]}
+    Dated log                                   dist_name_nrbts is ${dist_name_nrbts}
+    ### NRBTS
+    #actExplicitCsirsPoolSolution / update / true
+    SCF Set element    dist_name=${dist_name_nrbts}    element_name=actExplicitCsirsPoolSolution   element_value=true   scope=Classical
+    ### NRCELL
+    FOR    ${cell_id}    IN RANGE    0    ${nb_cell}
+        ${dist_name_nrcell}                     Set Variable    ${TNRCELL_DN_LIST[0]}[${cell_id}]
+        Dated log                               dist_nrcell_name is ${dist_name_nrcell}
+        #nrResourceGroupProfileDN / add / ${dist_name_nrresourcegroup_prof}
+        SCF Set element in List    dist_name=${dist_name_nrcell}    list_name=periodicCsiAcquisition    element_name=csiReportPeriodicity
+        ...                        element_value=slots80     scope=Classical
+    END
+    SCF StopSession                             scf_file=${updated_scf}
+    OAM Perform Full Commissioning              scf_file=${updated_scf}
+    OAM wait available
+    OAM Get SCF File                            file=SCF_Updated_For_10513_I.xml
+    ${std_output}=                              Run    rm -f ${updated_scf}
+

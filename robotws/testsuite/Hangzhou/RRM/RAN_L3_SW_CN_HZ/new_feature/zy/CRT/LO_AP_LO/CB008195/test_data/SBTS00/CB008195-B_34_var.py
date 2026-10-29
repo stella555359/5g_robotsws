@@ -1,0 +1,226 @@
+from robot.libraries.BuiltIn import BuiltIn
+
+tl = BuiltIn().get_variable_value("${tl}")
+gNbId = tl.gnbs[0].instance_id
+
+PARAMS_IN_SCF = [
+       "NRBTS:gNbCuType=SA+NSA",
+       "NRCELL-21:cellDepType=SA+NSA",
+       "NRCELL-22:cellDepType=SA",
+       "NRBTS:actConnRrcPooling=true",
+       "NRBTS:actScheUePooling=true",
+       "NRBTS:actBbPoolTddFr1=true",
+       "NRBTS:actBbPoolExtensionTddFr1=true",
+       "NRBTS:actBbPoolTddFr1AlgEnh=true",
+       "NRBTS:actBbPoolTddFr1Enh=true",
+       # RANsharing
+       "NRBTS:actRanSharing=true",
+       "NRCELL/NRPLMNSET_SA-1:nrPlmnDNList=MRBTS/NRBTS/NRPLMN-1,NRPLMN-3",
+       "NRCELL/NRPLMNSET_SA-1:trackingAreaDN=MRBTS/NRBTS/TRACKINGAREA-270",
+       "NRCELL-21/NRPLMNSET_NSA-1:nrPlmnDNList=MRBTS/NRBTS/NRPLMN-1,MRBTS/NRBTS/NRPLMN-2",
+       "NRBTS/TRACKINGAREA-270:snssaiList:snssaiDNLast=SNSSAI-30|snssaiDN=SNSSAI-28",
+       "NRBTS/SNSSAI-28:sst=1",
+       "NRBTS/SNSSAI-28:sd=13714341",
+       "NRBTS/SNSSAI-28:nrPlmnDNList=MRBTS/NRBTS/NRPLMN-1",
+       "NRBTS/SNSSAI-28:ngUplane=",
+       "NRBTS/SNSSAI-29:sst=1",
+       "NRBTS/SNSSAI-29:sd=13714342",
+       "NRBTS/SNSSAI-29:nrPlmnDNList=MRBTS/NRBTS/NRPLMN-1",
+       "NRBTS/SNSSAI-29:ngUplane=",
+       "NRBTS/SNSSAI-30:sst=1",
+       "NRBTS/SNSSAI-30:sd=13714341",
+       "NRBTS/SNSSAI-30:nrPlmnDNList=MRBTS/NRBTS/NRPLMN-3",
+       "NRBTS/SNSSAI-30:ngUplane=",
+       "NRBTS/NRPLMN-1:mcc=262",
+       "NRBTS/NRPLMN-1:mnc=03",
+       "NRBTS/NRPLMN-1:mncLength=2",
+       "NRBTS/NRPLMN-2:mcc=311",
+       "NRBTS/NRPLMN-2:mnc=490",
+       "NRBTS/NRPLMN-2:mncLength=3",
+       "NRBTS/NRPLMN-3:mcc=310",
+       "NRBTS/NRPLMN-3:mnc=260",
+       "NRBTS/NRPLMN-3:mncLength=3",
+       # CB008195
+       "NRBTS:actSliceAwareAdmissionCtrl=true",
+       "NRBTS:rgMinQuotaReservationLevel=cell_and_multicell_level",
+       "NRBTS/NRCELL-21:sliceAwareAdmissionCtrlEnabled=true",
+       "NRBTS/NRCELL-22:sliceAwareAdmissionCtrlEnabled=true",
+       "NRBTS:actSliceAwareSchedulerUlAndEnh=true",
+       "NRCELL:actGbrRacTdEnhResourcePriority=false",
+       "NRCELL:actGBRAdmissionControl=GBRService",
+       "NRCELL:maxGBRTrafficLimit=40",
+       "NRCELL:nrResourceGroupProfileRacDN=",
+       "NRCELL-21:nrResourceGroupProfileRacDN=NRBTS/NRRESOURCEGROUP_PROFILE-1",
+       "NRCELL-22:nrResourceGroupProfileRacDN=NRBTS/NRRESOURCEGROUP_PROFILE-2",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1:bypassRgLimits=4",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-2:bypassRgLimits=4",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1:defaultRgSaList:nrResourceGroupId=1|nrPlmnDN=MRBTS/NRBTS/NRPLMN-1",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1:defaultRgSaList:nrResourceGroupId=2|nrPlmnDN=MRBTS/NRBTS/NRPLMN-2",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1:defaultRgSaList:nrResourceGroupId=2|nrPlmnDN=MRBTS/NRBTS/NRPLMN-3",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1:defaultRgNsaList:nrPlmnDN=MRBTS/NRBTS/NRPLMN-1|nrResourceGroupId=1",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1:defaultRgNsaList:nrPlmnDN=MRBTS/NRBTS/NRPLMN-2|nrResourceGroupId=2",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1:defaultRgNsaList:nrPlmnDN=MRBTS/NRBTS/NRPLMN-3|nrResourceGroupId=3",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-1:nrResourceList:resourceDN=SNSSAI-1|resourceDN=SNSSAI-1",
+       # "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-1:nrResourceList:resourceDN=NRPLMN-1|resourceDN=NRPLMN-1",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-1:racParams:maxQuota=71",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-1:racParams:minQuota=30",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-2:nrResourceList:resourceDN=SNSSAI-28|resourceDN=SNSSAI-28",
+       # "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-2:nrResourceList:resourceDN=NRPLMN-2|resourceDN=NRPLMN-2",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-2:racParams:maxQuota=40",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-2:racParams:minQuota=12",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-3:nrResourceList:resourceDN=SNSSAI-29|resourceDN=SNSSAI-29",
+       # "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-3:nrResourceList:resourceDN=NRPLMN-3|resourceDN=NRPLMN-3",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-3:racParams:maxQuota=20",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-3:racParams:minQuota=12",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-2:defaultRgSaList:nrResourceGroupId=1|nrPlmnDN=MRBTS/NRBTS/NRPLMN-1",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-2:defaultRgSaList:nrResourceGroupId=1|nrPlmnDN=MRBTS/NRBTS/NRPLMN-2",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-2:defaultRgSaList:nrResourceGroupId=1|nrPlmnDN=MRBTS/NRBTS/NRPLMN-3",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-2:defaultRgNsaList:nrResourceGroupId=1|nrPlmnDN=MRBTS/NRBTS/NRPLMN-1",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-2:defaultRgNsaList:nrResourceGroupId=2|nrPlmnDN=MRBTS/NRBTS/NRPLMN-2",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-2:defaultRgNsaList:nrResourceGroupId=2|nrPlmnDN=MRBTS/NRBTS/NRPLMN-3",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-1:nrResourceList:resourceDN=SNSSAI-28|resourceDN=SNSSAI-28",
+       # "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-1:nrResourceList:resourceDN=NRPLMN-2|resourceDN=NRPLMN-2",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-1:racParams:maxQuota=50",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-1:racParams:minQuota=20",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-2:nrResourceList:resourceDN=SNSSAI-29|resourceDN=SNSSAI-29",
+       # "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-2:nrResourceList:resourceDN=NRPLMN-3|resourceDN=NRPLMN-3",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-2:racParams:maxQuota=40",
+       "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-2:racParams:minQuota=30",
+       "MRBTS/NRBTS:drbRrcInactInactivityTimerSA=90",
+       "MRBTS/NRBTS:drbInactivityTimerSA=3600",
+       "MRBTS/NRBTS:srbInactivityTimerSA=90",
+       "MRBTS/NRBTS:maxUeRrcInactTime=90",
+       # limit_group_maxNum
+       "NRBTS/NRCELLGRP-21:maxNumOfNonGBRBearers=10",    # for NRCELL-21
+       "NRBTS/NRCELLGRP-22:maxNumOfNonGBRBearers=10",    # for NRCELL-22
+       "NRBTS/NRCELLGRP-21:maxNumOfUsers=10",
+       "NRBTS/NRCELLGRP-22:maxNumOfUsers=10",
+       # "MRBTS/NRBTS/NRDU-1:maxNumOfRrcConUEsPerDU=20",
+       "NRBTS:numOfDRBReservedPerEmergency=4",
+       # limit_cell_maxNum
+       "NRCELL:maxNumOfCaUsersNRCell=10",
+       "NRCELL-21:maxNumOfGBRBearersSA=10",
+       "NRCELL-22:maxNumOfGBRBearersSA=16",
+       "NRCELL-21:maxNumOfNonGBRBearersSA=20",
+       "NRCELL-22:maxNumOfNonGBRBearersSA=10",
+       "NRCELL:addNumOfGBRBearers=4",
+       "NRCELL:maxNumOfRrcSA=20",
+       "NRCELL:maxNumOfUsersPerNRCell=20",
+       "NRCELL:maxNumOfUsersPerCell=10",
+       "NRCELL:maxNumOfNrDcSnUsers=10",
+       "NRCELL:maxNumOfSCellAlloc=10",
+       # for GBR 5QI-4
+       "NRCELL:actNonVoNRGbrService=true",
+       "NRBTS/NRDRB_5QI-7:fiveqiValueList=4",
+       "NRBTS/NRDRB_5QI-7:nrDrbDN=MRBTS/NRBTS/NRDRB-16",
+       "NRBTS/NRDRB-16:maxDataRateGbrDl=5000",
+       "NRBTS/NRDRB-16:maxDataRateGbrUl=5000",
+       # other features
+       "NRCELL:actPriorityAccess=false",
+       "NRCELL:actEmergencyCall=false",
+       "NRBTS:actDrbPreemption=false",
+       "NRBTS:actUserPreemption=false",
+       "NRBTS:actIntraFreqHoSA=false",
+]
+
+PARAMS_IN_VENDOR = [
+       "guaranteedResourceRatioPerCell=25",
+       "bbPoolCapacity:maxNumOfUserL2Pool=30",
+       "bbPoolCapacity:maxNumOfDRBL2Pool=30",
+       "bbPoolCapacity:maxNumOfGBRL2Pool=9",
+       "bbPoolCapacity:maxNumPucchF1SRPerSlotL1Pool=30",
+       "bbPoolCapacity:maxNumPucchF3PCSIPerSlotL1Pool=30",
+]
+
+DELTA_LOCK_USELESS_CELLS = [
+    # lock all cells in other bbpool
+    "NRCELL-301:administrativeState=Locked",
+    "NRCELL-311:administrativeState=Locked",
+    "NRCELL-302:administrativeState=Locked",
+    "NRCELL-312:administrativeState=Locked",
+    "NRCELL-303:administrativeState=Locked",
+    "NRCELL-313:administrativeState=Locked",
+    "NRCELL-1:administrativeState=Locked",
+    "NRCELL-2:administrativeState=Locked",
+    "NRCELL-3:administrativeState=Locked",
+    # cell21 and cell22 in one bbpool, lock cell23
+    "NRCELL-23:administrativeState=Locked",
+]
+AVG_NUM_UE_NOM_NRG = "M55910C00005"
+DNOM_SAMPLES_NRG = "M55910C00006"
+AVE_NUM_GBR_NOM_NRG = "M55910C00008"
+PEAK_NUM_UE_NRG = "M55910C00010"
+PEAK_NUM_GBR_NRG = "M55910C00012"
+RAC_REJ_DUE_DRB_MAX_QUOTA_NRG = "M55910C00015"
+RAC_REJ_DUE_UE_MAX_QUOTA_NRG = "M55910C00016"
+NUM_ADM_REQ_GBR_NRG = "M55910C00021"
+NUM_ADM_SUC_GBR_NRG = "M55910C00022"
+NUM_ADM_REQ_UE_NRG = "M55910C00023"
+NUM_ADM_SUC_UE_NRG = "M55910C00024"
+AVE_UNALLOC_5QI1_RES_NOM_NRG = "M55910C00014"
+
+
+PM_Counters_B30 = [
+  # check RAC_REJ_DUE_DRB_MAX_QUOTA_NRG not existing
+  f"{AVE_UNALLOC_5QI1_RES_NOM_NRG}=not_existing",
+  # check counters on NRCELL-2/NRRESOURCEGROUP-1, no ue access
+  f"NRCELL-2/NRRESOURCEGROUP-1:{AVG_NUM_UE_NOM_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-1:{DNOM_SAMPLES_NRG}=300",
+  f"NRCELL-2/NRRESOURCEGROUP-1:{AVE_NUM_GBR_NOM_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-1:{PEAK_NUM_UE_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-1:{PEAK_NUM_GBR_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-1:{RAC_REJ_DUE_DRB_MAX_QUOTA_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-1:{RAC_REJ_DUE_UE_MAX_QUOTA_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-1:{NUM_ADM_REQ_GBR_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-1:{NUM_ADM_SUC_GBR_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-1:{NUM_ADM_REQ_UE_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-1:{NUM_ADM_SUC_UE_NRG}=0",
+  # check counters on NRCELL-2/NRRESOURCEGROUP-2, no ue access
+  f"NRCELL-2/NRRESOURCEGROUP-2:{AVG_NUM_UE_NOM_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-2:{DNOM_SAMPLES_NRG}=300",
+  f"NRCELL-2/NRRESOURCEGROUP-2:{AVE_NUM_GBR_NOM_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-2:{PEAK_NUM_UE_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-2:{PEAK_NUM_GBR_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-2:{RAC_REJ_DUE_DRB_MAX_QUOTA_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-2:{RAC_REJ_DUE_UE_MAX_QUOTA_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-2:{NUM_ADM_REQ_GBR_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-2:{NUM_ADM_SUC_GBR_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-2:{NUM_ADM_REQ_UE_NRG}=0",
+  f"NRCELL-2/NRRESOURCEGROUP-2:{NUM_ADM_SUC_UE_NRG}=0",
+  # check counters on NRCELL-1/NRRESOURCEGROUP-1, no UE access
+  f"NRCELL-1/NRRESOURCEGROUP-1:{AVG_NUM_UE_NOM_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-1:{DNOM_SAMPLES_NRG}=300",
+  f"NRCELL-1/NRRESOURCEGROUP-1:{AVE_NUM_GBR_NOM_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-1:{PEAK_NUM_UE_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-1:{PEAK_NUM_GBR_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-1:{RAC_REJ_DUE_DRB_MAX_QUOTA_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-1:{RAC_REJ_DUE_UE_MAX_QUOTA_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-1:{NUM_ADM_REQ_GBR_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-1:{NUM_ADM_SUC_GBR_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-1:{NUM_ADM_REQ_UE_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-1:{NUM_ADM_SUC_UE_NRG}=0",
+  # check counters on NRCELL-1/NRRESOURCEGROUP-2, no UE access
+  f"NRCELL-1/NRRESOURCEGROUP-2:{AVG_NUM_UE_NOM_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-2:{DNOM_SAMPLES_NRG}=300",
+  f"NRCELL-1/NRRESOURCEGROUP-2:{AVE_NUM_GBR_NOM_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-2:{PEAK_NUM_UE_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-2:{PEAK_NUM_GBR_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-2:{RAC_REJ_DUE_DRB_MAX_QUOTA_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-2:{RAC_REJ_DUE_UE_MAX_QUOTA_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-2:{NUM_ADM_REQ_GBR_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-2:{NUM_ADM_SUC_GBR_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-2:{NUM_ADM_REQ_UE_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-2:{NUM_ADM_SUC_UE_NRG}=0",
+  # check counters on NRCELL-1/NRRESOURCEGROUP-3, 3ue access
+  f"NRCELL-1/NRRESOURCEGROUP-3:{AVG_NUM_UE_NOM_NRG}>0",
+  f"NRCELL-1/NRRESOURCEGROUP-3:{DNOM_SAMPLES_NRG}=300",
+  f"NRCELL-1/NRRESOURCEGROUP-3:{AVE_NUM_GBR_NOM_NRG}>0",
+  f"NRCELL-1/NRRESOURCEGROUP-3:{PEAK_NUM_UE_NRG}=3",
+  f"NRCELL-1/NRRESOURCEGROUP-3:{PEAK_NUM_GBR_NRG}=3",
+  f"NRCELL-1/NRRESOURCEGROUP-3:{RAC_REJ_DUE_DRB_MAX_QUOTA_NRG}=1",
+  f"NRCELL-1/NRRESOURCEGROUP-3:{RAC_REJ_DUE_UE_MAX_QUOTA_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-3:{NUM_ADM_REQ_GBR_NRG}=4",
+  f"NRCELL-1/NRRESOURCEGROUP-3:{NUM_ADM_SUC_GBR_NRG}=3",
+  f"NRCELL-1/NRRESOURCEGROUP-3:{NUM_ADM_REQ_UE_NRG}=3",
+  f"NRCELL-1/NRRESOURCEGROUP-3:{NUM_ADM_SUC_UE_NRG}=3",
+]

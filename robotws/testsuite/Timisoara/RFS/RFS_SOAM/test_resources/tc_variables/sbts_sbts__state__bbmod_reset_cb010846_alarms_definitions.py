@@ -1,0 +1,116 @@
+from temporary_alarms_definition import *
+
+
+def _build_variable_list():
+    var_dict = {}
+
+    var_dict["MASTER_EXPECTED_ALARMS_10"] = [{"alarmId": "7116", "faultId": "10"}]
+
+    var_dict["MASTER_EXPECTED_ALARMS_10_1815"] = [
+        {"alarmId": "7116", "faultId": "10|1815"}
+    ]
+
+    var_dict["MASTER_EXPECTED_ALARMS_16"] = [{"alarmId": "7116", "faultId": "16"}]
+
+    var_dict["MASTER_IGNORED_ALARMS_CNI_127210"] = [
+        {"alarmId": "7222", "faultId": "9000"},
+        {"alarmId": "7220", "faultId": "4459"},
+        {"alarmId": "7115", "faultId": "4657"},
+    ] + SBTS_TEMP_IGNORED_ALARMS
+
+    var_dict["MASTER_IGNORED_ALARMS_NO_CNI_127210"] = (
+        [
+            {"alarmId": "7222", "faultId": "9000"},
+            {"alarmId": "7220", "faultId": "4459"},
+            {"alarmId": "7115", "faultId": "4657"},
+        ]
+        + SBTS_TEMP_IGNORED_ALARMS
+        + ADMIN_ADDITIONAL_COMMON_IGNORED_ALARMS_NO_CNI_127210
+    )
+
+    var_dict["MASTER_IGNORED_ALARMS_DURING_RESET_NO_CNI_127210"] = [
+        {"alarmId": "7114", "faultId": "7509|7511|7513"},
+        {"alarmId": "7115", "faultId": "6129|6132|6134"},
+        {"alarmId": "7107", "faultId": "62003"},
+    ] + var_dict["MASTER_IGNORED_ALARMS_NO_CNI_127210"]
+
+    var_dict["MASTER_IGNORED_ALARMS_DURING_RESET_CNI_127210"] = [
+        {"alarmId": "7114", "faultId": "7509|7511|7513"},
+        {"alarmId": "7115|7112", "faultId": "6129"},
+        {"alarmId": "7115|7107", "faultId": "6132"},
+        {"alarmId": "7115|7112", "faultId": "6134"},
+        {"alarmId": "7107", "faultId": "62003"},
+    ] + var_dict["MASTER_IGNORED_ALARMS_CNI_127210"]
+
+    var_dict["SLAVE_EXPECTED_ALARMS_10"] = [{"alarmId": "7116", "faultId": "10"}]
+
+    var_dict["SLAVE_EXPECTED_ALARMS_10_1815"] = [
+        {"alarmId": "7116", "faultId": "10|1815"}
+    ]
+
+    var_dict["SLAVE_EXPECTED_ALARMS_16"] = [{"alarmId": "7116", "faultId": "16"}]
+
+    var_dict["SLAVE_IGNORED_ALARMS_CNI_127210"] = [
+        {"alarmId": "7222", "faultId": "9000"},
+        {"alarmId": "7220", "faultId": "4459"},
+        {"alarmId": "7115", "faultId": "4657"},
+    ] + SBTS_TEMP_IGNORED_ALARMS
+
+    var_dict["SLAVE_IGNORED_ALARMS_NO_CNI_127210"] = (
+        [
+            {"alarmId": "7222", "faultId": "9000"},
+            {"alarmId": "7220", "faultId": "4459"},
+            {"alarmId": "7115", "faultId": "4657"},
+        ]
+        + SBTS_TEMP_IGNORED_ALARMS
+        + ADMIN_ADDITIONAL_COMMON_IGNORED_ALARMS_NO_CNI_127210
+    )
+
+    var_dict["SLAVE_IGNORED_ALARMS_DURING_RESET_NO_CNI_127210"] = [
+        {"alarmId": "7114", "faultId": "7509"},
+        {"alarmId": "7114", "faultId": "7511"},
+        {"alarmId": "7114", "faultId": "7513"},
+        {"alarmId": "7115", "faultId": "6129"},
+        {"alarmId": "7115", "faultId": "6132"},
+        {"alarmId": "7115", "faultId": "6134"},
+        {"alarmId": "7107", "faultId": "62003"},
+    ] + var_dict["SLAVE_IGNORED_ALARMS_NO_CNI_127210"]
+
+    var_dict["SLAVE_IGNORED_ALARMS_DURING_RESET_CNI_127210"] = [
+        {"alarmId": "7114", "faultId": "7509"},
+        {"alarmId": "7114", "faultId": "7511"},
+        {"alarmId": "7114", "faultId": "7513"},
+        {"alarmId": "7115|7112", "faultId": "6129"},
+        {"alarmId": "7115|7107", "faultId": "6132"},
+        {"alarmId": "7115|7112", "faultId": "6134"},
+        {"alarmId": "7107", "faultId": "62003"},
+    ] + var_dict["SLAVE_IGNORED_ALARMS_NO_CNI_127210"]
+
+    var_dict["MASTER_CRITICAL_ALARMS"] = [] + SBTS_TEMP_CRITICAL_ALARMS
+
+    var_dict["SLAVE_CRITICAL_ALARMS"] = [] + SBTS_TEMP_CRITICAL_ALARMS
+
+    var_dict["MASTER_ALARMS_CNI_127210"] = {
+        "MASTER_IGNORED_ALARMS": "MASTER_IGNORED_ALARMS_CNI_127210",
+        "MASTER_IGNORED_ALARMS_DURING_RESET": "MASTER_IGNORED_ALARMS_DURING_RESET_CNI_127210",
+    }
+
+    var_dict["MASTER_ALARMS_NO_CNI_127210"] = {
+        "MASTER_IGNORED_ALARMS": "MASTER_IGNORED_ALARMS_NO_CNI_127210",
+        "MASTER_IGNORED_ALARMS_DURING_RESET": "MASTER_IGNORED_ALARMS_DURING_RESET_NO_CNI_127210",
+    }
+
+    var_dict["SLAVE_ALARMS_CNI_127210"] = {
+        "SLAVE_IGNORED_ALARMS": "SLAVE_IGNORED_ALARMS_CNI_127210",
+        "SLAVE_IGNORED_ALARMS_DURING_RESET": "SLAVE_IGNORED_ALARMS_DURING_RESET_CNI_127210",
+    }
+
+    var_dict["SLAVE_ALARMS_NO_CNI_127210"] = {
+        "SLAVE_IGNORED_ALARMS": "SLAVE_IGNORED_ALARMS_NO_CNI_127210",
+        "SLAVE_IGNORED_ALARMS_DURING_RESET": "SLAVE_IGNORED_ALARMS_DURING_RESET_NO_CNI_127210",
+    }
+
+    return var_dict
+
+
+test_alarms_list = _build_variable_list()

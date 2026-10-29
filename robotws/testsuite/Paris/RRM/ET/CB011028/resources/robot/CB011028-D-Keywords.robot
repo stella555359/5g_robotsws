@@ -1,0 +1,8359 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   CB011028-D-Keywords.robot
+...               Prerequisite :
+...               Scope :
+...               Test Case Scenario author   : christophe.samson@nokia.com
+...               Creation Date               : 09-12-2023
+...               Modified Date               : 09-12-2023
+...               Last Modified by            : christophe.samson@nokia.com
+...               Version   Date          Author                                   Notes
+...               0.1       09-12-2023    christophe.samson@nokia.com              Creation
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Libraries
+Library      taf.transport.ssh                                   WITH NAME          ssh
+Library      taf.sbts.oam.coam.admin.interface
+Library      taf.sbts.oam.coam.admin                             WITH NAME          coam
+Library      taf.collectors.pmcounters                           WITH NAME          tafpmcounters
+Library      taf.collectors.tcpdump                              WITH NAME          tcpdump
+Library      taf.collectors.core                                 WITH NAME          core
+Library      ute_wtssim
+# Library      taf.config.wts                                      WITH NAME          wts
+Library      taf.config.wts                                      WITH NAME          wts_cfg
+
+# Libraries SWENG
+Library      ../../../../../resources/SWENG/python/StringTool.py
+Library      ../../../../../resources/SWENG/python/ScfVendorOperations.py
+
+# Libraries ET
+Library      ../../../resources/python/linux_cmds.py
+Library      ../../../resources/common/TtiTrace/python/ttitrace.py     WITH NAME          nps_ttitraces_tools
+Library      ../../../resources/DSS/python/robot_extension.py          WITH NAME          robot_extension
+
+# Libraries CB011028
+Library      ../python/Constants-CB011028-D.py                         WITH NAME          MyConstants
+
+Library      ../python/avg_dl_data.py
+Library      ../python/avg_ul_data.py
+Library      ../python/tools.py                                        WITH NAME          nps_11028_tools
+Library      ../python/CB011028-lib.py
+Library      ../../../resources/common/TtiTrace/python/tti_analyzer_framework/set_pandas.py            WITH NAME          set_pandas
+Library      ../../../resources/common/TtiTrace/python/tti_analyzer_framework/tti_dataframe.py         WITH NAME          tti_dataframe
+Library      ../python/tti_analysis/check_nack.py
+Library      ../python/tti_analysis/check_ul_dtx_crc.py
+Library      ../python/file.py
+Library      ../python/set_ta_xml.py                                   WITH NAME          set_ta_xml
+Library      ../python/Dev_lib.py
+
+# Resources SWENG
+Resource      ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource      ../../../../../resources/SWENG/robot/Counters.robot
+Resource      ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource      ../../../../../resources/SWENG/robot/Setup.robot
+Resource      ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource      ../../../../../resources/SWENG/robot/Capture.robot
+Resource      ../../../../../resources/SWENG/robot/Traffic.robot
+Resource      ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource      ../../../../../resources/SWENG/robot/Oam.robot
+Resource      ../../../../../resources/SWENG/robot/Tools.robot
+Resource      ../../../../../resources/SWENG/robot/Restart.robot
+Resource      ../../../../../resources/SWENG/robot/Scf.robot
+Resource      ../../../../../resources/SWENG/robot/Container.robot
+Resource      ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource      ../../../../../resources/SWENG/robot/PacketSearch.robot
+Resource      ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+
+# Resources
+Resource     ../../../resources/common/TtiTrace/ttitrace.robot
+
+# Resources CB011028
+Resource     btslog.robot
+Resource     CB011028-Ue-Commands.robot
+
+Variables    ../python/Constants-CB011028-D.py
+
+*** Variables ***
+
+${f}    /home/ute/
+${SQR44_L2ET_GOLDEN_FILE_ADDRESS}          https://gitlabe1.ext.net.nokia.com/csamson/sqdgrp_et_44.git
+${rimrs_delta_file}                        ${CURDIR}/../config/Delta_Configuration_scf_Add_RIMRS.json
+${rimrs_delta_file_4cells}                 ${CURDIR}/../config/Delta_Configuration_scf_Add_RIMRS_4cells.json
+${rimrs_activate_delta_file}               ${CURDIR}/../config/delta_activate_rimrs.json
+${rimrs_deactiave_delta_file}              ${CURDIR}/../config/delta_deactivate_rimrs.json
+${actNrRim_activate_delta_file}            ${CURDIR}/../config/Delta_Configuration_scf_Activate_actNrRim.json
+${actNrRim_activate_delta_file_4cells}     ${CURDIR}/../config/Delta_Configuration_scf_Activate_actNrRim_4cells.json
+${Cell2_numRbForRs_96_delta_file}          ${CURDIR}/../config/Delta_Configuration_scf_Cell2_numRbForRs_96.json
+${activate_11028_delta_file}               ${CURDIR}/../config/Delta_Configuration_scf_activate_11028.json
+${actPowerSavingBWP_activate_delta_file}   ${CURDIR}/../config/Delta_Configuration_scf_PS_BWP.json
+${actPowerSavingBWP_activate_delta_file_3Cells}   ${CURDIR}/../config/Delta_Configuration_scf_PS_BWP_3_Cells.json
+${actPowerSavingBWP_activate_delta_file_4Cells}   ${CURDIR}/../config/Delta_Configuration_scf_PS_BWP_4_Cells.json
+${actPowerSavingBWP_activate_delta_file_Cell1}   ${CURDIR}/../config/Delta_Configuration_scf_PS_BWP_Cell1.json
+
+${kill_btslog}     timeout 5 sudo kill -9 $(ps -ef|grep btslog|grep -v grep|awk '{print $2}') 1>/dev/null 2>&1
+${kill_dpkg}       timeout 5 sudo kill -9 $(ps -ef|grep dpkg|grep tti-dec.deb|grep -v grep|awk '{print $2}') 1>/dev/null 2>&1
+${kill_sherpa}     timeout 5 sudo kill -9 $(ps -ef|grep ./Sherpa|grep -v grep|grep -v run|awk '{print $2}') 1>/dev/null 2>&1
+# ps -el | grep Sherpa | grep -v grep | grep -v run
+
+&{P_UETYPE}                                                         &{EMPTY}
+
+# check alarm that need to be ignored;
+&{SBTS_EXPECTED_ALARMS_49}   alarmId=7102   faultId=49
+
+${Enabled_}  regex"Enabled|enabled"
+${Disabled_}  regex"Disabled|disabled"
+${Online_}  regex"Online|None"
+${Offline_}  regex"Offline|off line"
+${Degraded_}  regex"Degraded|degraded"
+${Online_Degraded_}  regex"Online|None|Degraded|degraded"
+${NotInstalled_}  regex"NotInstalled|not installed"
+${NotInstalled_Offline_}  regex"NotInstalled|not installed|Offline|off line"
+${Failed_}  regex"Failed|failed"
+${Failed_Offline_}  regex"Failed|failed|Offline|off line"
+${Unlocked_}  regex"Unlocked|unlocked"
+${Locked_}  regex"Locked|locked"
+${ShuttingDown_}  regex"ShuttingDown|Shutting Down"
+${Dependency_}  regex"Dependency|dependency"
+${PowerOff_}  regex"PowerOff|power off"
+${Testing_}  regex"Testing|testing"
+${Initializing_}  regex"Initializing|initializing"
+${Commissioned_}  regex"Commissioned|commissioned"
+${NotCommissioned_}  regex"NotCommissioned|notCommissioned"
+${IntegratedToRan_}  regex"IntegratedToRan|integrated to RAN"
+${OnAir_}  regex"OnAir|onAir"
+${OnAirDone_}  regex"OnAirDone|onAirDone"
+${Test_}  regex"Test|test"
+${Configured_}  regex"Configured|configured"
+${IntegratedToRan_Configured_}  regex"IntegratedToRan|integrated to RAN|Configured|configured"
+${Blocked_}  Blocked
+${Unblocked_}  Unblocked
+${Blocking_}  Blocking
+${Unblocking_}  Unblocking
+${Idle_}  Idle
+${Active_}  Active
+${Disabled_Enabled_}  regex"Disabled|disabled|Enabled|enabled"
+
+*** Keywords ***
+# robocop: off=unused-argument
+# robocop: off=possible-variable-overwriting
+
+My Restart Gnb Classical
+    [Documentation]                 INTERNAL USAGE
+    ...                             Restart sequence for case GNB is in classical configuration
+    ...                             Start CPRT traces before Wait F1..... for debug purpose...
+    [Arguments]                     ${GNBCallback}=None                     ${APCallback}=None
+    ...                             ${isOAMRebooted}=False                  ${F1waitTime}=15min
+    Dated log                       Restart Gnb Classical :isOAMRebooted=${isOAMRebooted}
+    Run Keyword if                  ${isOAMRebooted}==False
+    ...                             Airscale Soft Reboot                    ${GNB_DU}
+    Airscale Soft Reboot            ${AP_DU}
+    Dated Log                       Waiting for airscales to come back
+    sleep                           2m
+    ${gnb_status}=                  WA Airscale Wait For Ready              ${GNB_DU}
+    Run Keyword If                  '${gnb_status}'!='Ready'                Fail    GNB is not ready
+    ${ap_status}=                   WA Airscale Wait For Ready              ${AP_DU}
+    Run Keyword If                  '${gnb_status}'!='Ready'                Fail    AP is not ready
+    Run Keyword if   '${w_generic_capture}' == 'True'         Step      Captures CB009890 Init   prefix=CellSetup.Attach.SA.Traffic
+    Run Keyword if   '${w_generic_capture}' == 'True'         Step      Captures Start      actionCORE=${isCaptureCORE}
+    ...                                                                                     actionCPRT=${isCaptureCPRT}
+    ...                                                                                     actionL1L2=${isCaptureL1L2}
+    Get TL Info Struct
+    Run Keyword if                  '${GNBCallback}'!='None'                ${GNBCallback}
+    Run Keyword if                  '${APCallback}'!='None'                 ${APCallback}
+    WA DCI Wait for service         ${AP_DU}
+    # Skipping Wait for DCI (Feature 6765-D activated on GNB side)
+    # WA DCI Wait for service         ${GNB_DU}
+    F1 Wait Link Classical          timeout=${F1waitTime}
+    GNSS Check and run
+    IRfHead Check Service
+
+Get Number Of Ue Configured With GBR Traffic
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${dict_ues}
+    ...     Actions:        it returns the number of ue's configured with GBR traffic
+    ...     Checks:         it checks that the requested GBR throughput for the ue's is different from 0
+    ...     Verdict:        the number of ue's configured with GBR traffic is returned
+    [Arguments]             ${dict_ues}
+
+    ${current_value}        Set Variable        0
+    FOR    ${current_ue}    IN      @{dict_ues}
+        ${current_value}=     Run Keyword If    ${current_ue.DL_throughput_GBR} > ${NO_THROUGHPUT}
+        ...                                               Evaluate    ${current_value} + 1
+        ...                               ELSE            Evaluate    ${current_value} + 0
+    END
+    Dated Log               The number of ue's configured with GBR traffic is ${current_value}
+    [Return]                ${current_value}
+
+Generate Test Verdict
+    [Arguments]    ${FilePkl}   ${vendor_custom}   ${expected_avg_values}   ${kw Check SCF parameters}
+    debug dated log    expected_avg_values ${expected_avg_values}
+    ${VENDORFILE_maxNumScheUePdschL1Pool_default}   Get From Dictionary       ${vendor_custom}     maxNumScheUePdschL1Pool
+    ${VENDORFILE_maxNumScheUePdschL1Sp_default}     Get From Dictionary       ${vendor_custom}     maxNumScheUePdschL1Sp
+    ${VENDORFILE_maxNumLayerPrbL1Sp_default}        Get From Dictionary       ${vendor_custom}     maxNumLayerPrbL1Sp
+    ${VENDORFILE_maxNumStreamPrbL1Sp_default}       Get From Dictionary       ${vendor_custom}     maxNumStreamPrbL1Sp
+    ${VENDORFILE_maxNumWbStreamPrbL1Sp_default}     Get From Dictionary       ${vendor_custom}     maxNumWbStreamPrbL1Sp
+    ${VENDORFILE_maxNumStreamPrbL1Sp_default}=    Run Keyword if    '${VENDORFILE_maxNumStreamPrbL1Sp_default}'=='None'    set Variable     2184
+    ...                                             ELSE                            set Variable     ${VENDORFILE_maxNumStreamPrbL1Sp_default}
+    ${VENDORFILE_ul_maxNumStreamPrbL1Sp_csSize32_default}     Get From Dictionary       ${vendor_custom}     ul_maxNumStreamPrbL1Sp_csSize32
+    ${VENDORFILE_ul_maxNumStreamPrbL1Sp_csSize48_default}     Get From Dictionary       ${vendor_custom}     ul_maxNumStreamPrbL1Sp_csSize48
+    ${VENDORFILE_ul_maxNumStreamPrbL1Sp_csSize64_default}     Get From Dictionary       ${vendor_custom}     ul_maxNumStreamPrbL1Sp_csSize64
+    ${min_l1PoolStreamPrbCapacity}=                 Evaluate         int(2*${VENDORFILE_maxNumStreamPrbL1Sp_default} * (100 - 5) / 100)
+    ${max_l1PoolStreamPrbCapacity}=                 Evaluate         int(2*${VENDORFILE_maxNumStreamPrbL1Sp_default} * (100 + 5) / 100)
+    ${expected_avg_total_prbs_spool1}               Get From Dictionary       ${dictExpectedValues}     expected_avg_total_prbs_spool1
+    ${expected_avg_total_prbs_spool2}               Get From Dictionary       ${dictExpectedValues}     expected_avg_total_prbs_spool2
+    ${expected_avg_total_prbsstream_spool1}         Get From Dictionary       ${dictExpectedValues}     expected_avg_total_prbsstream_spool1
+    ${expected_avg_total_prbsstream_spool2}         Get From Dictionary       ${dictExpectedValues}     expected_avg_total_prbsstream_spool2
+    ${expected_avg_total_prbs_spool1_int}           Convert To Integer	  ${expected_avg_total_prbs_spool1}
+    ${expected_avg_total_prbs_spool2_int}           Convert To Integer	  ${expected_avg_total_prbs_spool2}
+    ${expected_avg_total_prbsstream_spool1_int}     Convert To Integer	  ${expected_avg_total_prbsstream_spool1}
+    ${expected_avg_total_prbsstream_spool2_int}     Convert To Integer	  ${expected_avg_total_prbsstream_spool2}
+    ${cond}=   Evaluate
+    ...        '${VENDORFILE_ul_maxNumStreamPrbL1Sp_csSize48_default}'!='None'
+    ${ul_maxNumStreamPrbL1pool}=    run Keyword if   ${cond}
+    # ASOE case : maxNumLayerPrbDlL1Sp = 1638 (csSize = 48) in the Vendor File
+    ...     Evaluate    int(2*${VENDORFILE_ul_maxNumStreamPrbL1Sp_csSize48_default})
+    ...                               ELSE    set Variable   int(2*${1638})
+    ${min_ul_l1PoolStreamPrbCapacity}=    Evaluate         int(${ul_maxNumStreamPrbL1pool} * (100 - 5) / 100)
+    ${max_ul_l1PoolStreamPrbCapacity}=    Evaluate         int(${ul_maxNumStreamPrbL1pool} * (100 + 5) / 100)
+    Run keyword and continue on failure                 CB011028-lib.${kw Check SCF parameters}
+    Run keyword and continue on failure                 CB011028-D-Keywords.verify CellSetup SysCom Traces    isCaptureCPRT=${isCaptureCPRT}
+    Run Keyword If   ${isCaptureCPRT}    robot_extension.Run Keyword And Warn On Failure
+    ...            CB011028-D-Keywords.Extract Cell Mapping Info from cellSetup Pcap     File=${testCaseDir}/${CaptureCPRT.name}.pcap
+    robot_extension.Run Keyword And Warn On Failure     CB011028-lib.verify_TTITraces_for_7113
+    robot_extension.Run Keyword And Warn On Failure     CB011028-lib.verify_TTITraces_for_8940
+    Run keyword and continue on failure                 CB011028-lib.verify_TTITraces_for_CB008940_C1    ${expected_avg_total_prbs_spool1_int}
+    ...                                                                                                  ${expected_avg_total_prbs_spool2_int}
+    ...                                                                                                  ${expected_avg_total_prbsstream_spool1_int}
+    ...                                                                                                  ${expected_avg_total_prbsstream_spool2_int}
+    Run keyword and continue on failure                 CB011028-lib.verify_TTITraces_for_CB008940_C2    ${expected_avg_total_prbsstream_spool1_int}
+    ...                                                                                                  ${expected_avg_total_prbsstream_spool2_int}
+    ...                                                                                                  ${min_l1PoolStreamPrbCapacity}
+    ...                                                                                                  ${max_l1PoolStreamPrbCapacity}
+    ${tm}=    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}    .
+    # Check 4 cells (maxNumDlSubcellL1Pool=6 and maxNumDlSubcellL1Sp=4) contraints with ASOE - CB009890 Check
+    ${path_to_filtered_ttitrace_pkl}=   Run keyword and continue on failure     CB011028-lib.verify_TTITraces_for_CB009890_C1
+    ...                                                                           path_to_pickle=${FilePkl}
+    ...                                                                           name=dl_df_for_manual_analysis_all_subcells_CB009890_A-${tm}
+    Run keyword and continue on failure     CB011028-lib.verify_TTITraces_for_CB009890_C2   path_to_pickle=${path_to_filtered_ttitrace_pkl}
+    ...                                                                                     maxNumDlSubcellL1Pool=6
+    ...                                                                                     maxNumDlSubcellL1Sp=4
+    # End Of Check 4 cells (maxNumDlSubcellL1Pool=6 and maxNumDlSubcellL1Sp=4) contraints with ASOE - CB009890 Check
+
+    robot_extension.Run Keyword And Warn On Failure     CB011028-lib.verify_TTITraces_for_MUMIMO_C1      ${expected_avg_total_prbsstream_spool1_int}
+    ...                                                                                                  ${expected_avg_total_prbsstream_spool2_int}
+    ...                                                                                                  ${min_l1PoolStreamPrbCapacity}
+    ...                                                                                                  ${max_l1PoolStreamPrbCapacity}
+    robot_extension.Run Keyword And Warn On Failure     CB011028-lib.verify_TTITraces_for_ULMUMIMO_C1    ${expected_avg_total_prbsstream_spool1_int}
+    ...                                                                                                  ${expected_avg_total_prbsstream_spool2_int}
+    ...                                                                                                  ${min_l1PoolStreamPrbCapacity}
+    ...                                                                                                  ${max_l1PoolStreamPrbCapacity}
+    ${path_to_filtered_ttitrace_pkl}=   Run keyword and continue on failure     CB011028-lib.verify_TTITraces_for_CB011028_C1
+    ...                                                                           path_to_pickle=${FilePkl}
+    ...                                                                           name=dl_df_for_manual_analysis_all_subcells_CB011028-D-${tm}
+    ${CB007113 Allowed}=   Is CB007113 Allowed
+    # only DL PRB POOLING is checked with CB011028 testing
+    # Run Keyword If   '${CB007113 Allowed}'=='True'      Run keyword and continue on failure     CB011028-lib.verify_TTITraces_for_CB007113_C1
+    # ...                                                                                                  ${min_ul_l1PoolStreamPrbCapacity}
+    # ...                                                                                                  ${max_ul_l1PoolStreamPrbCapacity}
+    dated log      ${consTraceColor}--------> [DL/UL] UL and DL DTX STATS${defColor}
+    ${output_dtx_statistics}=   Run keyword and continue on failure     get_dtx_statistics_physCellId_ul    ${FilePkl}
+    ${result}=  StringTool.getHeaderLine   output_dtx_statistics_physCellId_ul   ${output_dtx_statistics}
+    dated log      ${result}
+    ${output_dtx_statistics}=   Run keyword and continue on failure     get_dtx_statistics_physCellId_dl    ${FilePkl}
+    ${result}=  StringTool.getHeaderLine   output_dtx_statistics_physCellId_dl   ${output_dtx_statistics}
+    dated log      ${result}
+    dated log      ${consTraceColor}--------> [DL] DL MUMIMO STATS${defColor}
+    ${combined_mumimo_stats}  ${mumimo_stats}   Run keyword and continue on failure    get_mumimo_statistics_physCellId_dl   ${FilePkl}
+    dated log     dl_mumimo_stats = ${mumimo_stats}
+    dated log      ${consTraceColor}--------> [DL] DL subcell STATS${defColor}
+    ${combined_subcell_stats}  ${subcell_stats}   Run keyword and continue on failure    get_subcell_statistics_physCellId_dl   ${FilePkl}
+    dated log     dl_subcell_stats = ${subcell_stats}
+    dated log      ${consTraceColor}--------> cells_and_ues_physCellId${defColor}
+    ${output}   Run keyword and continue on failure    get_cells_and_ues_physCellId   ${FilePkl}
+    dated log    cells_and_ues_physCellId = ${output}
+    dated log      ${consTraceColor}--------> [DL] get_rank_statistics_rnti_dl${defColor}
+    ${combined_rank_stats}  ${rank_stats}   Run keyword and continue on failure    get_rank_statistics_rnti_dl   ${FilePkl}
+    dated log    get_rank_statistics_rnti_dl = ${combined_rank_stats}
+    dated log      ${consTraceColor}--------> [DL] filter_valid_events_and_check_acknack_retx${defColor}
+    ${combined_acknack_stats_physCellId}  ${combined_acknack_stats_rnti}  ${combined_retx_stats_physCellId}  ${combined_retx_stats_rnti}
+    ...                                 Run keyword and continue on failure    check_nack.filter_valid_events_and_check_acknack_retx   ${FilePkl}
+    dated log    combined_acknack_stats_physCellId = ${combined_acknack_stats_physCellId}
+    dated log    combined_acknack_stats_rnti = ${combined_acknack_stats_rnti}
+    dated log    combined_retx_stats_physCellId = ${combined_retx_stats_physCellId}
+    dated log    combined_retx_stats_rnti = ${combined_retx_stats_rnti}
+    dated log      ${consTraceColor}--------> [UL] UL MUMIMO STATS${defColor}
+    ${combined_ulmumimo_stats}  ${ul_mumimo_stats}   Run keyword and continue on failure    get_mumimo_statistics_physCellId_ul   ${FilePkl}
+    dated log     ul_mumimo_stats = ${ul_mumimo_stats}
+    dated log      ${consTraceColor}--------> [UL] filter_valid_events_and_check_ul_crc_dtx_retx${defColor}
+    ${combined_ul_crc_stats_physCellId}  ${combined_ul_crc_stats_rnti}  ${combined_ul_retx_stats_physCellId}  ${combined_ul_retx_stats_rnti}
+    ...                                   ${combined_ul_dtx_stats_physCellId}  ${combined_ul_dtx_stats_rnti}
+    ...                         Run keyword and continue on failure    check_ul_dtx_crc.filter_valid_events_and_check_ul_crc_dtx_retx   ${FilePkl}
+    dated log    combined_ul_crc_stats_physCellId = ${combined_ul_crc_stats_physCellId}
+    dated log    combined_ul_crc_stats_rnti = ${combined_ul_crc_stats_rnti}
+    dated log    combined_ul_retx_stats_physCellId = ${combined_ul_retx_stats_physCellId}
+    dated log    combined_ul_retx_stats_rnti = ${combined_ul_retx_stats_rnti}
+    dated log    combined_ul_dtx_stats_physCellId = ${combined_ul_dtx_stats_physCellId}
+    dated log    combined_ul_dtx_stats_rnti = ${combined_ul_dtx_stats_rnti}
+    dated log      ${consTraceColor}--------> [UL] get_rank_statistics_rnti_ul${defColor}
+    ${combined_ul_rank_stats}  ${ul_rank_stats}   Run keyword and continue on failure    get_rank_statistics_rnti_ul   ${FilePkl}
+    dated log    get_rank_statistics_rnti_ul = ${combined_ul_rank_stats}
+    dated log      ${consTraceColor}--------> [UL] UL subcell STATS${defColor}
+    ${combined_ul_subcell_stats}  ${ul_subcell_stats}   Run keyword and continue on failure    get_subcell_statistics_physCellId_ul   ${FilePkl}
+    dated log     ul_subcell_stats = ${ul_subcell_stats}
+
+Verification of Stream PRB Information within PRB Pooling Report
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${stream_prb_capa} ${alloc_stream_prb} ${subpool_id} ${check_operator}
+    ...     Actions:        it verifies all the l1SubPoolStreamPrbCapacity and numAllocStreamPRB values of the recommended sub pool id
+    ...     Checks:         it checks the values within PRB Pooling Allocation SubPool Report
+    ...     Verdict:        l1SubPoolStreamPrbCapacity and numAllocStreamPRB values are as expected
+    [Arguments]             ${stream_prb_capa}
+    ...                     ${alloc_stream_prb}
+    ...                     ${subpool_id}=0
+    ...                     ${result_req}=True
+    ...                     ${check_operator}===
+
+    ${file_path_report}                         Set Variable    Dl_PrbPoolingAllocationSubpool_45_.csv
+    Dated Log                                   ===> used file is ${file_path_report}
+    # l1SubPoolStreamPrbCapacity
+    Dated Log New Line    ===> check if ${COL_NAME_L1SUBPOOLSTREAMPRBCAPACITY} ${check_operator} ${stream_prb_capa} when subpool is ${subpool_id}
+    ${verif_result}                             Verify value with operator in csv Files with Prerequisite    CsvName=${file_path_report}
+    ...                                                             ColumnName=${COL_NAME_L1SUBPOOLSTREAMPRBCAPACITY}
+    ...                                                             valuetocheck=${stream_prb_capa}
+    ...                                                             check_operator=${check_operator}
+    ...                                                             directory=${sherpa_output_path}
+    ...                                                             colum_prereq=${COL_NAME_SUBPOOLID}
+    ...                                                             regex_prereq=${subpool_id}
+    Run Keyword If    ${verif_result} == True
+    ...                 Dated Log               ===> DL L1 SubPool stream PRB capacity is passed when ${COL_NAME_SUBPOOLID} is ${subpool_id}
+    ...         ELSE    Dated Log               ===> DL L1 SubPool stream PRB capacity IS NOT PASSED when ${COL_NAME_SUBPOOLID} is ${subpool_id}
+    Should Be True    ${verif_result} == ${result_req}
+    # numAllocStreamPRB
+    Dated Log New Line    ===> check if ${COL_NAME_NUMALLOCSTREAMPRB} ${check_operator} ${alloc_stream_prb} when subpool_id is ${subpool_id}
+    ${verif_result}                             Verify value with operator in csv Files with Prerequisite    CsvName=${file_path_report}
+    ...                                                             ColumnName=${COL_NAME_NUMALLOCSTREAMPRB}
+    ...                                                             valuetocheck=${alloc_stream_prb}
+    ...                                                             check_operator=${check_operator}
+    ...                                                             directory=${sherpa_output_path}
+    ...                                                             colum_prereq=${COL_NAME_SUBPOOLID}
+    ...                                                             regex_prereq=${subpool_id}
+    Run Keyword If    ${verif_result} == True
+    ...                 Dated Log               ===> DL num alloc stream PRB check is passed when ${COL_NAME_SUBPOOLID} is ${subpool_id}
+    ...         ELSE    Dated Log               ===> DL num alloc stream PRB check IS NOT PASSED when ${COL_NAME_SUBPOOLID} is ${subpool_id}
+    Should Be True    ${verif_result} == ${result_req}
+
+Generate Test Verdict Using Sherpa
+    [Arguments]     ${path_traces_Sherpa}    ${l1SubPoolStreamPrbCapacity_subpool_0}=2100    ${l1SubPoolStreamPrbCapacity_subpool_1}=300
+    return from Keyword if   '${w_check_9890_using_sherpa}' == 'False'
+    dated log    ${consTraceColor}--------> Check 11028 based Sherpa Traces${defColor}
+    set suite variable     ${sherpa_output_path}          ${path_traces_Sherpa}
+
+    # expected value is retrieved from json file
+    ${expected_avg_total_prbsstream_spool1}         Get From Dictionary       ${dictExpectedValues}     expected_avg_total_prbsstream_spool1
+    ${expected_avg_total_prbsstream_spool2}         Get From Dictionary       ${dictExpectedValues}     expected_avg_total_prbsstream_spool2
+    ${l1SubPoolStreamPrbCapacity_subpool_0}=        Set Variable              ${expected_avg_total_prbsstream_spool1}
+    ${l1SubPoolStreamPrbCapacity_subpool_1}=        Set Variable              ${expected_avg_total_prbsstream_spool2}
+
+    ${min_l1SubPoolStreamPrbCapacity_subpool_0}=            Evaluate         int(${l1SubPoolStreamPrbCapacity_subpool_0} * (100 - 10) / 100)
+    ${max_l1SubPoolStreamPrbCapacity_subpool_0}=            Evaluate         int(${l1SubPoolStreamPrbCapacity_subpool_0} * (100 + 10) / 100)
+    ${min_l1SubPoolStreamPrbCapacity_subpool_1}=            Evaluate         int(${l1SubPoolStreamPrbCapacity_subpool_1} * (100 - 20) / 100)
+    ${max_l1SubPoolStreamPrbCapacity_subpool_1}=            Evaluate         int(${l1SubPoolStreamPrbCapacity_subpool_1} * (100 + 20) / 100)
+    robot_extension.Run Keyword And Warn On Failure
+    ...        Verify l1SubPoolStreamPrbCapacity within Dl_PrbPoolingAllocationSubpool_45 Report is included between 2 values
+    ...                                subpool_id=0   min_l1SubPoolStreamPrbCapacity_value=${min_l1SubPoolStreamPrbCapacity_subpool_0}
+    ...                                               max_l1SubPoolStreamPrbCapacity_value=${max_l1SubPoolStreamPrbCapacity_subpool_0}
+    robot_extension.Run Keyword And Warn On Failure
+    ...        Verify l1SubPoolStreamPrbCapacity within Dl_PrbPoolingAllocationSubpool_45 Report is included between 2 values
+    ...                                subpool_id=1   min_l1SubPoolStreamPrbCapacity_value=${min_l1SubPoolStreamPrbCapacity_subpool_1}
+    ...                                               max_l1SubPoolStreamPrbCapacity_value=${max_l1SubPoolStreamPrbCapacity_subpool_1}
+
+    robot_extension.Run Keyword And Warn On Failure    CB011028-D-Keywords.Verification of Stream PRB Information within PRB Pooling Report
+    ...                                                                         stream_prb_capa=${max_l1SubPoolStreamPrbCapacity_subpool_0}
+    ...                                                                         alloc_stream_prb=${max_l1SubPoolStreamPrbCapacity_subpool_0}
+    ...                                                                         subpool_id=0
+    ...                                                                         check_operator=>
+    robot_extension.Run Keyword And Warn On Failure    CB011028-D-Keywords.Verification of Stream PRB Information within PRB Pooling Report
+    ...                                                                         stream_prb_capa=${max_l1SubPoolStreamPrbCapacity_subpool_1}
+    ...                                                                         alloc_stream_prb=${max_l1SubPoolStreamPrbCapacity_subpool_1}
+    ...                                                                         subpool_id=1
+    ...                                                                         check_operator=>
+
+    Run keyword and continue on failure      CB011028-D-Keywords.Check NumMinPrbAlloc and NumMaxPrbAlloc in Dl PrbPoolingAllocationReport
+
+Teardow Kw
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${TEST NAME OK}
+    run Keyword if    '${status}'=='PASS'    set test variable   ${TEST NAME}   ${TEST NAME OK}
+    StringTool.printLineWithTitle   title=Test ${TEST NAME} Teardown
+    Run Keyword if   '${w_generic_capture}' == 'True'       Run Keyword And Ignore Error        Captures CB009890 Stop
+    robot_extension.Run Keyword And Warn On Failure     Check if BBRM ERR Assignment present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if ESTATUS5G_NOTOK present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if FaultID 6505 SSD Log Storage Overdraw present in Syslogs
+    Display SLOTTYPE configuration from Syslogs
+    Check Alarm Cleared All cells    nbCell=${C_Cell.totalNbOfCell}
+    Display diagnosis
+
+load Json test data
+    [Arguments]    ${Json test configuration}=${EMPTY}     ${dict_ues}=${EMPTY}   ${vendor_custom}=${EMPTY}    ${param}=${EMPTY}
+    return from keyword if   '${Json test configuration}'=='${EMPTY}'
+    ${data_test}=    nps_11028_tools.load_json   ${Json test configuration}
+    # dated log   data_test=${data_test}
+    dated log   Upload data test for ${consTraceColor}${TEST NAME}${defColor} from json file
+    # dated log   data_test=${data_test['${TEST NAME}']}
+    ${dictAllParam}      Get From Dictionary
+    ...     ${data_test['${TEST NAME}']}
+    ...     dictParam
+    ${dictParam}      Get From Dictionary
+    ...     ${data_test['${TEST NAME}']}
+    ...     dictParam
+    ${CAPTURE}      Get From Dictionary
+    ...     ${data_test['${TEST NAME}']}
+    ...     CAPTURE
+    ${totalNbOfUe}       Get From Dictionary
+    ...     ${data_test['${TEST NAME}']}
+    ...     NbOfUe
+    Set To Dictionary       ${param}     totalNbOfUe       ${totalNbOfUe}
+    ${dict_settings_all_ues}      Get From Dictionary
+    ...     ${data_test['${TEST NAME}']}
+    ...     dict_settings_all_ues
+    ${dict_vendor_custom}      Get From Dictionary
+    ...     ${data_test['${TEST NAME}']}
+    ...     VENDOR_CUSTOM
+    ${dict_ExpectedValues}      Get From Dictionary
+    ...     ${data_test['${TEST NAME}']}
+    ...     ExpectedValues
+
+    dated log    ${consTraceColor}${Json test configuration} present${defColor} ---> need to update test variables
+    update test Variables       ${dictParam}    ${CAPTURE}
+    set Test variable     ${dict_ues}    ${dict_settings_all_ues}
+    set Test variable     ${vendor_custom}    ${dict_vendor_custom}
+    set test variable     ${dictExpectedValues}   ${dict_ExpectedValues}
+    robot_extension.Run Keyword And Warn On Failure    Log dictionary          ${vendor_custom}   msg=vendor_custom_test
+    robot_extension.Run Keyword And Warn On Failure    Log dictionary          ${dictExpectedValues}   msg=ExpectedValues_test
+
+Process TTI Traces
+    [Arguments]     ${Kw_Convert_TtiTrace_From_csv_to_Dict}=Convert TTI trace from csv to dict CB009890    ${step}=${EMPTY}
+    ${ret}   ${tti_trace_path}    Run Keyword And Ignore Error   Get TTI traces      suffix=${step}
+    ...                                                                              time=${GetTtiTraceTime}
+    ...                                                                              w_convert_pcap_to_excelCsv=${w_convert_TtiPcap_to_excelCsv}
+
+    ${TTIcsv}  ${UL_TTIcsv}   Run keyword and continue on failure         Convert TTI trace from pcap to excelCsv CB009890
+    ...                                                           ttitraceFilename=ttitrace_streaming.pcap    ttitracepath=${tti_trace_path}
+    Run Keywords       dated log    Tti csv file converted using TtiTraceDecoder.py legacyCsv ${TTIcsv}
+    ...      AND       dated log    Tti csv file converted using TtiTraceDecoder.py legacyCsv ${UL_TTIcsv}
+    Set Log Level    NONE
+    ${tti_trace_dict_dl}=      Run keyword and continue on failure   ${Kw_Convert_TtiTrace_From_csv_to_Dict}    TTITraceCsv=${TTIcsv}
+    ...                                                                                                 num_of_events=${GetTtiTraceNumOfEvent}
+    ${tti_trace_dict_ul}=   Run keyword and continue on failure   Convert TTI trace from csv to dict CB007713    TTITraceCsv=${UL_TTIcsv}
+    ...                                                                                                 num_of_events=${GetTtiTraceNumOfEvent}
+    Set Log Level    TRACE
+    robot_extension.Run Keyword And Warn On Failure      Check PRB Assignment CB008940        ${tti_trace_dict_dl}
+    robot_extension.Run Keyword And Warn On Failure      Check UL PRB Assignment CB007113     ${tti_trace_dict_ul}
+    [return]   ${tti_trace_path}   ${tti_trace_dict_dl}
+
+Sherpa Traces
+    [Arguments]    ${step}=${EMPTY}
+    set test variable   ${TEST NAME OK}   ${TEST NAME}
+    ${tm}    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}    .
+    ${TEST NAME}     Run Keyword if    '${step}'!='${EMPTY}'   Catenate      SherpaTraces-${GetSherpaTraceTime}-${tm}-${step}
+    ...                  ELSE                                  Catenate      SherpaTraces-${GetSherpaTraceTime}-${tm}
+    set test variable     ${TEST NAME}
+    Run Keyword If    '${enable_sherpa}' == 'True'         Run Keywords    Step      Activate Sherpa
+    ...    AND        Step                      Sleep with duration "${GetSherpaTraceTime}"s and msg "Sherpa pcap Traces"
+    ...    AND        Step                      Private Deactivate Sherpa and Stop Collect     desired_storage_directory=${testCaseDir}
+    ...                                                                                        keep_pcap_file=${True}
+    ...    AND        Run Keyword And Ignore Error      Upload and decode sherpa pcap files    Sherpa_logs_local_path=${testCaseDir}
+    ...                                                                                keep_pcap_file=${True}     duration=0
+    ...    AND        Run Keyword And Ignore Error      Calling Panda Extract Csv For PRB Pooling
+    set Test variable   ${TEST NAME}    ${TEST NAME OK}
+    Run Keyword If    '${enable_sherpa}' == 'True'      set test variable     ${path_traces_Sherpa}    ${sherpa_output_path}
+
+    # Generate Verdict...
+    Run Keyword If    '${enable_sherpa}' == 'True'   Step      Generate Test Verdict Using Sherpa
+    ...                                                                 path_traces_Sherpa=${path_traces_Sherpa}
+    ...                                                                 depends=Private Deactivate Sherpa and Stop Collect
+
+Sleep with duration "${Time}"s and msg "${Msg}"
+    Traced Sleep    duration=${Time}    msg=${Msg}
+
+ObtainEmptyVariablesKeyword
+    [Return]   ${EMPTY}     ${EMPTY}
+
+ObtainVariablesKeyword
+    [Return]  PASS   ${EMPTY}
+
+AssignValues
+    ${ret}    ${tti_trace_path}   ObtainVariablesKeyword
+
+Basic Call to WTS Set X2 Link
+    [Documentation]                 Establish on WTSEmu the X2 link between eNB and gNB.
+    ...                             Wait for cell cetup for each cell by using keyword 'UE Cell Setup Check'.
+    ...                             See keyword 'UE Cell Setup Check' for more details.
+    ...
+    ...                             *Argument details:*
+    ...                             - alias: vm connection alias (default value = dynamically retrieved)
+    [Arguments]                     ${alias}=${HOST_EPCSIM.alias}
+    wtsemu.Enb X2 Link Up           enb=${ENB_ID}                               target=${GNB_ID}
+    sleep                           3s
+    IF                              not ${isAic}
+                                    wtsemu.Read Wtsemu Output Until Re
+                                    ...    expected=ENB-${ENB_ID}: X2AP Link with [EG]NB-${GNB_ID} \\((\\d+\\.){3}\\d+\\:\\d+\\[\\d\\]\\) is up
+                                    ...    timeout=500
+    END
+
+Basic Call to Setup Wtsemu SA
+    [Arguments]    ${telnet_egate_addr}=${tl.core.default_ssh_connection_details.addr}
+    ...            ${nbUe}=1      ${nbSaUe}=1     ${nbCell}=1     ${bypassX2Setup}=${True}    ${shouldUseLua}=${False}
+    ...            ${list_of_UE_tobe_created}=${None}     ${bypassSIB}=${False}
+    ...            ${Kw_TM}=${EMPTY}
+    WTS Clear
+    ${alias}		                SSH Wait For Connect                    host=${HOST_EPCSIM}
+    Dated Log New Line              Starting WTS setup (WTS:IP=${HOST_EPCSIM.sshConnection.addr})
+    # WTS Set Backhaul IP                     ${alias}
+    # Init lua config file with nb of UE
+    ${LuaFileName}                  TxtConfig Init     nbUe=${nbUe}    nbSaUe=${nbSaUe}    list_of_UE_tobe_created=${list_of_UE_tobe_created}
+    # Configure eDaemon and eGate
+    WTS Start processes             telnet_egate_addr=${telnet_egate_addr}
+    run Keyword if   '${Kw_TM}'!='${EMPTY}'    ${Kw_TM}
+    # Launching configuration
+    WTS Configure upon format       shouldUseLua=${shouldUseLua}            luaFile=${LuaFileName}
+    return from keyword if          ${bypassX2Setup}
+    # Establish X2 Link
+    ${status}                       Run keyword and return status       Basic Call to WTS Set X2 Link
+
+Private Setup Wtsemu SA
+    [Documentation]                WTSEmu Setup for SA call. This is a call to keyword 'WTS Setup':
+    ...                            | WTS Setup
+    ...                            | ...   telnet_egate_addr=${tl.core.default_ssh_connection_details.addr}
+    ...                            | ...   nbUe=1
+    ...                            | ...   nbSaUe=${nbSaUe}
+    ...                            | ...   shouldUseLua=${shouldUseLua}
+    ...                            | ...   bypassX2Setup=${True}
+    ...                            | ...   bypassSIB=${False}
+    ...                            | ...   nbCell=${nbCell}
+    ...                            See keyword 'WTS Setup' for more details.
+    ...
+    ...                            *Argument details:*
+    ...                            - *nbSaUe*: number of SA UE to use (default value = 1, should be >= 1)
+    ...                            - *nbCell*: number of cell to check for SystemInformationBlock-NR (default value= 0 dynamically retrieved)
+    ...                            - *shouldUseLua*: flag to choose between cfg or lua basic-setup file (default value = False)
+    ...                            - *list_of_UE_tobe_created*: list of UEs structure to be created when using lua (default value = None)
+    ...                                 mandatory params: ue & target_cells &{my_UE_SA}     ue=1    target_cells=2
+    [Arguments]    ${nbUe}=1      ${nbSaUe}=1     ${nbCell}=1     ${bypassX2Setup}=${True}    ${shouldUseLua}=${False}
+    ...            ${list_of_UE_tobe_created}=${None}     ${bypassSIB}=${False}
+    CallSetup.WTS Setup         nbUe=${nbUe}    nbSaUe=${nbSaUe}    nbCell=${nbCell}    bypassX2Setup=${bypassX2Setup}   shouldUseLua=${shouldUseLua}
+    ...                         list_of_UE_tobe_created=${list_of_UE_tobe_created}   bypassSIB=${bypassSIB}
+
+Captures CB009890 Init
+    [Documentation]
+    ...     Conditions:     it needs no conditions
+    ...     Actions:        it configures the parameters to initialize the captures for L1L2, CORE and CPRT
+    ...     Checks:         it needs no checks
+    ...     Verdict:        the parameters for the captures are initialized
+    [Arguments]         ${prefix}=Capture
+
+    ${tm}=    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}
+    ${CaptureL1L2}          Capture L1L2 Set Upon Config            airscale=${GNB_DU}
+    ${CaptureCORE}          Run Keyword If    ${isAic}
+    ...                                       Capture CORE Set Upon Config    airscale=${GNB_CU}
+    ...                                 ELSE
+    ...                                       Capture CORE Set Upon Config    airscale=${GNB_DU}
+    ${CaptureCPRT}          Capture CPRT Set Upon Config            airscale=${GNB_DU}
+    ${testCase}    Replace String    ${TEST_NAME[0:30]}    ${SPACE}    _
+    ${testCase}    Replace String    ${testCase}    .    _
+    ${testCase}    Remove String     ${testCase}    [1]
+    ${testCase}    Remove String     ${testCase}    [1.0]
+    ${testCase}    Remove String     ${testCase}    [2.0]
+    ${testCase}    Remove String     ${testCase}    [
+    ${testCase}    Remove String     ${testCase}    ]
+    # ${CaptureBIP.prefix}       set Variable   ${prefix}.${testCase}
+    ${CaptureL1L2.prefix}       set Variable   ${prefix}.${testCase}.${tm}.wL1L2Bip
+    ${CaptureL1L2.withTN}       set Variable   False
+    ${CaptureCORE.prefix}       set Variable   ${prefix}.${testCase}.${tm}.wCore
+    ${CaptureCORE.withTN}       set Variable   False
+    ${CaptureCPRT.prefix}       set Variable   ${prefix}.${testCase}.${tm}.wCPRT
+    ${CaptureCPRT.withTN}       set Variable   False
+    ${CaptureCPRT.filter}       set Variable   sctp
+    Capture Init            ${CaptureL1L2}
+    Capture Init            ${CaptureCORE}
+    Capture Init            ${CaptureCPRT}
+    Set Suite Variable      ${CaptureL1L2}
+    Set Suite Variable      ${CaptureCORE}
+    Set Suite Variable      ${CaptureCPRT}
+
+Captures CB009890 Stop
+    Captures Stop       actionCORE=${isCaptureCORE}
+    ...                 actionCPRT=${isCaptureCPRT}
+    ...                 actionL1L2=${isCaptureL1L2}
+
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CaptureCPRT.path}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${CaptureCPRT.path}    ${testCaseDir}
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CaptureCORE.path}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${CaptureCORE.path}    ${testCaseDir}
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CaptureL1L2.path}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${CaptureL1L2.path}    ${testCaseDir}
+
+Update gNB Swconfig
+    [Arguments]                      ${swconfig_gnb}
+    [Documentation]     only update swconfig with ${swconfig_gnb} content
+    ...        Exemple :
+    ...              ${l2ps_rdEnableFDMPdschDmrs_0x5801a6}=      create dictionary          field=0x5801a6
+    ...                                                                value=${testParam.rdEnableFDMPdschDmrs_0x5801a6}
+    ...              ${cprt_log_level_0x590072}=       create dictionary                  field=0x590072          value=1
+    ...              ${my_swconfig_gnb}=                 Create List           ${l2ps_rdEnableFDMPdschDmrs_0x5801a6}
+    ...                                                                        ${cprt_log_level_0x590072}
+    ...              Update gNB Swconfig   swconfig_gnb=${my_swconfig_gnb}
+    ${isEmpty}    Run Keyword And Return Status    Should Be Empty      ${swconfig_gnb}
+    return from keyword if     ${isEmpty}
+    Set Fields in swconfig DU       param_list=${swconfig_gnb}
+
+# 0x58057A 	rdFeatureFlagBitmapLevel  0 VIP  1 ERROR  2 WARNING  3 INFO  4 DEBUG  5 INVALID
+# 0x58057B 	rdFeatureFlagBitmap0      Bit 12 DSS
+# 0x58057C 	rdFeatureFlagBitmap1      Bit 31 DL.PDSCH_DMRS_FDM    Bit 19 DL.DCI
+# L2PS_DSS_DEBUG_RAD_PARAMETERS = {    # Swconfig.txt
+#    '0x58057a': '4',
+#    '0x58057b': '0x1001',
+#    '0x58057c': '0x80080000',
+#}
+#feature log pooling
+#rdFeatureFlagBitmap1: 11 - PRB_POOLING.BASIC,12 - PRB_POOLING.DL,13 - PRB_POOLING.UL ==> binary 0011 1000 0000 0000
+# 0x58057C=0x3800
+#L2 feature flags
+# 0x58057A=4 #pour ERR & WRN & INF & DBG
+
+Set CB009890 L2PS Debug Specific RAD
+    [Documentation]   Author: Ch SAMSON , set L2PS CB009890 debug Rad parameters
+
+    ${l2ps_0x58057a}=      create dictionary          field=0x58057a     value=4
+    ${l2ps_0x58057c}=      create dictionary          field=0x58057c     value=0x3800
+
+    ${swconfig_gnb}=       run Keyword if    '${SHOULD_UPDATE_DEBUG_L2PS_RAD}' == '1'     Create List     ${l2ps_0x58057a}
+    ...                                                                                                   ${l2ps_0x58057c}
+    ...   ELSE                                                                            Create List
+
+    [return]    ${swconfig_gnb}
+
+Set RAD Params Of 9890
+    [Documentation]     Add or Modify the RAD params of 9890 To Activate the feature
+    ...                 will be replaced later by NIDD params
+    ...                 0x580117=1 : #CSI-RS Event Sherpa
+    ...                 0x420062=1 : new cell slot model
+    ...                 0x590191=1 : rdSlowPrbPoolingTddFr1UseHardcodedTrackingCsiRs
+    ...                 0x420068=000 : rdTddPoolingFeaturesEnable default value is 111
+    ...                              Binary 3 bits LSB bit0->CB9890; bit1->CB008847; bit2->CB007113
+    ...                              0 disable; 1 enable features can be activated independantly
+    ...                 0x590190=1 : rdActSlowPrbPoolingTddFr1Dl
+    ...                 0x58057A=4 : L2 feature flags : ERR & WRN & INF & DBG
+    ...                 0x58057C=0x3800 : rdFeatureFlagBitmap1
+    ...                     bit 11 - PRB_POOLING.BASIC,
+    ...                     bit 12   PRB_POOLING.DL,
+    ...                     bit 13 - PRB_POOLING.UL ==> binary 0011 1000 0000 0000
+    ...                 0x5901C0=1 : rdEnableBBL1SpPrbInitCapacity
+    Dated Log New Line   Add RAD params of 9890 ......
+    dated log    -----> field=0x580117 value=1 # crs-rs send req in sherpa
+    dated log    -----> field=0x420068 value=3 #rdTddPoolingFeaturesEnable, binary bits
+    # ${rad_param_1}=      create dictionary       field=0x590191    value=0
+    ${rad_param_1}=      create dictionary       field=0x580117    value=1
+    ${rad_param_2}=      create dictionary       field=0x420068    value=3
+    ${rad_param_list}=       Create List         ${rad_param_1}
+    ...                                          ${rad_param_2}
+    SetConfig.Set Fields in swconfig DU       param_list=${rad_param_list}
+    ${l2ps_debug_swconfig_gnb}=      Set CB009890 L2PS Debug Specific RAD
+    Update gNB Swconfig   ${l2ps_debug_swconfig_gnb}
+    Dated Log New Line   RAD params of 9890 update completed
+
+# CB008940-SR-I - ZeroAllocationBypass activated
+# CB008940-SR-G - Load based PRB pooling for TDD FR1 DL -II with InterL1 SubPoolPooling;
+Set RAD Params for 11028-D
+    [Documentation]     Add or Modify the RAD params of 11028-D To Activate the feature
+    ...                 will be replaced later by NIDD params
+    #adding for 8940
+    # 0x580117=1 # crs-rs send req in sherpa
+
+    Dated Log New Line   Add RAD params of CB008940, CB007113, CB009890 and CB0011028......
+    dated log    -----> field=0x580117 value=1 # crs-rs send req in sherpa
+    dated log    -----> field=0x420080 value=1 # 1=rdTddSubcellDeactEnable (CB009890)
+    dated log    -----> field=0x580689 value=32 # rdRimRsPeriodicity Period
+    # dated log    -----> field=0x580787 value=1 # LBT27586 - 03165922
+
+    ${rad_param_1}=      create dictionary       field=0x580117    value=1   # crs-rs send req in sherpa
+    ${rad_param_2}=      create dictionary       field=0x420080    value=1   # rdTddSubcellDeactEnable (CB009890)
+    ${rad_param_3}=      create dictionary       field=0x58057a    value=4   # RIM RS logs in syslogs
+    ${rad_param_4}=      create dictionary       field=0x58057f    value=11  # RIM RS logs in syslogs
+    ${rad_param_5}=      create dictionary       field=0x580689    value=32  # rdRimRsPeriodicity Period (bits 0-15) and Offset (bits 16-31) in Slots
+	# ${rad_param_6}=      create dictionary       field=0x580787    value=1   # LBT27586 - 03165922
+
+    ${rad_param_list}=       Create List         ${rad_param_1}
+    ...                                          ${rad_param_2}
+    ...                                          ${rad_param_5}
+    # ...                                          ${rad_param_6}
+    SetConfig.Set Fields in swconfig DU       param_list=${rad_param_list}
+    ${l2ps_debug_swconfig_gnb}=      Set CB009890 L2PS Debug Specific RAD
+    Update gNB Swconfig   ${l2ps_debug_swconfig_gnb}
+    Dated Log New Line   RAD params of CB011028 update completed
+
+Set RAD Params for 9890-A wo ZAB
+    [Documentation]     Add or Modify the RAD params of 9890-A To Activate the feature
+    ...                 will be replaced later by NIDD params
+    #adding for 9890
+    # 0x580117=1 # crs-rs send req in sherpa
+    # 0x420068=3 #rdTddPoolingFeaturesEnable, binary bits
+    # 0x580690=1 # ZAB active
+    # 0x58066a=1 # 1 9890-G inter pooling active, 0 -G non active#feature log
+    #feature log pooling
+    #rdFeatureFlagBitmap1: 11 - PRB_POOLING.BASIC,12 - PRB_POOLING.DL,13 - PRB_POOLING.UL ==> binary 0011 1000 0000 0000
+    # 0x58057C=0x3800
+    #L2 feature flags
+    # 0x58057A=4 #pour ERR & WRN & INF & DBG
+
+    Dated Log New Line   Add RAD params of CB009890-A ......
+    dated log    -----> field=0x580117 value=1 # crs-rs send req in sherpa
+    dated log    -----> field=0x420068 value=3 #rdTddPoolingFeaturesEnable, binary bits, CB07113(bit2)+CB008847(bit1)+CB009890(bit0)
+    dated log    -----> field=0x580690 value=0 # ZAB active
+    dated log    -----> field=0x58066a value=1 # 1 9890-G inter pooling active, 0 -G non active#feature log
+
+    ${rad_param_1}=      create dictionary       field=0x580117    value=1    # crs-rs send req in sherpa
+    ${rad_param_2}=      create dictionary       field=0x420068    value=3   #rdTddPoolingFeaturesEnable, CB07113(bit2)+CB008847(bit1)+CB009890(bit0)
+    ${rad_param_3}=      create dictionary       field=0x580690    value=0    # ZAB active
+    ${rad_param_4}=      create dictionary       field=0x58066a    value=1    # 1 9890-G inter pooling active, 0 -G non active#feature log
+    ${rad_param_list}=       Create List         ${rad_param_1}
+    ...                                          ${rad_param_2}
+    ...                                          ${rad_param_3}
+    ...                                          ${rad_param_4}
+    SetConfig.Set Fields in swconfig DU       param_list=${rad_param_list}
+    ${l2ps_debug_swconfig_gnb}=      Set CB009890 L2PS Debug Specific RAD
+    Update gNB Swconfig   ${l2ps_debug_swconfig_gnb}
+    Dated Log New Line   RAD params of CB009890-A update completed
+
+Set RAD Params for 9890-A-wo-CB007113
+    [Documentation]     Add or Modify the RAD params of 9890-L To Activate the feature
+    ...                 will be replaced later by NIDD params
+    #adding for 9890
+    # 0x580117=1 # crs-rs send req in sherpa
+    # 0x420068=3 #rdTddPoolingFeaturesEnable, binary bits
+    # 0x580690=1 # ZAB active
+    # 0x58066a=1 # 1 9890-G inter pooling active, 0 -G non active#feature log
+    #feature log pooling
+    #rdFeatureFlagBitmap1: 11 - PRB_POOLING.BASIC,12 - PRB_POOLING.DL,13 - PRB_POOLING.UL ==> binary 0011 1000 0000 0000
+    # 0x58057C=0x3800
+    #L2 feature flags
+    # 0x58057A=4 #pour ERR & WRN & INF & DBG
+
+    Dated Log New Line   Add RAD params of CB008940 ......
+    dated log    -----> field=0x580117 value=1 # crs-rs send req in sherpa
+    dated log    -----> field=0x420068 value=3 #rdTddPoolingFeaturesEnable, binary bits, CB07113(bit2)+CB008847(bit1)+CB009890(bit0)
+    dated log    -----> field=0x580690 value=1 # ZAB active
+    dated log    -----> field=0x58066a value=1 # 1 9890-G inter pooling active, 0 -G non active#feature log
+    ${rad_param_1}=      create dictionary       field=0x580117    value=1    # crs-rs send req in sherpa
+    ${rad_param_2}=      create dictionary       field=0x420068    value=3    #rdTddPoolingFeaturesEnable, binary bits
+    ${rad_param_3}=      create dictionary       field=0x580690    value=1    # ZAB active
+    ${rad_param_4}=      create dictionary       field=0x58066a    value=1    # 1 9890-G inter pooling active, 0 -G non active#feature log
+    ${rad_param_list}=       Create List         ${rad_param_1}
+    ...                                          ${rad_param_2}
+    ...                                          ${rad_param_3}
+    ...                                          ${rad_param_4}
+    SetConfig.Set Fields in swconfig DU       param_list=${rad_param_list}
+    ${l2ps_debug_swconfig_gnb}=      Set CB009890 L2PS Debug Specific RAD
+    Update gNB Swconfig   ${l2ps_debug_swconfig_gnb}
+    Dated Log New Line   RAD params of CB008940 update completed
+
+Set_NRBTS_mod_ListParam
+    [Documentation]
+    ...              This KW will help to set actDl256Qam on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${arg}    ${value}    ${modiflist}
+    Dated Log      "${arg} set ${value}"
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    &{modify_param}   Create Dictionary
+    ...                    parameter=${arg}
+    ...                    dist_name=${dn}
+    ...                    value=${value}
+    Append To List     ${modiflist}          ${modify_param}
+    [return]     ${modiflist}
+
+Set_NRCELL_mod_ListParam
+    [Documentation]
+    ...              This KW will help to set actDl256Qam on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${arg}    ${value}    ${cell}  ${modiflist}
+    Dated Log      "${arg} set ${value}"
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell}
+    &{modify_param}   Create Dictionary
+    ...                    parameter=${arg}
+    ...                    dist_name=${dn}
+    ...                    value=${value}
+    Append To List     ${modiflist}          ${modify_param}
+    [return]     ${modiflist}
+
+Set_NIDD_modification_ListParam
+    [Documentation]   Set_NIDD_modification_ListParam
+    [Arguments]    ${pname}    ${value}    ${dn}    ${modiflist}
+    Dated Log      "${pname} set ${value}"
+    &{modify_param}   Create Dictionary
+    ...                    parameter=${pname}
+    ...                    dist_name=${dn}
+    ...                    value=${value}
+    Append To List     ${modiflist}          ${modify_param}
+    [return]     ${modiflist}
+
+Update gNB OAM List Param
+    [Arguments]                      ${oam_param_gnb}
+    [Documentation]     only update OAM Parameters with ${oam_param_gnb} content
+    ${isEmpty}    Run Keyword And Return Status    Should Be Empty      ${oam_param_gnb}
+    return from keyword if     ${isEmpty}
+    OAM Set Params            ${oam_param_gnb}            # OAM need a list ....
+
+Set CB009890-L NIDD PARAMETERS OLD
+    Set CB009890-L NIDD NRBTS PARAMETERS
+    ${num_of_cells}=    Get Cell Number
+    FOR    ${cell_id}    IN RANGE    ${num_of_cells}
+        ${cell_id_}    Evaluate    ${cell_id} + ${1}
+        Set CB009890-L NIDD NRBTS PARAMETERS for CellId "${cell_id_}"
+    END
+
+Set CB009890-L NIDD NRBTS PARAMETERS
+    #** SCF update
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    ${actSlowPrbPooling}	 scf.get_value_from_scf   p_name=actSlowPrbPooling
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}
+    ${actSlowPrbPooling_to_update}=   set variable if   '${actSlowPrbPooling.lower()}'=='true'     True
+    ...                                                                                            False
+    @{OAMParam_modiflist}    Create List
+    ${OAMParam_modiflist}=  Run Keyword if   '${actSlowPrbPooling_to_update}'=='True'    Set_NRBTS_mod_ListParam      actSlowPrbPooling
+    ...                                                                                                               false
+    ...                                                                                                               ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    Run Keyword if   '${actSlowPrbPooling_to_update}'=='True'               Dated log    actSlowPrbPooling Updated in Scf
+
+    ${actBbPoolTddFr1}	 scf.get_value_from_scf   p_name=actBbPoolTddFr1
+    ...                                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}
+    ${actBbPoolTddFr1_to_update}=   set variable if   '${actBbPoolTddFr1.lower()}'=='false'         True
+    ...                                                                                             False
+    ${OAMParam_modiflist}=  Run Keyword if   '${actBbPoolTddFr1_to_update}'=='True'    Set_NRBTS_mod_ListParam      actBbPoolTddFr1
+    ...                                                                                                             true
+    ...                                                                                                             ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    Run Keyword if   '${actBbPoolTddFr1_to_update}'=='True'               Dated log    actBbPoolTddFr1 Updated in Scf
+
+    ${actSpatialStreamPooling}	 scf.get_value_from_scf   p_name=actSpatialStreamPooling
+    ...                                                   dist_name=MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}
+    ${actSpatialStreamPooling_to_update}=   set variable if   '${actSpatialStreamPooling.lower()}'=='false'         True
+    ...                                                                                                             False
+    ${OAMParam_modiflist}=  Run Keyword if   '${actSpatialStreamPooling_to_update}'=='True'    Set_NRBTS_mod_ListParam      actSpatialStreamPooling
+    ...                                                                                                                     true
+    ...                                                                                                                     ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    Run Keyword if   '${actSpatialStreamPooling_to_update}'=='True'               Dated log    actSpatialStreamPooling Updated in Scf
+
+    ${actTddPrePooling}	 scf.get_value_from_scf   p_name=actTddPrePooling
+    ...                                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}
+    ${actTddPrePooling_to_update}=   set variable if   '${actTddPrePooling.lower()}'=='false'         True
+    ...                                                                                               False
+    ${OAMParam_modiflist}=  Run Keyword if   '${actTddPrePooling_to_update}'=='True'    Set_NRBTS_mod_ListParam      actTddPrePooling
+    ...                                                                                                              true
+    ...                                                                                                              ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    Run Keyword if   '${actTddPrePooling_to_update}'=='True'               Dated log    actTddPrePooling Updated in Scf
+
+    Update gNB OAM List Param   ${OAMParam_modiflist}
+    return from Keyword
+
+Set CB009890-L NIDD NRBTS PARAMETERS for CellId "${CellId}"
+    #** SCF update
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    ${actDlMuMimo}	 scf.get_value_from_scf   p_name=actDlMuMimo
+    ...                                       dist_name=MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${CellId}
+    ${actDlMuMimo_to_update}=   set variable if   '${actDlMuMimo.lower()}'=='true'     True
+    ...                                                                                False
+    @{OAMParam_modiflist}    Create List
+    ${OAMParam_modiflist}=  Run Keyword if   '${actDlMuMimo_to_update}'=='True'    Set_NRCELL_mod_ListParam      actDlMuMimo
+    ...                                                                                                          ${CellId}
+    ...                                                                                                          false
+    ...                                                                                                          ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    Run Keyword if   '${actDlMuMimo_to_update}'=='True'               Dated log    actDlMuMimo Updated in Scf
+
+    ${actCellCsirsTddOnSsbBf}	 scf.get_value_from_scf   p_name=actCellCsirsTddOnSsbBf
+    ...                                                   dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    ${actCellCsirsTddOnSsbBf_to_update}=   set variable if   '${actCellCsirsTddOnSsbBf.lower()}'=='true'     True
+    ...                                                                                                      False
+    ${OAMParam_modiflist}=  Run Keyword if   '${actCellCsirsTddOnSsbBf_to_update}'=='True'    Set_NRCELL_mod_ListParam      actCellCsirsTddOnSsbBf
+    ...                                                                                                                     ${CellId}
+    ...                                                                                                                     false
+    ...                                                                                                                     ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    Run Keyword if   '${actCellCsirsTddOnSsbBf_to_update}'=='True'               Dated log    actCellCsirsTddOnSsbBf Updated in Scf
+
+    ${actCellCsiRsImTddNonBf}	 scf.get_value_from_scf   p_name=actCellCsiRsImTddNonBf
+    ...                                                   dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    ${actCellCsiRsImTddNonBf_to_update}=   set variable if   '${actCellCsiRsImTddNonBf.lower()}'=='true'     True
+    ...                                                                                                      False
+    ${OAMParam_modiflist}=  Run Keyword if   '${actCellCsirsTddOnSsbBf_to_update}'=='True'    Set_NRCELL_mod_ListParam      actCellCsiRsImTddNonBf
+    ...                                                                                                                     ${CellId}
+    ...                                                                                                                     false
+    ...                                                                                                                     ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    Run Keyword if   '${actCellCsirsTddOnSsbBf_to_update}'=='True'               Dated log    actCellCsiRsImTddNonBf Updated in Scf
+
+    ${actAdaptiveReTxResMcs}	 scf.get_value_from_scf   p_name=actAdaptiveReTxResMcs
+    ...                                                   dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    ${actAdaptiveReTxResMcs_to_update}=   set variable if   '${actAdaptiveReTxResMcs.lower()}'=='true'     True
+    ...                                                                                                    False
+    ${OAMParam_modiflist}=  Run Keyword if   '${actAdaptiveReTxResMcs_to_update}'=='True'    Set_NRCELL_mod_ListParam      actAdaptiveReTxResMcs
+    ...                                                                                                                     ${CellId}
+    ...                                                                                                                     false
+    ...                                                                                                                     ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    Run Keyword if   '${actAdaptiveReTxResMcs_to_update}'=='True'               Dated log    actAdaptiveReTxResMcs Updated in Scf
+
+    ${actCsirsMultiplexing}	 scf.get_value_from_scf   p_name=actCsirsMultiplexing
+    ...                                               dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    ${actCsirsMultiplexing_to_update}=   set variable if   '${actCsirsMultiplexing.lower()}'=='false'     True
+    ...                                                                                                   False
+    ${OAMParam_modiflist}=  Run Keyword if   '${actCsirsMultiplexing_to_update}'=='True'    Set_NRCELL_mod_ListParam      actCsirsMultiplexing
+    ...                                                                                                                     ${CellId}
+    ...                                                                                                                     true
+    ...                                                                                                                     ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    Run Keyword if   '${actCsirsMultiplexing_to_update}'=='True'               Dated log    actCsirsMultiplexing Updated in Scf
+
+    ${actDlSrsBm}	 scf.get_value_from_scf   p_name=actDlSrsBm
+    ...                                       dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    ${actDlSrsBm_to_update}=   set variable if   '${actDlSrsBm.lower()}'=='false'     True
+    ...                                                                               False
+    ${OAMParam_modiflist}=  Run Keyword if   '${actDlSrsBm_to_update}'=='True'    Set_NRCELL_mod_ListParam      actDlSrsBm
+    ...                                                                                                         ${CellId}
+    ...                                                                                                         true
+    ...                                                                                                         ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    Run Keyword if   '${actDlSrsBm_to_update}'=='True'               Dated log    actDlSrsBm Updated in Scf
+
+    ${actPdschAtSsbSlots}	 scf.get_value_from_scf   p_name=actPdschAtSsbSlots
+    ...                                               dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    ${actPdschAtSsbSlots_to_update}=   set variable if   '${actPdschAtSsbSlots.lower()}'=='false'     True
+    ...                                                                                               False
+    ${OAMParam_modiflist}=  Run Keyword if   '${actPdschAtSsbSlots_to_update}'=='True'    Set_NRCELL_mod_ListParam      actPdschAtSsbSlots
+    ...                                                                                                                 ${CellId}
+    ...                                                                                                                 true
+    ...                                                                                                                 ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    Run Keyword if   '${actDlSrsBm_to_update}'=='True'               Dated log    actPdschAtSsbSlots Updated in Scf
+
+    ${actPdschRmCsirsForTracking}	 scf.get_value_from_scf   p_name=actPdschRmCsirsForTracking
+    ...                                                       dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    ${actPdschRmCsirsForTracking_to_update}=   set variable if   '${actPdschRmCsirsForTracking.lower()}'=='false'     True
+    ...                                                                                                               False
+    ${OAMParam_modiflist}=  Run Keyword if   '${actPdschRmCsirsForTracking_to_update}'=='True'  Set_NRCELL_mod_ListParam   actPdschRmCsirsForTracking
+    ...                                                                                                                    ${CellId}
+    ...                                                                                                                    true
+    ...                                                                                                                    ${OAMParam_modiflist}
+    ...   ELSE              set variable   ${OAMParam_modiflist}
+    Run Keyword if   '${actPdschRmCsirsForTracking_to_update}'=='True'               Dated log    actPdschRmCsirsForTracking Updated in Scf
+
+    # dlQam256PowerBackoffSub6:  3dB  if needed (sometimes required to avoid power saturation of DL 256QAM I/Q)
+    ${dlQam256PowerBackoffSub6}=   Get dlQam256PowerBackoffSub6 from SCF   CellId=${CellId}
+    ${OAMParam_modiflist}=   Run Keyword if     '${dlQam256PowerBackoffSub6}'!='30'     Set_NRCELL_mod_ListParam
+    ...                                                                                               dlQam256PowerBackoffSub6
+    ...                                                                                               ${CellId}
+    ...                                                                                               30
+    ...                                                                                               ${OAMParam_modiflist}
+    ...   ELSE           set variable   ${OAMParam_modiflist}
+
+    Update gNB OAM List Param   ${OAMParam_modiflist}
+    return from Keyword
+
+Set CB009890-A NIDD PARAMETERS
+    [Arguments]    ${list}=${NIDD_9890_Q_PARAMS}
+    Set CB009890-L NIDD PARAMETERS VERSION 2     ${list}
+    ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    Set Suite Variable           ${test_scf_file}
+
+Set CB009890-L NIDD PARAMETERS
+    [Arguments]    ${list}=${NIDD_9890_Q_PARAMS}
+    Set CB009890-L NIDD PARAMETERS VERSION 2     ${list}
+    ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    Set Suite Variable           ${test_scf_file}
+
+Set CB009890-L NIDD PARAMETERS VERSION 2
+    [Arguments]    ${list}
+    #** SCF update
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    @{OAMParam_modiflist}    Create List
+    scf.load_scf	 ${current_scf_fullname}
+    FOR    ${item}    IN    @{list}
+         continue for loop if     'list_name' in ${item}
+         ${val}	 scf.get_value_from_scf   p_name=${item}[pname]
+         ...                              dist_name=${item}[dist_name]
+         continue for loop if  '${val}'=='${item}[value]'
+         ${val_to_update}=   set variable if   '${val.lower()}'!='${item}[value]'     True
+         ...                                                                          False
+
+         ${OAMParam_modiflist}=  Run Keyword if   '${val_to_update}'=='True'    Set_NIDD_modification_ListParam      ${item}[pname]
+         ...                                                                                                         ${item}[value]
+         ...                                                                                                         ${item}[dist_name]
+         ...                                                                                                         ${OAMParam_modiflist}
+         ...   ELSE              set variable   ${OAMParam_modiflist}
+         Run Keyword if   '${val_to_update}'=='True'               Dated log    ${item}[pname] OnLine Modification
+    END
+    # dated log     OAMParam_modiflist=${OAMParam_modiflist}
+    Update gNB OAM List Param   ${OAMParam_modiflist}
+    return from Keyword
+
+Set CB009890 NIDD PARAMETERS VERSION 3
+    [Arguments]    ${list}
+    #** SCF update
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    @{OAMParam_modiflist}    Create List
+    scf.load_scf	 ${current_scf_fullname}
+    FOR    ${item}    IN    @{list}
+         ${val_dtxMaxRetentionDelay}=	 run Keyword if    'list_name' in ${item}   scf.get_value_from_scf    dist_name=${item}[dist_name]
+         ...                                                                              list_name=${item}[list_name]
+         ...                                                                              index=4
+         # run Keyword if    'list_name' in ${item}       dated log   val_dtxMaxRetentionDelay=${val_dtxMaxRetentionDelay} for ${item}[dist_name]
+         ${val_dtxPrbThreshold}=	 run Keyword if    'list_name' in ${item}   scf.get_value_from_scf    dist_name=${item}[dist_name]
+         ...                                                                              list_name=${item}[list_name]
+         ...                                                                              index=5
+         # run Keyword if    'list_name' in ${item}        dated log   val_dtxPrbThreshold=${val_dtxPrbThreshold} for ${item}[dist_name]
+         ${val_dtxMaxRetentionDelay_toCheck}=  run Keyword if    'list_name' in ${item}
+         ...       Get From Dictionary  ${item}[value]   key=dtxMaxRetentionDelay
+         # run Keyword if    'list_name' in ${item}        dated log     val_dtxMaxRetentionDelay_toCheck=${val_dtxMaxRetentionDelay_toCheck}
+         ${val_dtxPrbThreshold_toCheck}=  run Keyword if    'list_name' in ${item}    Get From Dictionary  ${item}[value]   key=dtxPrbThreshold
+         # run Keyword if    'list_name' in ${item}        dated log     val_dtxPrbThreshold_toCheck=${val_dtxPrbThreshold_toCheck}
+         ${condition1}=   run Keyword if    'list_name' in ${item}   Evaluate   ${val_dtxPrbThreshold}==${val_dtxPrbThreshold_toCheck}
+         ${condition2}=   run Keyword if    'list_name' in ${item}   Evaluate   ${val_dtxPrbThreshold}==${val_dtxPrbThreshold_toCheck}
+         continue for loop if   'list_name' in ${item} and ${condition1} and ${condition2}
+         &{NIDD_struct}    run Keyword if    'list_name' in ${item}       Evaluate
+         ...                {'dist_name':'${item}[dist_name]','parameter':'${item}[list_name]','value':[${item}[value]]}
+         run Keyword if    'list_name' in ${item}    Append To List     ${OAMParam_modiflist}          ${NIDD_struct}
+         ...      ELSE                               set variable       ${OAMParam_modiflist}
+         continue for loop if     'list_name' in ${item}
+         ${val}	 scf.get_value_from_scf   p_name=${item}[pname]
+         ...                              dist_name=${item}[dist_name]
+         continue for loop if  '${val}'=='${item}[value]'
+         ${val_to_update}=   set variable if   '${val.lower()}'!='${item}[value]'     True
+         ...                                                                          False
+         ${OAMParam_modiflist}=  Run Keyword if   '${val_to_update}'=='True'    Set_NIDD_modification_ListParam      ${item}[pname]
+         ...                                                                                                         ${item}[value]
+         ...                                                                                                         ${item}[dist_name]
+         ...                                                                                                         ${OAMParam_modiflist}
+         ...   ELSE              set variable   ${OAMParam_modiflist}
+         Run Keyword if   '${val_to_update}'=='True'               Dated log    ${item}[pname] Updated in Scf
+    END
+    # dated log     OAMParam_modiflist=${OAMParam_modiflist}
+    Update gNB OAM List Param   ${OAMParam_modiflist}
+    return from Keyword
+
+Connect to COAM ADMIN
+    [documentation]   only one Connect to COAM ADMIN call and coam_gnb alias is used by every coam request
+    [Arguments]    ${gnb_id}=0  ${bts_host}=${EMPTY}
+    ${bts_host}=  Set Variable if  '${bts_host}'=='${EMPTY}'  ${tl.gnbs[${gnb_id}].cu.oam_http_connection_details.addr}  ${bts_host}
+    coam.setup_admin    bts_host=${bts_host}    name=coam_gnb
+
+Display Important NIDD param
+    [Arguments]    ${w_setup_admin}=False
+    StringTool.printLineWithTitle     title=NIDD parameters MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id} and MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL
+    ${num_of_cells}=    Get Cell Number
+    ${bts_host}=  Set Variable if   '${w_setup_admin}'=='True'     ${tl.gnbs[${0}].cu.oam_http_connection_details.addr}
+    run Keyword if     '${w_setup_admin}'=='True'     coam.setup_admin    bts_host=${bts_host}    name=coam_gnb
+    FOR    ${cell_id}    IN RANGE    ${num_of_cells}
+        ${cell_id_}    Evaluate    ${cell_id} + ${1}
+        ${cellgrp_id}=      Get Cell Group From Cell     cell_id=${cell_id_}  connection=coam_gnb
+        ${msg_display}=    StringTool.getHeaderLine    CellId ${cell_id_} is located in     CellGroupId ${cellgrp_id}
+        dated log      ${msg_display}
+        # dated log     CellId ${cell_id_} => CellGroupId ${cellgrp_id}
+    END
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    StringTool.printLineWithTitle     Display Voip, GBR, Frame Structure NIDD parameters
+    ${num_of_cells}=    Get Cell Number
+    FOR    ${cell_id}    IN RANGE    ${num_of_cells}
+         ${cell_id_}    Evaluate    ${cell_id} + ${1}
+         ${actNonVoNRGbrService}=    Get NRCELL Param from SCF   param=actNonVoNRGbrService   CellId=${cell_id_}
+         ${actVoNR}=                 Get NRCELL Param from SCF   param=actVoNR   CellId=${cell_id_}
+         ${maxNumOfGBRBearersSA}=    Get NRCELL Param from SCF   param=maxNumOfGBRBearersSA   CellId=${cell_id_}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/actNonVoNRGbrService
+         ...                                             ${actNonVoNRGbrService}
+         dated log      ${msg_display}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/actVoNR
+         ...                                             ${actVoNR}
+         dated log      ${msg_display}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/maxNumOfGBRBearersSA
+         ...                                             ${maxNumOfGBRBearersSA}
+         dated log      ${msg_display}
+    END
+    # seems that NRDRB-15 is mandatory for GBR VoiP bearer (QCI1)
+    ${result}    scf.is_object_in_scf    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRDRB-15
+    run keyword if    ${result}==False    dated log  MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRDRB-15 not PRESENT in SCF
+    FOR    ${cell_id}    IN RANGE    ${num_of_cells}
+         ${cell_grp_id}    Evaluate    ${cell_id} + ${0}
+         ${cell_id_}    Evaluate    ${cell_id} + ${1}
+         ${csiReportPeriodicity}=    Get NRCELL Param from SCF   param=csiReportPeriodicity   CellId=${cell_id_}
+         ${csirsTrackingPeriod}=     Get NRCELL Param from SCF   param=csirsTrackingPeriod   CellId=${cell_id_}
+         ${frameStructureType}=      Get NRCELL Param from SCF   param=frameStructureType   CellId=${cell_id_}
+         ${ulDlDataSlotRatio}=       Get NRCELL Param from SCF   param=ulDlDataSlotRatio   CellId=${cell_id_}
+         ${actDtxOptimizedScheduler}=       Get NRCELL Param from SCF   param=actDtxOptimizedScheduler   CellId=${cell_id_}
+         ${actDlPaWarmUp}=           Get NRCELL Param from SCF   param=actDlPaWarmUp   CellId=${cell_id_}
+         # MRBTS-1/NRBTS-1/NRCELLGRP-0 => to improve later !!!!
+         # ${ssBurstSetPeriod}=        Get NRCELLGRP Param from SCF   param=ssBurstSetPeriod   CellId=${cell_id_}
+         ${ssBurstSetPeriod}	 scf.get_value_from_scf           p_name=ssBurstSetPeriod
+         ...                                                      dist_name=MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELLGRP-${cell_grp_id}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/frameStructureType
+         ...                                             ${frameStructureType}
+         dated log      ${msg_display}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/ulDlDataSlotRatio
+         ...                                             ${ulDlDataSlotRatio}
+         dated log      ${msg_display}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/ssBurstSetPeriod
+         ...                                             ${ssBurstSetPeriod}
+         dated log      ${msg_display}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/csiReportPeriodicity
+         ...                                             ${csiReportPeriodicity}
+         dated log      ${msg_display}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/csirsTrackingPeriod
+         ...                                             ${csirsTrackingPeriod}
+         dated log      ${msg_display}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/actDtxOptimizedScheduler
+         ...                                             ${actDtxOptimizedScheduler}
+         dated log      ${msg_display}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/actDlPaWarmUp
+         ...                                             ${actDlPaWarmUp}
+         dated log      ${msg_display}
+    END
+    Display NRRIM_PROFILE-1 NIDD param
+    Display PRB POOLING NIDD param
+    StringTool.printLineWithTitle     title=-
+    return from Keyword
+
+Display NRRIM_PROFILE-1 NIDD param
+    StringTool.printLineWithTitle
+    ...     title=NRRIM_PROFILE-1 NIDD parameters MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id} and MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL
+    ${num_of_cells}=    Get Cell Number
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    StringTool.printLineWithTitle     Display NRRIM_PROFILE NIDD parameters
+    ${num_of_cells}=    Get Cell Number
+    FOR    ${cell_id}    IN RANGE    ${num_of_cells}
+         ${cell_id_}    Evaluate    ${cell_id} + ${1}
+         ${nrRimMitigationScheme}=    Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=nrRimMitigationScheme   CellId=${cell_id_}
+         ${numRbForRs}=               Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=numRbForRs   CellId=${cell_id_}
+         ${numRsType1SetId}=          Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=numRsType1SetId   CellId=${cell_id_}
+         ${repetitionRsType1}=        Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=repetitionRsType1   CellId=${cell_id_}
+         ${rsNearFarConfig}=          Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=rsNearFarConfig   CellId=${cell_id_}
+         ${rsTransTrigger}=           Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=rsTransTrigger   CellId=${cell_id_}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/NRRIM_PROFILE-1/nrRimMitigationScheme
+         ...                                             ${nrRimMitigationScheme}
+         dated log      ${msg_display}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/NRRIM_PROFILE-1/numRbForRs
+         ...                                             ${numRbForRs}
+         dated log      ${msg_display}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/NRRIM_PROFILE-1/numRsType1SetId
+         ...                                             ${numRsType1SetId}
+         dated log      ${msg_display}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/NRRIM_PROFILE-1/repetitionRsType1
+         ...                                             ${repetitionRsType1}
+         dated log      ${msg_display}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/NRRIM_PROFILE-1/rsNearFarConfig
+         ...                                             ${rsNearFarConfig}
+         dated log      ${msg_display}
+         ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/NRRIM_PROFILE-1/rsTransTrigger
+         ...                                             ${rsTransTrigger}
+         dated log      ${msg_display}
+         # ${startRbForRs}=        Get startRbForRs Parameters From gNB     CellId=${cell_id_}
+         # ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}/NRRIM_PROFILE-1/startRbForRs
+         # ...                                             ${startRbForRs}
+         # dated log      ${msg_display}
+    END
+    StringTool.printLineWithTitle     title=-
+    return from Keyword
+
+Display PRB POOLING NIDD param
+    StringTool.printLineWithTitle
+    ...     title=PRB POOLING NIDD parameters MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}
+    ${num_of_cells}=    Get Cell Number
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    StringTool.printLineWithTitle     Display PRB POOLING NIDD parameters
+    ${actSlowPrbPooling}=    Get NRBTS Param from SCF   param_name=actSlowPrbPooling
+    ${msg_display}=    StringTool.getHeaderLine  MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/actSlowPrbPooling (5GC001227 Baseband pooling of PRBs - FR1 FDD)
+    ...                                          ${actSlowPrbPooling}
+    dated log      ${msg_display}
+
+    ${actSlowPrbPoolingFddFr1Enh}=    Get NRBTS Param from SCF   param_name=actSlowPrbPoolingFddFr1Enh
+    ${text}=   Set Variable  MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/actSlowPrbPoolingFddFr1Enh (CB009215 PRB pooling for FDD cells - concept refinement)
+    ${msg_display}=    StringTool.getHeaderLine     ${text}    ${actSlowPrbPoolingFddFr1Enh}
+    dated log      ${msg_display}
+
+    ${actSpatialStreamPooling}=    Get NRBTS Param from SCF   param_name=actSpatialStreamPooling
+    ${text}=    Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/actSpatialStreamPooling (5GC002093 Shared real time baseband resources - FR1 TDD)
+    ${msg_display}=    StringTool.getHeaderLine     ${text}    ${actSpatialStreamPooling}
+    dated log      ${msg_display}
+
+    ${actTddPrePooling}=    Get NRBTS Param from SCF   param_name=actTddPrePooling
+    ${text}=    Set Variable     MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/actTddPrePooling (5GC002093 Shared real time baseband resources - FR1 TDD)
+    ${msg_display}=    StringTool.getHeaderLine     ${text}    ${actTddPrePooling}
+    dated log      ${msg_display}
+
+    ${actLargeBbPoolTddFr1}=    Get NRBTS Param from SCF   param_name=actLargeBbPoolTddFr1
+    ${text}=    Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/actLargeBbPoolTddFr1 (CB007112 Baseband pooling of up to 16 DL MIMO layers)
+    ${msg_display}=    StringTool.getHeaderLine  ${text}      ${actLargeBbPoolTddFr1}
+    dated log      ${msg_display}
+
+    ${actBbPoolTddFr1}=    Get NRBTS Param from SCF   param_name=actBbPoolTddFr1
+    ${msg_display}=    StringTool.getHeaderLine  MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/actBbPoolTddFr1 (CB008940 Baseband resource pooling - FR1 TDD)
+    ...                                          ${actBbPoolTddFr1}
+    dated log      ${msg_display}
+    ${actBbPoolExtensionTddFr1}=    Get NRBTS Param from SCF   param_name=actBbPoolExtensionTddFr1
+    ${text}=    Set Variable      MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/actBbPoolExtensionTddFr1 (CB010513 Baseband pooling - Extensions for FR1 TDD)
+    ${msg_display}=    StringTool.getHeaderLine     ${text}      ${actBbPoolExtensionTddFr1}
+    dated log      ${msg_display}
+    ${actBbPoolTddFr1AlgEnh}=    Get NRBTS Param from SCF   param_name=actBbPoolTddFr1AlgEnh
+    ${msg_display}=    StringTool.getHeaderLine    MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/actBbPoolTddFr1AlgEnh (TMO CAS)
+         ...                                             ${actBbPoolTddFr1AlgEnh}
+    dated log      ${msg_display}
+    ${actBbPoolTddFr1Enh}=    Get NRBTS Param from SCF   param_name=actBbPoolTddFr1Enh
+    ${text}=    Set Variable     MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/actBbPoolTddFr1Enh (CB011028 Baseband pooling - Enhancements for FR1 TDD)
+    ${msg_display}=    StringTool.getHeaderLine          ${text}      ${actBbPoolTddFr1Enh}
+    dated log      ${msg_display}
+
+    ${allowSlowPrbPoolingStatNdmSrs}=    Get NRBTS Param from SCF   param_name=allowSlowPrbPoolingStatNdmSrs
+    ${text}=    Set Variable   MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/allowSlowPrbPoolingStatNdmSrs (slow static NDM-SRS PRB pooling is allowed or not)
+    ${msg_display}=    StringTool.getHeaderLine          ${text}      ${allowSlowPrbPoolingStatNdmSrs}
+    dated log      ${msg_display}
+
+    StringTool.printLineWithTitle     title=-
+    return from Keyword
+
+Check CB009890-A NIDD PARAMETERS
+   [Arguments]    ${list}=${NIDD_9890_Q_PARAMS}
+   Check CB009890 NIDD PARAMETERS VERSION 2     ${list}
+
+Check CB009890-L NIDD PARAMETERS
+   [Arguments]    ${list}=${NIDD_9890_Q_L_PARAMS}
+   Check CB009890 NIDD PARAMETERS VERSION 2     ${list}
+
+Check CB009890 NIDD PARAMETERS VERSION 2
+    [Arguments]    ${list}
+    #** SCF check
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    @{OAMParam_modiflist}    Create List
+    scf.load_scf	 ${current_scf_fullname}
+    StringTool.printLineWithTitle     title=NIDD parameters MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id} and MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL
+    FOR    ${item}    IN    @{list}
+         continue for loop if     'list_name' in ${item}
+         ${val}	 scf.get_value_from_scf   p_name=${item}[pname]
+         ...                              dist_name=${item}[dist_name]
+         continue for loop if     "${item}[pname]" == "bbmodBoardConfigType" and '${val}'=='${item}[value]'
+         Should be True    '${val.lower()}'=='${item}[value]'     ${item}[pname]=${val.lower()} not as expected!!!
+         run Keyword if    "${item}[pname]" == "actSlowPrbPooling"
+         ...                           dated log     ${item}[dist_name]/actSlowPrbPooling=${val.lower()} (FDD) is set to "FALSE" (5GC001227)
+         run Keyword if    "${item}[pname]" == "actBbPoolTddFr1"
+         ...                            dated log     ${item}[dist_name]/actBbPoolTddFr1=${val.lower()} (CB009890)
+         run Keyword if    "${item}[pname]" == "actSpatialStreamPooling"
+         ...           dated log     ${item}[dist_name]/actSpatialStreamPooling=${val.lower()} (CB008172) + NRBTS/actTddPrePooling !!!!!
+         run Keyword if    "${item}[pname]" == "actTddPrePooling"
+         ...                            dated log     ${item}[dist_name]/actTddPrePooling=${val.lower()} NRBTS/actTddPrePooling (CB008172)
+         run Keyword if    "${item}[pname]" == "actDlMuMimo"
+         ...                            dated log     ${item}[dist_name]/actDlMuMimo=${val.lower()}
+         run Keyword if    "${item}[pname]" == "actCellCsirsTddOnSsbBf"
+         ...                            dated log     ${item}[dist_name]/actCellCsirsTddOnSsbBf=${val.lower()} (CB008534)
+         run Keyword if    "${item}[pname]" == "actCellCsiRsImTddNonBf"
+         ...                            dated log     ${item}[dist_name]/actCellCsiRsImTddNonBf=${val.lower()} (CB007601)
+         run Keyword if    "${item}[pname]" == "actAdaptiveReTxResMcs"
+         ...                            dated log     ${item}[dist_name]/actAdaptiveReTxResMcs=${val.lower()} (CB008662)
+         run Keyword if    "${item}[pname]" == "actCsirsMultiplexing"
+         ...                            dated log     ${item}[dist_name]/actCsirsMultiplexing=${val.lower()}
+         run Keyword if    "${item}[pname]" == "actDlSrsBm"
+         ...                            dated log     ${item}[dist_name]/actDlSrsBm=${val.lower()} (CB008247)
+         run Keyword if    "${item}[pname]" == "actPdschAtSsbSlots"
+         ...                            dated log     ${item}[dist_name]/actPdschAtSsbSlots=${val.lower()} (5GC002534-A)
+         run Keyword if    "${item}[pname]" == "actPdschRmCsirsForTracking"
+         ...                            dated log     ${item}[dist_name]/actPdschRmCsirsForTracking=${val.lower()} (5GC002538)
+         run Keyword if    "${item}[pname]" == "actDtxOptimizedScheduler"
+         ...                            dated log     ${item}[dist_name]/actDtxOptimizedScheduler=${val.lower()} (5GC008238)
+         run Keyword if    "${item}[pname]" == "actProactUlScheduling"
+         ...                            dated log     ${item}[dist_name]/actProactUlScheduling=${val.lower()}
+         run Keyword if    "${item}[pname]" == "miNrLowRlcReport"
+         ...                            dated log     ${item}[dist_name]/miNrLowRlcReport=${val.lower()}
+         run Keyword if    "${item}[pname]" == "bbmodBoardConfigType"
+         ...                            dated log     ${item}[dist_name]/bbmodBoardConfigType=${val}
+    END
+    StringTool.printLineWithTitle     title=-
+    return from Keyword
+
+Check CB009890 NIDD PARAMETERS VERSION 3
+    [Arguments]    ${list}
+    #** SCF check
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    @{OAMParam_modiflist}    Create List
+    scf.load_scf	 ${current_scf_fullname}
+    StringTool.printLineWithTitle
+    ...                 title=Check and Display NIDD parameters MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id} and MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL
+    FOR    ${item}    IN    @{list}
+         ${val_dtxMaxRetentionDelay}=	 run Keyword if    'list_name' in ${item}   scf.get_value_from_scf    dist_name=${item}[dist_name]
+         ...                                                                              list_name=${item}[list_name]
+         ...                                                                              index=4
+         # run Keyword if    'list_name' in ${item}       dated log   val_dtxMaxRetentionDelay=${val_dtxMaxRetentionDelay} for ${item}[dist_name]
+         ${val_dtxPrbThreshold}=	 run Keyword if    'list_name' in ${item}   scf.get_value_from_scf    dist_name=${item}[dist_name]
+         ...                                                                              list_name=${item}[list_name]
+         ...                                                                              index=5
+         run Keyword if     'list_name' in ${item}
+         ...                           dated log     ${item}[dist_name]/dtxMaxRetentionDelay=${val_dtxMaxRetentionDelay}
+         run Keyword if     'list_name' in ${item}
+         ...                           dated log     ${item}[dist_name]/dtxPrbThreshold=${val_dtxPrbThreshold}
+         continue for loop if         'list_name' in ${item}
+         ${val}   scf.get_value_from_scf   p_name=${item}[pname]
+         ...                               dist_name=${item}[dist_name]
+         continue for loop if     "${item}[pname]" == "bbmodBoardConfigType" and '${val}'=='${item}[value]'
+         ${waitValue}=   Set Variable     ${item}[value]
+         Should be True    '${val.lower()}'=='${waitValue.lower()}'     ${item}[pname]=${val.lower()} not as expected!!!
+         run Keyword if    "${item}[pname]" == "actSlowPrbPooling"
+         ...                           dated log     ${item}[dist_name]/actSlowPrbPooling=${val.lower()} (FDD) is set to "FALSE" (5GC001227)
+         run Keyword if    "${item}[pname]" == "actBbPoolTddFr1"
+         ...                            dated log     ${item}[dist_name]/actBbPoolTddFr1=${val.lower()} (CB008940)
+         run Keyword if    "${item}[pname]" == "actSpatialStreamPooling"
+         ...           dated log     ${item}[dist_name]/actSpatialStreamPooling=${val.lower()} (CB008172) + NRBTS/actTddPrePooling !!!!!
+         run Keyword if    "${item}[pname]" == "actTddPrePooling"
+         ...                            dated log     ${item}[dist_name]/actTddPrePooling=${val.lower()} NRBTS/actTddPrePooling (CB008172)
+         run Keyword if    "${item}[pname]" == "actBbPoolExtensionTddFr1"
+         ...                     dated log     ${item}[dist_name]/actBbPoolExtensionTddFr1=${val.lower()} NRBTS/actBbPoolExtensionTddFr1 (CB010513)
+         run Keyword if    "${item}[pname]" == "actBbPoolTddFr1Enh"
+         ...                            dated log     ${item}[dist_name]/actBbPoolTddFr1Enh=${val.lower()} NRBTS/actBbPoolTddFr1Enh (CB011028)
+         run Keyword if    "${item}[pname]" == "actBbPoolTddFr1AlgEnh"
+         ...                            dated log     ${item}[dist_name]/actBbPoolTddFr1AlgEnh=${val.lower()} NRBTS/actBbPoolTddFr1AlgEnh (TMO CAS)
+         run Keyword if    "${item}[pname]" == "actDlMuMimo"
+         ...                            dated log     ${item}[dist_name]/actDlMuMimo=${val.lower()} (5GC00524)
+         run Keyword if    "${item}[pname]" == "actDlMuMimoEnh"
+         ...                            dated log     ${item}[dist_name]/actDlMuMimoEnh=${val.lower()} (CB008305)
+         run Keyword if    "${item}[pname]" == "actFdmScheduling"
+         ...                            dated log     ${item}[dist_name]/actFdmScheduling=${val.lower()}
+         run Keyword if    "${item}[pname]" == "actFdmEnhancedScheduling"
+         ...                            dated log     ${item}[dist_name]/actFdmEnhancedScheduling=${val.lower()}
+         run Keyword if    "${item}[pname]" == "actCellCsirsTddOnSsbBf"
+         ...                            dated log     ${item}[dist_name]/actCellCsirsTddOnSsbBf=${val.lower()} (CB008534)
+         run Keyword if    "${item}[pname]" == "actCellCsiRsImTddNonBf"
+         ...                            dated log     ${item}[dist_name]/actCellCsiRsImTddNonBf=${val.lower()} (CB007601)
+         run Keyword if    "${item}[pname]" == "actAdaptiveReTxResMcs"
+         ...                            dated log     ${item}[dist_name]/actAdaptiveReTxResMcs=${val.lower()} (CB008662)
+         run Keyword if    "${item}[pname]" == "actCsirsMultiplexing"
+         ...                            dated log     ${item}[dist_name]/actCsirsMultiplexing=${val.lower()}
+         run Keyword if    "${item}[pname]" == "actDlSrsBm"
+         ...                            dated log     ${item}[dist_name]/actDlSrsBm=${val.lower()} (CB008247)
+         run Keyword if    "${item}[pname]" == "actPdschAtSsbSlots"
+         ...                            dated log     ${item}[dist_name]/actPdschAtSsbSlots=${val.lower()} (5GC002534-A)
+         run Keyword if    "${item}[pname]" == "actPdschRmCsirsForTracking"
+         ...                            dated log     ${item}[dist_name]/actPdschRmCsirsForTracking=${val.lower()} (5GC002538)
+         run Keyword if    "${item}[pname]" == "actDtxOptimizedScheduler"
+         ...                            dated log     ${item}[dist_name]/actDtxOptimizedScheduler=${val.lower()} (5GC008238)
+         run Keyword if    "${item}[pname]" == "bbmodBoardConfigType"
+         ...                            dated log     ${item}[dist_name]/bbmodBoardConfigType=${val}
+         run Keyword if    "${item}[pname]" == "actCustomBsr"
+         ...                            dated log     ${item}[dist_name]/actCustomBsr=${val}
+         # run Keyword if    "${item}[pname]" == "actPdcpRlcBufCongestionMechsm"
+         # ...                            dated log     ${item}[dist_name]/actPdcpRlcBufCongestionMechsm=${val}
+         run Keyword if    "${item}[pname]" == "rlcBufUsageThreshold"
+         ...                            dated log     ${item}[dist_name]/rlcBufUsageThreshold=${val}
+         run Keyword if    "${item}[pname]" == "pdcpBufUsageThreshold"
+         ...                            dated log     ${item}[dist_name]/pdcpBufUsageThreshold=${val}
+         run Keyword if    "${item}[pname]" == "numNonGbrPdcpSduDiscard"
+         ...                            dated log     ${item}[dist_name]/numNonGbrPdcpSduDiscard=${val}
+         run Keyword if    "${item}[pname]" == "numNonGbrRlcSduDiscard"
+         ...                            dated log     ${item}[dist_name]/numNonGbrRlcSduDiscard=${val}
+         # CB008360 : https://feature-corner.nsn-net.net/?q=CB008360
+         run Keyword if    "${item}[pname]" == "actUlMuMimo"
+         ...                            dated log     ${item}[dist_name]/actUlMuMimo=${val} (CB008360)
+         # 5GC001086 : https://feature-corner.nsn-net.net/materials/cl7ab3lue1368964ikz5hqtmxmt
+         run Keyword if    "${item}[pname]" == "actUlSrsBm"
+         ...                            dated log     ${item}[dist_name]/actUlSrsBm=${val} (5GC001086 SRS based beamforming in UL)
+    END
+    StringTool.printLineWithTitle     title=-
+    return from Keyword
+
+Check CB009890-A NIDD PARAMETERS OLD VERSION
+    Check CB009890-A NIDD PARAMETERS NRBTS
+    ${num_of_cells}=    Get Cell Number
+    FOR    ${cell_id}    IN RANGE    ${num_of_cells}
+        ${cell_id_}    Evaluate    ${cell_id} + ${1}
+        StringTool.printLineWithTitle     title=NIDD parameters MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${cell_id_}
+        Check CB009890-A NIDD PARAMETERS for CellId "${cell_id_}"
+    END
+    StringTool.printLineWithTitle     title=-
+
+Check CB009890-A NIDD PARAMETERS NRBTS
+    StringTool.printLineWithTitle     title=NIDD parameters MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    ${actSlowPrbPooling}	 scf.get_value_from_scf   p_name=actSlowPrbPooling
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}
+    Should be True    '${actSlowPrbPooling}'=='False'     actSlowPrbPooling=${actSlowPrbPooling} not as expected!!!
+
+    ${actBbPoolTddFr1}	 scf.get_value_from_scf   p_name=actBbPoolTddFr1
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}
+    Should be True    '${actBbPoolTddFr1}'=='True'        actBbPoolTddFr1=${actBbPoolTddFr1} not as expected!!!
+
+    ${actSpatialStreamPooling}	 scf.get_value_from_scf   p_name=actSpatialStreamPooling
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}
+    Should be True    '${actSpatialStreamPooling}'=='False'   actSpatialStreamPooling=${actSpatialStreamPooling} not as expected!!!
+
+    ${actTddPrePooling}	 scf.get_value_from_scf   p_name=actTddPrePooling
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}
+    Should be True    '${actTddPrePooling}'=='False'   actTddPrePooling=${actTddPrePooling} not as expected!!!
+
+    dated log     actSlowPrbPooling=${actSlowPrbPooling} (FDD) is set to "FALSE" (5GC001227)
+    dated log     actBbPoolTddFr1=${actBbPoolTddFr1} (CB008940)
+    dated log     actSlowPrbPoolingTddFr1Ul is set to FALSE (CB007113) => NOT PRESENT !!!
+    dated log     actSpatialStreamPooling=${actSpatialStreamPooling} (CB008172) + NRBTS/actTddPrePooling !!!!!
+    dated log     actTddPrePooling=${actTddPrePooling} NRBTS/actTddPrePooling (CB008172)
+
+Check CB009890-A NIDD PARAMETERS for CellId "${CellId}"
+    [Documentation]    From scf...
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    ${actDlMuMimo}	 scf.get_value_from_scf   p_name=actDlMuMimo
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${nrbts_id}/NRCELL-${CellId}
+    Should be True    '${actDlMuMimo}'=='False'        actDlMuMimo=${actDlMuMimo} not as expected!!!
+
+    ${actCellCsirsTddOnSsbBf}	 scf.get_value_from_scf   p_name=actCellCsirsTddOnSsbBf
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    Should be True    '${actCellCsirsTddOnSsbBf}'=='False'   actCellCsirsTddOnSsbBf=${actCellCsirsTddOnSsbBf} not as expected!!!
+
+    ${actCellCsiRsImTddNonBf}	 scf.get_value_from_scf   p_name=actCellCsiRsImTddNonBf
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    Should be True    '${actCellCsiRsImTddNonBf}'=='False'     actCellCsiRsImTddNonBf=${actCellCsiRsImTddNonBf} not as expected!!!
+
+    ${actAdaptiveReTxResMcs}	 scf.get_value_from_scf   p_name=actAdaptiveReTxResMcs
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    Should be True    '${actAdaptiveReTxResMcs}'=='False'      actAdaptiveReTxResMcs=${actAdaptiveReTxResMcs} not as expected!!!
+
+    ${actCsirsMultiplexing}	 scf.get_value_from_scf   p_name=actCsirsMultiplexing
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    Should be True    '${actCsirsMultiplexing}'=='True'     actCsirsMultiplexing=${actCsirsMultiplexing} not as expected!!!
+
+    ${actDlSrsBm}	 scf.get_value_from_scf   p_name=actDlSrsBm
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    Should be True    '${actDlSrsBm}'=='True'       actDlSrsBm=${actDlSrsBm} not as expected
+
+    ${actPdschAtSsbSlots}	 scf.get_value_from_scf   p_name=actPdschAtSsbSlots
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    Should be True    '${actPdschAtSsbSlots}'=='True'     actPdschAtSsbSlots=${actPdschAtSsbSlots} not as expected!!!
+
+    ${actPdschRmCsirsForTracking}	 scf.get_value_from_scf   p_name=actPdschRmCsirsForTracking
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    Should be True   '${actPdschRmCsirsForTracking}'=='True'     actPdschRmCsirsForTracking=${actPdschRmCsirsForTracking} not as expected!!!
+
+    dated log     actDlMuMimo=${actDlMuMimo}
+    dated log     actCellCsirsTddOnSsbBf=${actCellCsirsTddOnSsbBf} (CB008534)
+    dated log     actCellCsiRsImTddNonBf=${actCellCsiRsImTddNonBf} (CB007601)
+    dated log     actAdaptiveReTxResMcs=${actAdaptiveReTxResMcs} (CB008662)
+    dated log     actCsirsMultiplexing=${actCsirsMultiplexing}
+    dated log     actDlSrsBm=${actDlSrsBm} (CB008247)
+    dated log     actPdschAtSsbSlots=${actPdschAtSsbSlots} (5GC002534-A)
+    dated log     actPdschRmCsirsForTracking=${actPdschRmCsirsForTracking} (5GC002538)
+    Return From Keyword
+
+# actScheUePooling = True
+# NRBTS.actSlowPrbPooling (FDD) is set to "FALSE" (5GC001227)
+# NRBTS.actSlowPrbPoolingTddFr1Ul is set to ??FALSE?? (CB7113) (NIDD to be removed in later release)
+# NRBTS.actBbPoolTddFr1 is set to ??TRUE??. (CB008940)
+# NRBTS.actUEPoolingTDD is set to "TRUE" (CB008847 NIDD will be removed in later release)   => NOT PRESENT !!!
+# NRBTS/actSpatialStreamPooling is set to "TRUE" (CB8172)  + NRBTS/actTddPrePooling !!!!!
+# NRBTS/actDlMuMimo is set to "FALSE"
+# NRBTS.actMultipleDedicatedBWP=False (CB007552)
+# NRCELL.actEnhMultipleDedicatedBWP=False ( CB008541)
+# NRCELL:actPowerSavingBWP=False ( 5GC00937)
+# NRCELL.actCellCsirsTddOnSsbBf is set to "FALSE". (CB008534)
+# NRCELL.actCellCsiRsImTddNonBf is set to ??FALSE (CB007601)
+# NRCELL.actAdaptiveReTxresMcs is set to "FALSE" (CB008662)
+# NRCELL.actCsiRsMultiplexing is set to "TRUE"
+# NRCELL.actDlSrsBm is set to "TRUE" (CB8247)
+# NRCELL.actPdschAtSsbSlots = TRUE (5GC002534-A)
+# NRCELL.actPdschRmCsirsForTracking = TRUE (5GC002538)
+
+Check l1Subpool Assignment in Syslogs
+   ${commandToRun}     Catenate     cd /tmp/btslog2; find . -name "*.LOG" -type f | sed -e 's/^\\.\\///g'
+   ${ret}    ${syslogfiles}     Run Keyword And Ignore Error    Run   ${commandToRun}
+   ${sysLog_files}    Split String    ${syslogfiles}    separator=\n
+   FOR    ${syslog}    IN    @{sysLog_files}
+         dated log    Computing syslog File ${consTraceColor}${syslog}${defColor}...
+         ${contains_no_Syslogs}=     Run Keyword And Return Status       Should Not Contain     ${syslog}     ${EMPTY}
+         # ${contains_no_Syslogs}==True   => Syslog are not present !!!
+         # Run Keyword if   '${contains_no_Syslogs}' == 'True'   dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+         Run Keyword if   '${contains_no_Syslogs}' == 'False'  robot_extension.Run Keyword And Warn On Failure   Check l1Subpool Assignment
+         ...                                                                                                                       syslog=${syslog}
+         ...    ELSE                                dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+         Run Keyword if   '${contains_no_Syslogs}' == 'False'  robot_extension.Run Keyword And Warn On Failure   Check Dll1Subpool Assignment
+         ...                                                                                                                       syslog=${syslog}
+         ...    ELSE                                dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+         Run Keyword if   '${contains_no_Syslogs}' == 'False'  robot_extension.Run Keyword And Warn On Failure
+         ...                                                                display totalStreamPrbs per l1PoolId in SysLog    syslog=${syslog}
+         ...    ELSE                                dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+   END
+
+Check l1Subpool Assignment for CB009890 C in Syslogs
+   ${commandToRun}     Catenate     cd /tmp/btslog2; find . -name "*.LOG" -type f | sed -e 's/^\\.\\///g'
+   ${ret}    ${syslogfiles}     Run Keyword And Ignore Error    Run   ${commandToRun}
+   ${sysLog_files}    Split String    ${syslogfiles}    separator=\n
+   FOR    ${syslog}    IN    @{sysLog_files}
+         dated log    Computing syslog File ${consTraceColor}${syslog}${defColor}...
+         ${contains_no_Syslogs}=     Run Keyword And Return Status       Should Not Contain     ${syslog}     ${EMPTY}
+         # ${contains_no_Syslogs}==True   => Syslog are not present !!!
+         # Run Keyword if   '${contains_no_Syslogs}' == 'True'   dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+         Run Keyword if   '${contains_no_Syslogs}' == 'False'  robot_extension.Run Keyword And Warn On Failure
+         ...                                                                            Check Ull1Subpool Assignment CB009890 C    syslog=${syslog}
+         ...    ELSE                                dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+         Run Keyword if   '${contains_no_Syslogs}' == 'False'  robot_extension.Run Keyword And Warn On Failure
+         ...                                                                            Check Dll1Subpool Assignment CB009890 C    syslog=${syslog}
+         ...    ELSE                                dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+         Run Keyword if   '${contains_no_Syslogs}' == 'False'  robot_extension.Run Keyword And Warn On Failure
+         ...                                                                display totalStreamPrbs per l1PoolId in SysLog    syslog=${syslog}
+         ...    ELSE                                dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+   END
+
+Check if BBRM ERR Assignment present in Syslogs
+   ${commandToRun}     Catenate     cd /tmp/btslog2; find . -name "*.LOG" -type f | sed -e 's/^\\.\\///g'
+   ${ret}    ${syslogfiles}     Run Keyword And Ignore Error    Run   ${commandToRun}
+   ${sysLog_files}    Split String    ${syslogfiles}    separator=\n
+   FOR    ${syslog}    IN    @{sysLog_files}
+         dated log    Computing syslog File ${consTraceColor}${syslog}${defColor}...
+         ${contains_no_Syslogs}=     Run Keyword And Return Status       Should Not Contain     ${syslog}     ${EMPTY}
+         # ${contains_no_Syslogs}==True   => Syslog are not present !!!
+         Run Keyword if   '${contains_no_Syslogs}' == 'False'  robot_extension.Run Keyword And Warn On Failure   Check BBRM ERR Assignment
+         ...                                                                                                                       syslog=${syslog}
+         ...    ELSE                                           dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+   END
+
+Check if ESTATUS5G_NOTOK present in Syslogs
+   ${commandToRun}     Catenate     cd /tmp/btslog2; find . -name "*.LOG" -type f | sed -e 's/^\\.\\///g'
+   ${ret}    ${syslogfiles}     Run Keyword And Ignore Error    Run   ${commandToRun}
+   ${sysLog_files}    Split String    ${syslogfiles}    separator=\n
+   FOR    ${syslog}    IN    @{sysLog_files}
+         dated log    Computing syslog File ${consTraceColor}${syslog}${defColor}...
+         ${contains_no_Syslogs}=     Run Keyword And Return Status       Should Not Contain     ${syslog}     ${EMPTY}
+         # ${contains_no_Syslogs}==True   => Syslog are not present !!!
+         Run Keyword if   '${contains_no_Syslogs}' == 'False'  robot_extension.Run Keyword And Warn On Failure   Check ESTATUS5G_NOTOK
+         ...                                                                                                                       syslog=${syslog}
+         ...    ELSE                                           dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+         Run Keyword if   '${contains_no_Syslogs}' == 'False'  robot_extension.Run Keyword And Warn On Failure   Check GnbOamCellUpdateFailed
+         ...                                                                                                                       syslog=${syslog}
+         ...    ELSE                                           dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+   END
+
+Check if FaultID 6505 SSD Log Storage Overdraw present in Syslogs
+   ${commandToRun}     Catenate     cd /tmp/btslog2; find . -name "*.LOG" -type f | sed -e 's/^\\.\\///g'
+   ${ret}    ${syslogfiles}     Run Keyword And Ignore Error    Run   ${commandToRun}
+   ${sysLog_files}    Split String    ${syslogfiles}    separator=\n
+   FOR    ${syslog}    IN    @{sysLog_files}
+         dated log    Computing syslog File ${consTraceColor}${syslog}${defColor}...
+         ${contains_no_Syslogs}=     Run Keyword And Return Status       Should Not Contain     ${syslog}     ${EMPTY}
+         # ${contains_no_Syslogs}==True   => Syslog are not present !!!
+         Run Keyword if   '${contains_no_Syslogs}' == 'False'  robot_extension.Run Keyword And Warn On Failure
+         ...                                                   Check 6505 AASYSINFO_FS_OVERLOAD_IND_MSG    syslog=${syslog}
+         ...    ELSE                                           dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+   END
+
+Display Bbrm configuration from Syslogs
+   StringTool.printLineWithTitle  title= Display Bbrm configuration from SysLogs
+   ${commandToRun}     Catenate     cd /tmp/btslog2; find . -name "*.LOG" -type f | sed -e 's/^\\.\\///g'
+   ${ret}    ${syslogfiles}     Run Keyword And Ignore Error    Run   ${commandToRun}
+   ${sysLog_files}    Split String    ${syslogfiles}    separator=\n
+   FOR    ${syslog}    IN    @{sysLog_files}
+         dated log    Computing syslog File ${consTraceColor}${syslog}${defColor}...
+         ${contains_no_Syslogs}=     Run Keyword And Return Status       Should Not Contain     ${syslog}     ${EMPTY}
+         # ${contains_no_Syslogs}==True   => Syslog are not present !!!
+         Run Keyword if   '${contains_no_Syslogs}' == 'False'  robot_extension.Run Keyword And Warn On Failure   Display Bbrm configuration
+         ...                                                                                                                  syslog=${syslog}
+         ...    ELSE                                           dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+   END
+   StringTool.printLineWithTitle  title=-
+
+Display SLOTTYPE configuration from Syslogs
+   StringTool.printLineWithTitle  title= Display SLOTTYPE configuration from SysLogs
+   ${commandToRun}     Catenate     cd /tmp/btslog2; find . -name "*.LOG" -type f | sed -e 's/^\\.\\///g'
+   ${ret}    ${syslogfiles}     Run Keyword And Ignore Error    Run   ${commandToRun}
+   ${sysLog_files}    Split String    ${syslogfiles}    separator=\n
+   FOR    ${syslog}    IN    @{sysLog_files}
+         dated log    Computing syslog File ${consTraceColor}${syslog}${defColor}...
+         ${contains_no_Syslogs}=     Run Keyword And Return Status       Should Not Contain     ${syslog}     ${EMPTY}
+         # ${contains_no_Syslogs}==True   => Syslog are not present !!!
+         Run Keyword if   '${contains_no_Syslogs}' == 'False'  robot_extension.Run Keyword And Warn On Failure   Display SLOTTYPE configuration
+         ...                                                                                                                  syslog=${syslog}
+         ...    ELSE                                           dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+   END
+   StringTool.printLineWithTitle  title=-
+
+Check CB007113 Activation
+    ${commandToRun}     Catenate
+    ...     cat /tmp/btslog2/${syslog} | grep
+    ...     'l1SpMaxNumStreamPrb\"\:${maxNumStreamPrbL1Sp}\,\"l1SpMaxNumLayerPrb\"\:${maxNumLayerPrbL1Sp}'
+
+    ${output1}=        OperatingSystem.Run
+    ...    command=cat /tmp/btslog2/${syslog} | grep 'slowPrbPoolingTddFr1UlAllowed\:true'
+    ${output2}=        OperatingSystem.Run
+    ...    command=${commandToRun}
+
+    should not be empty                  ${output1}
+    should not be empty                  ${output2}
+    [Return]        ${output1}       ${output2}
+
+Is CB007113 Allowed
+    [Arguments]   ${syslogPath}=/tmp/btslog2
+    ${commandToRun}     Catenate     cd ${syslogPath}; find . -name "*.LOG" -type f | sed -e 's/^\\.\\///g'
+    ${ret}    ${syslogfiles}     Run Keyword And Ignore Error    Run   ${commandToRun}
+    ${sysLog_files}    Split String    ${syslogfiles}    separator=\n
+    ${CB00713 Allowed}          set Variable    False
+    FOR    ${syslog}    IN    @{sysLog_files}
+         ${rc}    ${output}    Run And Return Rc And Output
+         ...    command=cat ${syslogPath}/${syslog} | grep 'slowPrbPoolingTddFr1UlAllowed\:true'
+         ${status}    Run Keyword And Return Status    Should Not Be Empty    ${output}
+         exit for loop if    ${status}
+     END
+    ${CB00713 Allowed}=    set Variable if   '${status}'=='True'    True
+    ...                                                             False
+    [Return]        ${CB00713 Allowed}
+
+Clean Up Env
+    [Arguments]    ${host_ip}=localhost
+    [Documentation]    This keyword is to clean up testline process such as btslog and so on.
+    ...    Examples:
+    ...    | Clean Up Env |
+    ${HOME}=    Get Environment Variable    name=HOME
+    Run Keyword If     '${host_ip}'=='127.0.0.1' or '${host_ip}'=='localhost'    Run Keywords    Run     ${kill_btslog}
+    ...     AND     Run   ${kill_dpkg}
+    ...     AND     Run   ${kill_sherpa}
+    ...     AND     Run    rm /tmp/admin_api_*.txt -f
+    ...     AND     Run    rm /tmp/disconnect*.ims2 -f
+    ...     AND     Run    rm ${EXECDIR}/admin_api_*.txt -f
+    ...     AND     Run    rm ${EXECDIR}/disconnect*.ims2 -f
+    ...     AND     Run    rm ${HOME}/SosReport*.tgz -f
+    ...     AND     Run    rm ${HOME}/WTS*.tgz -f
+    ...     AND     run keyword and ignore error   Run   command=cd ${EXECDIR}; find . -name '*disconnect*.ims2' -type f -print -exec rm -rf {} \\;
+    ...     AND     Run    rm /tmp/*.pcap* -rf
+    ...     AND     Run    sudo rm /tmp/*.pcap* -rf
+    ...     ELSE    Run keywords    SSH.Connect To    ${host_ip}    ute    ute    alias=remote_connection
+    ...     AND     SSH.Execute    ${kill_btslog}    connection=remote_connection
+    ...     AND     SSH.Disconnect    connection=remote_connection
+
+Get Host IP
+    [Documentation]    This keyword is to get testline control host intranet IP.
+    ...    Examples:
+    ...    | ${host_ip} | Get Host IP |
+    ${command}    Set Variable    sudo ifconfig eth0|awk -F "[ :]+" 'NR==2 {print $3}'
+    ${rc}    ${output}=    OperatingSystem.Run and Return RC and Output    ${command}
+    Set Suite Metadata    Host IP    ${output}
+    Set Suite Variable    ${Host IP}    ${output}
+    [Return]    ${output}
+
+Get Host Name
+    [Documentation]    This keyword is to get testline control host name.
+    ...    Examples:
+    ...    | ${host_name} | Get Host Name |
+    ${rc}    ${output}=    OperatingSystem.Run and Return RC and Output    hostname
+    Set Suite Metadata    Host Name    ${output}
+    Set Suite Variable    ${Host Name}    ${output}
+    [Return]    ${output}
+
+Log dictionary
+    [Documentation]  log key/value pairs from dictionary to the console
+    [Arguments]  ${mydict}    ${msg}=-
+    ${items}     Get Dictionary Items   ${mydict}   sort_keys=False
+    StringTool.printLineWithTitle     title=${msg}
+    FOR   ${key}    ${value}   IN   @{items}
+        ${msg_display}=    StringTool.getHeaderLine    ${key}:   ${value}
+        dated log     ${msg_display}
+    END
+    StringTool.printLineWithTitle     title=-
+
+Init Trace color
+    ${consTraceColor}               Evaluate                    "${CYAN}"
+    ${consTraceColorBlack}          Evaluate                    "${BLACK}"
+    ${consTraceColorRed}            Evaluate                    "${RED}"
+    ${consTraceColorGreen}          Evaluate                    "${GREEN}"
+    ${consTraceColorYellow}         Evaluate                    "${YELLOW}"
+    ${consTraceColorBgBlue}         Evaluate                    "${BG_BLUE}"
+    ${consTraceColorBgYellow}       Evaluate                    "${BG_YELLOW}"
+    ${defColor}                     Evaluate                    "${NORMAL}"
+    Set Suite Variable              ${consTraceColor}
+    Set Suite Variable              ${consTraceColorBlack}
+    Set Suite Variable              ${consTraceColorRed}
+    Set Suite Variable              ${consTraceColorGreen}
+    Set Suite Variable              ${consTraceColorYellow}
+    Set Suite Variable              ${consTraceColorBgBlue}
+    Set Suite Variable              ${consTraceColorBgYellow}
+    Set Suite Variable              ${defColor}
+
+Init Variables
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${COLLECT_LOGS}
+    ${COLLECT_LOGS}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                        ${COLLECT_LOGS}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${SHOULD_BE_COMMISSIONED_GNB_FIRST}
+    ${SHOULD_BE_COMMISSIONED_GNB_FIRST}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                        ${SHOULD_BE_COMMISSIONED_GNB_FIRST}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${UPDATE_SCF}
+    ${UPDATE_SCF}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                      ${UPDATE_SCF}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${WAIT_5G_CELL_ONAIR}
+    ${WAIT_5G_CELL_ONAIR}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                        ${WAIT_5G_CELL_ONAIR}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${ENABLE_TEST_TEARDOWN}
+    ${ENABLE_TEST_TEARDOWN}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                        ${ENABLE_TEST_TEARDOWN}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${EXCLUDE_LOGS_IF_FAIL}
+    ${EXCLUDE_LOGS_IF_FAIL}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                        ${EXCLUDE_LOGS_IF_FAIL}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${SHOULD_UPDATE_DEBUG_L2PS_RAD}
+    ${SHOULD_UPDATE_DEBUG_L2PS_RAD}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                        ${SHOULD_UPDATE_DEBUG_L2PS_RAD}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${GET_AND_UPDATE_BSR_SW}
+    ${GET_AND_UPDATE_BSR_SW}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                      ${GET_AND_UPDATE_BSR_SW}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${GET_BSR_SW_BASED_ARTIFACTORY}
+    ${GET_BSR_SW_BASED_ARTIFACTORY}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                      ${GET_BSR_SW_BASED_ARTIFACTORY}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${GET_BSR_SW_BASED_GIT}
+    ${GET_BSR_SW_BASED_GIT}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                      ${GET_BSR_SW_BASED_GIT}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${Prior_deltaCom_than_blockunblock}
+    ${Prior_deltaCom_than_blockunblock}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                        ${Prior_deltaCom_than_blockunblock}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${RobLoopNb}
+    ${RobLoopNb}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                        ${RobLoopNb}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${DBGlogs}
+    ${DBGlogs}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                        ${DBGlogs}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${W_CUSTOMCONFIG}
+    ${W_CUSTOMCONFIG}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                          ${W_CUSTOMCONFIG}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${w_Delta_apply_vendorFile}
+    ${w_Delta_apply_vendorFile}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                                    ${w_Delta_apply_vendorFile}
+
+    Set Suite Variable              ${COLLECT_LOGS}
+    Set Suite Variable              ${SHOULD_BE_COMMISSIONED_GNB_FIRST}
+    Set Suite Variable              ${UPDATE_SCF}
+    Set Suite Variable              ${WAIT_5G_CELL_ONAIR}
+    Set Suite Variable              ${ENABLE_TEST_TEARDOWN}
+    Set Suite Variable              ${EXCLUDE_LOGS_IF_FAIL}
+    Set Suite Variable              ${SHOULD_UPDATE_DEBUG_L2PS_RAD}
+    Set Suite Variable              ${GET_AND_UPDATE_BSR_SW}
+    Set Suite Variable              ${GET_BSR_SW_BASED_GIT}
+    Set Suite Variable              ${GET_BSR_SW_BASED_ARTIFACTORY}
+    Set Suite Variable              ${Prior_deltaCom_than_blockunblock}
+    Set Suite Variable              ${RobLoopNb}
+    Set Suite Variable              ${DBGlogs}
+    Set Suite Variable              ${W_CUSTOMCONFIG}
+    Set Suite Variable              ${w_Delta_apply_vendorFile}
+
+Init CB009890 Test Variables
+    [Arguments]     ${vendor_custom}    ${dict_ues}    ${totalNbOfUe}
+
+    set Global Variable    ${dict_settings_all_ues_global}   ${dict_ues}
+    ${vendor_custom_test}   Tools.Dictionary Get    ${vendor_custom}
+    ${VENDORFILE_maxNumScheUePdschL1Pool_default}   Get From Dictionary       ${vendor_custom}     maxNumScheUePdschL1Pool
+    ${VENDORFILE_maxNumScheUePdschL1Sp_default}     Get From Dictionary       ${vendor_custom}     maxNumScheUePdschL1Sp
+    ${VENDORFILE_maxNumLayerPrbL1Sp_default}        Get From Dictionary       ${vendor_custom}     maxNumLayerPrbL1Sp
+    ${VENDORFILE_maxNumStreamPrbL1Sp_default}       Get From Dictionary       ${vendor_custom}     maxNumStreamPrbL1Sp
+    ${VENDORFILE_maxNumWbStreamPrbL1Sp_default}     Get From Dictionary       ${vendor_custom}     maxNumWbStreamPrbL1Sp
+
+    ${dict_ues_test}        Tools.Dictionary Get    ${dict_ues}
+    ${NbOfUe}               get length              ${dict_ues_test}
+    set Test variable       ${TPUT_DL_NGBR_UE1_default}    0
+    set Test variable       ${TPUT_DL_GBR_UE1_default}     0
+    set Test variable       ${TPUT_UL_NGBR_UE1_default}     0
+    set Test variable       ${TPUT_DL_NGBR_UE2_default}    0
+    set Test variable       ${TPUT_DL_GBR_UE2_default}     0
+    set Test variable       ${TPUT_UL_NGBR_UE2_default}     0
+    set Test variable       ${TPUT_DL_NGBR_UE3_default}    0
+    set Test variable       ${TPUT_DL_GBR_UE3_default}     0
+    set Test variable       ${TPUT_UL_NGBR_UE3_default}     0
+    FOR   ${index_ue}   IN RANGE    ${NbOfUe}
+        Exit For Loop If     ${index_ue} > ${totalNbOfUe}
+        ${index_ue_1}=    Evaluate    ${index_ue} + ${1}
+        ${TPUT_DL_NGBR_UE_default}     Get From Dictionary       ${dict_ues_test[${index_ue}]}    DL_throughput
+        set Test variable      ${TPUT_DL_NGBR_UE${index_ue_1}_default}     ${TPUT_DL_NGBR_UE_default}
+        ${TPUT_DL_GBR_UE_default}      Get From Dictionary       ${dict_ues_test[${index_ue}]}    DL_throughput_GBR
+        set Test variable      ${TPUT_DL_GBR_UE${index_ue_1}_default}     ${TPUT_DL_GBR_UE_default}
+        ${TPUT_UL_NGBR_UE_default}     Get From Dictionary       ${dict_ues_test[${index_ue}]}    UL_throughput
+        set Test variable      ${TPUT_UL_NGBR_UE${index_ue_1}_default}     ${TPUT_UL_NGBR_UE_default}
+    END
+    # ${TPUT_DL_NGBR_UE1_default}     Get From Dictionary       ${dict_ues_test[${0}]}    DL_throughput
+    # ${TPUT_DL_GBR_UE1_default}      Get From Dictionary       ${dict_ues_test[${0}]}    DL_throughput_GBR
+    # ${TPUT_DL_NGBR_UE2_default}     Get From Dictionary       ${dict_ues_test[${1}]}    DL_throughput
+    # ${TPUT_DL_GBR_UE2_default}      Get From Dictionary       ${dict_ues_test[${1}]}    DL_throughput_GBR
+    # ${TPUT_DL_NGBR_UE3_default}     Get From Dictionary       ${dict_ues_test[${2}]}    DL_throughput
+    # ${TPUT_DL_GBR_UE3_default}      Get From Dictionary       ${dict_ues_test[${2}]}    DL_throughput_GBR
+    # ${TPUT_UL_NGBR_UE1_default}     Get From Dictionary       ${dict_ues_test[${0}]}    UL_throughput
+    # # ${TPUT_UL_GBR_UE1_default}       Get From Dictionary       ${dict_ues_test[${0}]}    UL_throughput_GBR
+    # ${TPUT_UL_NGBR_UE2_default}     Get From Dictionary       ${dict_ues_test[${1}]}    UL_throughput
+    # # ${TPUT_UL_GBR_UE2_default}      Get From Dictionary       ${dict_ues_test[${1}]}    UL_throughput_GBR
+    # ${TPUT_UL_NGBR_UE3_default}     Get From Dictionary       ${dict_ues_test[${2}]}    UL_throughput
+    # # ${TPUT_UL_GBR_UE3_default}      Set To Dictionary       ${dict_ues_test[${2}]}    UL_throughput_GBR
+
+    # DL case
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${TPUT_DL_NGBR_UE1}
+    ${TPUT_DL_NGBR_UE1}  set Variable if    '${status}'=='FAIL'    ${TPUT_DL_NGBR_UE1_default}
+    ...                                                            ${TPUT_DL_NGBR_UE1}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${TPUT_DL_GBR_UE1}
+    ${TPUT_DL_GBR_UE1}  set Variable if    '${status}'=='FAIL'    ${TPUT_DL_GBR_UE1_default}
+    ...                                                           ${TPUT_DL_GBR_UE1}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${TPUT_DL_NGBR_UE2}
+    ${TPUT_DL_NGBR_UE2}  set Variable if    '${status}'=='FAIL'    ${TPUT_DL_NGBR_UE2_default}
+    ...                                                            ${TPUT_DL_NGBR_UE2}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${TPUT_DL_GBR_UE2}
+    ${TPUT_DL_GBR_UE2}  set Variable if    '${status}'=='FAIL'    ${TPUT_DL_GBR_UE2_default}
+    ...                                                           ${TPUT_DL_GBR_UE2}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${TPUT_DL_NGBR_UE3}
+    ${TPUT_DL_NGBR_UE3}  set Variable if    '${status}'=='FAIL'    ${TPUT_DL_NGBR_UE3_default}
+    ...                                                            ${TPUT_DL_NGBR_UE3}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${TPUT_DL_GBR_UE3}
+    ${TPUT_DL_GBR_UE3}  set Variable if    '${status}'=='FAIL'    ${TPUT_DL_GBR_UE3_default}
+    ...                                                           ${TPUT_DL_GBR_UE3}
+    # UL case
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${TPUT_UL_NGBR_UE1}
+    ${TPUT_UL_NGBR_UE1}  set Variable if    '${status}'=='FAIL'    ${TPUT_UL_NGBR_UE1_default}
+    ...                                                            ${TPUT_UL_NGBR_UE1}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${TPUT_UL_GBR_UE1}
+    ${TPUT_UL_GBR_UE1}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                           ${TPUT_UL_GBR_UE1}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${TPUT_UL_NGBR_UE2}
+    ${TPUT_UL_NGBR_UE2}  set Variable if    '${status}'=='FAIL'    ${TPUT_UL_NGBR_UE2_default}
+    ...                                                            ${TPUT_UL_NGBR_UE2}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${TPUT_UL_GBR_UE2}
+    ${TPUT_UL_GBR_UE2}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                           ${TPUT_UL_GBR_UE2}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${TPUT_UL_NGBR_UE3}
+    ${TPUT_UL_NGBR_UE3}  set Variable if    '${status}'=='FAIL'    ${TPUT_UL_NGBR_UE3_default}
+    ...                                                            ${TPUT_UL_NGBR_UE3}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${TPUT_UL_GBR_UE3}
+    ${TPUT_UL_GBR_UE3}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                           ${TPUT_UL_GBR_UE3}
+
+    ${vendor_custom_test}   Tools.Dictionary Get    ${vendor_custom}
+    ${VENDORFILE_maxNumScheUePdschL1Pool_default}   Get From Dictionary       ${vendor_custom}     maxNumScheUePdschL1Pool
+    ${VENDORFILE_maxNumScheUePdschL1Sp_default}     Get From Dictionary       ${vendor_custom}     maxNumScheUePdschL1Sp
+    ${VENDORFILE_maxNumLayerPrbL1Sp_default}        Get From Dictionary       ${vendor_custom}     maxNumLayerPrbL1Sp
+    ${VENDORFILE_maxNumStreamPrbL1Sp_default}       Get From Dictionary       ${vendor_custom}     maxNumStreamPrbL1Sp
+    ${VENDORFILE_maxNumWbStreamPrbL1Sp_default}     Get From Dictionary       ${vendor_custom}     maxNumWbStreamPrbL1Sp
+
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${VENDORFILE_maxNumScheUePdschL1Pool}
+    ${VENDORFILE_maxNumScheUePdschL1Pool}  set Variable if    '${status}'=='FAIL'    ${VENDORFILE_maxNumScheUePdschL1Pool_default}
+    ...                                                        ${VENDORFILE_maxNumScheUePdschL1Pool}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${VENDORFILE_maxNumScheUePdschL1Sp}
+    ${VENDORFILE_maxNumScheUePdschL1Sp}  set Variable if    '${status}'=='FAIL'    ${VENDORFILE_maxNumScheUePdschL1Sp_default}
+    ...                                                        ${VENDORFILE_maxNumScheUePdschL1Sp}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${VENDORFILE_maxNumLayerPrbL1Sp}
+    ${VENDORFILE_maxNumLayerPrbL1Sp}  set Variable if    '${status}'=='FAIL'    ${VENDORFILE_maxNumLayerPrbL1Sp_default}
+    ...                                                        ${VENDORFILE_maxNumLayerPrbL1Sp}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${VENDORFILE_maxNumStreamPrbL1Sp}
+    ${VENDORFILE_maxNumStreamPrbL1Sp}  set Variable if    '${status}'=='FAIL'    ${VENDORFILE_maxNumStreamPrbL1Sp_default}
+    ...                                                        ${VENDORFILE_maxNumStreamPrbL1Sp}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${VENDORFILE_maxNumWbStreamPrbL1Sp}
+    ${VENDORFILE_maxNumWbStreamPrbL1Sp}  set Variable if    '${status}'=='FAIL'    ${VENDORFILE_maxNumWbStreamPrbL1Sp_default}
+    ...                                                        ${VENDORFILE_maxNumWbStreamPrbL1Sp}
+
+    ${dict_ues_test}        Tools.Dictionary Get    ${dict_ues}
+    ${NbOfUe}               get length              ${dict_ues_test}
+    FOR   ${index_ue}   IN RANGE    ${NbOfUe}
+        Exit For Loop If     ${index_ue} > ${totalNbOfUe}
+        ${index_ue_1}=    Evaluate    ${index_ue} + ${1}
+        Set To Dictionary       ${dict_ues_test[${index_ue}]}    DL_throughput        ${TPUT_DL_NGBR_UE${index_ue_1}_default}
+        Set To Dictionary       ${dict_ues_test[${index_ue}]}    DL_throughput_GBR    ${TPUT_DL_GBR_UE${index_ue_1}_default}
+        Set To Dictionary       ${dict_ues_test[${index_ue}]}    UL_throughput        ${TPUT_UL_NGBR_UE${index_ue_1}_default}
+    END
+    # Set To Dictionary       ${dict_ues_test[${0}]}    DL_throughput       ${TPUT_DL_NGBR_UE1}
+    # Set To Dictionary       ${dict_ues_test[${0}]}    DL_throughput_GBR   ${TPUT_DL_GBR_UE1}
+    # Set To Dictionary       ${dict_ues_test[${1}]}    DL_throughput       ${TPUT_DL_NGBR_UE2}
+    # Set To Dictionary       ${dict_ues_test[${1}]}    DL_throughput_GBR   ${TPUT_DL_GBR_UE2}
+    # Set To Dictionary       ${dict_ues_test[${2}]}    DL_throughput       ${TPUT_DL_NGBR_UE3}
+    # Set To Dictionary       ${dict_ues_test[${2}]}    DL_throughput_GBR   ${TPUT_DL_GBR_UE3}
+    # Set To Dictionary       ${dict_ues_test[${0}]}    UL_throughput       ${TPUT_UL_NGBR_UE1}
+    # # Set To Dictionary       ${dict_ues_test[${0}]}    UL_throughput_GBR   ${TPUT_UL_GBR_UE1}
+    # Set To Dictionary       ${dict_ues_test[${1}]}    UL_throughput       ${TPUT_UL_NGBR_UE2}
+    # # Set To Dictionary       ${dict_ues_test[${1}]}    UL_throughput_GBR   ${TPUT_UL_GBR_UE2}
+    # Set To Dictionary       ${dict_ues_test[${2}]}    UL_throughput       ${TPUT_UL_NGBR_UE3}
+    # # Set To Dictionary       ${dict_ues_test[${2}]}    UL_throughput_GBR   ${TPUT_UL_GBR_UE3}
+    set suite variable      ${dict_ues_test}
+    ${NbOfUe}       get length          ${dict_ues_test}
+    FOR   ${index_ue}   IN RANGE    ${NbOfUe}
+        robot_extension.Run Keyword And Warn On Failure    Log dictionary      ${dict_ues_test[${index_ue}]}   msg=dict_ue${index_ue}
+    END
+
+    ${vendor_custom_test}   Tools.Dictionary Get    ${vendor_custom}
+    Set To Dictionary       ${vendor_custom}     maxNumScheUePdschL1Pool   ${VENDORFILE_maxNumScheUePdschL1Pool}
+    Set To Dictionary       ${vendor_custom}     maxNumScheUePdschL1Sp     ${VENDORFILE_maxNumScheUePdschL1Sp}
+    Set To Dictionary       ${vendor_custom}     maxNumLayerPrbL1Sp        ${VENDORFILE_maxNumLayerPrbL1Sp}
+    Set To Dictionary       ${vendor_custom}     maxNumStreamPrbL1Sp       ${VENDORFILE_maxNumStreamPrbL1Sp}
+    Set To Dictionary       ${vendor_custom}     maxNumWbStreamPrbL1Sp     ${VENDORFILE_maxNumWbStreamPrbL1Sp}
+    set suite variable      ${vendor_custom}
+    # dated log    vendor_custom_test=${vendor_custom_test}
+    robot_extension.Run Keyword And Warn On Failure    Log dictionary          ${vendor_custom}   msg=vendor_custom_test
+
+    Set Suite Variable              ${TPUT_DL_NGBR_UE1}
+    Set Suite Variable              ${TPUT_DL_GBR_UE1}
+    Set Suite Variable              ${TPUT_DL_NGBR_UE2}
+    Set Suite Variable              ${TPUT_DL_GBR_UE2}
+    Set Suite Variable              ${TPUT_DL_NGBR_UE3}
+    Set Suite Variable              ${TPUT_DL_GBR_UE3}
+    Set Suite Variable              ${TPUT_UL_NGBR_UE1}
+    Set Suite Variable              ${TPUT_UL_GBR_UE1}
+    Set Suite Variable              ${TPUT_UL_NGBR_UE2}
+    Set Suite Variable              ${TPUT_UL_GBR_UE2}
+    Set Suite Variable              ${TPUT_UL_NGBR_UE3}
+    Set Suite Variable              ${TPUT_UL_GBR_UE3}
+    Set Suite Variable              ${VENDORFILE_maxNumScheUePdschL1Pool}
+    Set Suite Variable              ${VENDORFILE_maxNumScheUePdschL1Sp}
+    Set Suite Variable              ${VENDORFILE_maxNumLayerPrbL1Sp}
+    Set Suite Variable              ${VENDORFILE_maxNumStreamPrbL1Sp}
+    Set Suite Variable              ${VENDORFILE_maxNumStreamPrbL1Sp}
+
+Get Original TL Configuration Files
+    [Arguments]                   ${BACKUP_DIR}=original_config_files
+
+    Prepare Logs Directory Path    resultDir=${LOG_PATH}   subdir=${BACKUP_DIR}
+
+    ${ret}   ${original_vendor_file_list}   Run Keyword And Ignore Error      SetConfig.Download Vendor File
+    ${cmd}=   Catenate    basename ${original_vendor_file_list}[0]
+    ${original_vendor_file_name}=   OperatingSystem.Run   ${cmd}
+    Run Keyword And Ignore Error    OperatingSystem.Move File       ${original_vendor_file_list}[0]   ${LOG_PATH}/${BACKUP_DIR}/.
+    Dated Log               -----> Original Vendor File Name : ${LOG_PATH}/${BACKUP_DIR}/${original_vendor_file_name}
+
+    # Save current  SCF file
+    ${file_name}   set variable     SCF_Original.xml
+    ${original_scf_file}            OAM Get SCF File                file=${file_name}
+    Set Suite Variable              ${original_scf_file}
+    Dated Log New Line         Original SCF file stored to ${original_scf_file}
+    Run keyword and Ignore error   OperatingSystem.Move File    ${original_scf_file}
+    ...                                                         ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    # Get swconfig file that will be restored during test suite teardown
+    ${alias_gnb}                    SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    ${file_name}   set variable     swconfig_Original.txt
+    csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${LOG_PATH}/${file_name}
+    ...                             connection=${alias_gnb}
+    Dated Log                  Default swconfig file stored to ${LOG_PATH}/${file_name}
+    Run keyword and Ignore error   OperatingSystem.Move File    ${LOG_PATH}/${file_name}
+    ...                                                         ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    # Get EPC file configuration:
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    ${file_name}   set variable     basic_wts_Original.cfg
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/${file_name}
+    ...                             connection=${alias_epc}
+    Dated Log                  Default basic cfg file stored to ${LOG_PATH}/${file_name}
+    Run keyword and Ignore error   OperatingSystem.Move File    ${LOG_PATH}/${file_name}    ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    ${file_name}   set variable     new_iphy_Original.xml
+    Run keyword and Ignore error      Get iPhy.xml file from Airphone    target_dir=${LOG_PATH}    file_name=${file_name}
+    Dated Log                  Default /ffs/run/simmode/new_iphy.xml from Airphone stored to ${LOG_PATH}/${file_name}
+    Run keyword and Ignore error     OperatingSystem.Move File    ${LOG_PATH}/${file_name}    ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    # store original Airphone swconfig
+    ${file_name}   set variable     ap_swconfig.txt
+    ${ap_swconfig_orig}    Store Current swconfig from Airphone     target_dir=${LOG_PATH}   file_name=${file_name}
+    Dated Log                  Default /ffs/run/swconfig.txt from Airphone stored to ${ap_swconfig_orig}
+    Run keyword and Ignore error     OperatingSystem.Copy File    ${ap_swconfig_orig}    ${LOG_PATH}/${BACKUP_DIR}/${file_name}.orig
+
+Restore Orignal Configuration
+    [Arguments]                   ${BACKUP_DIR}=original_config_files
+
+    # Get swconfig file that will be restored during test suite teardown
+    ${status}    ${alias_gnb}          Run Keyword And Ignore Error        SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    Run Keyword And Ignore Error       csn.upload_file                 remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${LOG_PATH}/${BACKUP_DIR}/swconfig_Original.txt
+    ...                             connection=${alias_gnb}
+
+    SSH Exec                        command=crasign ${SWCONFIG_PATH}           alias=${alias_gnb}
+
+    Dated Log                 swconfig file has been restored to default (${LOG_PATH}/${BACKUP_DIR}/swconfig_original.txt)
+
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.upload_file                 remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/${BACKUP_DIR}/basic_wts_Original.cfg
+    ...                             connection=${alias_epc}
+
+    Dated Log                basic cfg file has been restored to default (${LOG_PATH}/${BACKUP_DIR}/basic_wts_original.cfg)
+
+    ${file_name}   set variable     new_iphy_Original.xml
+    Run keyword and Ignore error      Restore iPhy.xml file to Airphone    local_dir=${LOG_PATH}/${BACKUP_DIR}
+    ...                                                                    file_name=${file_name}
+    Dated Log            /ffs/run/simmode/iphy.xml has been restored with default ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+Suite Setup CB011028-D-Common
+    [Documentation]
+    ...     Conditions:     it needs no conditions
+    ...     Actions:        it performs the generic suite setup and backup the configurations files
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        suite setup is passed
+    [Arguments]          ${test_dictParam}
+    ...                  ${yamlPathname}=${EMPTY}
+    set_ta_xml.init_ta_xml
+    Clean Up Env
+    Get Host IP
+    Get Host Name
+    MyConstants.Hello
+    Init Trace color
+    Init Variables
+    StringTool.printLineWithTitle     title=default_test_strategy
+    Dated log             default_test_strategy : W_CUSTOMCONFIG = ${W_CUSTOMCONFIG}
+    StringTool.printLineWithTitle   title=-
+    ${yamlPathname}    Set Variable if    '${W_CUSTOMCONFIG}'=='0'    ${EMPTY}
+    ...                                                               ${yamlPathname}
+    Setup.Suite Setup From Scratch    automaticTeardown=${False}   yamlPathname=${yamlPathname}
+    import variables        ${CURDIR}/../python/CB011028-D-Variables.py
+    Create Test Suite Folder
+    Get Original TL Configuration Files
+    Connect to COAM ADMIN
+    robot_extension.Run Keyword And Warn On Failure                              Get Testline Name
+    ${ret}   ${UE type}=      robot_extension.Run Keyword And Warn On Failure    Get UE type
+    ${ret}   ${ap_version}=   robot_extension.Run Keyword And Warn On Failure    Get Airphone SW version
+    robot_extension.Run Keyword And Warn On Failure                              Get WTS Version
+    robot_extension.Run Keyword And Warn On Failure                              Get PYTHON Version
+    ${ret}   ${gnb_sw_version}         robot_extension.Run Keyword And Warn On Failure    Fetch common OAM SW version
+    Set Suite Metadata    gNB sw    ${gnb_sw_version}
+    StringTool.printLineWithTitle     title=TL info
+    ${msg}=   StringTool.getHeaderLine    Host IP        ${Host IP}
+    dated log      ${msg}
+    ${msg}=   StringTool.getHeaderLine    Host Name      ${Host Name}
+    dated log      ${msg}
+    ${msg}=    StringTool.getHeaderLine   Current gNB SW Version   ${gnb_sw_version}
+    dated log      ${msg}
+    ${msg}=    StringTool.getHeaderLine   Ue Type        ${UE type}
+    dated log      ${msg}
+    ${msg}=    StringTool.getHeaderLine   AirPhone Sw Version       ${ap_version}
+    dated log      ${msg}
+    ${msg}=    StringTool.getHeaderLine   WTS_VERSION       ${WTS_VERSION}
+    dated log      ${msg}
+    StringTool.printLineWithTitle     title=-
+    display_dictionnary_parameters_of_the_TestCase    ${test_dictParam}
+    display_dictionnary_parameters_CAPTURE_of_the_TestCase    ${CAPTURE}
+    ${w_generic_capture}               Get From Dictionary     ${test_dictParam}     w_generic_capture
+    ${isCaptureCPRT}                   Get From Dictionary     ${test_dictParam}     w_CaptureCPRT
+    ${isCaptureL1L2}                   Get From Dictionary     ${test_dictParam}     w_CaptureL1L2
+    ${isCaptureCORE}                   Get From Dictionary     ${test_dictParam}     w_CaptureCORE
+    ${w_check_9890_using_sherpa}       Get From Dictionary     ${test_dictParam}     w_check_9890_using_sherpa
+    ${w_convert_TtiPcap_to_excelCsv}   Get From Dictionary     ${test_dictParam}     w_convert_TtiPcap_to_excelCsv
+    ${w_Basic_Call_to_Setup_Wtsemu}    Get From Dictionary     ${test_dictParam}     w_Basic_Call_to_Setup_Wtsemu
+    ${enable_sherpa}                   Get From Dictionary     ${test_dictParam}     w_enable_sherpa_Traces
+    ${w_GetL1L2Bip}                    Get From Dictionary     ${test_dictParam}     w_GetL1L2Bip
+    ${w_GetTtiTrace}                   Get From Dictionary     ${test_dictParam}     w_GetTtiTrace
+    ${w_ue_detach}                     Get From Dictionary     ${test_dictParam}     w_ue_detach
+    ${w_DISPLAY_ue_stats_nr_15min}     Get From Dictionary     ${test_dictParam}     w_DISPLAY_ue_stats_nr_15min
+    ${GetTtiTraceTime}                 Get From Dictionary     ${CAPTURE}     GetTtiTraceTime
+    ${Getl1l2TraceTime}                Get From Dictionary     ${CAPTURE}     Getl1l2TraceTime
+    ${GetSherpaTraceTime}              Get From Dictionary     ${CAPTURE}     GetSherpaTraceTime
+    ${GetTtiTraceNumOfEvent}           Get From Dictionary     ${CAPTURE}     GetTtiTraceNumOfEvent
+    Set Suite Variable      ${GetTtiTraceTime}
+    Set Suite Variable      ${GetTtiTraceNumOfEvent}
+    Set Suite Variable      ${Getl1l2TraceTime}
+    Set Suite Variable      ${GetSherpaTraceTime}
+    Set Suite Variable      ${enable_sherpa}
+    Set Suite Variable      ${w_check_9890_using_sherpa}
+    Set Suite Variable      ${w_generic_capture}
+    Set Suite Variable      ${w_convert_TtiPcap_to_excelCsv}
+    Set Suite Variable      ${w_Basic_Call_to_Setup_Wtsemu}
+    Set Suite Variable      ${isCaptureCPRT}
+    Set Suite Variable      ${isCaptureL1L2}
+    Set Suite Variable      ${isCaptureCORE}
+    Set Suite Variable      ${enable_sherpa}
+    Set Suite Variable      ${w_GetTtiTrace}
+    Set Suite Variable      ${w_ue_detach}
+    Set Suite Variable      ${w_DISPLAY_ue_stats_nr_15min}
+    Set Suite Variable      ${w_GetL1L2Bip}
+    Get_Private_variables_Suite_setup
+    ${scf_suite_setup_backup}         COAM Get SCF   file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable      ${scf_suite_setup_backup}
+    # Dated Log               SCF backup file = ${scf_suite_setup_backup}
+    StringTool.printLineWithTitle     title=default_test_strategy
+    Dated log             default_test_strategy : W_CUSTOMCONFIG = ${W_CUSTOMCONFIG}
+    Dated Log             default_test_strategy : SHOULD_BE_COMMISSIONED_GNB_FIRST = ${SHOULD_BE_COMMISSIONED_GNB_FIRST}
+    Dated log             default_test_strategy : UPDATE_SCF = ${UPDATE_SCF}
+    Dated log             default_test_strategy : WAIT_5G_CELL_ONAIR = ${WAIT_5G_CELL_ONAIR}
+    Dated Log             default_test_strategy : COLLECT_LOGS = ${COLLECT_LOGS}
+    Dated log             default_test_strategy : EXCLUDE_LOGS_IF_FAIL = ${EXCLUDE_LOGS_IF_FAIL}
+    Dated log             default_test_strategy : ENABLE_TEST_TEARDOWN = ${ENABLE_TEST_TEARDOWN}
+    Dated Log             default_test_strategy : ENABLE_CHECK_COUNTERS = ${ENABLE_CHECK_COUNTERS}
+    Dated log             default_test_strategy : SharkTool = ${TestSharkTool}
+    Dated log             default_test_strategy : SHOULD_UPDATE_DEBUG_L2PS_RAD = ${SHOULD_UPDATE_DEBUG_L2PS_RAD}
+    Dated log             default_test_strategy : GET_AND_UPDATE_BSR_SW = ${GET_AND_UPDATE_BSR_SW}
+    Dated log             default_test_strategy : GET_BSR_SW_BASED_GIT = ${GET_BSR_SW_BASED_GIT}
+    Dated log             default_test_strategy : GET_BSR_SW_BASED_ARTIFACTORY = ${GET_BSR_SW_BASED_ARTIFACTORY}
+    Dated log             default_test_strategy : Prior_deltaCom_than_blockunblock = ${Prior_deltaCom_than_blockunblock}
+    Dated log             default_test_strategy : RobLoopNb = ${RobLoopNb}
+    Dated log             default_test_strategy : DBGlogs = ${DBGlogs}
+    Dated log             default_test_strategy : w_Delta_apply_vendorFile = ${w_Delta_apply_vendorFile}
+    ${mcshark_present}   ${MCShark}=      Check MCShark if present
+    ${msg}=   run Keyword if   "${mcshark_present}"=="True"    StringTool.getHeaderLine    MCShark plugin   ${MCShark}
+    ...   ELSE                                        StringTool.getHeaderLine    MCShark plugin     Not installed
+    run Keyword if   "${msg}"!="${EMPTY}"      Dated log      ${msg}
+    set suite variable    ${mcshark_present}
+    StringTool.printLineWithTitle   title=-
+    ${warning_msg}=     Catenate     WARNING : BEWARE THAT GET_BSR_SW_BASED_GIT==1 and GET_BSR_SW_BASED_ARTIFACTORY==1 is not allowed!!!
+    Run Keyword If    '${GET_BSR_SW_BASED_GIT}' == '1' and '${GET_BSR_SW_BASED_ARTIFACTORY}' == '1'
+    ...                                          dated log     ${consTraceColorBgYellow}${consTraceColorBlack}${warning_msg}${defColor}
+    Run Keyword if   '${GET_AND_UPDATE_BSR_SW}' == '1' and '${GET_BSR_SW_BASED_GIT}' == '1' and '${GET_BSR_SW_BASED_ARTIFACTORY}' == '0'
+    ...                      Run Keywords   dated log        =====> Get and Update BSR SW [BSR_AEQE_6_H6_ALN60_ARP60_P00_COVERAGE_00424_00001.zip]
+    ...                            AND      Get and Update BSR SW Using Git
+    ...                                           ${SQR44_L2ET_GOLDEN_FILE_ADDRESS}
+    ...                                           BSR     BSR_AEQE_6_H6_ALN60_ARP60_P00_COVERAGE_00424_00001.zip   /home/ute/BSR
+    Run Keyword if   '${GET_AND_UPDATE_BSR_SW}' == '1' and '${GET_BSR_SW_BASED_ARTIFACTORY}' == '1' and '${GET_BSR_SW_BASED_GIT}' == '0'
+    ...                      Run Keywords   dated log        =====> Get and Update BSR SW [BSR_AEQE_6_H6_ALN60_ARP60_P00_COVERAGE_00424_00001.zip]
+    ...                            AND      Get and Update BSR SW
+    ...                                         https://artifactory-espoo1.ext.net.nokia.com/artifactory/mnpute-rotta-local/csamson
+    ...                                         CB009890     BSR_AEQE_6_H6_ALN60_ARP60_P00_COVERAGE_00424_00001.zip   /home/ute/BSR
+    robot_extension.Run Keyword And Warn On Failure      clone Gnblogs Tool
+
+Suite Teardown CB011028-D-Common
+    [Documentation]
+    ...     Conditions:     it needs no conditions
+    ...     Actions:        it restores the files when the test is finished
+    ...     Checks:         it needs no checks
+    ...     Verdict:        suite teardown is passed
+    run keyword and ignore error   Restore Orignal Configuration
+    ${scf_suite_teardown_restore}=    Get Variable Value    ${scf_suite_setup_backup}    None
+    # OAM Perform Full Commissioning    scf_file=${scf_suite_teardown_restore}
+    # OAM wait available
+    # Dated Log               SCF restore file = ${scf_suite_teardown_restore}
+
+Test Setup for CB011028-Common
+    set Suite Variable    ${testCaseDir}    None
+    Get testcase log directory
+    Prepare Test Name
+    Prepare Logs Directory Path    subdir=gnblogs_tool
+    Create Header Csv Test result
+    robot_extension.Run Keyword And Warn On Failure   CleanUpSysLogs
+    robot_extension.Run Keyword And Warn On Failure   CB011028-D-Keywords.Start Tcpdump on TestPc   interface=eth3   option=-s0 sctp or icmp
+    robot_extension.Run Keyword And Warn On Failure   btslog.Start Btslog
+    ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    Set Suite Variable           ${test_scf_file}
+    set test variable      ${2_2_nrCellType_to_update_Cell1}   ${False}
+    set test variable      ${4_4_nrCellType_to_update_Cell1}   ${False}
+    set test variable      ${8_4_nrCellType_to_update_Cell1}   ${False}
+    Display Important NIDD param
+
+Test Teardown for CB011028-Common
+    BuiltIn.Log      \nTest ${TEST_NAME} 11028 ending   console=yes
+    Produce Scout Data
+    robot_extension.Run Keyword And Warn On Failure   Stop Tcpdump on TestPc  interface=eth3   target_dir=${testCaseDir}
+    robot_extension.Run Keyword And Warn On Failure   btslog.Stop Btslog    target_dir=${testCaseDir}
+    teardownP1
+    teardownP2
+
+update test Variables
+    [Arguments]         ${test_dictParam}      ${CAPTURE}
+    StringTool.printLineWithTitle     title=-
+    display_dictionnary_parameters_of_the_TestCase    ${test_dictParam}
+    display_dictionnary_parameters_CAPTURE_of_the_TestCase    ${CAPTURE}
+    ${w_generic_capture}               Get From Dictionary     ${test_dictParam}     w_generic_capture
+    ${isCaptureCPRT}                   Get From Dictionary     ${test_dictParam}     w_CaptureCPRT
+    ${isCaptureL1L2}                   Get From Dictionary     ${test_dictParam}     w_CaptureL1L2
+    ${isCaptureCORE}                   Get From Dictionary     ${test_dictParam}     w_CaptureCORE
+    ${w_check_9890_using_sherpa}       Get From Dictionary     ${test_dictParam}     w_check_9890_using_sherpa
+    ${w_convert_TtiPcap_to_excelCsv}   Get From Dictionary     ${test_dictParam}     w_convert_TtiPcap_to_excelCsv
+    ${w_Basic_Call_to_Setup_Wtsemu}    Get From Dictionary     ${test_dictParam}     w_Basic_Call_to_Setup_Wtsemu
+    ${enable_sherpa}                   Get From Dictionary     ${test_dictParam}     w_enable_sherpa_Traces
+    ${w_GetL1L2Bip}                    Get From Dictionary     ${test_dictParam}     w_GetL1L2Bip
+    ${w_GetTtiTrace}                   Get From Dictionary     ${test_dictParam}     w_GetTtiTrace
+    ${w_ue_detach}                     Get From Dictionary     ${test_dictParam}     w_ue_detach
+    ${w_DISPLAY_ue_stats_nr_15min}     Get From Dictionary     ${test_dictParam}     w_DISPLAY_ue_stats_nr_15min
+    ${GetTtiTraceTime}                 Get From Dictionary     ${CAPTURE}     GetTtiTraceTime
+    ${Getl1l2TraceTime}                Get From Dictionary     ${CAPTURE}     Getl1l2TraceTime
+    ${GetSherpaTraceTime}              Get From Dictionary     ${CAPTURE}     GetSherpaTraceTime
+    ${GetTtiTraceNumOfEvent}           Get From Dictionary     ${CAPTURE}     GetTtiTraceNumOfEvent
+    Set Suite Variable      ${GetTtiTraceTime}
+    Set Suite Variable      ${GetTtiTraceNumOfEvent}
+    Set Suite Variable      ${Getl1l2TraceTime}
+    Set Suite Variable      ${GetSherpaTraceTime}
+    Set Suite Variable      ${enable_sherpa}
+    Set Suite Variable      ${w_check_9890_using_sherpa}
+    Set Suite Variable      ${w_generic_capture}
+    Set Suite Variable      ${w_convert_TtiPcap_to_excelCsv}
+    Set Suite Variable      ${w_Basic_Call_to_Setup_Wtsemu}
+    Set Suite Variable      ${isCaptureCPRT}
+    Set Suite Variable      ${isCaptureL1L2}
+    Set Suite Variable      ${isCaptureCORE}
+    Set Suite Variable      ${enable_sherpa}
+    Set Suite Variable      ${w_GetTtiTrace}
+    Set Suite Variable      ${w_ue_detach}
+    Set Suite Variable      ${w_DISPLAY_ue_stats_nr_15min}
+    Set Suite Variable      ${w_GetL1L2Bip}
+
+Deploy Vendor File to activate CB011028
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${vendor_param} ${is_perform_full_commissioning}
+    ...     Actions:
+    ...     Actions:
+    ...     Checks:
+    ...     Verdict:
+    [Arguments]             ${vendor_param}
+    ...                     ${is_perform_full_commissioning}=${True}
+    # OAM Perform Full Commissioning is mandatory to apply vendor configuration
+    # Dev_lib.start_to_capture_infomodel_log
+    ${modified_vendor_file}=    Dev_lib.change_vendor_parameters    ${vendor_param}
+    # Run Keyword And Ignore Error      Dev_lib.stop_to_capture_infomodel_log
+    &{args}    Create Dictionary         vendor_file="${modified_vendor_file}"
+    dated log   apply set_vendor_file with cmd_args=${args}
+    # due to some SOAM architecture particularities, use same ADMIN instance for both set_vendor command and commissioning command
+    coam.set_vendor_file    vendor_file=${modified_vendor_file}   connection=coam_gnb
+    # Force the full commissioning when it is requested
+    Run Keyword if    ${is_perform_full_commissioning}    Run Keywords     dated log    ===> Perform coam commissioning
+    ...                                                       AND          coam.perform_commissioning    scf_file=${test_scf_file}
+    ...                                                                                                  connection=coam_gnb
+    ...                                                       AND          OAM wait available    wait_time=300
+
+Update Vendor File Config For bbL1SpPrbInitCapacity And bbPoolCapacity
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${vendor_param}
+    ...     Actions:
+    ...     Checks:
+    ...     Verdict:
+    [Arguments]             ${vendor_param}
+
+    ${original_vendor_file}    ${modified_vendor_file}              SetConfig.Download Vendor File
+    Dated Log               -----> Original Vendor File Name :
+    Dated Log               ${original_vendor_file}
+    Dated Log               -----> Modified Vendor File Name will be :
+    Dated Log               ${modified_vendor_file}
+
+    ScfVendorOperations.setup reader            ${original_vendor_file}
+    ${mo_dict}              ScfVendorOperations.get moelements byclass        NRBTS
+    # bbL1SpPrbInitCapacity
+    # Original value should be related to <!-- 48 CS, only DL -->
+    &{original_values}      Create Dictionary
+    ...                               bbHwVariant=${vendor_param.bbHwVariant}
+    ...                               csSize=48
+    ...                               direction=DL
+    # ...                               l1PoolType=NR_L1_Loki_TDD_FR1_eCPRI_IQF_Asymm
+    ...                               l1PoolType=NR_L1_Loki_TDD_FR1_eCPRI_IQF_Symm
+    ...                               maxNumLayerPrbL1Sp=2184
+    ...                               maxNumStreamPrbL1Sp=2184
+    ...                               maxNumWbStreamPrbL1Sp=1092
+
+    ${vendor_param.maxNumLayerPrbL1Sp}=         Run Keyword If    ${vendor_param.maxNumLayerPrbL1Sp} == None    Set Variable    2184
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumLayerPrbL1Sp}
+
+    ${vendor_param.maxNumStreamPrbL1Sp}=        Run Keyword If    ${vendor_param.maxNumStreamPrbL1Sp} == None    Set Variable    2184
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumStreamPrbL1Sp}
+    ${vendor_param.maxNumWbStreamPrbL1Sp}=      Run Keyword If    ${vendor_param.maxNumWbStreamPrbL1Sp} == None    Set Variable    1092
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumWbStreamPrbL1Sp}
+
+    &{new_values}           Create Dictionary
+    ...                               bbHwVariant=${vendor_param.bbHwVariant}
+    ...                               csSize=48
+    ...                               direction=DL
+    # ...                               l1PoolType=NR_L1_Loki_TDD_FR1_eCPRI_IQF_Asymm
+    ...                               l1PoolType=NR_L1_Loki_TDD_FR1_eCPRI_IQF_Symm
+    ...                               maxNumLayerPrbL1Sp=${vendor_param.maxNumLayerPrbL1Sp}
+    ...                               maxNumStreamPrbL1Sp=${vendor_param.maxNumStreamPrbL1Sp}
+    ...                               maxNumWbStreamPrbL1Sp=${vendor_param.maxNumWbStreamPrbL1Sp}
+    # ...                               maxNumWbStreamPrbL1Sp=1092
+    @{original_items_list}=           Create List         ${original_values}
+    @{new_items_list}=                Create List         ${new_values}
+    ${list_name}            Set Variable                  bbL1SpPrbInitCapacity
+    ${modified_mo}=         ScfVendorOperations.replace items inList    ${original_items_list}    ${new_items_list}    ${list_name}    ${mo_dict}
+
+    # bbPoolCapacity
+    &{original_values}      Create Dictionary
+    ...                               bbHwVariant=${vendor_param.bbHwVariant}
+    ...                               bbPoolCapacityId=4
+    ...                               confDuplexMode=TDD
+    ...                               maxPdschTpSlotL1Pool=0
+    ...                               maxPdschTpSlotL2Pool=0
+    ...                               maxPuschTpSlotL1Pool=0
+    ...                               maxPuschTpSlotL2Pool=0
+    ...                               fronthaulType=cpriOrEcpri72a
+    ...                               l1DeploymentVariant=half_mode
+    ...                               maxNumOfDRBL2Pool=9000
+    ...                               maxNumOfGBRL2Pool=1104
+    ...                               maxNumOfUserL2Pool=4500
+    ...                               maxNumPucchF1HarqL1Pool=120
+    ...                               maxNumPucchF1SRPerSlotL1Pool=96
+    ...                               maxNumPucchF3HarqL1Pool=23
+    ...                               maxNumPucchF3PCSIPerSlotL1Pool=48
+    ...                               maxNumScheUePdschL1Pool=30
+    ...                               maxNumScheUePdschL1Sp=24
+    ...                               maxNumScheUePdschL2Sp=24
+    ...                               maxNumScheUePuschL1Pool=30
+    ...                               maxNumScheUePuschL1Sp=30
+    ...                               maxNumScheUePuschL2Sp=24
+    ...                               maxNumFHStreamPRBULL1Pool=4368
+    ...                               maxNumDlSubcellL1Pool=6
+    ...                               maxNumDlSubcellL1Sp=4
+    ...                               maxNumUlSubcellL1Pool=6
+    ...                               maxNumUlSubcellL1Sp=4
+    ...                               maxNumOfCAUserL2SubPool=40
+    ...                               maxNumCellPucchStrPrbL1Pool=50000
+    ...                               maxNumPooledPucchStrPrbL1Pool=65535
+
+    ${vendor_param.maxNumScheUePdschL1Pool}=    Run Keyword If    ${vendor_param.maxNumScheUePdschL1Pool} == None    Set Variable    30
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumScheUePdschL1Pool}
+    ${vendor_param.maxNumScheUePdschL1Sp}=      Run Keyword If    ${vendor_param.maxNumScheUePdschL1Sp} == None    Set Variable    24
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumScheUePdschL1Sp}
+    ${vendor_param.maxNumDlSubcellL1Pool}=      Run Keyword If    ${vendor_param.maxNumDlSubcellL1Pool} == None    Set Variable    6
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumDlSubcellL1Pool}
+    ${vendor_param.maxNumDlSubcellL1Sp}=        Run Keyword If    ${vendor_param.maxNumDlSubcellL1Sp} == None    Set Variable    4
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumDlSubcellL1Sp}
+    ${vendor_param.maxNumUlSubcellL1Pool}=      Run Keyword If    ${vendor_param.maxNumUlSubcellL1Pool} == None    Set Variable    6
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumUlSubcellL1Pool}
+    ${vendor_param.maxNumUlSubcellL1Sp}=        Run Keyword If    ${vendor_param.maxNumUlSubcellL1Sp} == None    Set Variable    4
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumUlSubcellL1Sp}
+
+    &{new_values}           Create Dictionary
+    ...                               bbHwVariant=${vendor_param.bbHwVariant}
+    ...                               bbPoolCapacityId=4
+    ...                               maxPdschTpSlotL1Pool=0
+    ...                               maxPdschTpSlotL2Pool=0
+    ...                               maxPuschTpSlotL1Pool=0
+    ...                               maxPuschTpSlotL2Pool=0
+    ...                               confDuplexMode=TDD
+    ...                               fronthaulType=cpriOrEcpri72a
+    ...                               l1DeploymentVariant=half_mode
+    ...                               maxNumOfDRBL2Pool=9000
+    ...                               maxNumOfGBRL2Pool=1104
+    ...                               maxNumOfUserL2Pool=4500
+    ...                               maxNumPucchF1HarqL1Pool=120
+    ...                               maxNumPucchF1SRPerSlotL1Pool=96
+    ...                               maxNumPucchF3HarqL1Pool=23
+    ...                               maxNumPucchF3PCSIPerSlotL1Pool=48
+    ...                               maxNumScheUePdschL1Pool=${vendor_param.maxNumScheUePdschL1Pool}
+    ...                               maxNumScheUePdschL1Sp=${vendor_param.maxNumScheUePdschL1Sp}
+    ...                               maxNumScheUePdschL2Sp=24
+    ...                               maxNumScheUePuschL1Pool=30
+    ...                               maxNumScheUePuschL1Sp=30
+    ...                               maxNumScheUePuschL2Sp=24
+    ...                               maxNumFHStreamPRBULL1Pool=4368
+    ...                               maxNumDlSubcellL1Pool=${vendor_param.maxNumDlSubcellL1Pool}
+    ...                               maxNumDlSubcellL1Sp=${vendor_param.maxNumDlSubcellL1Sp}
+    ...                               maxNumUlSubcellL1Pool=${vendor_param.maxNumUlSubcellL1Pool}
+    ...                               maxNumUlSubcellL1Sp=${vendor_param.maxNumUlSubcellL1Sp}
+    ...                               maxNumOfCAUserL2SubPool=40
+    ...                               maxNumCellPucchStrPrbL1Pool=50000
+    ...                               maxNumPooledPucchStrPrbL1Pool=65535
+
+    @{original_items_list}=           Create List         ${original_values}
+    @{new_items_list}=                Create List         ${new_values}
+    ${list_name}            Set Variable                  bbPoolCapacity
+    ${modified_mo}=         ScfVendorOperations.replace items inList    ${original_items_list}    ${new_items_list}    ${list_name}    ${mo_dict}
+
+    &{original_values}      Create Dictionary
+    ...                               bbHwVariant=${vendor_param.bbHwVariant}
+    ...                               bbPoolCapacityId=14
+    ...                               maxPdschTpSlotL1Pool=0
+    ...                               maxPdschTpSlotL2Pool=0
+    ...                               maxPuschTpSlotL1Pool=0
+    ...                               maxPuschTpSlotL2Pool=0
+    ...                               confDuplexMode=TDD
+    ...                               fronthaulType=cpriOrEcpri72a
+    ...                               l1DeploymentVariant=full_mode
+    ...                               maxNumOfDRBL2Pool=9000
+    ...                               maxNumOfGBRL2Pool=1104
+    ...                               maxNumOfUserL2Pool=4500
+    ...                               maxNumPucchF1HarqL1Pool=120
+    ...                               maxNumPucchF1SRPerSlotL1Pool=96
+    ...                               maxNumPucchF3HarqL1Pool=23
+    ...                               maxNumPucchF3PCSIPerSlotL1Pool=48
+    ...                               maxNumScheUePdschL1Pool=30
+    ...                               maxNumScheUePdschL1Sp=24
+    ...                               maxNumScheUePdschL2Sp=24
+    ...                               maxNumScheUePuschL1Pool=30
+    ...                               maxNumScheUePuschL1Sp=30
+    ...                               maxNumScheUePuschL2Sp=24
+    ...                               maxNumFHStreamPRBULL1Pool=4368
+    ...                               maxNumDlSubcellL1Pool=6
+    ...                               maxNumDlSubcellL1Sp=4
+    ...                               maxNumUlSubcellL1Pool=6
+    ...                               maxNumUlSubcellL1Sp=4
+    ...                               maxNumOfCAUserL2SubPool=40
+    ...                               maxNumCellPucchStrPrbL1Pool=50000
+    ...                               maxNumPooledPucchStrPrbL1Pool=65535
+
+    ${vendor_param.maxNumScheUePdschL1Pool}=    Run Keyword If    ${vendor_param.maxNumScheUePdschL1Pool} == None    Set Variable    30
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumScheUePdschL1Pool}
+    ${vendor_param.maxNumScheUePdschL1Sp}=      Run Keyword If    ${vendor_param.maxNumScheUePdschL1Sp} == None    Set Variable    24
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumScheUePdschL1Sp}
+    ${vendor_param.maxNumDlSubcellL1Pool}=      Run Keyword If    ${vendor_param.maxNumDlSubcellL1Pool} == None    Set Variable    6
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumDlSubcellL1Pool}
+    ${vendor_param.maxNumDlSubcellL1Sp}=        Run Keyword If    ${vendor_param.maxNumDlSubcellL1Sp} == None    Set Variable    4
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumDlSubcellL1Sp}
+    ${vendor_param.maxNumUlSubcellL1Pool}=      Run Keyword If    ${vendor_param.maxNumUlSubcellL1Pool} == None    Set Variable    6
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumUlSubcellL1Pool}
+    ${vendor_param.maxNumUlSubcellL1Sp}=        Run Keyword If    ${vendor_param.maxNumUlSubcellL1Sp} == None    Set Variable    4
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumUlSubcellL1Sp}
+
+    &{new_values}           Create Dictionary
+    ...                               bbHwVariant=${vendor_param.bbHwVariant}
+    ...                               bbPoolCapacityId=14
+    ...                               maxPdschTpSlotL1Pool=0
+    ...                               maxPdschTpSlotL2Pool=0
+    ...                               maxPuschTpSlotL1Pool=0
+    ...                               maxPuschTpSlotL2Pool=0
+    ...                               confDuplexMode=TDD
+    ...                               fronthaulType=cpriOrEcpri72a
+    ...                               l1DeploymentVariant=full_mode
+    ...                               maxNumOfDRBL2Pool=9000
+    ...                               maxNumOfGBRL2Pool=1104
+    ...                               maxNumOfUserL2Pool=4500
+    ...                               maxNumPucchF1HarqL1Pool=120
+    ...                               maxNumPucchF1SRPerSlotL1Pool=96
+    ...                               maxNumPucchF3HarqL1Pool=23
+    ...                               maxNumPucchF3PCSIPerSlotL1Pool=48
+    ...                               maxNumScheUePdschL1Pool=${vendor_param.maxNumScheUePdschL1Pool}
+    ...                               maxNumScheUePdschL1Sp=${vendor_param.maxNumScheUePdschL1Sp}
+    ...                               maxNumScheUePdschL2Sp=24
+    ...                               maxNumScheUePuschL1Pool=30
+    ...                               maxNumScheUePuschL1Sp=30
+    ...                               maxNumScheUePuschL2Sp=24
+    ...                               maxNumFHStreamPRBULL1Pool=4368
+    ...                               maxNumDlSubcellL1Pool=${vendor_param.maxNumDlSubcellL1Pool}
+    ...                               maxNumDlSubcellL1Sp=${vendor_param.maxNumDlSubcellL1Sp}
+    ...                               maxNumUlSubcellL1Pool=${vendor_param.maxNumUlSubcellL1Pool}
+    ...                               maxNumUlSubcellL1Sp=${vendor_param.maxNumUlSubcellL1Sp}
+    ...                               maxNumOfCAUserL2SubPool=40
+    ...                               maxNumCellPucchStrPrbL1Pool=50000
+    ...                               maxNumPooledPucchStrPrbL1Pool=65535
+
+    @{original_items_list}=           Create List         ${original_values}
+    @{new_items_list}=                Create List         ${new_values}
+    ${list_name}            Set Variable                  bbPoolCapacity
+    ${modified_mo}=         ScfVendorOperations.replace items inList    ${original_items_list}    ${new_items_list}    ${list_name}    ${mo_dict}
+
+    #    <item>
+    #      <p name="bbHwVariant">ABIO</p>
+    #      <p name="csSize">32</p>
+    #      <p name="direction">UL</p>
+    #      <p name="l1PoolType">NR_L1_Loki_TDD_FR1_eCPRI_IQF_Asymm</p>
+    #      <p name="maxNumLayerPrbL1Sp">546</p>
+    #      <p name="maxNumStreamPrbL1Sp">1092</p>
+    #      <p name="maxNumWbStreamPrbL1Sp">1092</p>
+    #    </item>
+
+    # UL Only case csSize=32
+    # Original value should be related to <!-- 32 CS, only UL -->
+    &{original_values}      Create Dictionary
+    ...                               bbHwVariant=${vendor_param.bbHwVariant}
+    ...                               csSize=32
+    ...                               direction=UL
+    ...                               l1PoolType=NR_L1_Loki_TDD_FR1_eCPRI_IQF_Asymm
+    ...                               maxNumLayerPrbL1Sp=546
+    ...                               maxNumStreamPrbL1Sp=1092
+    ...                               maxNumWbStreamPrbL1Sp=1092
+
+    ${vendor_param.ul_maxNumLayerPrbL1Sp_csSize32}=  Run Keyword If    ${vendor_param.ul_maxNumLayerPrbL1Sp_csSize32} == None    Set Variable    546
+    ...                                                     ELSE    Set Variable    ${vendor_param.ul_maxNumLayerPrbL1Sp_csSize32}
+
+    ${vendor_param.ul_maxNumStreamPrbL1Sp_csSize32}=    Run Keyword If    ${vendor_param.ul_maxNumStreamPrbL1Sp_csSize32} == None
+    ...                                                                                                                   Set Variable    1092
+    ...                                                     ELSE    Set Variable    ${vendor_param.ul_maxNumStreamPrbL1Sp_csSize32}
+    ${vendor_param.ul_maxNumWbStreamPrbL1Sp_csSize32}=  Run Keyword If    ${vendor_param.ul_maxNumWbStreamPrbL1Sp_csSize32} == None
+    ...                                                                                                                   Set Variable    1092
+    ...                                                     ELSE    Set Variable    ${vendor_param.ul_maxNumWbStreamPrbL1Sp_csSize32}
+
+    &{new_values}           Create Dictionary
+    ...                               bbHwVariant=${vendor_param.bbHwVariant}
+    ...                               csSize=32
+    ...                               direction=UL
+    ...                               l1PoolType=NR_L1_Loki_TDD_FR1_eCPRI_IQF_Asymm
+    ...                               maxNumLayerPrbL1Sp=${vendor_param.ul_maxNumLayerPrbL1Sp_csSize32}
+    ...                               maxNumStreamPrbL1Sp=${vendor_param.ul_maxNumStreamPrbL1Sp_csSize32}
+    ...                               maxNumWbStreamPrbL1Sp=${vendor_param.ul_maxNumWbStreamPrbL1Sp_csSize32}
+    @{original_items_list}=           Create List         ${original_values}
+    @{new_items_list}=                Create List         ${new_values}
+    ${list_name}            Set Variable                  bbL1SpPrbInitCapacity
+    ${modified_mo}=         ScfVendorOperations.replace items inList    ${original_items_list}    ${new_items_list}    ${list_name}    ${mo_dict}
+
+    # <!-- 64 CS, only UL -->
+    #     <item>
+    #       <p name="bbHwVariant">ABIO</p>
+    #       <p name="csSize">64</p>
+    #       <p name="direction">UL</p>
+    #       <p name="l1PoolType">NR_L1_Loki_TDD_FR1_eCPRI_IQF_Asymm</p>
+    #       <p name="maxNumLayerPrbL1Sp">1092</p>
+    #       <p name="maxNumStreamPrbL1Sp">2184</p>
+    #       <p name="maxNumWbStreamPrbL1Sp">1092</p>
+    #     </item>
+    &{original_values}      Create Dictionary
+    ...                               bbHwVariant=${vendor_param.bbHwVariant}
+    ...                               csSize=64
+    ...                               direction=UL
+    ...                               l1PoolType=NR_L1_Loki_TDD_FR1_eCPRI_IQF_Asymm
+    ...                               maxNumLayerPrbL1Sp=1092
+    ...                               maxNumStreamPrbL1Sp=2184
+    ...                               maxNumWbStreamPrbL1Sp=1092
+
+    ${vendor_param.ul_maxNumLayerPrbL1Sp_csSize64}=         Run Keyword If    ${vendor_param.ul_maxNumLayerPrbL1Sp_csSize64} == None
+    ...                                                                                                                  Set Variable    1092
+    ...                                                     ELSE    Set Variable    ${vendor_param.ul_maxNumLayerPrbL1Sp_csSize64}
+
+    ${vendor_param.ul_maxNumStreamPrbL1Sp_csSize64}=        Run Keyword If    ${vendor_param.ul_maxNumStreamPrbL1Sp_csSize64} == None
+    ...                                                                                                                  Set Variable    2184
+    ...                                                     ELSE    Set Variable    ${vendor_param.ul_maxNumStreamPrbL1Sp_csSize64}
+    ${vendor_param.ul_maxNumWbStreamPrbL1Sp_csSize64}=      Run Keyword If    ${vendor_param.ul_maxNumWbStreamPrbL1Sp_csSize64} == None
+    ...                                                                                                                  Set Variable    1092
+    ...                                                     ELSE    Set Variable    ${vendor_param.ul_maxNumWbStreamPrbL1Sp_csSize64}
+
+    &{new_values}           Create Dictionary
+    ...                               bbHwVariant=${vendor_param.bbHwVariant}
+    ...                               csSize=64
+    ...                               direction=UL
+    ...                               l1PoolType=NR_L1_Loki_TDD_FR1_eCPRI_IQF_Asymm
+    ...                               maxNumLayerPrbL1Sp=${vendor_param.ul_maxNumLayerPrbL1Sp_csSize64}
+    ...                               maxNumStreamPrbL1Sp=${vendor_param.ul_maxNumStreamPrbL1Sp_csSize64}
+    ...                               maxNumWbStreamPrbL1Sp=${vendor_param.ul_maxNumWbStreamPrbL1Sp_csSize64}
+    @{original_items_list}=           Create List         ${original_values}
+    @{new_items_list}=                Create List         ${new_values}
+    ${list_name}            Set Variable                  bbL1SpPrbInitCapacity
+    ${modified_mo}=         ScfVendorOperations.replace items inList    ${original_items_list}    ${new_items_list}    ${list_name}    ${mo_dict}
+
+    ScfVendorOperations.save back toxml                   ${modified_vendor_file}
+    ${Tmp_file_ls}          OperatingSystem.run           ls -altr ${modified_vendor_file}
+    Dated log               Obtained file ${Tmp_file_ls}
+    &{args}                 Create Dictionary             vendor_file="${modified_vendor_file}"
+    OAM Run Command         cmd=set_vendor_file           cmd_args=${args}
+
+Update Vendor File Config For bbL1SpPrbInitCapacity And bbPoolCapacity For ABIP
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${vendor_param}
+    ...     Actions:
+    ...     Checks:
+    ...     Verdict:
+    [Arguments]             ${vendor_param}
+
+    ${original_vendor_file}    ${modified_vendor_file}              SetConfig.Download Vendor File
+    Dated Log               -----> Original Vendor File Name :
+    Dated Log               ${original_vendor_file}
+    Dated Log               -----> Modified Vendor File Name will be :
+    Dated Log               ${modified_vendor_file}
+
+    ScfVendorOperations.setup reader            ${original_vendor_file}
+    ${mo_dict}              ScfVendorOperations.get moelements byclass        NRBTS
+    # bbL1SpPrbInitCapacity
+    # Original value should be related to <!-- 48 CS, only DL -->
+    &{original_values}      Create Dictionary
+    ...                               bbHwVariant=${vendor_param.bbHwVariant}
+    ...                               csSize=48
+    ...                               direction=DL
+    ...                               l1PoolType=NR_L1Pool_Thor_TDD_FR1_eCPRI
+    ...                               maxNumLayerPrbL1Sp=2184
+    ...                               maxNumStreamPrbL1Sp=2184
+    ...                               maxNumWbStreamPrbL1Sp=1092
+
+    ${vendor_param.maxNumLayerPrbL1Sp}=         Run Keyword If    ${vendor_param.maxNumLayerPrbL1Sp} == None    Set Variable    2184
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumLayerPrbL1Sp}
+
+    ${vendor_param.maxNumStreamPrbL1Sp}=        Run Keyword If    ${vendor_param.maxNumStreamPrbL1Sp} == None    Set Variable    2184
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumStreamPrbL1Sp}
+    ${vendor_param.maxNumWbStreamPrbL1Sp}=      Run Keyword If    ${vendor_param.maxNumWbStreamPrbL1Sp} == None    Set Variable    1092
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumWbStreamPrbL1Sp}
+
+    &{new_values}           Create Dictionary
+    ...                               bbHwVariant=${vendor_param.bbHwVariant}
+    ...                               csSize=48
+    ...                               direction=DL
+    ...                               l1PoolType=NR_L1Pool_Thor_TDD_FR1_eCPRI
+    ...                               maxNumLayerPrbL1Sp=${vendor_param.maxNumLayerPrbL1Sp}
+    ...                               maxNumStreamPrbL1Sp=${vendor_param.maxNumStreamPrbL1Sp}
+    ...                               maxNumWbStreamPrbL1Sp=${vendor_param.maxNumWbStreamPrbL1Sp}
+    # ...                               maxNumWbStreamPrbL1Sp=1092
+    @{original_items_list}=           Create List         ${original_values}
+    @{new_items_list}=                Create List         ${new_values}
+    ${list_name}            Set Variable                  bbL1SpPrbInitCapacity
+    ${modified_mo}=         ScfVendorOperations.replace items inList    ${original_items_list}    ${new_items_list}    ${list_name}    ${mo_dict}
+
+    # bbPoolCapacity
+    &{original_values}      Create Dictionary
+    ...                               bbHwVariant=${vendor_param.bbHwVariant}
+    ...                               bbPoolCapacityId=12
+    ...                               confDuplexMode=TDD
+    ...                               fronthaulType=cpriOrEcpri72a
+    ...                               l1DeploymentVariant=half_mode
+    ...                               maxNumOfDRBL2Pool=9000
+    ...                               maxNumOfGBRL2Pool=1104
+    ...                               maxNumOfUserL2Pool=4500
+    ...                               maxNumPucchF1HarqL1Pool=90
+    ...                               maxNumPucchF1SRPerSlotL1Pool=96
+    ...                               maxNumPucchF3HarqL1Pool=18
+    ...                               maxNumPucchF3PCSIPerSlotL1Pool=48
+    ...                               maxNumScheUePdschL1Pool=24
+    ...                               maxNumScheUePdschL1Sp=18
+    ...                               maxNumScheUePdschL2Sp=18
+    ...                               maxNumScheUePuschL1Pool=24
+    ...                               maxNumScheUePuschL1Sp=18
+    ...                               maxNumScheUePuschL2Sp=18
+    ...                               maxNumFHStreamPRBULL1Pool=4428
+    ...                               maxNumDlSubcellL1Pool=8
+    ...                               maxNumDlSubcellL1Sp=4
+    ...                               maxNumUlSubcellL1Pool=8
+    ...                               maxNumUlSubcellL1Sp=4
+
+    ${vendor_param.maxNumScheUePdschL1Pool}=    Run Keyword If    ${vendor_param.maxNumScheUePdschL1Pool} == None    Set Variable    24
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumScheUePdschL1Pool}
+    ${vendor_param.maxNumScheUePdschL1Sp}=      Run Keyword If    ${vendor_param.maxNumScheUePdschL1Sp} == None    Set Variable    18
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumScheUePdschL1Sp}
+    ${vendor_param.maxNumDlSubcellL1Pool}=      Run Keyword If    ${vendor_param.maxNumDlSubcellL1Pool} == None    Set Variable    8
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumDlSubcellL1Pool}
+    ${vendor_param.maxNumDlSubcellL1Sp}=        Run Keyword If    ${vendor_param.maxNumDlSubcellL1Sp} == None    Set Variable    4
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumDlSubcellL1Sp}
+    ${vendor_param.maxNumUlSubcellL1Pool}=      Run Keyword If    ${vendor_param.maxNumUlSubcellL1Pool} == None    Set Variable    8
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumUlSubcellL1Pool}
+    ${vendor_param.maxNumUlSubcellL1Sp}=        Run Keyword If    ${vendor_param.maxNumUlSubcellL1Sp} == None    Set Variable    4
+    ...                                                     ELSE    Set Variable    ${vendor_param.maxNumUlSubcellL1Sp}
+
+    &{new_values}           Create Dictionary
+    ...                               bbHwVariant=${vendor_param.bbHwVariant}
+    ...                               bbPoolCapacityId=12
+    ...                               confDuplexMode=TDD
+    ...                               fronthaulType=cpriOrEcpri72a
+    ...                               l1DeploymentVariant=half_mode
+    ...                               maxNumOfDRBL2Pool=9000
+    ...                               maxNumOfGBRL2Pool=1104
+    ...                               maxNumOfUserL2Pool=4500
+    ...                               maxNumPucchF1HarqL1Pool=90
+    ...                               maxNumPucchF1SRPerSlotL1Pool=96
+    ...                               maxNumPucchF3HarqL1Pool=18
+    ...                               maxNumPucchF3PCSIPerSlotL1Pool=48
+    ...                               maxNumScheUePdschL1Pool=${vendor_param.maxNumScheUePdschL1Pool}
+    ...                               maxNumScheUePdschL1Sp=${vendor_param.maxNumScheUePdschL1Sp}
+    ...                               maxNumScheUePdschL2Sp=18
+    ...                               maxNumScheUePuschL1Pool=24
+    ...                               maxNumScheUePuschL1Sp=18
+    ...                               maxNumScheUePuschL2Sp=18
+    ...                               maxNumFHStreamPRBULL1Pool=4428
+    ...                               maxNumDlSubcellL1Pool=${vendor_param.maxNumDlSubcellL1Pool}
+    ...                               maxNumDlSubcellL1Sp=${vendor_param.maxNumDlSubcellL1Sp}
+    ...                               maxNumUlSubcellL1Pool=${vendor_param.maxNumUlSubcellL1Pool}
+    ...                               maxNumUlSubcellL1Sp=${vendor_param.maxNumUlSubcellL1Sp}
+    @{original_items_list}=           Create List         ${original_values}
+    @{new_items_list}=                Create List         ${new_values}
+    ${list_name}            Set Variable                  bbPoolCapacity
+    ${modified_mo}=         ScfVendorOperations.replace items inList    ${original_items_list}    ${new_items_list}    ${list_name}    ${mo_dict}
+
+    ScfVendorOperations.save back toxml                   ${modified_vendor_file}
+    ${Tmp_file_ls}          OperatingSystem.run           ls -altr ${modified_vendor_file}
+    Dated log               Obtained file ${Tmp_file_ls}
+    &{args}                 Create Dictionary             vendor_file="${modified_vendor_file}"
+    OAM Run Command         cmd=set_vendor_file           cmd_args=${args}
+
+Deploy Vendor File Config
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${vendor_param} ${is_perform_full_commissioning}
+    ...     Actions:
+    ...     Actions:
+    ...     Checks:
+    ...     Verdict:
+    [Arguments]             ${vendor_param}
+    ...                     ${is_perform_full_commissioning}=${True}
+
+    # OAM Perform Full Commissioning is mandatory to apply vendor configuration
+    CB011028-D-Keywords.Update Vendor File Config For bbL1SpPrbInitCapacity And bbPoolCapacity     ${vendor_param}
+    # Force the full commissioning when it is requested
+    Run Keyword if    ${is_perform_full_commissioning}    Run Keywords     OAM Perform Full Commissioning    scf_file=${test_scf_file}
+    ...                                                       AND          OAM wait available    wait_time=300
+
+Deploy Vendor File Config For ABIP
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${vendor_param} ${is_perform_full_commissioning}
+    ...     Actions:
+    ...     Actions:
+    ...     Checks:
+    ...     Verdict:
+    [Arguments]             ${vendor_param}
+    ...                     ${is_perform_full_commissioning}=${True}
+
+    # OAM Perform Full Commissioning is mandatory to apply vendor configuration
+    CB011028-D-Keywords.Update Vendor File Config For bbL1SpPrbInitCapacity And bbPoolCapacity For ABIP     ${vendor_param}
+    # Force the full commissioning when it is requested
+    Run Keyword if    ${is_perform_full_commissioning}    Run Keywords     OAM Perform Full Commissioning    scf_file=${test_scf_file}
+    ...                                                       AND          OAM wait available    wait_time=300
+
+Set Reset Loop Counter
+    [Documentation]                 INTERNAL USAGE
+    ...                             ddal -s ddal_boot_set_reset_loop_count 0
+    [Arguments]                     ${rlc_number}=0
+
+    Dated log                       Initialize reset_loop_count on ${GNB_DU.name} (command =ddal -s ddal_boot_set_reset_loop_count ${rlc_number})
+    ${alias}                        SSH Connect                          ${GNB_DU.sys[0].M}
+    ${file}                         SSH Cmd                              command=ddal -s ddal_boot_set_reset_loop_count ${rlc_number}
+    ...                             alias=${alias}
+
+Configure the setting for the ${totalNbOfUe} UEs
+    dated log      Configure the setting for the ${totalNbOfUe} ue's
+
+CallSetup UE register UeId "${ue}" on Target cell "${CellId}"
+    CallSetup.UE Register  ue=${ue}
+
+get bts status with COAM
+    [Documentation]     : [PRIVATE]
+    ...     get Specific bts status
+    ...
+    ...     timeout:   Time to wait for positive procedure result
+    ...
+    [Arguments]     ${oam_alias}     ${timeout}=30
+    ${bts_status}=     coam.get_bts_statuses    timeout=${timeout}    connection=${oam_alias}
+    Dated log    BTS procedural state is now: ${consTraceColor} ${bts_status['proceduralState']} ${defColor}
+    [Return]     ${bts_status['proceduralState']}
+
+Verify cellId setup with COAM
+    [Documentation]     : [PRIVATE]
+    ...     Verify Specific Cell status and BTS Cell setup status
+    ...
+    ...     cell_status:   cell status reported bu cOAM, using get_cells_info
+    ...     cell_id:   Id of cell,
+    ...     timeout:   Time to wait for positive procedure result
+    ...
+    [Arguments]    ${oam_alias}    ${cell_status}=None    ${cell_id}=1   ${timeout}=30
+    ${P_internal_cell_dist_id}=  Set Variable   ${cell_status['id']['internal']}
+    ${cell_status_}=    Set variable  ${cell_status['status']}
+    ${bts_status}=     coam.get_bts_statuses    timeout=${timeout}    connection=${oam_alias}
+    ${msg}=   Catenate    ${consTraceColor}Cell ${cell_id} ${defColor}[${P_internal_cell_dist_id}]
+    Dated log    ${msg}
+    ${msg}=   Catenate    operationalState=${cell_status_['operationalState']},
+    ...                   proceduralStatus=${cell_status_['proceduralStatus']},
+    ...                   administrativeState=${cell_status_['administrativeState']},
+    Dated log    ${msg}
+    ${msg}=   Catenate    blockingState=${cell_status_['blockingState']}
+    Dated log    ${msg}
+    Dated log    BTS procedural state is now: ${consTraceColor} ${bts_status['proceduralState']} ${defColor}
+    Should be equal    ${cell_status_['operationalState']}         Enabled         ignore_case=true
+    Should be equal    ${cell_status_['proceduralStatus']}         configured      ignore_case=true
+    Should be equal    ${cell_status_['blockingState']}            Unblocked       ignore_case=true
+    Should be equal    ${cell_status_['administrativeState']}      Unlocked        ignore_case=true
+    Should be equal    ${bts_status['operationalState']}           Enabled         ignore_case=true
+    Should be equal    ${bts_status['proceduralState']}           OnAir     msg=GNB is not on air, Current status is ${bts_status['proceduralState']}
+    ...                                                                     ignore_case=true
+    Should be equal    ${bts_status['blockingState']}             Unblocked       ignore_case=true
+    [Return]  ${P_internal_cell_dist_id}
+
+Verify cell setup with COAM
+    [Documentation]     : [PRIVATE]
+    ...     Verify Specific Cell status and BTS Cell setup status
+    ...
+    ...     cell_id:   Id of cell,
+    ...     timeout:   Time to wait for positive procedure result
+    ...
+    [Arguments]     ${oam_alias}    ${cell_id}=0   ${timeout}=30
+    ${cells_status}=    coam.get_cells_info    cell_type=nr     timeout=${timeout}    connection=${oam_alias}
+    ${bts_status}=     coam.get_bts_statuses    timeout=${timeout}    connection=${oam_alias}
+    ${P_internal_cell_dist_id}=  Set Variable   ${cells_status[${cell_id}]['id']['internal']}
+    ${cell_status_}=    Set variable  ${cells_status[${cell_id}]['status']}
+    ${msg}=   Catenate    ${consTraceColor}Cell ${cell_id}${defColor} [${P_internal_cell_dist_id}]
+    Dated log    ${msg}
+    ${msg}=   Catenate    operationalState=${cell_status_['operationalState']},
+    ...                   proceduralStatus=${cell_status_['proceduralStatus']},
+    ...                   administrativeState=${cell_status_['administrativeState']},
+    Dated log    ${msg}
+    ${msg}=   Catenate    blockingState=${cell_status_['blockingState']}
+    Dated log    ${msg}
+    Dated log    BTS procedural state is now: ${consTraceColor} ${bts_status['proceduralState']} ${defColor}
+    Should be equal    ${cell_status_['operationalState']}         Enabled         ignore_case=true
+    Should be equal    ${cell_status_['proceduralStatus']}         configured      ignore_case=true
+    Should be equal    ${cell_status_['blockingState']}            Unblocked       ignore_case=true
+    Should be equal    ${cell_status_['administrativeState']}      Unlocked        ignore_case=true
+    Should be equal    ${bts_status['operationalState']}          Enabled         ignore_case=true
+    Should be equal    ${bts_status['proceduralState']}           OnAir     msg=GNB is not on air, Current status is ${bts_status['proceduralState']}
+    ...                                                                     ignore_case=true
+    Should be equal    ${bts_status['blockingState']}             Unblocked       ignore_case=true
+    [Return]  ${P_internal_cell_dist_id}   ${cells_status}
+
+Verify that cellId are onair with COAM
+    [Documentation]     [PRIVATE]
+    [Arguments]      ${oam_alias}   ${globalCellId}=1
+    ${output}=    coam.get_cells_info    cell_type=nr     timeout=30    connection=${oam_alias}
+    FOR    ${cell}    IN    @{output}
+        continue for loop if   '${cell['globalCellId']}' != '${globalCellId}'
+        ${_internal_cell_dist_id}=  Verify cellId setup with COAM   oam_alias=${oam_alias}  cell_status=${cell}  cell_id=${globalCellId}
+    END
+
+Verify that cells are onair with COAM
+    [Documentation]     [PRIVATE]
+    [Arguments]      ${oam_alias}   ${num_of_cells}=1
+    FOR    ${cell_id}    IN RANGE    ${num_of_cells}
+        ${_internal_cell_dist_id}  ${cells_status}=  Verify cell setup with COAM   oam_alias=${oam_alias}   cell_id=${cell_id}
+    END
+    [return]   ${cells_status}
+
+Get Cell Number
+    [Arguments]    ${gnb_index}=0
+    # NRCELL_DN_LIST is a global variable provided by AF
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist       ${NRCELL_DN_LIST}
+    @{defaultList}=   Create List    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    Run Keyword If   "${status}"=="FAIL"     Set Global Variable     ${NRCELL_DN_LIST}   ${defaultList}
+    Remove Values from List    ${NRCELL_DN_LIST}    ${None}
+    ${cell_number}    Set Variable    ${NRCELL_DN_LIST.__len__()}
+    [Return]   ${cell_number}
+
+Wait gNB cells 5g On air wo Print Cells Info
+    [Documentation]        [PRIVATE]  Wait gNB cells 5g On air
+    [Arguments]     ${num_of_cells}=1
+    Return From Keyword If    "${WAIT_5G_CELL_ONAIR}" == "0"
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+    ${cells_status}=   wait until keyword succeeds    1min    20s      Verify that cells are onair with COAM   oam_alias=${GNB_DU.oam.httpAlias}
+    ...                                                                                     num_of_cells=${num_of_cells}
+
+Wait gNB cells 5g On air
+    [Documentation]        [PRIVATE]  Wait gNB cells 5g On air
+    [Arguments]     ${num_of_cells}=1
+    Return From Keyword If    "${WAIT_5G_CELL_ONAIR}" == "0"
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+    ${cells_status}=   wait until keyword succeeds    1min    20s      Verify that cells are onair with COAM   oam_alias=${GNB_DU.oam.httpAlias}
+    ...                                                                                     num_of_cells=${num_of_cells}
+
+    # Dated Log   DBG - cells_status=${cells_status}
+    ${dict_cells}=  Create dictionary
+    FOR    ${cell_id}    IN RANGE    ${num_of_cells}
+        Dated Log New Line  ${consTraceColor}=== cellId ${cell_id} === ${defColor}
+        Dated Log           globalCellId=${cells_status[${cell_id}]['globalCellId']}
+        Dated Log           configuration=${cells_status[${cell_id}]['id']['configuration']}
+        Dated Log           band=${cells_status[${cell_id}]['band']}
+        Dated Log           subCellList=${cells_status[${cell_id}]['subCellList']}
+        Dated Log           cellName=${cells_status[${cell_id}]['cellName']}
+        Dated Log           physicalCellId=${cells_status[${cell_id}]['physicalCellId']}
+        Dated Log           technology=${cells_status[${cell_id}]['technology']}
+        ${technology}=      set variable    ${cells_status[${cell_id}]['technology']}
+        Dated Log           nrCellType=${cells_status[${cell_id}]['nrCellType']}
+        Dated Log           cellDepType=${cells_status[${cell_id}]['cellDepType']}
+        Dated Log           downlinkMimoMode=${cells_status[${cell_id}]['downlinkMimoMode']}
+        Run Keyword if     '${technology}' == 'TDD'      Run Keywords    Dated Log     chBw=${cells_status[${cell_id}]['chBw']}    AND
+        ...                                                              Dated Log     nrarfcn=${cells_status[${cell_id}]['nrarfcn']}
+        ...   ELSE                                       Run Keywords    Dated Log     chBwUl=${cells_status[${cell_id}]['chBwUl']}    AND
+        ...                                                              Dated Log     chBwDl=${cells_status[${cell_id}]['chBwDl']}    AND
+        ...                                                              Dated Log     nrarfcnUl=${cells_status[${cell_id}]['nrarfcnUl']}  AND
+        ...                                                              Dated Log     nrarfcnDl=${cells_status[${cell_id}]['nrarfcnDl']}
+
+        ${val}  Create list  ${cells_status[${cell_id}]['globalCellId']}   ${cells_status[${cell_id}]['physicalCellId']}
+        ...                  ${cells_status[${cell_id}]['nrCellType']}     ${cells_status[${cell_id}]['downlinkMimoMode']}
+        ...                  ${cells_status[${cell_id}]['technology']}
+        Set To Dictionary    ${dict_cells}    CellId-${cells_status[${cell_id}]['globalCellId']}=${val}
+    END
+    set suite variable   ${dict_cells}
+    Dated log   dict_cells=${dict_cells}
+    [Teardown]         OAM Disconnect                  ${GNB_DU.oam}
+
+
+get subcellId Spool0 with COAM
+    [Documentation]     [PRIVATE]
+    [Arguments]      ${oam_alias}   ${num_of_cells}=1
+    FOR    ${cell_id}    IN RANGE    ${num_of_cells}
+        ${cells_status}=    coam.get_cells_info    cell_type=nr     timeout=${timeout}    connection=${oam_alias}
+    END
+    [return]   ${cells_status}
+
+Get dlsubcellid for cellId by spool with COAM
+    [Documentation]     [PRIVATE]
+    [Arguments]      ${oam_alias}
+    ${cells_status}=    coam.get_cells_info    cell_type=nr     timeout=30    connection=${oam_alias}
+    #  subCellList=['Subcell-0 (DL)', 'Subcell-0 (UL)', 'Subcell-3 (DL)', 'Subcell-3 (UL)', 'Subcell-4 (DL)', 'Subcell-5 (DL)']
+    ${dlsubcellSpool0List}=  Create List
+    ${dlsubcellSpool1List}=  Create List
+    FOR    ${cell}    IN    @{cells_status}
+        ${subcellList_CellId}=  set Variable    ${cell['subCellList']}
+        ${subcellList_PhysicalCellId}=   set Variable     ${cell['physicalCellId']}
+        run Keyword if   '${subcellList_PhysicalCellId}' == '50'     dated log    subcellList_Cell50 = ${subcellList_CellId}
+        run Keyword if   '${subcellList_PhysicalCellId}' == '51'     dated log    subcellList_Cell51 = ${subcellList_CellId}
+        run Keyword if   '${subcellList_PhysicalCellId}' == '52'     dated log    subcellList_Cell52 = ${subcellList_CellId}
+        run Keyword if   '${subcellList_PhysicalCellId}' == '53'     dated log    subcellList_Cell53 = ${subcellList_CellId}
+        ${dlsubcellSpool0List}   run Keyword if   '${subcellList_PhysicalCellId}' == '50' or '${subcellList_PhysicalCellId}' == '52'
+        ...                  extract_dll1sp_from_COAM    ${subcellList_CellId}   ${dlsubcellSpool0List}
+        ...                         ELSE                set Variable             ${dlsubcellSpool0List}
+        ${dlsubcellSpool1List}   run Keyword if   '${subcellList_PhysicalCellId}' == '51' or '${subcellList_PhysicalCellId}' == '53'
+        ...                  extract_dll1sp_from_COAM    ${subcellList_CellId}   ${dlsubcellSpool1List}
+        ...                         ELSE                set Variable             ${dlsubcellSpool1List}
+    END
+    [return]   ${dlsubcellSpool0List}   ${dlsubcellSpool1List}
+
+Get ulsubcellid for cellId by spool with COAM
+    [Documentation]     [PRIVATE]
+    [Arguments]      ${oam_alias}
+    ${cells_status}=    coam.get_cells_info    cell_type=nr     timeout=30    connection=${oam_alias}
+    #  subCellList=['Subcell-0 (DL)', 'Subcell-0 (UL)', 'Subcell-3 (DL)', 'Subcell-3 (UL)', 'Subcell-4 (DL)', 'Subcell-5 (DL)']
+    ${ulsubcellSpool0List}=  Create List
+    ${ulsubcellSpool1List}=  Create List
+    FOR    ${cell}    IN    @{cells_status}
+        ${subcellList_CellId}=  set Variable    ${cell['subCellList']}
+        ${subcellList_PhysicalCellId}=   set Variable     ${cell['physicalCellId']}
+        run Keyword if   '${subcellList_PhysicalCellId}' == '50'     dated log    subcellList_Cell50 = ${subcellList_CellId}
+        run Keyword if   '${subcellList_PhysicalCellId}' == '51'     dated log    subcellList_Cell51 = ${subcellList_CellId}
+        run Keyword if   '${subcellList_PhysicalCellId}' == '52'     dated log    subcellList_Cell52 = ${subcellList_CellId}
+        run Keyword if   '${subcellList_PhysicalCellId}' == '53'     dated log    subcellList_Cell53 = ${subcellList_CellId}
+        ${ulsubcellSpool0List}   run Keyword if   '${subcellList_PhysicalCellId}' == '50' or '${subcellList_PhysicalCellId}' == '52'
+        ...                  extract_ull1sp_from_COAM    ${subcellList_CellId}   ${ulsubcellSpool0List}
+        ...                         ELSE                set Variable             ${ulsubcellSpool0List}
+        ${ulsubcellSpool1List}   run Keyword if   '${subcellList_PhysicalCellId}' == '51' or '${subcellList_PhysicalCellId}' == '53'
+        ...                  extract_ull1sp_from_COAM    ${subcellList_CellId}   ${ulsubcellSpool1List}
+        ...                         ELSE                set Variable             ${ulsubcellSpool1List}
+    END
+    [return]   ${ulsubcellSpool0List}   ${ulsubcellSpool1List}
+
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Traffic #
+DL Traffic SA Not Stopped with "${throughput}"Mbps "${duration}"s duration and "${deviation}" percent deviation with "${protocol}" protocol
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${ueSetting}
+    ...     Actions:        it manages the DL traffic on the UE
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        DL traffic is passed
+
+    Set To Dictionary       ${current_elem}        trf_id    ${current_elem.ue}
+    Traffic UE DL           ueSetting=${current_elem}
+    ...                               throughput=${throughput}
+    ...                               captureCallback=None
+    ...                               capture=None
+    ...                               captureDuration=0
+    ...                               duration=${duration}
+    ...                               shouldBeStop=False
+    ...                               shouldBeCheck=False
+    ...                               deviation=${deviation}
+    ...                               size=${current_elem.size}
+    ...                               protocol=${protocol}
+
+UL Traffic SA Not Stopped with "${throughput}"Mbps "${duration}"s duration and "${deviation}" percent deviation with "${protocol}" protocol
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${ueSetting}
+    ...     Actions:        it manages the DL traffic on the UE
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        DL traffic is passed
+
+    Set To Dictionary       ${current_elem}        trf_id    ${current_elem.ue}
+    Traffic UE UL           ueSetting=${current_elem}
+    ...                               throughput=${throughput}
+    ...                               captureCallback=None
+    ...                               capture=None
+    ...                               captureDuration=0
+    ...                               duration=${duration}
+    ...                               shouldBeStop=False
+    ...                               shouldBeCheck=False
+    ...                               deviation=${deviation}
+    ...                               protocol=${protocol}
+
+DL Traffic GBR SA Not Stopped with "${throughput}"Mbps "${duration}"s duration and "${deviation}" percent deviation
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${nbOfUe} ${ueSetting}
+    ...     Actions:        it manages the DL traffic GBR on the UE
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        DL traffic is passed
+
+    # Step 1 on qfi=2 with protocol tcp
+    Set To Dictionary       ${current_elem}        trf_id    2
+    Set To Dictionary       ${current_elem}        qfi       2
+    Traffic UE DL           ueSetting=${current_elem}
+    ...                               throughput=${current_elem.DL_throughput_GBR}
+    ...                               captureCallback=None
+    ...                               capture=None
+    ...                               captureDuration=0
+    ...                               duration=${duration}
+    ...                               shouldBeStop=False
+    ...                               shouldBeCheck=False
+    ...                               deviation=${deviation}
+    ...                               protocol=tcp
+    # Step 2 on qfi=3 with protocol udp
+    Set To Dictionary       ${current_elem}        trf_id    3
+    Set To Dictionary       ${current_elem}        qfi       3
+    Traffic UE DL           ueSetting=${current_elem}
+    ...                               throughput=${current_elem.DL_throughput_GBR}
+    ...                               captureCallback=None
+    ...                               capture=None
+    ...                               captureDuration=0
+    ...                               duration=${duration}
+    ...                               shouldBeStop=False
+    ...                               shouldBeCheck=False
+    ...                               deviation=${deviation}
+    ...                               protocol=udp
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Fetch common OAM SW version
+    [Documentation]    :
+    ...    Only used by KW "Fetch Current gNB SW Version"
+    ...    [PRIVATE]
+    [Arguments]    ${gnb_id}=0  ${bts_host}=${EMPTY}  ${w_Display}=False
+    ${bts_host}=  Set Variable if  '${bts_host}'=='${EMPTY}'  ${tl.gnbs[${gnb_id}].cu.oam_http_connection_details.addr}  ${bts_host}
+    # admin.connect_to    bts_host=${bts_host}    name=gnb
+    admin.setup_admin    bts_host=${bts_host}    name=gnb
+    ${gnb_sw_version}=    admin.get_sw_version    connection=gnb
+    admin.teardown    connection=gnb
+    ${gnb_sw_version}=    nps_11028_tools.reform_coam_sw_version    ${gnb_sw_version}
+    set global variable    ${current_gNB_sw_version}      ${gnb_sw_version}
+    ${msg}=   Run Keyword If   '${w_Display}'=='True'   StringTool.getHeaderLine    Fetch Current gNB SW Version:   ${gnb_sw_version}
+    Run Keyword If   '${w_Display}'=='True'   StringTool.printLineWithTitle   -
+    Run Keyword If   '${w_Display}'=='True'   Dated log             ${msg}
+    Run Keyword If   '${w_Display}'=='True'   StringTool.printLineWithTitle   -
+    [Return]    ${gnb_sw_version}
+
+Create Test Suite Folder
+    [Documentation]    create test suite folder
+    [Arguments]    ${with_timestamp}=${FALSE}
+    ${timeStamp}    get current date    result_format=%Y%m%d_%H%M%S
+    ${SUITE_NAME}    Replace String    ${SUITE_NAME}    ${SPACE}    _
+    ${testSuiteDir}    set variable if    '${with_timestamp}'=='${TRUE}'   ${LOG_PATH}/${SUITE_NAME}/${timeStamp}
+    ...                                                                    ${LOG_PATH}
+    Set Suite Variable    ${testSuiteDir}
+    Run Keyword if    '${with_timestamp}'=='${TRUE}'     create directory    ${testSuiteDir}
+
+Create Test Case Folder
+    [Documentation]    create test case folder
+    ${testCaseDir}    Replace String    ${TEST_NAME}    ${SPACE}    _
+    ${testCaseDir}    nps_11028_tools.filter_non_printable_and_remove_head    ${testCaseDir}
+    ${testCaseDir}    Replace String    ${testCaseDir[0:30]}    ${SPACE}    _
+    ${testCaseDir}    Replace String    ${testCaseDir}    .    _
+    Dated log       Create Test Case Folder ${testSuiteDir}/${testCaseDir}
+    Set Suite Variable    ${testCaseDir}    ${testSuiteDir}/${testCaseDir}
+    Create Directory    ${testCaseDir}
+
+Create Test Case Folder OLD
+    [Documentation]    create test case folder
+    ${testCaseDir}    Replace String    ${TEST_NAME[0:30]}    ${SPACE}    _
+    ${testCaseDir}    Replace String    ${testCaseDir}    .    _
+    ${testCaseDir}    Remove String    ${testCaseDir}    [1]
+    ${testCaseDir}    Remove String    ${testCaseDir}    [1.0]
+    Dated log       Create Test Case Folder ${testSuiteDir}/${testCaseDir}
+    Set Suite Variable    ${testCaseDir}    ${testSuiteDir}/${testCaseDir}
+    Create Directory    ${testCaseDir}
+
+Get testcase log directory
+    [Documentation]    :Author: Ch SAMSON
+    ...    Retuns path for Testcase log directory
+    ...    If Testcase Log directory does not exist it will created automatically
+    ...
+    ...    :returns: Path for Testcase log
+    ...
+    ${P_resultTestDir}=    Get Variable Value    ${testCaseDir}
+    Run Keyword If    '${P_resultTestDir}'=='None'
+    ...    Create Test Case Folder
+    ${P_resultTestDir} =    Get Variable Value   ${testCaseDir}
+    [Return]    ${P_resultTestDir}
+
+Prepare Test Name
+    [Documentation]    :Author: Ch SAMSON
+    ...    Retuns formated test name
+    ...
+    ...    :returns: formated test name
+    ...
+    ${TEST_NAME}=       replace string  ${TEST_NAME}      ${SPACE}        _
+    set test variable      ${TEST_NAME}
+    [Return]    ${TEST_NAME}
+
+Prepare Logs Directory Path
+    [Arguments]    ${resultDir}=None   ${subdir}=${EMPTY}    ${with_timestamp}=${FALSE}
+    [Documentation]
+    ...    Creates directory for storing logs, based on current execution context.
+    ...    An absolute path to created directory is returned.
+    [Tags]    PRIVATE
+    ${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    ${subdir}    set variable if    '${with_timestamp}'=='${TRUE}'   ${subdir}_${timestamp}
+    ...                                                              ${subdir}
+    ${resultDir}=    Run Keyword If    '${resultDir}'=='None'    Get testcase log directory
+    ...    ELSE    Set Variable    ${resultDir}
+    ${logs_dir}   set variable     ${resultDir}/${subdir}
+    OperatingSystem.Create Directory    ${logs_dir}
+    [Return]    ${logs_dir}
+
+Get Testline Name
+    StringTool.printLineWithTitle   title=Get Testline Name
+    ${ret}    ${testline_name}=    OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    ${mgs}=  StringTool.getHeaderLine    Testline Name:  ${testline_name}
+    dated log     ${mgs}
+    ${mgs}=   StringTool.getHeaderLine    Testline init file is   /home/ute/testline_configuration/${testline_name}/
+    dated log     ${mgs}
+    Set Suite Metadata    Testline Name    ${testline_name}
+    Set global variable   ${testline_name}
+    # add here some info about  UTE TL
+    ${reserve_file}=    Set Variable     /opt/ute/reservation.json
+    ${file_exist}=    Run Keyword And Return Status    OperatingSystem.file_should_exist    ${reserve_file}
+    ${cmd}=   run Keyword if   "${file_exist}"=="True"    Catenate
+    ...                                           python -c 'import json;print(json.load(open("${reserve_file}"))["topology"])'
+    ${ret}    ${ret_cmd}=       run Keyword if   "${file_exist}"=="True"       OperatingSystem.Run And Return Rc And Output    ${cmd}
+    ${mgs}=     run Keyword if   "${file_exist}"=="True"      StringTool.getHeaderLine          Topology is   ${ret_cmd}
+    run Keyword if   "${file_exist}"=="True"      Set Suite Metadata    Topology    ${ret_cmd}
+    run Keyword if   "${file_exist}"=="True"      dated log     ${mgs}
+    ${cmd}=   run Keyword if   "${file_exist}"=="True"    Catenate
+    ...                                           python -c 'import json;print(json.load(open("${reserve_file}"))["user"])'
+    ${ret}    ${ret_cmd}=       run Keyword if   "${file_exist}"=="True"       OperatingSystem.Run And Return Rc And Output    ${cmd}
+    ${mgs}=   run Keyword if   "${file_exist}"=="True"    StringTool.getHeaderLine       user is   ${ret_cmd}
+    run Keyword if   "${file_exist}"=="True"     dated log     ${mgs}
+    ${cmd}=   run Keyword if   "${file_exist}"=="True"    Catenate
+    ...                                           python -c 'import json;print(json.load(open("${reserve_file}"))["enb_build"])'
+    ${ret}    ${ret_cmd}=       run Keyword if   "${file_exist}"=="True"       OperatingSystem.Run And Return Rc And Output    ${cmd}
+    ${mgs}=   run Keyword if   "${file_exist}"=="True"     StringTool.getHeaderLine       enb_build is   ${ret_cmd}
+    run Keyword if   "${file_exist}"=="True"      dated log    ${mgs}
+    StringTool.printLineWithTitle   title=-
+    [return]    ${testline_name}
+
+Get TTI traces
+    [Arguments]     ${suffix}=${EMPTY}   ${time}=1s    ${event_nr_max}=30000   ${w_convert_pcap_to_excelCsv}=True
+    Dated Log         ======> Get TTI traces
+    ${tm}    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}    .
+    Dated Log         Start TTI Traces in Streaming Mode
+    ttitrace.Start TTI Traces in Streaming Mode      filter_bitmap2=0x0
+    Traced Sleep    ${time}      msg=Waiting for TTI Traces
+    Dated log         Stop TTI Traces in Streaming Mode...
+    ${ttiTraceSubDir}   set Variable    TtiTrace-${time}-${tm}
+    ${ttiTraceSubDir}   set Variable if    '${suffix}'!='${EMPTY}'     ${ttiTraceSubDir}-${suffix}
+    ...                                                                ${ttiTraceSubDir}
+    ${tti_trace_path}=     ttitrace.Stop TTI Traces in Streaming Mode    tti_trace_path=${testCaseDir}/${ttiTraceSubDir}
+    Dated log         Decode TTI Traces...
+    nps_ttitraces_tools.decode_tti_traces_using_TtitraceReaderEvtDec       desired_storage_directory=${testCaseDir}/${ttiTraceSubDir}
+    ...                                                                    num_of_events=${event_nr_max}
+    Run Keyword And Ignore Error   OperatingSystem.Run
+    ...                                 cp ${testCaseDir}/${ttiTraceSubDir}/msg_all.csv ${testCaseDir}/${ttiTraceSubDir}/msg-all-${time}-${tm}.csv
+    run keyword if   '${w_convert_pcap_to_excelCsv}'=='True'    run keywords
+    ...               Dated log    Convert TTI trace from pcap to excelCsv...    AND
+    ...               Run keyword and continue on failure     ttitrace.Convert TTI trace from pcap to excelCsv     input_file_path=${tti_trace_path}
+    ...                                                                    output_file_path=${testCaseDir}/${ttiTraceSubDir}
+    [return]     ${testCaseDir}/${ttiTraceSubDir}
+
+Get L1L2 traces
+    [Arguments]     ${time}=1s   ${prefix}=DL_UL_Tput  ${msg}=take BIP L1L2 traces with DL/UL Tput
+    Dated Log         ======> Get L1L2 Bip Traces
+    ${tm}    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}
+    ${CaptureBIP}              Capture L1L2 Set Upon Config             airscale=${GNB_DU}
+    ${testCase}    Replace String    ${TEST_NAME[0:20]}    ${SPACE}    _
+    ${testCase}    Replace String    ${testCase}    .    _
+    ${testCase}    Remove String     ${testCase}    [1]
+    ${testCase}    Remove String     ${testCase}    [1.0]
+    ${testCase}    Remove String     ${testCase}    [2.0]
+    ${testCase}    Remove String     ${testCase}    [
+    ${testCase}    Remove String     ${testCase}    ]
+    ${CaptureBIP.prefix}       set Variable   ${prefix}.${testCase}.${tm}
+    ${CaptureBIP.withTN}       set Variable   False
+    # not needed with L1L2Bip pcap using WEBEM
+    # ${CaptureBIP.filter}       set variable   ether[12:2]=0x8951 or ether[16:2]=0x8951
+
+    Capture Init   ${CaptureBIP}
+    Capture start  ${CaptureBIP}
+    Traced Sleep   ${time}     msg=${msg}
+    dated log    => BEWARE that L1L2Bip Traces can take a long time...
+    Capture stop   ${CaptureBIP}
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CaptureBIP.path}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${CaptureBIP.path}    ${testCaseDir}
+    [Return]    ${testCaseDir}/${CaptureBIP.name}
+
+teardownP1
+    dated log    =======> Test Teardown : Collecting logs...
+    Run Keyword And Ignore Error     Collect EGATE console Logs
+
+    # Save current SCF file used during test cases
+    ${current_scf_file}             OAM Get SCF File            dir=${testCaseDir}      file=SCF_used_for_11028_Tests.xml
+    Set Suite Variable              ${current_scf_file}
+    Dated Log New Line         Current 11028 SCF file stored to ${current_scf_file}
+
+    # Get swconfig file used during 11028 tests
+    ${ret}   ${alias_gnb}           Run Keyword And Ignore Error         SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    Run Keyword And Ignore Error       csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${testCaseDir}/swconfig_used_for_11028_Tests.txt
+    ...                             connection=${alias_gnb}
+    Dated Log                  Current 9890 swconfig file stored to ${testCaseDir}/swconfig_used_for_11028_Tests.txt
+
+    # Get vendor file used during 11028 tests
+    ${ret}   ${curent_vendor_file_list}   Run Keyword And Ignore Error      SetConfig.Download Vendor File
+    ${cmd}=   Catenate    basename ${curent_vendor_file_list}[0]
+    ${curent_vendor_file_name}=   OperatingSystem.Run   ${cmd}
+    ${curent_vendor_file_name}      Remove String      ${curent_vendor_file_name}     _ori.xml
+    ${curent_vendor_file_name}      Remove String      ${curent_vendor_file_name}     .xml
+    Run Keyword And Ignore Error    OperatingSystem.Copy File       ${curent_vendor_file_list}[0]
+    ...                                                             ${testCaseDir}/${curent_vendor_file_name}_used_for_11028_Tests.xml
+    Dated Log               -----> Current Vendor File Name : ${testCaseDir}/${curent_vendor_file_name}_used_for_11028_Tests.xml
+
+    # Get EPC file configuration used during 11028 tests
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${testCaseDir}/basic_wts_used_for_11028_Tests.cfg
+    ...                             connection=${alias_epc}
+
+    # Get AP configuration file used during 9890 tests
+    ${ap_configfile}                Get XML AirPhoneConfig Path
+    run Keyword if      '${ap_configfile}' != '${empty}'     csn.download_file     remote_path=${tl.core.dir_path}/${ap_configfile}
+    ...                             local_path=${testCaseDir}/ApOamConfig_used_for_11028_Tests.xml
+    ...                             connection=${alias_epc}
+
+    ${msg}=   Catenate    Current 11028 basic file ${tl.core.cfg_filename} stored
+    ...                      to ${testCaseDir}/basic_wts_used_for_11028_Tests.cfg
+    Dated Log    ${msg}
+    Dated Log  Current 11028 ApOamConfig file stored to ${testCaseDir}/ApOamConfig_used_for_11028_Tests.xml
+
+    # get Alarm at the end of the test and store it into a file
+    Dated log New Line  OAM Get Active Alarms to Save into file
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+
+    ${active_alarms}     OAM Get Active Alarms                   oam=${GNB_DU.oam}       textFormat=${False}
+    ${len}    Get Length    ${active_alarms}
+    ${alarm_id_list}    Create List
+    ${alarm_name_list}    Create List
+    ${faultId}=     set variable if    ${isAiC}        fault_id
+    ...                                                faultId
+    ${faultName}=     set variable if    ${isAiC}      fault_name
+    ...                                                faultName
+
+    FOR    ${i}    IN RANGE    ${len}
+         ${tmp_id}    Get From Dictionary    ${active_alarms[${i}]}    ${faultId}
+         ${tmp_name_id}    Get From Dictionary    ${active_alarms[${i}]}    ${faultName}
+         Append To List    ${alarm_id_list}    ${tmp_id}
+         Append To List    ${alarm_name_list}    ${tmp_name_id}
+    END
+    # Dated log     Active alarms: alarm_id_list=${alarm_id_list}
+    # Dated log     Active alarms: alarm_name_list=${alarm_name_list}
+
+    Append To File    ${testCaseDir}/OAM_Alarms_After_${TEST_NAME}.txt     Active Alarms Id List:\n${alarm_id_list}\n\n
+    Append To File    ${testCaseDir}/OAM_Alarms_After_${TEST_NAME}.txt     Active Alarms Name List:\n${alarm_name_list}\n\n
+
+    OAM Disconnect                          ${GNB_DU.oam}
+
+    Dated Log         Collect /ram/startup_l3.log and egate_console.log from Airphone...
+    Prepare Logs Directory Path    subdir=airphone
+    Run Keyword And Ignore Error      Collect EGATE console Logs
+    Run keyword and Ignore error      Get APL3 log from Airphone        target_dir=${testCaseDir}/airphone
+
+    Dated Log         Collect /ffs/run/simmode/iphy.xml from Airphone...
+    Run keyword and Ignore error      Get iPhy.xml file from Airphone   target_dir=${testCaseDir}/airphone
+
+    Dated Log         Collect /ffs/run/swconfig.txt from Airphone...
+    Run keyword and Ignore error      Get SWCONFIG file from Airphone   target_dir=${testCaseDir}/airphone
+
+    # Get EPC file configuration used during 11028 tests
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    ${LuaFileName_generated}=    catenate    SEPARATOR=    ${tl.core.cfg_filename.replace(".cfg",".lua")}
+    run keyword and ignore error     csn.download_file          remote_path=${tl.core.dir_path}/${LuaFileName_generated}
+    ...                             local_path=${testCaseDir}/basic_wts_used_for_11028_Tests.lua
+    ...                             connection=${alias_epc}
+    dated log    =======> Test Teardown : End Of Collecting logs...
+    # CleanBasicFiles   => move to End Of Kw "Test Suite Teardown for CB011028"
+
+teardownP2
+    Collect Logs if needed
+    set Suite Variable    ${testCaseDir}    None
+
+CleanBasicFiles
+    [Documentation]         At the end of the test, this KW erase all Sweng adding arround basic cfg/lua
+    Dated Log               ERASE LUA FILES from previous test
+    ${alias}                SSH Connect           ${HOST_EPCSIM}
+    ${myCommand}=           set variable          rm -f /opt/iphy/latest/basic*step2*.*;rm -rf /tmp/ute/
+    ${result}=              SSH Exec              command=${myCommand}
+    ...                                           alias=${alias}
+    Dated Log               result=${result}
+
+CleanUpSysLogs
+    [Documentation]
+    Dated Log               CleanUp Syslog from previous test
+    ${commandToRun}     Catenate     rm -rf /tmp/btslog2/SYSLOG*.LOG
+    ${ret}    ${results}     Run Keyword And Ignore Error    Run   ${commandToRun}
+    Run Keyword if   '${ret}' == 'PASS'     dated log    ${consTraceColor}Syslog are removed${defColor}
+    ...    ELSE                             dated log    ${consTraceColor}No Syslog present !!!${defColor}
+
+Collect EGATE console Logs
+    [Documentation]    This keyword is used to collect egate_console.log from the /opt/wts/latest/ folder
+    ...                This is collected in the Test Log Folder
+    [Arguments]       ${target_dir}=None
+    ${local_target_dir}=    Run Keyword If    '${target_dir}'=='None'    Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+
+    ute_wtssim.setup_egate      egate_port=${tl.core.egate_port}
+    ...                         host_ip=${tl.core.default_ssh_connection_details.addr}
+    ...                         tool_dir=${tl.core.dir_path}
+    ...                         alias=ap_egate
+    ...                         ssh_user=ute
+    ...                         ssh_pass=ute
+    ute_wtssim.execute egate command         cmd=sim_log_set flush  timeout=1s  alias=ap_egate
+    ute_wtssim.teardown_egate    alias=ap_egate
+
+    # Connect to LTEEMU   alias=lteemu_alias
+    ${alias}        SSH Connect   host=${HOST_EPCSIM}
+
+    Dated Log      Collecting ${tl.core.dir_path}/egate_console.log...
+    csn.download_file               remote_path=${tl.core.dir_path}/egate_console.log
+    ...                             local_path=${local_target_dir}/egate_console.log
+    ...                             connection=${alias}
+    Dated Log                  egate_console.log file stored to ${local_target_dir}
+
+
+Get APL3 log from Airphone
+    [Documentation]    :Author: Ch SAMSON
+    ...
+    ...     :param ue_id:         Id of gnb                       [0.. ]  default=0
+    ...     :param comu_id:       Id of Common Unit               [0..1]  default=0
+    ...     :param target_dir:    (default None) save swconfig to path
+    ...
+    ...     :return:   startup_l3_log for further usage
+    ...
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}    ${target_dir}=None
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+    ${ap_alias}=    Connect to Airphone Common Unit    ue_id=${ue_id}    ue_comu_id=${comu_id}
+    Dated log                       Check the startup_l3.log file: zipped or not zipped
+    ssh.send command    ls -ltr /ram/startup_l3.log.xz   connection=${ap_alias}
+    ${output_1}=    ssh.read output   connection=${ap_alias}
+    ssh.send command    ls -ltr /ram/startup_l3.log   connection=${ap_alias}
+    ${output_2}=    ssh.read output   connection=${ap_alias}
+    ${lenght_1}                     Get Length                              ${output_1}
+    ${length_2}                     Get Length                              ${output_2}
+    Dated log                       AP startup_l3 length_xz:${lenght_1} - lenght_non_xz:${length_2}
+    ${APL3_log}=    Set Variable If                 ${lenght_1} != 0                        startup_l3.log.xz
+    ...                                             ${length_2} != 0                        startup_l3.log
+    ...                                                                                     startup_l3.log
+    ssh.Download File    remote_path=/ram/${APL3_log}    local_path=${target_dir}/ap_${APL3_log}    connection=${ap_alias}
+    [Return]    ${target_dir}/ap_${APL3_log}
+
+Get iPhy.xml file from Airphone
+    [Documentation]    :Author: Ch SAMSON
+    ...
+    ...     :param ue_id:         Id of gnb                       [0.. ]  default=0
+    ...     :param comu_id:       Id of Common Unit               [0..1]  default=0
+    ...     :param target_dir:    (default None) save swconfig to path
+    ...
+    ...     :return:   swconfig path for further usage
+    ...
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}    ${target_dir}=None    ${file_name}=ap_iphy.xml
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+    ${ap_alias}=    Connect to Airphone Common Unit    ue_id=${ue_id}    ue_comu_id=${comu_id}
+    # WARNING : need to adapt new_iphy.xml  => iphy.xml  for AiC tests !!!
+    # ${iphy_filename}     set variable if     ${isAiC}       iphy.xml
+    # ...                                                     new_iphy.xml
+    ${iphy_filename}     set variable     iphy.xml
+    ssh.Download File    remote_path=/ffs/run/simmode/${iphy_filename}    local_path=${target_dir}/${file_name}    connection=${ap_alias}
+    [Return]    ${target_dir}/${file_name}
+
+Restore iPhy.xml file to Airphone
+    [Documentation]    :Author: Ch SAMSON
+    ...
+    ...     :param ue_id:         Id of gnb                       [0.. ]  default=0
+    ...     :param comu_id:       Id of Common Unit               [0..1]  default=0
+    ...     :param target_dir:    (default None) save swconfig to path
+    ...
+    ...     :return:   swconfig path for further usage
+    ...
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}    ${local_dir}=None    ${file_name}=ap_new_iphy.xml
+    ${local_dir}=    Run Keyword If    '${local_dir}'=='None'    Get testcase log directory
+    ...    ELSE    Set Variable    ${local_dir}
+    ${ap_alias}=    Connect to Airphone Common Unit    ue_id=${ue_id}    ue_comu_id=${comu_id}
+    ${iphy_filename}     set variable    iphy.xml
+    ssh.upload File    local_path=${local_dir}/${file_name}    remote_path=/ffs/run/simmode/${iphy_filename}       connection=${ap_alias}
+    [Return]    ${local_dir}/${file_name}
+
+Get SWCONFIG file from Airphone
+    [Documentation]    :Author: Ch SAMSON
+    ...
+    ...     :param ue_id:         Id of gnb                       [0.. ]  default=0
+    ...     :param comu_id:       Id of Common Unit               [0..1]  default=0
+    ...     :param target_dir:    (default None) save swconfig to path
+    ...
+    ...     :return:   swconfig path for further usage
+    ...
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}    ${target_dir}=None    ${file_name}=ap_swconfig.txt
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+    ${ap_alias}=    Connect to Airphone Common Unit    ue_id=${ue_id}    ue_comu_id=${comu_id}
+    ${swconfig_filename}     set variable       swconfig.txt
+    ssh.Download File    remote_path=/ffs/run/${swconfig_filename}    local_path=${target_dir}/${file_name}    connection=${ap_alias}
+    [Return]    ${target_dir}/${file_name}
+
+Store Current swconfig from Airphone
+    [Documentation]    :
+    ...    in case testcase needs to modify swconfig.txt on Airphone, collect current one as backup, Set path as Suite Variable ${P_ORIG_AP_SWCONFIG}
+    ...
+    ...    :param ue_id:      Id of ue                       [0.. ]  default=0
+    ...    :param comu_id:    Id of Common Unit              [0..1]  default=0
+    ...    :param target_dir: where to save original swconfig.txt, default with testline.Get Test Suite Config Directory
+    ...
+    ...    **Example:**
+    ...    | Store Current swconfig from Airphone
+    ...
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}    ${target_dir}=None   ${file_name}=ap_swconfig.txt
+    ${ORIG_SWCONFIG}=    Get SWCONFIG file from Airphone    ue_id=${0}    comu_id=${0}    target_dir=${target_dir}
+    Run    mv ${ORIG_SWCONFIG} ${ORIG_SWCONFIG}.orig
+    Set Suite Variable    ${P_ORIG_AP_SWCONFIG}    ${ORIG_SWCONFIG}.orig
+    [Return]    ${ORIG_SWCONFIG}.orig
+
+Connect to Airphone Common Unit
+    [Documentation]    :
+    ...     setup ssh connection to Airphone Airscale (ASXX) and returns connection handle/alias
+    ...
+    ...     :param ue_id:             Id of UE                       [0.. ]  default=0
+    ...     :param ue_comu_id:        Id of AP Common Unit           [0..1]  default=0
+    ...     :param alias:       (optional) connection alias  !! should not be used
+    ...
+    ...     :returns alias:     alias for ssh connection to Common Unit
+    ...
+    ...     **Example:**
+    ...
+    ...     | ${ap_alias}=   connect.Connect to Airphone Common Unit    ue_id=0  ue_comu_id=0
+    ...     | ssh.execute     command=uptime  connection=${ap_alias}
+    ...
+    [Arguments]    ${ue_id}=${0}    ${ue_comu_id}=${0}  ${alias}=ssh-ap-${ue_id}-${ue_comu_id}
+    ssh.Connect_to      hostname=${tl.ues[${ue_id}].l1.common_units[${ue_comu_id}].lmp_connection.addr}
+    ...                 username=${tl.ues[${ue_id}].l1.common_units[${ue_comu_id}].lmp_connection.username}
+    ...                 password=${tl.ues[${ue_id}].l1.common_units[${ue_comu_id}].lmp_connection.password}
+    ...                 alias=${alias}
+    ssh.Force Reconnect    connection=${alias}
+    [Return]    ${alias}
+
+Collect all logs
+    [Documentation]      Get GNB Logs from Coam. Files are put inside testCaseDir directory
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+
+    ${COLLECT_LOGS}           Set Variable if
+    ...                       "${TEST STATUS}" == "FAIL" and "${EXCLUDE_LOGS_IF_FAIL}" == "0"
+    ...                       1    ${COLLECT_LOGS}
+
+    Return From Keyword If    "${COLLECT_LOGS}" == "0"
+
+    Dated Log         Collect WTS logs...
+    Prepare Logs Directory Path    subdir=wts
+    Collect WTS log files       target_dir=${testCaseDir}/wts
+
+    return from Keyword if     '${ENABLE_TEST_TEARDOWN}'=='0'
+
+    # BTS snapshot.
+    Dated Log New Line         Get gNB snapshot...
+    ${snapshot_path}     Get GNB Logs from Coam
+    Prepare Logs Directory Path    subdir=snapshot
+    ${status}   ${ret}   Run Keyword And Ignore Error    OperatingSystem.File Should Exist    ${snapshot_path}
+    run Keyword if   '${status}'=='PASS'     Run Keyword And Ignore Error    OperatingSystem.Move File    ${snapshot_path}   ${testCaseDir}/snapshot
+    run Keyword if   '${status}'=='PASS'     Dated Log     gNB snapshot ${snapshot_path} generated and copied into ${testCaseDir}/snapshot
+
+    ${status}   ${snapshot_ims2_path}     Run Keyword And Ignore Error      Collect IMS2 Coam
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${snapshot_ims2_path}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${snapshot_ims2_path}    ${testCaseDir}/snapshot
+    Dated Log     gNB snapshot IMS2 ${snapshot_ims2_path} generated and copied into ${testCaseDir}/snapshot
+
+    Prepare Logs Directory Path    subdir=ap_sosreport
+    Dated Log         Collect Current swconfig from Airphone...
+    Store Current swconfig from Airphone     target_dir=${testCaseDir}/ap_sosreport
+    Dated Log          Collect Airphone Logs...
+    Collect sos report logs   target_dir=${testCaseDir}/ap_sosreport
+    Dated Log     Sos report finished
+
+Get GNB Logs from Coam
+    [Arguments]    ${resultDir}=None   ${subdir}=${EMPTY}    ${with_timestamp}=${TRUE}
+    return from Keyword if     ${isAiC}    ${EMPTY}
+    ${resultDir}=    Run Keyword If    '${resultDir}'=='None'    Get testcase log directory
+    ...    ELSE    Set Variable    ${resultDir}
+    ${logs_dir}   set variable     ${resultDir}/${subdir}
+	coam.connect to   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+	${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    ${snapshot_path}=    run keyword if   '${with_timestamp}'=='${TRUE}'   set variable  ${logs_dir}/Snapshot_GNB_${timestamp}.zip
+    ...    ELSE                                                            set variable  ${logs_dir}/Snapshot_GNB.zip
+    coam.get_snapshot     target_file_name=${snapshot_path}    timeout=720    connection=coam_admin
+    [Teardown]  run Keyword if   not ${isAiC}    coam.teardown    connection=coam_admin
+    [Return]         ${snapshot_path}
+
+Collect IMS2 Coam
+    return from Keyword if   ${isAiC}
+	coam.connect to   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+	${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    ${snapshot_path}=    set variable  ${LOG_PATH}/Snapshot_GNB_IMS2_${timestamp}.zip
+    Run Keyword And Ignore Error    admin.collect_im_snapshot
+    ...                             target_file_name=${snapshot_path}
+    ...                             timeout=720
+    ...                             connection=coam_admin
+    [Teardown]  coam.teardown    connection=coam_admin
+    [Return]         ${snapshot_path}
+
+Connect to Core
+    [Documentation]    :
+    ...     setup ssh connection core and returns connection handle/alias
+    ...     KW sould be called without arguments
+    ...
+    ...     :param alias: (optional) alias used for ssh connection
+    ...
+    ...     :return alias: alias for ssh connection to OAM
+    ...
+    [Arguments]    ${alias}=ssh-core
+    ssh.Connect_to      hostname=${tl.core.default_ssh_connection_details.addr}
+    ...                 username=${tl.core.default_ssh_connection_details.username}
+    ...                 password=${tl.core.default_ssh_connection_details.password}
+    ...                 alias=${alias}
+    [Return]    ${alias}
+
+Get latest modified file with defined pattern
+    [Documentation]    :
+    ...    It returns the latest modified file from a specified directory
+    ...
+    ...    :param path:    Path of directory to get the files
+    ...    :param pattern: Optional matching pattern (default: ${EMPTY})
+    ...
+    ...    :returns lastModifiedFile: Latest modified file
+    ...
+    [Arguments]    ${path}    ${pattern}=${EMPTY}
+    ${files}=    OperatingSystem.List files in directory    path=${path}    pattern=${pattern}
+    ${lastModifiedFile}=    Get from list    ${files}    0
+    ${time1}=    OperatingSystem.Get modified time    ${path}//${lastModifiedFile}    epoch
+    FOR    ${file}    IN    @{files}
+        ${time}=    Get modified time    ${path}//${file}    epoch
+        ${lastModifiedFile}=    Set variable if    ${time1} < ${time}    ${file}    ${lastModifiedfile}
+    END
+    [Return]    ${lastModifiedFile}
+
+Collect sos report logs
+    [Documentation]
+    ...    Sos report logs are needed in case of opening airphone pronto
+    ...
+    ...    :param target_dir:   directory to store the journal file
+    ...    :param script_path:  path where sosReport.sh is located (default: ${tl.core.dir_path})
+    ...
+    [Arguments]    ${target_dir}=None    ${script_path}=${tl.core.dir_path}
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    Get Testcase Log Directory
+    ...    ELSE    Set Variable    ${target_dir}
+    # Call Get Sos Report from sweng
+    Setup.Get Sos Report
+    ${sos_report_file}=    Get latest modified file with defined pattern    path=${LOG_PATH}
+    ...                                                                     pattern=SosReport_${TEST NAME}.tgz
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${LOG_PATH}/${sos_report_file}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${LOG_PATH}/${sos_report_file}    ${target_dir}/SosReport_${TEST NAME[0:30]}.tgz
+    Dated Log     sos Report ${sos_report_file} generated and copied into ${target_dir}
+    ${core_alias}=    Connect to Core
+    ssh.Download File    remote_path=${tl.core.dir_path}/sosReport_ASIK_ASIL.sh.log    local_path=${target_dir}/sosReport_ASIK_ASIL.sh.log
+    ...    connection=${core_alias}
+
+Collect sos report logs old version
+    [Documentation]  [OBSOLETE][DONT WORK WITH ASIL!!!]
+    ...    Sos report logs are needed in case of opening airphone pronto
+    ...
+    ...    :param target_dir:   directory to store the journal file
+    ...    :param script_path:  path where sosReport.sh is located (default: ${tl.core.dir_path})
+    ...
+    [Arguments]    ${target_dir}=None    ${script_path}=${tl.core.dir_path}
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    Get Testcase Log Directory
+    ...    ELSE    Set Variable    ${target_dir}
+    ${core_alias}=    Connect to Core
+    ssh.execute    cd ${script_path}; ./sosReport.sh -c -s -nr -iphyDIR\=${tl.core.dir_path} -btsDIR\=${tl.core.dir_path}   connection=${core_alias}
+    ssh.Download File    remote_path=${tl.core.dir_path}/iphyPsSnapshot.zip    local_path=${target_dir}/iphyPsSnapshot.zip
+    ...    connection=${core_alias}
+    ssh.Download File    remote_path=${tl.core.dir_path}/btsSnapshot.zip    local_path=${target_dir}/btsSnapshot.zip
+    ...    connection=${core_alias}
+    ssh.Download File    remote_path=${tl.core.dir_path}/sosReport.sh.log    local_path=${target_dir}/sosReport.sh.log
+    ...    connection=${core_alias}
+    ${sos_report_file}=    Get latest modified file with defined pattern    path=${script_path}
+    ...                                                                     pattern=SosReport*_complete_iphy1.tgz
+    ssh.Download File    remote_path=${script_path}/${sos_report_file}    local_path=${target_dir}/${sos_report_file}
+    ...    connection=${core_alias}
+
+Collect Logs
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+    Run Keyword And Ignore Error         Get testcase log directory
+    Run Keyword And Ignore Error         Collect all logs     ${alias}
+
+Collect Logs if needed
+    [Documentation]                 Collect logs if needed
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+    log many     ${TEST STATUS}
+    Run Keyword If  '${TEST STATUS}' == 'FAIL' or '${COLLECT_LOGS}' == '1'     Collect Logs    ${alias}
+    ...    ELSE    Pass Execution If    '${TEST STATUS}' == 'PASS'    Not collect logs
+
+Collect WTS log files
+    [Documentation]    Author: Ch SAMSON
+    ...    Run keyword before egate teardown
+    ...
+    ...
+    ...    :param target_dir:   directory to store the journal file
+    ...    :param wts_alias:    alias name to handle egate for ute_wtssim    default=ap_egate
+    ...
+    [Arguments]    ${target_dir}=None    ${wts_alias}=ap_egate
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+
+    ${alias}            SSH Connect         host=${HOST_EPCSIM}
+    # option h added in case of WTS folder is a link
+    Dated Log      tar zcvfh WTS.tgz ${tl.core.dir_path}
+    ssh.execute    tar zcvfh WTS.tgz ${tl.core.dir_path}    connection=${alias}
+    ssh.execute    ls -l ${tl.core.dir_path}/* >ls-l-WTS.txt       connection=${alias}
+    ${HOME}=    Get Environment Variable    name=HOME
+    csn.download_file               remote_path=${HOME}/WTS.tgz
+    ...                             local_path=${target_dir}/WTS.tgz
+    ...                             connection=${alias}
+    csn.download_file               remote_path=${HOME}/ls-l-WTS.txt
+    ...                             local_path=${target_dir}/ls-l-WTS.txt
+    ...                             connection=${alias}
+    Dated Log                  WTS log files stored to ${target_dir}
+
+Connect to TestPC
+    [Documentation]   :
+    ...     Setup ssh connection to Test PC and returns connection handle/alias
+    ...
+    ...     **Note:** KW sould be called without arguments
+    ...
+    ...     :param alias: (optional) alias used for ssh connection
+    ...
+    ...     :return alias: for ssh connection to Testpc
+    ...
+    ...     **Example:**
+    ...
+    ...     | ${tpc_alias}=  Connect to TestPC
+    ...     | ssh.execute  command=ls  connection=${tpc_alias}
+    ...
+    [Arguments]    ${alias}=ssh-test-pc
+    ssh.Connect_to      hostname=${tl.test_pc.default_ssh_connection_details.addr}
+    ...                 username=${tl.test_pc.default_ssh_connection_details.username}
+    ...                 password=${tl.test_pc.default_ssh_connection_details.password}
+    ...                 alias=${alias}
+    [Return]    ${alias}
+
+Start Tcpdump on TestPc
+    [Documentation]    :Author: Soenke Kullberg
+    ...     Start Tcpdump on test PC
+    ...
+    ...     :param option: (default="") Addtional options for tcpdump
+    ...     :param interface: (default=fronthaul) Interface tcpdump
+    ...     :param collector: (default gnb-${gnb_id}-oam-${interface}-tcpdump)  Name of collector **Impact on log filename**
+    ...
+    ...     **Example:**
+    ...
+    ...         | Start Tcpdump on TestPc     interface=eth0
+    ...         | BuiltIn.Sleep     10 sec
+    ...         | Stop Tcpdump on TestPc     interface=eth0
+    [Arguments]     ${interface}  ${option}=${EMPTY}      ${collector}=testpc-${interface}-tcpdump
+    ${testpc_ssh_config}=  Create Dictionary
+    ...     host=${tl.test_pc.default_ssh_connection_details.addr}
+    ...     user=${tl.test_pc.default_ssh_connection_details.username}
+    ...     password=${tl.test_pc.default_ssh_connection_details.password}
+    tcpdump.create_tcpdump_collector
+    ...     name=${collector}
+    ...     options=-i ${interface} ${option}
+    ...     executor=${testpc_ssh_config}
+    tcpdump.setup_collectors    names=${collector}
+    tcpdump.start_collectors    names=${collector}
+    tcpdump.set_suite_alias     ${collector}
+    BuiltIn.Log    Tcpdump on test pc on interface ${interface} started successfully    console=yes
+    [RETURN]    ${collector}
+
+
+Stop Tcpdump on TestPc
+    [Documentation]    :Author: Soenke Kullberg
+    ...     Stop tcpdump on testpc
+    ...     Logs are storred in Testcase Log directory
+    ...
+    ...     :param interface: (default=fronthaul) Interface for tcpdump
+    ...     :param target_dir: Directory to store the pcap file
+    ...
+    ...     :return tcpdump-file: Path to tcpdump file
+    ...
+    [Arguments]     ${interface}  ${collector}=testpc-${interface}-tcpdump    ${target_dir}=None
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    common_Dss_Keywords.Get Testcase Log Directory
+    ...    ELSE    Set Variable    ${target_dir}
+    tcpdump.stop_collectors         names=${collector}
+    tcpdump.collect_collectors      names=${collector}   target_dir=${target_dir}
+    tcpdump.teardown_collectors     names=${collector}
+    BuiltIn.Log    Tcpdump on test pc on interface ${interface} stopped and collected successfully    console=yes
+    [RETURN]    ${target_dir}/${collector}/${collector}.pcap
+
+Check MCShark if present
+   [Arguments]    ${w_log}=False
+   # USER_PLUGIN_PATH="$HOME/.local/lib/wireshark/plugins"
+   # USER_PLUGIN_PATH=$(tshark -G folders | grep '^Personal Lua Plugins:' | cut -d: -f2- | sed 's/^\s*//')
+   # WR_ver=$(tshark -v | grep -oE "TShark\s\(Wireshark\)\s[0-9]+\.[0-9]" | grep -oE "[0-9]+\.[0-9]")
+   # plugin_install_path="${USER_PLUGIN_PATH}/${WR_ver}/epan"
+   ${USER_PLUGIN_PATH}=   Run   tshark -G folders | grep '^Personal Lua Plugins:' | cut -d: -f2- | sed 's/^\s*//'
+   ${USER_PLUGIN_PATH}=    Catenate    ${USER_PLUGIN_PATH}
+   ${WR_ver}=    Run    tshark -v | grep -oE 'TShark\\s\\(Wireshark\\)\\s[0-9]+\.[0-9]' | grep -oE '[0-9]+\.[0-9]'
+   ${plugin_install_path}=   set variable   ${USER_PLUGIN_PATH}/${WR_ver}/epan
+   ${MCShark}=    Run    ls ${plugin_install_path}/mcshark-*.so
+   run Keyword if   "${w_log}"=="True"    Dated log      User plugin path : ${USER_PLUGIN_PATH}
+   run Keyword if   "${w_log}"=="True"    Dated log      TShark version : ${WR_ver}
+   run Keyword if   "${w_log}"=="True"    Dated log      Plugin install path : ${plugin_install_path}
+   run Keyword if   "${w_log}"=="True"    Dated log      MCShark : ${MCShark}
+   ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist       ${MCShark}
+   ${contains}=     Run Keyword And Return Status       Should Not Contain     ${MCShark}     No such file or directory
+   # ${contains}==True   => MCShark plugin already installed and present
+   [Return]     ${contains}   ${MCShark}
+
+Install MCShark if Needed
+    [Arguments]               ${current_sw_version}=None
+    ${mcshark_present}  ${MCShark}=    Check MCShark if present
+    ${logs_dir}=    run Keyword if   "${mcshark_present}"=="False"
+    ...                        Prepare Logs Directory Path   resultDir=${LOG_PATH}   subdir=install_Logs    with_timestamp=True
+    ...   ELSE                 set variable    None
+    run Keyword if   "${mcshark_present}"=="False"    Install wslte plugins for MCShark    sw_version=${current_sw_version}
+    ...                                                                                    local_dir=${logs_dir}
+    ...   ELSE     Dated log    wslte plugins for MCShark ${MCShark} already installed
+    # update variable
+    ${mcshark_present}   ${MCShark}=      pcap.Check MCShark if present
+    ${msg}=   run Keyword if   "${mcshark_present}"=="True"    StringTool.getHeaderLine    MCShark plugin   ${MCShark}
+    ...   ELSE                                        StringTool.getHeaderLine    MCShark plugin     Not installed
+    run Keyword if   "${msg}"!="${EMPTY}"      Dated log      ${msg}
+    set suite variable    ${mcshark_present}
+
+Private Deactivate Sherpa and Stop Collect
+    [Documentation]     Before using activate Sherpa traces on gnb using COAM gui or the dedicated KW.
+    ...                 Condition: use ONLY after Activate Sherpa usage KW.
+    [Arguments]                     ${desired_storage_directory}=${LOG_PATH}      ${keep_pcap_file}=${False}
+    ${trace_dir}                    Set Variable                ${desired_storage_directory}
+    Set Suite Variable              ${trace_dir}
+    Run Keyword If      ${isAic}    Stop And Download Sherpa Trace On AIC
+    Return From Keyword If          ${isAic}
+    core.stop_collectors            names=l2stream3
+    core.collect_collectors         names=l2stream3             target_dir=${trace_dir}
+    core.teardown_collectors        names=l2stream3
+    # If required, move the pcap file into a sub dir
+    # By default, the generated .pcap files remain in the original directory and
+    # will be erased at the next call of Sherpa
+    Run Keyword If                  ${keep_pcap_file}==${True}
+    ...                             Move Sherpa Pcap Files      ${trace_dir}
+
+Convert TTI trace from csv to dict CB009890
+    [Arguments]    ${TTITraceCsv}   ${num_of_events}=1000
+    [Tags]     robot:flatten
+    ${CsvFilename}      Remove String      ${TTITraceCsv}     .csv
+    ${TTITraceCsv_w_CR}     set variable   ${CsvFilename}.w_CR.csv
+    # echo -ne '\n' > test.csv; cat ttitrace_streaming.dl.issue.csv >> test.csv
+    ${cmd}=   Catenate   SEPARATOR=   echo '\n' > ${TTITraceCsv_w_CR}; cat ${TTITraceCsv} >> ${TTITraceCsv_w_CR}
+    OperatingSystem.Run     ${cmd}
+    ${tti_trace_dict}    read_and_parse_tti_data    path_to_tti=${TTITraceCsv_w_CR}       num_of_events=${num_of_events}
+    [Return]       ${tti_trace_dict}
+
+
+Convert TTI trace from csv to dict CB009890 for MicroDtx TestCase
+    [Arguments]    ${TTITraceCsv}   ${num_of_events}=1000
+    [Tags]     robot:flatten
+    ${CsvFilename}      Remove String      ${TTITraceCsv}     .csv
+    ${TTITraceCsv_w_CR}     set variable   ${CsvFilename}.w_CR.csv
+    # echo -ne '\n' > test.csv; cat ttitrace_streaming.dl.issue.csv >> test.csv
+    ${cmd}=   Catenate   SEPARATOR=   echo '\n' > ${TTITraceCsv_w_CR}; cat ${TTITraceCsv} >> ${TTITraceCsv_w_CR}
+    OperatingSystem.Run     ${cmd}
+    ${tti_trace_dict}    read_and_parse_tti_data_for_MicroDtx_TestCase    path_to_tti=${TTITraceCsv_w_CR}       num_of_events=${num_of_events}
+    [Return]       ${tti_trace_dict}
+
+Convert TTI trace from csv to dict CB007713
+    [Arguments]    ${TTITraceCsv}   ${num_of_events}=1000
+    [Tags]     robot:flatten
+    ${CsvFilename}      Remove String      ${TTITraceCsv}     .csv
+    ${TTITraceCsv_w_CR}     set variable   ${CsvFilename}.w_CR.csv
+    # echo -ne '\n' > test.csv; cat ttitrace_streaming.dl.issue.csv >> test.csv
+    ${cmd}=   Catenate   SEPARATOR=   echo '\n' > ${TTITraceCsv_w_CR}; cat ${TTITraceCsv} >> ${TTITraceCsv_w_CR}
+    OperatingSystem.Run     ${cmd}
+    ${tti_trace_dict}    read_and_parse_tti_data_ul    path_to_tti=${TTITraceCsv_w_CR}       num_of_events=${num_of_events}
+    [Return]       ${tti_trace_dict}
+
+Convert TTI trace from csv to dict CB009890 version 2
+    [Arguments]    ${TTITraceCsv}   ${num_of_events}=1000
+    ${fileContent}=  OperatingSystem.Get File    ${TTITraceCsv}
+    @{Lines}=        Split To Lines       ${fileContent}
+    ${CsvFilename}      Remove String      ${TTITraceCsv}     .csv
+    ${TTITraceCsv_w_CR}     set variable   ${CsvFilename}_w_CR.csv
+    OperatingSystem.Append to file    ${TTITraceCsv_w_CR}    \n
+    FOR    ${Line}    IN    @{Lines}
+        OperatingSystem.Append to file    ${TTITraceCsv_w_CR}    ${Line}\n
+    END
+    ${tti_trace_dict}    read_and_parse_tti_data    ${TTITraceCsv_w_CR}       num_of_events=${num_of_events}
+    [Return]       ${tti_trace_dict}
+
+Convert TTI trace from csv to dict CB009890 version 1
+    [Arguments]    ${TTITraceCsv}   ${num_of_events}=1000
+    ${tti_trace_dict}    read_and_parse_tti_data    ${TTITraceCsv}       num_of_events=${num_of_events}
+    [Return]       ${tti_trace_dict}
+
+Get DL PRB Demand CB008940
+    [Arguments]    ${TTITraceDict}
+    ${DL_PRB_Demand}     ${DL_PRB_Demand_Several_SFN}    get_dlPrb_Demand    ${TTITraceDict}
+    [Return]       ${DL_PRB_Demand}   ${DL_PRB_Demand_Several_SFN}
+
+Get Assigned PRB CB008940
+    [Arguments]    ${TTITraceDict}      ${SFN}
+    ${Assigned_PRB}    get_numAllocCellPrbDl    ${TTITraceDict}      ${SFN}
+    [Return]       ${Assigned_PRB}
+
+Get DL PRB Alloc BBRM CB008940
+    [Arguments]    ${TTITraceDict}
+    ${DL_PRB_Alloc_BBRM}     ${DL_PRB_Alloc_Several_SFN}    get_dlprb_alloc_bbrm    ${TTITraceDict}
+    [Return]       ${DL_PRB_Alloc_BBRM}   ${DL_PRB_Alloc_Several_SFN}
+
+Get UL PRB Alloc BBRM CB007113
+    [Arguments]    ${TTITraceDict}
+    ${UL_PRB_Alloc_BBRM}     ${UL_PRB_Alloc_Several_SFN}    get_ulprb_alloc_bbrm    ${TTITraceDict}
+    [Return]       ${UL_PRB_Alloc_BBRM}   ${UL_PRB_Alloc_Several_SFN}
+
+Get MicroDTX Assigned PRB CB009890
+    [Arguments]    ${TTITraceDict}      ${SFN}
+    ${Assigned_PRB}    get_numAllocCellPrbDl_MicroDtx    ${TTITraceDict}      ${SFN}
+    [Return]       ${Assigned_PRB}
+
+Get numOfPrb dlFdSchedData CB009890
+    [Arguments]    ${TTITraceDict}      ${SFN}
+    ${Assigned_PRB}    get_numOfPrb_dlFdSchedData    ${TTITraceDict}      ${SFN}   num_of_events=10
+    [Return]       ${Assigned_PRB}
+
+Get UL PRB Demand CB007113
+    [Arguments]    ${TTITraceDict}
+    ${UL_PRB_Demand}     ${UL_PRB_Demand_Several_SFN}    get_ulPrb_Demand    ${TTITraceDict}
+    [Return]       ${UL_PRB_Demand}   ${UL_PRB_Demand_Several_SFN}
+
+Get UL Assigned PRB CB009890
+    [Arguments]    ${TTITraceDict}      ${SFN}
+    ${Assigned_PRB}    get_numAllocCellPrbUl    ${TTITraceDict}      ${SFN}
+    [Return]       ${Assigned_PRB}
+
+Convert TTI trace from pcap to excelCsv CB009890
+    [Documentation]   Convert TTI trace from pcap to excelCsv
+    [Arguments]     ${ttitraceFilename}     ${ttitracepath}=/tmp/
+
+    ${CsvFilename}      Remove String      ${ttitraceFilename}     .pcap
+    ${CommandToExecute}     Catenate         python3 /opt/tti-dec/tti-dec-bin/TtiTraceDecoder.py -o
+    ...     ${ttitracepath}/${CsvFilename}  ${ttitracepath}/${ttitraceFilename} legacyCsv
+    OperatingSystem.Run     ${CommandToExecute}
+    [Return]        ${ttitracepath}/${CsvFilename}.dl.csv     ${ttitracepath}/${CsvFilename}.ul.csv
+    # [Return]        ${ttitracepath}/${CsvFilename}.ul.csv
+    # [Return]        ${ttitracepath}/${CsvFilename}.dlAndUl.csv
+
+display totalStreamPrbs per l1PoolId in SysLog
+    [Documentation]   Analyzing this kind of Syslog trace
+    ...    8D-cp_rt INF/cp_rt/CsiRsPoolingGroupsTdd.cpp:58 Created 3 CsiRsPoolingGroup(s) with totalStreamPrbs:2184 in l1PoolId:10
+    [Arguments]     ${syslog}=/tmp/
+
+    ${commandToRun}     Catenate
+    ...     cat /tmp/btslog2/${syslog} | grep
+    ...     'CsiRsPoolingGroup.*totalStreamPrbs*\d*.*l1PoolId\:(\d?)'
+
+    ${output}=        OperatingSystem.Run
+    ...    command=cat /tmp/btslog2/${syslog} | grep CsiRsPoolingGroup
+    should not be empty                  ${output}
+
+    ${totalStreamPrbs_l1PoolId_0}  ${totalStreamPrbs_l1PoolId_10}  ${cellmappingtocsirspoolinggroup}  extract_totalStreamPrbs_from_syslog   ${output}
+    Should Not Be Empty     ${totalStreamPrbs_l1PoolId_10}
+    log to console      totalStreamPrbs Assignment for l1PoolId 0: ${totalStreamPrbs_l1PoolId_0}
+    log to console      totalStreamPrbs Assignment for l1PoolId 10: ${totalStreamPrbs_l1PoolId_10}
+    log to console      cellmappingtocsirspoolinggroup: ${cellmappingtocsirspoolinggroup}
+    ${msg}=   Catenate   totalStreamPrbs Assignment for l1PoolId 0 like [l1PoolId=0, totalStreamPrbs]:
+    dated log         ${consTraceColor}${msg} ${totalStreamPrbs_l1PoolId_0}${defColor}
+    ${msg}=   Catenate   totalStreamPrbs Assignment for l1PoolId 10 like [l1PoolId=10, totalStreamPrbs=2184]:
+    dated log         ${consTraceColorYellow}${msg} ${totalStreamPrbs_l1PoolId_10}${defColor}
+    Set Suite Variable      ${totalStreamPrbs_l1PoolId_10}
+    # ${msg}=   Catenate   cellmappingtocsirspoolinggroup :
+    # dated log         ${consTraceColor}${msg} ${cellmappingtocsirspoolinggroup}${defColor}
+    # CsiRsPoolingGroupsTdd.cpp:110 added NrCellIdentity:16385 with streamPrbDemand:1092 to CsiRsPoolingGroup 0
+    #    (allocatedStreamPrbs:1092) in l1PoolId:10
+    # ${msg}=   Catenate   CsiRsPoolingGroupsTdd: added NrCellIdentity: ( ) with streamPrbDemand: ( ) to CsiRsPoolingGroup ( )
+    # ${msg}=   Catenate   ${msg} (allocatedStreamPrbs: ( )) in l1PoolId: ( )
+    # dated log         ${consTraceColor}${msg} ${cellmappingtocsirspoolinggroup[0]}${defColor}
+    # dated log         ${consTraceColor}${msg} ${cellmappingtocsirspoolinggroup[1]}${defColor}
+    # dated log         ${consTraceColor}${msg} ${cellmappingtocsirspoolinggroup[2]}${defColor}
+    ${msg}=  Catenate   CsiRsPoolingGroupsTdd: added NrCellIdentity: (${cellmappingtocsirspoolinggroup[0]}[0]) with streamPrbDemand:
+    ${msg}=  Catenate   ${msg} (${cellmappingtocsirspoolinggroup[0]}[1]) to CsiRsPoolingGroup (${cellmappingtocsirspoolinggroup[0]}[2])
+    ${msg}=  Catenate  ${msg} (allocatedStreamPrbs: (${cellmappingtocsirspoolinggroup[0]}[3])) in l1PoolId: (${cellmappingtocsirspoolinggroup[0]}[4])
+    dated log         ${consTraceColor}${msg}${defColor}
+    ${msg}=  Catenate  CsiRsPoolingGroupsTdd: added NrCellIdentity: (${cellmappingtocsirspoolinggroup[1]}[0]) with streamPrbDemand:
+    ${msg}=  Catenate  ${msg} (${cellmappingtocsirspoolinggroup[1]}[1]) to CsiRsPoolingGroup (${cellmappingtocsirspoolinggroup[1]}[2])
+    ${msg}=  Catenate  ${msg} (allocatedStreamPrbs: (${cellmappingtocsirspoolinggroup[1]}[3])) in l1PoolId: (${cellmappingtocsirspoolinggroup[1]}[4])
+    dated log         ${consTraceColor}${msg}${defColor}
+    ${msg}=  Catenate  CsiRsPoolingGroupsTdd: added NrCellIdentity: (${cellmappingtocsirspoolinggroup[0]}[0]) with streamPrbDemand:
+    ${msg}=  Catenate  ${msg} (${cellmappingtocsirspoolinggroup[2]}[1]) to CsiRsPoolingGroup (${cellmappingtocsirspoolinggroup[2]}[2])
+    ${msg}=  Catenate  ${msg} (allocatedStreamPrbs: (${cellmappingtocsirspoolinggroup[2]}[3])) in l1PoolId: (${cellmappingtocsirspoolinggroup[2]}[4])
+    dated log         ${consTraceColor}${msg}${defColor}
+    Set Suite Variable      ${totalStreamPrbs_l1PoolId_10}
+    [Return]        ${totalStreamPrbs_l1PoolId_10}
+
+display totalStreamPrbs per l1PoolId in SysLog with dir
+    [Documentation]   Analyzing this kind of Syslog trace
+    ...    8D-cp_rt INF/cp_rt/CsiRsPoolingGroupsTdd.cpp:58 Created 3 CsiRsPoolingGroup(s) with totalStreamPrbs:2184 in l1PoolId:10
+    [Arguments]     ${dir}=/tmp/btslog2     ${syslog}=/tmp/
+
+    ${commandToRun}     Catenate
+    ...     cat ${dir}/${syslog} | grep
+    ...     'CsiRsPoolingGroup.*totalStreamPrbs*\d*.*l1PoolId\:(\d?)'
+
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${syslog} | grep CsiRsPoolingGroup
+    should not be empty                  ${output}
+
+    ${totalStreamPrbs_l1PoolId_0}  ${totalStreamPrbs_l1PoolId_10}  ${cellmappingtocsirspoolinggroup}  extract_totalStreamPrbs_from_syslog   ${output}
+    # Should Not Be Empty     ${totalStreamPrbs_l1PoolId_10}
+    log to console      totalStreamPrbs Assignment for l1PoolId 0: ${totalStreamPrbs_l1PoolId_0}
+    log to console      totalStreamPrbs Assignment for l1PoolId 10: ${totalStreamPrbs_l1PoolId_10}
+    log to console      cellmappingtocsirspoolinggroup: ${cellmappingtocsirspoolinggroup}
+    ${msg}=   Catenate   totalStreamPrbs Assignment for l1PoolId 0 like [l1PoolId=0, totalStreamPrbs]:
+    dated log         ${consTraceColor}${msg} ${totalStreamPrbs_l1PoolId_0}${defColor}
+    ${msg}=   Catenate   totalStreamPrbs Assignment for l1PoolId 10 like [l1PoolId=10, totalStreamPrbs=2184]:
+    dated log         ${consTraceColorYellow}${msg} ${totalStreamPrbs_l1PoolId_10}${defColor}
+    Set Suite Variable      ${totalStreamPrbs_l1PoolId_10}
+    # ${msg}=   Catenate   cellmappingtocsirspoolinggroup :
+    # dated log         ${consTraceColor}${msg} ${cellmappingtocsirspoolinggroup}${defColor}
+    # CsiRsPoolingGroupsTdd.cpp:110 added NrCellIdentity:16385 with streamPrbDemand:1092 to CsiRsPoolingGroup 0
+    #    (allocatedStreamPrbs:1092) in l1PoolId:10
+    # ${msg}=   Catenate   CsiRsPoolingGroupsTdd: added NrCellIdentity: ( ) with streamPrbDemand: ( ) to CsiRsPoolingGroup ( )
+    # ${msg}=   Catenate   ${msg} (allocatedStreamPrbs: ( )) in l1PoolId: ( )
+    # dated log         ${consTraceColor}${msg} ${cellmappingtocsirspoolinggroup[0]}${defColor}
+    # dated log         ${consTraceColor}${msg} ${cellmappingtocsirspoolinggroup[1]}${defColor}
+    # dated log         ${consTraceColor}${msg} ${cellmappingtocsirspoolinggroup[2]}${defColor}
+    ${ret}   ${msg}=  Run Keyword And Ignore Error
+    ...        Catenate   CsiRsPoolingGroupsTdd: added NrCellIdentity: (${cellmappingtocsirspoolinggroup[0]}[0]) with streamPrbDemand:
+    ${ret}   ${msg}=  Run Keyword And Ignore Error
+    ...        Catenate   ${msg} (${cellmappingtocsirspoolinggroup[0]}[1]) to CsiRsPoolingGroup (${cellmappingtocsirspoolinggroup[0]}[2])
+    ${ret}   ${msg}=  Run Keyword And Ignore Error
+    ...      Catenate  ${msg} (allocatedStreamPrbs: (${cellmappingtocsirspoolinggroup[0]}[3])) in l1PoolId: (${cellmappingtocsirspoolinggroup[0]}[4])
+    dated log         ${consTraceColor}${msg}${defColor}
+    ${ret}   ${msg}=  Run Keyword And Ignore Error
+    ...           Catenate  CsiRsPoolingGroupsTdd: added NrCellIdentity: (${cellmappingtocsirspoolinggroup[1]}[0]) with streamPrbDemand:
+    ${ret}   ${msg}=  Run Keyword And Ignore Error
+    ...           Catenate  ${msg} (${cellmappingtocsirspoolinggroup[1]}[1]) to CsiRsPoolingGroup (${cellmappingtocsirspoolinggroup[1]}[2])
+    ${ret}   ${msg}=  Run Keyword And Ignore Error
+    ...     Catenate  ${msg} (allocatedStreamPrbs: (${cellmappingtocsirspoolinggroup[1]}[3])) in l1PoolId: (${cellmappingtocsirspoolinggroup[1]}[4])
+    dated log         ${consTraceColor}${msg}${defColor}
+    ${ret}   ${msg}=  Run Keyword And Ignore Error
+    ...           Catenate  CsiRsPoolingGroupsTdd: added NrCellIdentity: (${cellmappingtocsirspoolinggroup[0]}[0]) with streamPrbDemand:
+    ${ret}   ${msg}=  Run Keyword And Ignore Error
+    ...           Catenate  ${msg} (${cellmappingtocsirspoolinggroup[2]}[1]) to CsiRsPoolingGroup (${cellmappingtocsirspoolinggroup[2]}[2])
+    ${ret}   ${msg}=  Run Keyword And Ignore Error
+    ...      Catenate  ${msg} (allocatedStreamPrbs: (${cellmappingtocsirspoolinggroup[2]}[3])) in l1PoolId: (${cellmappingtocsirspoolinggroup[2]}[4])
+    dated log         ${consTraceColor}${msg}${defColor}
+    Set Suite Variable      ${totalStreamPrbs_l1PoolId_10}
+
+    Display Bbrm configuration      dir=${dir}     syslog=${syslog}
+
+    [Return]        ${totalStreamPrbs_l1PoolId_10}
+
+Check BBRM ERR Assignment
+    [Documentation]   Analyzing this kind of Syslog trace
+    ...    1540190-EQ_L2PS_BBRM ERR/L2-PS/src/bbrm/subCellsPooling/PrbCapacityChecker.cpp[161]
+    [Arguments]     ${dir}=/tmp/btslog2     ${syslog}=/tmp/
+
+    ${commandToRun}     Catenate
+    ...     cat ${dir}/${syslog} | grep
+    ...     'BBRM ERR'
+    ${msg}=        Catenate   ${consTraceColorBgYellow}${consTraceColorBlack}no BBRM ERR found${defColor}
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${syslog} | grep "BBRM ERR"
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${output}
+    run Keyword if    ${isEmpty}      dated log   ${msg}
+    Return From Keyword If      ${isEmpty}
+    ${bbrm_err}  extract_BBRM_ERR_from_syslog   ${output}
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${bbrm_err}
+    run Keyword if    ${isEmpty}         log to console      no BBRM ERR found: ${bbrm_err}
+    ${msg}=        Catenate   ${consTraceColor}no BBRM ERR found${defColor}
+    return from Keyword if   ${isEmpty}     dated log   ${msg}
+    FOR    ${bbrm_err_elt}    IN    @{bbrm_err}
+        dated log    ${consTraceColorRed}BBRM ERR found: line ${bbrm_err_elt[0]} : ${bbrm_err_elt[1]}${defColor}
+    END
+    [Return]        ${bbrm_err}
+
+Check ESTATUS5G_NOTOK
+    [Documentation]   Analyzing this kind of Syslog trace
+    ...    ESTATUS5G_NOTOK
+    [Arguments]     ${dir}=/tmp/btslog2     ${syslog}=/tmp/
+
+    ${commandToRun}     Catenate
+    ...     cat ${dir}/${syslog} | grep
+    ...     'ESTATUS5G_NOTOK'
+    ${msg}=        Catenate   ${consTraceColorBgYellow}${consTraceColorBlack}no ESTATUS5G_NOTOK found${defColor}
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${syslog} | grep "ESTATUS5G_NOTOK"
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${output}
+    run Keyword if    ${isEmpty}      dated log   ${msg}
+    Return From Keyword If      ${isEmpty}
+    ${bbrm_err}  extract_ESTATUS5G_NOTOK_from_syslog   ${output}
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${bbrm_err}
+    run Keyword if    ${isEmpty}         log to console      no ESTATUS5G_NOTOK found: ${bbrm_err}
+    ${msg}=        Catenate   ${consTraceColor}no ESTATUS5G_NOTOK found${defColor}
+    return from Keyword if   ${isEmpty}     dated log   ${msg}
+    FOR    ${bbrm_err_elt}    IN    @{bbrm_err}
+        dated log    ${consTraceColorRed}ESTATUS5G_NOTOK found: line ${bbrm_err_elt[0]} : ${bbrm_err_elt[1]}${defColor}
+    END
+    [Return]        ${bbrm_err}
+
+Check GnbOamCellUpdateFailed
+    [Documentation]   Analyzing this kind of Syslog trace
+    ...    GnbOamCellUpdateFailed
+    [Arguments]     ${dir}=/tmp/btslog2     ${syslog}=/tmp/
+
+    ${commandToRun}     Catenate
+    ...     cat ${dir}/${syslog} | grep
+    ...     'GnbOamCellUpdateFailed'
+    ${msg}=        Catenate   ${consTraceColorBgYellow}${consTraceColorBlack}no GnbOamCellUpdateFailed found${defColor}
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${syslog} | grep "GnbOamCellUpdateFailed"
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${output}
+    run Keyword if    ${isEmpty}      dated log   ${msg}
+    Return From Keyword If      ${isEmpty}
+    ${bbrm_err}  extract_GnbOamCellUpdateFailed_from_syslog   ${output}
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${bbrm_err}
+    run Keyword if    ${isEmpty}         log to console      no GnbOamCellUpdateFailed found: ${bbrm_err}
+    ${msg}=        Catenate   ${consTraceColor}no GnbOamCellUpdateFailed found${defColor}
+    return from Keyword if   ${isEmpty}     dated log   ${msg}
+    FOR    ${bbrm_err_elt}    IN    @{bbrm_err}
+        dated log    ${consTraceColorRed}GnbOamCellUpdateFailed found: line ${bbrm_err_elt[0]} : ${bbrm_err_elt[1]}${defColor}
+    END
+    [Return]        ${bbrm_err}
+
+Check 6505 AASYSINFO_FS_OVERLOAD_IND_MSG
+    [Documentation]   Analyzing this kind of Syslog trace
+    ...    6505 ( AASYSINFO_FS_OVERLOAD_IND_MSG  )
+    [Arguments]     ${dir}=/tmp/btslog2     ${syslog}=/tmp/
+
+    ${commandToRun}     Catenate
+    ...     cat ${dir}/${syslog} | grep
+    ...     'AASYSINFO_FS_OVERLOAD_IND_MSG'
+    ${msg}=        Catenate   ${consTraceColorBgYellow}${consTraceColorBlack}no AASYSINFO_FS_OVERLOAD_IND_MSG found${defColor}
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${syslog} | grep "AASYSINFO_FS_OVERLOAD_IND_MSG"
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${output}
+    run Keyword if    ${isEmpty}      dated log   ${msg}
+    Return From Keyword If      ${isEmpty}
+    ${bbrm_err}  extract_AASYSINFO_FS_OVERLOAD_IND_MSG_from_syslog   ${output}
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${bbrm_err}
+    run Keyword if    ${isEmpty}         log to console      no AASYSINFO_FS_OVERLOAD_IND_MSG found: ${bbrm_err}
+    ${msg}=        Catenate   ${consTraceColor}no AASYSINFO_FS_OVERLOAD_IND_MSG found${defColor}
+    return from Keyword if   ${isEmpty}     dated log   ${msg}
+    FOR    ${bbrm_err_elt}    IN    @{bbrm_err}
+        dated log    ${consTraceColorRed}AASYSINFO_FS_OVERLOAD_IND_MSG found: line ${bbrm_err_elt[0]} : ${bbrm_err_elt[1]}${defColor}
+    END
+    [Return]        ${bbrm_err}
+
+Display Bbrm configuration
+    [Arguments]     ${dir}=/tmp/btslog2     ${syslog}=/tmp/
+
+    ${commandToRun}     Catenate
+    ...     cat ${dir}/${syslog} | grep
+    ...     'PRB pooling buffers'
+    ${msg}=        Catenate   ${consTraceColor}no PRB pooling buffers found${defColor}
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${syslog} | grep "PRB pooling buffers"
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${output}
+    Return From Keyword If      ${isEmpty}    dated log   ${msg}
+    ${bbrm_conf}  extract_BBRM_conf_from_syslog   ${output}
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${bbrm_conf}
+    run Keyword if    ${isEmpty}         log to console      no BBRM conf found: ${bbrm_conf}
+    ${msg}=        Catenate   ${consTraceColor}no BBRM conf found${defColor}
+    return from Keyword if   ${isEmpty}     dated log   ${msg}
+    FOR    ${bbrm_conf_elt}    IN    @{bbrm_conf}
+        dated log    ${consTraceColor}BBRM conf found: line ${bbrm_conf_elt[0]} : PRB pooling buffer ${bbrm_conf_elt[1]}${defColor}
+    END
+
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${syslog} | grep "Bbrm conf: bbPoolInfo present"
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${output}
+    Return From Keyword If      ${isEmpty}    dated log   ${msg}
+    ${bbrm_conf}  extract_BBRM_conf_2_from_syslog   ${output}
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${bbrm_conf}
+    run Keyword if    ${isEmpty}         log to console      no BBRM conf found: ${bbrm_conf}
+    ${msg}=        Catenate   ${consTraceColor}no BBRM conf found${defColor}
+    return from Keyword if   ${isEmpty}     dated log   ${msg}
+    FOR    ${bbrm_conf_elt}    IN    @{bbrm_conf}
+        dated log    ${consTraceColor}BBRM conf found: line ${bbrm_conf_elt[0]} : Bbrm conf: bbPoolInfo present ${bbrm_conf_elt[1]}${defColor}
+    END
+
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${syslog} | grep "Bbrm conf DL"
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${output}
+    Return From Keyword If      ${isEmpty}    dated log   ${msg}
+    ${bbrm_conf}  extract_BBRM_conf_3_from_syslog   ${output}
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${bbrm_conf}
+    run Keyword if    ${isEmpty}         log to console      no BBRM conf found: ${bbrm_conf}
+    ${msg}=        Catenate   ${consTraceColor}no BBRM conf found${defColor}
+    return from Keyword if   ${isEmpty}     dated log   ${msg}
+    FOR    ${bbrm_conf_elt}    IN    @{bbrm_conf}
+        dated log    ${consTraceColorYellow}BBRM conf found: line ${bbrm_conf_elt[0]} CB009890 : ${bbrm_conf_elt[1]}${defColor}
+    END
+
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${syslog} | grep "Bbrm conf UL"
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${output}
+    Return From Keyword If      ${isEmpty}    dated log   ${msg}
+    ${bbrm_conf}  extract_BBRM_conf_4_from_syslog   ${output}
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${bbrm_conf}
+    run Keyword if    ${isEmpty}         log to console      no BBRM conf found: ${bbrm_conf}
+    ${msg}=        Catenate   ${consTraceColor}no BBRM conf found${defColor}
+    return from Keyword if   ${isEmpty}     dated log   ${msg}
+    FOR    ${bbrm_conf_elt}    IN    @{bbrm_conf}
+        dated log    ${consTraceColorYellow}BBRM conf found: line ${bbrm_conf_elt[0]} CB009890 : ${bbrm_conf_elt[1]}${defColor}
+    END
+
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${syslog} | grep "(DOWNLINK)"
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${output}
+    Return From Keyword If      ${isEmpty}    dated log   ${msg}
+    ${bbrm_conf}  extract_BBRM_conf_DL_from_syslog   ${output}
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${bbrm_conf}
+    run Keyword if    ${isEmpty}         log to console      no DOWNLINK Info conf found: ${bbrm_conf}
+    ${msg}=        Catenate   ${consTraceColor}no DOWNLINK info conf found${defColor}
+    return from Keyword if   ${isEmpty}     dated log   ${msg}
+    FOR    ${bbrm_conf_elt}    IN    @{bbrm_conf}
+        dated log    ${consTraceColor}BBRM conf found: line ${bbrm_conf_elt[0]} : ${bbrm_conf_elt[1]} : ${bbrm_conf_elt[2]}${defColor}
+    END
+
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${syslog} | grep "(UPLINK)"
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${output}
+    Return From Keyword If      ${isEmpty}    dated log   ${msg}
+    ${bbrm_conf}  extract_BBRM_conf_UL_from_syslog   ${output}
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${bbrm_conf}
+    run Keyword if    ${isEmpty}         log to console      no UPLINK Info conf found: ${bbrm_conf}
+    ${msg}=        Catenate   ${consTraceColor}no UPLINK conf found${defColor}
+    return from Keyword if   ${isEmpty}     dated log   ${msg}
+    FOR    ${bbrm_conf_elt}    IN    @{bbrm_conf}
+        dated log    ${consTraceColor}BBRM conf found: line ${bbrm_conf_elt[0]} : ${bbrm_conf_elt[1]} : ${bbrm_conf_elt[2]}${defColor}
+    END
+
+    [Return]        ${bbrm_conf}
+
+Create Header Csv Test result
+    [Arguments]          ${target_dir}=None           ${text}=line; Slot; Type;
+    ${local_target_dir}=    Run Keyword If    '${target_dir}'=='None'    Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+    ${timeStamp}=    DateTime.Get current date    exclude_millis=True    result_format=%Y%m%d-%H%M%S
+    ${testCase}    Replace String    ${TEST_NAME[0:30]}    ${SPACE}    _
+    ${testCase}    Replace String    ${testCase}    .    _
+    ${testCase}    Remove String     ${testCase}    [1]
+    ${testCase}    Remove String     ${testCase}    [1.0]
+    ${testCase}    Remove String     ${testCase}    [2.0]
+    ${testCase}    Remove String     ${testCase}    [
+    ${testCase}    Remove String     ${testCase}    ]
+    ${filename}   set Variable
+    ...               SLOT_TYPE-${testCase}-${timeStamp}.csv
+    Run Keyword And Ignore Error    OperatingSystem.touch    ${local_target_dir}/${filename}
+    Run Keyword And Ignore Error    OperatingSystem.run      echo "${text}" > ${local_target_dir}/${filename}
+    set suite variable      ${csv_file_results}       ${local_target_dir}/${filename}
+
+Log Test results
+    [Arguments]                    ${text}
+    Run Keyword And Ignore Error    OperatingSystem.run      echo "${text}" >> ${csv_file_results}
+
+Display SLOTTYPE configuration
+    [Arguments]     ${dir}=/tmp/btslog2     ${syslog}=/tmp/
+
+    ${commandToRun}     Catenate
+    ...     cat ${dir}/${syslog} | grep
+    ...     'SlotTypeSelectorBase'
+    ${msg}=        Catenate   ${consTraceColor}no SlotTypeSelectorBase found${defColor}
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${syslog} | grep "SlotTypeSelectorBase"
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${output}
+    Return From Keyword If      ${isEmpty}    dated log   ${msg}
+    ${slottype_conf}  extract_SlotTypeSelectorBase_from_syslog   ${output}
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${slottype_conf}
+    run Keyword if    ${isEmpty}         log to console      no SlotTypeSelectorBase found: ${slottype_conf}
+    ${msg}=        Catenate   ${consTraceColor}no SlotTypeSelectorBase found${defColor}
+    return from Keyword if   ${isEmpty}     dated log   ${msg}
+    FOR    ${slottype_conf_elt}    IN    @{slottype_conf}
+        ${text}=    Catenate    line: ${slottype_conf_elt[0]}; ${slottype_conf_elt[1]}; ${slottype_conf_elt[2]};
+        Log Test results      ${text}
+    END
+    [Return]        ${slottype_conf}
+
+Check l1Subpool Assignment
+   [Arguments]     ${syslog}=/tmp/
+
+    ${commandToRun}     Catenate
+    ...     cat /tmp/btslog2/${syslog} | grep
+    ...     'SCellMappingReq.*TCellIdentity = (\d*).*l1SubpoolId\":(\d?)'
+
+    ${output}=        OperatingSystem.Run
+    ...    command=cat /tmp/btslog2/${syslog} | grep SCellMappingReq
+    should not be empty                  ${output}
+
+    ${ull1spcells}      extract_l1sp_from_syslog     ${output}
+    Should Not Be Empty     ${ull1spcells[1]}
+    log to console      Check l1Subpool Assignment : ${ull1spcells}
+    # ulSubcellId
+    # sp0 = [0, 1, 2]
+    # ulsubpoolid => 2 dlsubpool
+    dated log         ${consTraceColor}2 ulSubpoolId${defColor}
+    # dated log         ${consTraceColor}ulSubcellId/ulsubpoolid : ${l1spcells}${defColor}
+    dated log         ${consTraceColor}Distribution of ulSubcellId in ulSubpoolId: ${ull1spcells}${defColor}
+    Set Suite Variable      ${ull1spcells}
+    [Return]        ${ull1spcells}
+
+Check Dll1Subpool Assignment
+    [Arguments]     ${syslog}
+
+    ${commandToRun}     Catenate
+    ...     cat /tmp/btslog2/${syslog} | grep
+    ...     'SCellMappingReq.*TCellIdentity = (\d*).*l1SubpoolId\":(\d?)'
+
+    ${output}=        OperatingSystem.Run
+    ...    command=cat /tmp/btslog2/${syslog} | grep SCellMappingReq
+    should not be empty                  ${output}
+
+    ${dll1spcells}      extract_dll1sp_from_syslog     ${output}
+    Should Not Be Empty     ${dll1spcells[1]}
+    log to console      Check Dll1Subpool Assignment : ${dll1spcells}
+    # dlSubcellId
+    # sp0 = [0, 1, 2, 3, 4, 5]
+    # dlsubpoolid => 2 dlsubpool
+    dated log         ${consTraceColor}2 dlSubpoolId${defColor}
+    dated log         ${consTraceColor}Distribution of dlSubcellId in dlSubpoolId: ${dll1spcells}${defColor}
+    Set Suite Variable      ${dll1spcells}
+    [Return]        ${dll1spcells}
+
+Check Dll1Subpool Assignment CB009890 C
+    [Arguments]     ${syslog}
+
+    ${commandToRun}     Catenate
+    ...     cat /tmp/btslog2/${syslog} | grep
+    ...     'SCellMappingReq.*TCellIdentity = (\d*).*l1SubpoolId\":(\d?)'
+
+    ${output}=        OperatingSystem.Run
+    ...    command=cat /tmp/btslog2/${syslog} | grep SCellMappingReq
+    should not be empty                  ${output}
+
+    ${dll1spcells}      extract_dll1sp_from_syslog_9890_C     ${output}
+    Should Not Be Empty     ${dll1spcells[1]}
+    log to console      Check Dll1Subpool Assignment : ${dll1spcells}
+    # dlSubcellId
+    # sp0 = [0, 1, 2, 3, 4, 5]
+    # dlsubpoolid => 2 dlsubpool
+    dated log         ${consTraceColor}2 dlSubpoolId${defColor}
+    dated log         ${consTraceColor}Distribution of dlSubcellId in dlSubpoolId: ${dll1spcells}${defColor}
+    dated log         ${consTraceColor} sp0_poolId10 dlSubcellId in dlSubpoolId: ${dll1spcells[0]}${defColor}
+    dated log         ${consTraceColor} sp0_poolId13 dlSubcellId in dlSubpoolId: ${dll1spcells[1]}${defColor}
+    dated log         ${consTraceColor} sp1_poolId10 dlSubcellId in dlSubpoolId: ${dll1spcells[2]}${defColor}
+    dated log         ${consTraceColor} sp1_poolId13 dlSubcellId in dlSubpoolId: ${dll1spcells[3]}${defColor}
+    Set Suite Variable      ${dll1spcells}
+    [Return]        ${dll1spcells}
+
+Check Ull1Subpool Assignment CB009890 C
+    [Arguments]     ${syslog}
+
+    ${commandToRun}     Catenate
+    ...     cat /tmp/btslog2/${syslog} | grep
+    ...     'SCellMappingReq.*TCellIdentity = (\d*).*l1SubpoolId\":(\d?)'
+
+    ${output}=        OperatingSystem.Run
+    ...    command=cat /tmp/btslog2/${syslog} | grep SCellMappingReq
+    should not be empty                  ${output}
+
+    ${ull1spcells}      extract_ull1sp_from_syslog_9890_C     ${output}
+    Should Not Be Empty     ${ull1spcells[1]}
+    log to console      Check Ull1Subpool Assignment : ${ull1spcells}
+    # dlSubcellId
+    # sp0 = [0, 1, 2, 3, 4, 5]
+    # dlsubpoolid => 2 dlsubpool
+    dated log         ${consTraceColor}Distribution of ulSubcellId in UlSubpoolId: ${ull1spcells}${defColor}
+    dated log         ${consTraceColor} sp0_poolId10 ulSubcellId in ulSubpoolId: ${ull1spcells[0]}${defColor}
+    dated log         ${consTraceColor} sp0_poolId13 ulSubcellId in ulSubpoolId: ${ull1spcells[1]}${defColor}
+    dated log         ${consTraceColor} sp1_poolId10 ulSubcellId in ulSubpoolId: ${ull1spcells[2]}${defColor}
+    dated log         ${consTraceColor} sp1_poolId13 ulSubcellId in ulSubpoolId: ${ull1spcells[3]}${defColor}
+    Set Suite Variable      ${ull1spcells}
+    [Return]        ${ull1spcells}
+
+Check PRB Assignment CB008940
+    [Arguments]    ${TTITraceDict}
+    ${DL_PRB_Demand_total}    ${DL_PRB_Demand_total_Several_SFN}     Get DL PRB Demand CB008940     ${TTITraceDict}
+    # dated log      DL_PRB_Demand_total=${DL_PRB_Demand_total}
+    # dated log      DL_PRB_Demand_total_Several_SFN=${DL_PRB_Demand_total_Several_SFN}
+    display_list_parameters_w_name    ${DL_PRB_Demand_total}  name=DL_PRB_Demand_total   msg=Check PRB Assignment CB008940
+    display_list_parameters_w_name    ${DL_PRB_Demand_total_Several_SFN}  name=DL_PRB_Demand_total_Several_SFN   msg=Check PRB Assignment CB008940
+    ${DL_PRB_Demand}        Get from list     ${DL_PRB_Demand_total}        1
+    ${DL_PRB_Demand_Minus6}     Get from list     ${DL_PRB_Demand_total}        0
+    ${msgToLog}     Catenate   Based on ${consTraceColor}dlMetricIndData${defColor} Event: first SFN is ${DL_PRB_Demand['sfn']}:
+    ...     DL PRBs demand UE1: GBR: ${consTraceColorYellow}${DL_PRB_Demand['gbrPrbDemand'][0]}${defColor},
+    ...     nonGBR: ${consTraceColorYellow}${DL_PRB_Demand['nonGbrPrbDemand'][0]}${defColor},
+    ...     UE2: GBR: ${consTraceColorYellow}${DL_PRB_Demand['gbrPrbDemand'][1]}${defColor},
+    ...     nonGBR: ${consTraceColorYellow}${DL_PRB_Demand['nonGbrPrbDemand'][1]}${defColor},
+    ...     UE3: GBR: ${consTraceColorYellow}${DL_PRB_Demand['gbrPrbDemand'][2]}${defColor},
+    ...     nonGBR: ${consTraceColorYellow}${DL_PRB_Demand['nonGbrPrbDemand'][2]}${defColor}
+    ...     UE4: GBR: ${consTraceColorYellow}${DL_PRB_Demand['gbrPrbDemand'][3]}${defColor},
+    ...     nonGBR: ${consTraceColorYellow}${DL_PRB_Demand['nonGbrPrbDemand'][3]}${defColor}
+    dated log    ------> ${msgToLog}
+
+    # Set Log Level    NONE
+    ${DL_PRB_Alloc_BBRM_total}    ${DL_PRB_Alloc_BBRM_total_Several_SFN}     Get DL PRB Alloc BBRM CB008940     ${TTITraceDict}
+    Set Log Level    TRACE
+    # dated log      DL_PRB_Alloc_BBRM_total=${DL_PRB_Alloc_BBRM_total}
+    # dated log      DL_PRB_Alloc_BBRM_total_Several_SFN=${DL_PRB_Alloc_BBRM_total_Several_SFN}
+    display_list_parameters_w_name    ${DL_PRB_Alloc_BBRM_total}  name=DL_PRB_Alloc_BBRM_total   msg=Check PRB Assignment CB008940
+    display_list_parameters_w_name    ${DL_PRB_Alloc_BBRM_total_Several_SFN}  name=DL_PRB_Alloc_BBRM_total_Several_SFN
+    ...                                                                       msg=Check PRB Assignment CB008940
+    ${DL_PRB_Alloc_BBRM}        Get from list     ${DL_PRB_Alloc_BBRM_total}        1
+    ${DL_PRB_Alloc_BBRM_Minus6}     Get from list     ${DL_PRB_Alloc_BBRM_total}        0
+    ${msgToLog}     Catenate   Based on ${consTraceColor}dlAllocatedPooledResourcesData${defColor} Event: first SFN is ${DL_PRB_Alloc_BBRM['sfn']}:
+    ...     DL PRBs Alloc BBRM UE1: PRB Alloc: ${consTraceColorYellow}${DL_PRB_Alloc_BBRM['numAllocCellPrbDl'][0]}${defColor},
+    ...     hasZabPrivilege: ${consTraceColorYellow}${DL_PRB_Alloc_BBRM['hasZabPrivilege'][0]}${defColor},
+    ...     UE2: PRB Alloc: ${consTraceColorYellow}${DL_PRB_Alloc_BBRM['numAllocCellPrbDl'][1]}${defColor},
+    ...     hasZabPrivilege: ${consTraceColorYellow}${DL_PRB_Alloc_BBRM['hasZabPrivilege'][1]}${defColor},
+    ...     UE3: PRB Alloc: ${consTraceColorYellow}${DL_PRB_Alloc_BBRM['numAllocCellPrbDl'][2]}${defColor},
+    ...     hasZabPrivilege: ${consTraceColorYellow}${DL_PRB_Alloc_BBRM['hasZabPrivilege'][2]}${defColor}
+    ...     UE4: PRB Alloc: ${consTraceColorYellow}${DL_PRB_Alloc_BBRM['numAllocCellPrbDl'][3]}${defColor},
+    ...     hasZabPrivilege: ${consTraceColorYellow}${DL_PRB_Alloc_BBRM['hasZabPrivilege'][3]}${defColor}
+    dated log    ------> ${msgToLog}
+
+    ${SFN}      Get From Dictionary     ${DL_PRB_Demand}        sfn
+    ${SFNToCheck}       Evaluate      str(int(${SFN})+1)
+    ${Assigned_PRB}     Get Assigned PRB CB008940      ${TTITraceDict}       ${SFNToCheck}
+    ${msg}=  Catenate   Based on ${consTraceColor}dlTdSchedSubcellData${defColor} Event,
+    ...                 Check PRB Assignment CB008940 : Assigned_PRB=${consTraceColor}${Assigned_PRB}${defColor}
+    dated log    ------> ${msg}
+    [teardown]   Set Log Level    TRACE
+
+Check UL PRB Assignment CB007113
+    [Arguments]    ${TTITraceDict}
+    ${UL_PRB_Demand_total}    ${UL_PRB_Demand_total_Several_SFN}     Get UL PRB Demand CB007113     ${TTITraceDict}
+    # dated log      UL_PRB_Demand_total=${UL_PRB_Demand_total}
+    # dated log      UL_PRB_Demand_total_Several_SFN=${UL_PRB_Demand_total_Several_SFN}
+    display_list_parameters_w_name    ${UL_PRB_Demand_total}  name=UL_PRB_Demand_total   msg=Check UL PRB Assignment CB007113
+    display_list_parameters_w_name    ${UL_PRB_Demand_total_Several_SFN}  name=UL_PRB_Demand_total_Several_SFN
+    ...                                                                   msg=Check UL PRB Assignment CB007113
+    ${UL_PRB_Demand}        Get from list     ${UL_PRB_Demand_total}        1
+    ${UL_PRB_Demand_Minus6}     Get from list     ${UL_PRB_Demand_total}        0
+    ${msgToLog}     Catenate   Based on ${consTraceColor}ulMetricIndData${defColor} Event: first SFN is ${UL_PRB_Demand['sfn']}:
+    ...     UL PRBs demand UE1: GBR: ${consTraceColorYellow}${UL_PRB_Demand['gbrPrbDemand'][0]}${defColor},
+    ...     nonGBR: ${consTraceColorYellow}${UL_PRB_Demand['nonGbrPrbDemand'][0]}${defColor},
+    ...     UE2: GBR: ${consTraceColorYellow}${UL_PRB_Demand['gbrPrbDemand'][1]}${defColor},
+    ...     nonGBR: ${consTraceColorYellow}${UL_PRB_Demand['nonGbrPrbDemand'][1]}${defColor},
+    ...     UE3: GBR: ${consTraceColorYellow}${UL_PRB_Demand['gbrPrbDemand'][2]}${defColor},
+    ...     nonGBR: ${consTraceColorYellow}${UL_PRB_Demand['nonGbrPrbDemand'][2]}${defColor}
+    dated log    ------> ${msgToLog}
+    ${SFN}      Get From Dictionary     ${UL_PRB_Demand}        sfn
+    ${SFNToCheck}       Evaluate      str(int(${SFN})+1)
+    ${Assigned_PRB}     Get UL Assigned PRB CB009890      ${TTITraceDict}       ${SFNToCheck}
+    ${msg}=  Catenate   Based on ${consTraceColor}ulTdSchedSubcellData${defColor} Event,
+    ...                 Check UL PRB Assignment CB007113 : Assigned_PRB=${consTraceColor}${Assigned_PRB}${defColor}
+    dated log    ------> ${msg}
+    ${UL_PRB_Alloc_BBRM_total}    ${UL_PRB_Alloc_BBRM_total_Several_SFN}     Get UL PRB Alloc BBRM CB007113     ${TTITraceDict}
+    Set Log Level    TRACE
+    # dated log      UL_PRB_Alloc_BBRM_total=${UL_PRB_Alloc_BBRM_total}
+    # dated log      UL_PRB_Alloc_BBRM_total_Several_SFN=${UL_PRB_Alloc_BBRM_total_Several_SFN}
+    display_list_parameters_w_name    ${UL_PRB_Alloc_BBRM_total}  name=UL_PRB_Alloc_BBRM_total   msg=Check PRB Assignment CB007113
+    display_list_parameters_w_name    ${UL_PRB_Alloc_BBRM_total_Several_SFN}  name=UL_PRB_Alloc_BBRM_total_Several_SFN
+    ...                                                                       msg=Check PRB Assignment CB007113
+    ${UL_PRB_Alloc_BBRM}        Get from list     ${UL_PRB_Alloc_BBRM_total}        1
+    ${UL_PRB_Alloc_BBRM_Minus6}     Get from list     ${UL_PRB_Alloc_BBRM_total}        0
+    ${msgToLog}     Catenate   Based on ${consTraceColor}ulAllocatedPooledResourcesData${defColor} Event: first SFN is ${UL_PRB_Alloc_BBRM['sfn']}:
+    ...     UL PRBs Alloc BBRM UE1: PRB Alloc: ${consTraceColorYellow}${UL_PRB_Alloc_BBRM['numAllocCellPrbUl'][0]}${defColor},
+    ...     activeUlSubcellCount: ${consTraceColorYellow}${UL_PRB_Alloc_BBRM['activeUlSubcellCount'][0]}${defColor},
+    ...     UE2: PRB Alloc: ${consTraceColorYellow}${UL_PRB_Alloc_BBRM['numAllocCellPrbUl'][1]}${defColor},
+    ...     activeUlSubcellCount: ${consTraceColorYellow}${UL_PRB_Alloc_BBRM['activeUlSubcellCount'][1]}${defColor},
+    ...     UE3: PRB Alloc: ${consTraceColorYellow}${UL_PRB_Alloc_BBRM['numAllocCellPrbUl'][2]}${defColor},
+    ...     activeUlSubcellCount: ${consTraceColorYellow}${UL_PRB_Alloc_BBRM['activeUlSubcellCount'][2]}${defColor}
+    dated log    ------> ${msgToLog}
+
+    [teardown]   Set Log Level    TRACE
+
+Verify RimRs based on pcap traces
+    [Arguments]                   ${csirsTrackingSlotOffset_to_verify}=1
+    Dated log     ==========> verify_dldata_rimrssendreq_Info from dldata_rimrssendreq l1l2Bip pcap file
+    ${pattern}=     set variable      dldata_rimrssendreq
+    ${output}=      nps_11028_tools.verify_csirsTrackingSlotOffset_Info     pattern=${pattern}
+    ...                                                                     csirsTrackingSlotOffset_to_verify=${csirsTrackingSlotOffset_to_verify}
+    [return]    ${output}
+
+Check RimRs CB011028 Based L1L2 Bip
+    [Documentation]                test purpose is to test RimRs info from syscom pcap
+    [Arguments]                    ${capture}
+    Extract Usefull info from dldata_rimrssendreq Pcap       ${capture}
+    Dated log    ==========> Check If RimRsSendReq is Present : [${consTraceColorGreen}OK${defColor}]
+    ${pattern1}=     set variable      DlData_CsiRsSendReq
+    ${pattern2}=     set variable      DlData_RimRsSendReq
+    ${output}        nps_11028_tools.verify_csi_rs_and_rim_rs_are_not_send_on_the_same_slot
+    ...                                       pattern_csirs=${pattern1}
+    ...                                       pattern_rimrs=${pattern2}
+    Run keyword and continue on failure      should contain	                ${output}	                    passed
+    ${text}=     set Variable If     '${output}'=='passed'      ${consTraceColorGreen}OK${defColor}
+    ...                                                         ${consTraceColorRed}FAILED${defColor}
+    Dated log    ==========> Check If CSI-RS and RIM-RS are not send on the same slot : [${text}]
+    ${numRbForRs_scf}=   Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=numRbForRs   CellId=1
+    ${numRbForRs}=     Set Variable If     '${numRbForRs_scf}' == '48 RBs'    48
+    ...                                                                       96
+    ${output}        nps_11028_tools.verify_rimrs_num_and_start_prbs
+    ...                                       pattern_rimrs=DlData_RimRsSendReq
+    ...                                       subcellId=0
+    ...                                       expected_values_startPrb=0
+    ...                                       expected_values_numOfPrb=${numRbForRs}
+    Run keyword and continue on failure       should contain	                ${output}	       passed
+    ${text}=     set Variable If     '${output}'=='passed'      ${consTraceColorGreen}OK${defColor}
+    ...                                                         ${consTraceColorRed}FAILED${defColor}
+    Dated log    ==========> Check If StartRBforRS When Rim-rs is Transmitting is Correctly Set for subcellId 0: [${text}]
+    ${numRbForRs_scf}=   Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=numRbForRs   CellId=2
+    ${numRbForRs}=     Set Variable If     '${numRbForRs_scf}' == '48 RBs'    48
+    ...                                                                       96
+    ${output}        nps_11028_tools.verify_rimrs_num_and_start_prbs
+    ...                                       pattern_rimrs=DlData_RimRsSendReq
+    ...                                       subcellId=1
+    ...                                       expected_values_startPrb=0
+    ...                                       expected_values_numOfPrb=${numRbForRs}
+    Run keyword and continue on failure      should contain	                ${output}	           passed
+    ${text}=     set Variable If     '${output}'=='passed'      ${consTraceColorGreen}OK${defColor}
+    ...                                                         ${consTraceColorRed}FAILED${defColor}
+    Dated log    ==========> Check If StartRBforRS When Rim-rs is Transmitting is Correctly Set for subcellId 1: [${text}]
+    ${numRbForRs_scf}=   Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=numRbForRs   CellId=3
+    ${numRbForRs}=     Set Variable If     '${numRbForRs_scf}' == '48 RBs'    48
+    ...                                                                       96
+    ${output}        nps_11028_tools.verify_rimrs_num_and_start_prbs
+    ...                                       pattern_rimrs=DlData_RimRsSendReq
+    ...                                       subcellId=2
+    ...                                       expected_values_startPrb=0
+    ...                                       expected_values_numOfPrb=${numRbForRs}
+    Run keyword and continue on failure      should contain	                ${output}	            passed
+    ${text}=     set Variable If     '${output}'=='passed'      ${consTraceColorGreen}OK${defColor}
+    ...                                                         ${consTraceColorRed}FAILED${defColor}
+    Dated log    ==========> Check If StartRBforRS When Rim-rs is Transmitting is Correctly Set for subcellId 2: [${text}]
+    ${numRbForRs_scf}=   Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=numRbForRs   CellId=4
+    ${numRbForRs}=     Set Variable If     '${numRbForRs_scf}' == '48 RBs'    48
+    ...                                                                       96
+    ${output}        nps_11028_tools.verify_rimrs_num_and_start_prbs
+    ...                                       pattern_rimrs=DlData_RimRsSendReq
+    ...                                       subcellId=3
+    ...                                       expected_values_startPrb=0
+    ...                                       expected_values_numOfPrb=${numRbForRs}
+    Run keyword and continue on failure      should contain	                ${output}	            passed
+    ${text}=     set Variable If     '${output}'=='passed'      ${consTraceColorGreen}OK${defColor}
+    ...                                                         ${consTraceColorRed}FAILED${defColor}
+    Dated log    ==========> Check If StartRBforRS When Rim-rs is Transmitting is Correctly Set for subcellId 3: [${text}]
+    [return]    ${output}
+
+# Info;sfn;slot;rnti;csirsTrackingSlotOffset
+Extract Usefull info from dldata_rimrssendreq Pcap
+    [Arguments]                     ${File}
+    [Documentation]                 Extract dldata_rimrssendreq info from Pcap
+
+    Dated log                   Extract dldata_rimrssendreq info from PCAP file [${File}]
+
+    set test variable   ${pcapprocessed_dldata_rimrssendreq}    pcapprocessed_Extract_pcapprocessed_dldata_rimrssendreq.txt
+    set test variable   ${pcapprocessed_dldata_rimrssendreq_path}  ${testCaseDir}/${pcapprocessed_dldata_rimrssendreq}
+    ${cmd_mcshark}    Catenate      tshark -r
+    ...        ${File} -T fields -Y "dldata_rimrssendreq || dldata_csirssendreq" -e _ws.col.Info
+    ...           -e 3gpp.sfn
+    ...           -e 3gpp.slot
+    ...           -e 3gpp.subcellid
+    ...           -e DlData_RimRsSendReq_t.startPrb
+    ...           -e DlData_RimRsSendReq_t.numOfPrb
+    ...           -E header=y -E separator=';' > ${pcapprocessed_dldata_rimrssendreq_path}
+    Run       ${cmd_mcshark}
+    # remove space if present
+    Run      command=sed -i -e 's/ //g' ${pcapprocessed_dldata_rimrssendreq_path}
+
+    ${extract_col_info}   OperatingSystem.grep file        ${pcapprocessed_dldata_rimrssendreq_path}   _ws.col.Info
+    ${pattern}=      set variable      DlData_RimRsSendReq
+    ${extract}  OperatingSystem.grep file  ${pcapprocessed_dldata_rimrssendreq_path}
+    ...                                    ${pattern}
+    OperatingSystem.copy file    ${pcapprocessed_dldata_rimrssendreq_path}  ${testCaseDir}/msg_dldata_rimrssendreq_pcap.csv
+    run keyword if  len($extract)==len($extract_col_info)     fail   DlData_RimRsSendReq not found
+
+
+# specific to CB011028
+Check RimRs CB011028
+    [Arguments]    ${traceFilename}=${EMPTY}   ${ttitracepath}=/tmp/    ${vendor_custom}=${EMPTY}
+    run Keyword if   '${traceFilename}'!='${EMPTY}'    run Keywords  Check RimRs CB011028 Based L1L2 Bip     ${traceFilename}
+    ...                                                                                                      ${ttitracepath}
+    ...                                                                                                      ${vendor_custom.maxNumUlSubcellL1Pool}
+    ...                                                                                                      ${vendor_custom.maxNumUlSubcellL1Sp}
+    ...                                             AND         return from Keyword
+
+# specific to CB009890
+Check PRB Assignment CB009890-A TC1
+    [Arguments]    ${ttitraceFilename}=${EMPTY}   ${ttitracepath}=/tmp/    ${vendor_custom}=${EMPTY}
+    run Keyword if   '${ttitraceFilename}'!='${EMPTY}'    run Keywords  Check PRB Assignment CB009890-A Based FilePkl
+    ...                                                                                                      ${ttitraceFilename}
+    ...                                                                                                      ${ttitracepath}
+    ...                                                                                                      ${vendor_custom.maxNumDlSubcellL1Pool}
+    ...                                                                                                      ${vendor_custom.maxNumDlSubcellL1Sp}
+    ...                                             AND         return from Keyword
+
+# specific to CB009890
+Check PRB Assignment CB009890-B TC1
+    [Arguments]    ${ttitraceFilename}=${EMPTY}   ${ttitracepath}=/tmp/    ${vendor_custom}=${EMPTY}
+    run Keyword if   '${ttitraceFilename}'!='${EMPTY}'    run Keywords  Check PRB Assignment CB009890-B Based FilePkl
+    ...                                                                                                      ${ttitraceFilename}
+    ...                                                                                                      ${ttitracepath}
+    ...                                                                                                      ${vendor_custom.maxNumUlSubcellL1Pool}
+    ...                                                                                                      ${vendor_custom.maxNumUlSubcellL1Sp}
+    ...                                             AND         return from Keyword
+
+# specific to CB009890
+Check PRB Assignment CB009890-B TC
+    [Arguments]    ${ttitraceFilename}=${EMPTY}   ${ttitracepath}=/tmp/    ${vendor_custom}=${EMPTY}
+    run Keyword if   '${ttitraceFilename}'!='${EMPTY}'    Check PRB Assignment CB009890-A Based FilePkl
+    ...                                                                                           ${ttitraceFilename}
+    ...                                                                                           ${ttitracepath}
+    ...                                                                                           ${vendor_custom.maxNumDlSubcellL1Pool}
+    ...                                                                                           ${vendor_custom.maxNumDlSubcellL1Sp}
+    run Keyword if   '${ttitraceFilename}'!='${EMPTY}'    Check PRB Assignment CB009890-B Based FilePkl
+    ...                                                                                           ${ttitraceFilename}
+    ...                                                                                           ${ttitracepath}
+    ...                                                                                           ${vendor_custom.maxNumUlSubcellL1Pool}
+    ...                                                                                           ${vendor_custom.maxNumUlSubcellL1Sp}
+
+# specific to CB009890
+Check PRB Assignment CB009890-A Based FilePkl
+    [Arguments]   ${FilePcap}   ${ttitracepath}   ${maxNumDlSubcellL1Pool}    ${maxNumDlSubcellL1Sp}
+    ${tm}=    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}    .
+    ${FilePkl}=   Run keyword and continue on failure     Extract TTI Trace and Convert to Pickle for CB009890
+    ...                                                                         ttitraceFilename=${FilePcap}
+    ...                                                                         ttitracepath=${ttitracepath}
+    ${path_to_filtered_ttitrace_pkl}=   Run keyword and continue on failure     CB011028-lib.verify_TTITraces_for_CB009890_C1
+    ...                                                                           path_to_pickle=${FilePkl}
+    ...                                                                           name=dl_df_for_manual_analysis_all_subcells_CB009890_A-${tm}
+    Run keyword and continue on failure     CB011028-lib.verify_TTITraces_for_CB009890_C2   path_to_pickle=${path_to_filtered_ttitrace_pkl}
+    ...                                                                                     maxNumDlSubcellL1Pool=${maxNumDlSubcellL1Pool}
+    ...                                                                                     maxNumDlSubcellL1Sp=${maxNumDlSubcellL1Sp}
+    ${path_to_filtered_ttitrace_pkl}=   Run keyword and continue on failure     CB011028-lib.verify_TTITraces_for_CB009890_A_C3
+    ...                                                                           path_to_pickle=${FilePkl}
+    ...                                                                           name=dl_df_for_manual_analysis_all_subcells_CB009890_A_2-${tm}
+
+# specific to CB009890
+Check PRB Assignment CB009890-B Based FilePkl
+    [Arguments]   ${FilePcap}   ${ttitracepath}   ${maxNumUlSubcellL1Pool}    ${maxNumUlSubcellL1Sp}
+    ${tm}=    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}
+    ${FilePkl}=   Run keyword and continue on failure     Extract TTI Trace and Convert to Pickle for CB009890 B
+    ...                                                                         ttitraceFilename=${FilePcap}
+    ...                                                                         ttitracepath=${ttitracepath}
+    ${path_to_filtered_ttitrace_pkl}=   Run keyword and continue on failure     CB011028-lib.verify_TTITraces_for_CB009890_B_C1
+    ...                                                                           path_to_pickle=${FilePkl}
+    ...                                                                           name=ul_df_for_manual_analysis_all_subcells_CB009890-B-${tm}
+    Run keyword and continue on failure     CB011028-lib.verify_TTITraces_for_CB009890_B_C2   path_to_pickle=${path_to_filtered_ttitrace_pkl}
+    ...                                                                                       maxNumUlSubcellL1Pool=${maxNumUlSubcellL1Pool}
+    ...                                                                                       maxNumUlSubcellL1Sp=${maxNumUlSubcellL1Sp}
+
+Extract TTI Trace and Convert to Pickle to Check FdSched NbrPrb
+    [Arguments]  ${ttitraceFilename}     ${ttitracepath}=/tmp/
+    ${events_required}=  create list  utcTimeStampData   dlAllocatedPooledResourcesData
+    ...                               dlFdSchedData
+    ${path_to_tti_trace_pcap}=  set Variable   ${ttitracepath}/${ttitraceFilename}
+    ${df}=   Convert TTI trace from PCAP to data frame  input_file_path=${path_to_tti_trace_pcap}
+    ...                                                 events_list=${events_required}
+    ...                                                 write_to_pickle=${TRUE}
+    Convert TTI trace from data frame to csv    ${df}   ${ttitracepath}
+    ...                                         tti_trace_filename=filtered_ttitrace_FdSched_NbrPrb.csv
+    ${PklFilename}      Remove String      ${ttitraceFilename}     .pcap
+    set suite variable    ${path_to_ttitrace_pkl_fdSched}    ${ttitracepath}/${PklFilename}.pkl
+    OperatingSystem.Run    cp ${ttitracepath}/${PklFilename}.pkl ${ttitracepath}/${PklFilename}_FdSched_NbrPrb.pkl
+    [return]     ${ttitracepath}/${PklFilename}.pkl
+
+Check PRB Assignment CB011028-D FdSched NbrPrb Based TtiTrace
+    [Arguments]   ${FilePcap}   ${ttitracepath}
+    ${FilePkl}=   Run keyword and continue on failure     Extract TTI Trace and Convert to Pickle to Check FdSched NbrPrb
+    ...                                                                         ttitraceFilename=${FilePcap}
+    ...                                                                         ttitracepath=${ttitracepath}
+    Run keyword and continue on failure     CB011028-lib.verify_TTITraces_for_CB011028_FdSched   path_to_pickle=${FilePkl}
+    Run keyword and continue on failure     nps_11028_tools.verify_fdsched_nbrprb_not_exceed_dlallocatedpooledresourcesdata_numalloccellprbDl
+    ...                                                                                           physcellid=50
+    Run keyword and continue on failure     nps_11028_tools.verify_fdsched_nbrprb_not_exceed_dlallocatedpooledresourcesdata_numalloccellprbDl
+    ...                                                                                           physcellid=51
+    Run keyword and continue on failure     nps_11028_tools.verify_fdsched_nbrprb_not_exceed_dlallocatedpooledresourcesdata_numalloccellprbDl
+    ...                                                                                           physcellid=52
+    Run keyword and continue on failure     nps_11028_tools.verify_fdsched_nbrprb_not_exceed_dlallocatedpooledresourcesdata_numalloccellprbDl
+    ...                                                                                           physcellid=53
+
+Check Alarm Cleared All cells
+    [Arguments]     ${nbCell}=0
+    # 7506	gNB CpRtCell configuration update failure
+    # 4540  5G cell update failure
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+    Set Test Variable     ${aliasGNB}
+    FOR    ${Cell_Id}    IN RANGE    0    ${nbCell}
+        robot_extension.Run Keyword And Warn On Failure    Check Alarm Cleared
+        ...                                           parameters=faultId=7506,severity=Critical,impactedCellsList[?]=${Cell_Id}
+        robot_extension.Run Keyword And Warn On Failure    Check Alarm Cleared
+        ...                                           parameters=faultId=4540,severity=Critical,impactedCellsList[?]=${Cell_Id}
+    END
+    # robot_extension.Run Keyword And Warn On Failure   OAM Disconnect                          ${GNB_DU.oam}
+
+Cell Lock
+    [Arguments]    ${cell_id}
+    [Documentation]
+    ...     Lock Cell
+    Oam.OAM Cell Lock  cell_id=${cell_id}
+    Dated Log   Current status of cell ${cell_id} is blocked
+
+Cell Unlock
+    [Arguments]    ${cell_id}
+    Oam.OAM Cell Lock  state=UNLOCK     cell_id= ${cell_id}
+    Dated Log   Current status of cell ${cell_id} is unblocked
+
+Step ${index}: Perform Block SBTS cell ${cellId}
+    Dated Log   Step ${consTraceColorRed} ${index} ${defColor}: ${consTraceColor} Perform Block SBTS cell ${cellId} ${defColor}
+    ${Cell_state_blocked_check}=  Set Variable
+    ...  operationalState=${Disabled_}, availabilityStatus=${Offline_}, blockingState=${Blocked_}
+    ${Cell_state_unblocked_check}=  Set Variable  operationalState=${Disabled_Enabled_}, blockingState=${Unblocked_}
+    ${Cell_state_blocked}=  Set Variable  operationalState=Disabled, availabilityStatus=Offline, blockingState=Blocked
+    ${Cell_state_unblocked}=  Set Variable  operationalState=Enabled, blockingState=Unblocked
+    Set Test Variable  ${Cell_state_blocked_check}
+    Set Test Variable  ${Cell_state_unblocked_check}
+    Set Test Variable  ${Cell_state_blocked}
+    Set Test Variable  ${Cell_state_unblocked}
+    Set Test Variable  ${ALARM_49_count}  0
+    FOR  ${item}  IN  @{NR_CELL_list}
+        # dated log    cell=${item}
+        exit For Loop If     'NRCELL_R-${cellId}' in '${item}'
+    END
+    # dated log    NRCELL = ${item}
+    Block SBTS cell   Cell_Id=${item}
+
+Step ${index}: Perform Unblock SBTS cell ${cellId}
+    Dated Log   Step ${consTraceColorRed} ${index} ${defColor}: ${consTraceColor} Perform Unblock SBTS cell ${defColor}
+    ${Cell_state_blocked_check}=  Set Variable
+    ...  operationalState=${Disabled_}, availabilityStatus=${Offline_}, blockingState=${Blocked_}
+    ${Cell_state_unblocked_check}=  Set Variable  operationalState=${Disabled_Enabled_}, blockingState=${Unblocked_}
+    ${Cell_state_blocked}=  Set Variable  operationalState=Disabled, availabilityStatus=Offline, blockingState=Blocked
+    ${Cell_state_unblocked}=  Set Variable  operationalState=Enabled, blockingState=Unblocked
+    Set Test Variable  ${Cell_state_blocked_check}
+    Set Test Variable  ${Cell_state_unblocked_check}
+    Set Test Variable  ${Cell_state_blocked}
+    Set Test Variable  ${Cell_state_unblocked}
+    Set Test Variable  ${ALARM_49_count}  0
+    FOR  ${item}  IN  @{NR_CELL_list}
+        # dated log    cell=${item}
+        exit For Loop If     'NRCELL_R-${cellId}' in '${item}'
+    END
+    # dated log    NRCELL = ${item}
+    Unblock SBTS cell   ${item}
+
+Block SBTS cell
+    [Arguments]  ${Cell_Id}
+    ${cell_class_name}=      Set Variable      NRCEL
+    # dated Log    Block SBTS cell ${Cell_Id}
+    Log  *** Perform "Cell Block" operation on BTS: ${Cell_Id}  console=True
+    coam.Block Cell  dist_name=${Cell_Id}  timeout=180  connection=coam_gnb
+    Sleep  3s
+
+    Log  *** Check BTS state and alarms after "Cell Block" operation on SBTS ${cell_class_name}  console=True
+    coam.Assert  class_name=${cell_class_name}  id=${Cell_Id}  parameters=${Cell_state_blocked_check}  timeout=30  connection=coam_gnb
+    Log  *** BTS ${Cell_Id} status:\n - ${Cell_state_blocked}  console=True
+
+    Sleep  1s
+
+    ${ALARM_49_count}=  Evaluate  ${ALARM_49_count} + 1
+    Set Test Variable  ${ALARM_49_count}
+    ${SBTS_EXPECTED_ALARMS_49_full}=  Prepare expected alarms list  ${SBTS_EXPECTED_ALARMS_49}  ${ALARM_49_count}
+    Log  *** BTS "Cell blocked (0049)" alarm, expected number: ${ALARM_49_count}  console=True
+    Check Alarm Raised     parameters=faultId=49,severity=Critical,impactedCellsList[?]=${Cell_Id}
+    Log  *** BTS "Cell blocked (0049)" alarm, found number: ${ALARM_49_count}, as expected!  console=True
+
+Unblock SBTS cell
+    [Arguments]   ${Cell_Id}
+    ${cell_class_name}=  Set Variable   NRCEL
+    Log  *** Perform "Cell Unblock" operation on BTS: ${Cell_Id}  console=True
+    coam.Unblock Cell  dist_name=${Cell_Id}  timeout=180  connection=coam_gnb
+    Sleep  10s
+
+    Log  *** Check BTS state and alarms after "Cell Unblock" operation on BTS ${cell_class_name}  console=True
+    coam.Assert  class_name=${cell_class_name}  id=${Cell_Id}  parameters=${Cell_state_unblocked_check}  timeout=30  connection=coam_gnb
+    Log  *** BTS ${Cell_Id} status:\n - ${Cell_state_unblocked}  console=True
+
+    ${ALARM_49_count}=  Evaluate  ${ALARM_49_count} - 1
+    Set Test Variable  ${ALARM_49_count}
+    ${SBTS_EXPECTED_ALARMS_49_full}=  Prepare expected alarms list  ${SBTS_EXPECTED_ALARMS_49}  ${ALARM_49_count}
+    Log  *** BTS "Cell blocked (0049)" alarm, expected number: ${ALARM_49_count}  console=True
+    Check Alarm Cleared     parameters=faultId=49,severity=Critical,impactedCellsList[?]=${Cell_Id}
+    Log  *** BTS "Cell blocked (0049)" alarm, found number: ${ALARM_49_count}, as expected!  console=True
+
+Prepare expected alarms list
+    [Documentation]
+    ...  Keyword for creating list of alarms multiplicated by multiplication number
+    ...  | Parameter             | Man. | Description                                    |
+    ...  | exp_alarms_list       | Yes  | List with alarms prepared for multiplication   |
+    ...  | multiplication_number | Yes  | Number by which alarms should be multiplicated |
+    ...
+    ...  *RETURN*
+    ...  | Parameter              | Description               |
+    ...  | multiplicated_exp_list | List of lists with alarms |
+    ...
+    ...  *EXAMPLE*
+    ...  | ${WCDMA_exp_alarms_multiplicated}= | Prepare expected alarms list | [['7665', 'Core']] | 5 |
+
+    [Arguments]  ${exp_alarms_list}  ${multiplication_number}
+    ${multiplicated_exp_list}=  create list
+    FOR  ${index}  IN RANGE  ${multiplication_number}
+        # Append to list  ${multiplicated_exp_list}  @{exp_alarms_list}
+        Append to list  ${multiplicated_exp_list}  ${exp_alarms_list}
+    END
+    [Return]  ${multiplicated_exp_list}
+
+# faultId=49, severity=Critical
+Check Alarm Raised
+    [Arguments]    ${parameters}=faultId=49,severity=Critical
+    coam.assert_alarm_active    parameters=${parameters}    timeout=5   connection=coam_gnb
+
+Check Alarm Cleared
+    [Arguments]    ${parameters}=faultId=49,severity=Critical
+    coam.assert_alarm_inactive    parameters=${parameters}    timeout=5   connection=coam_gnb
+
+Set UE capa on EPCSim
+    [Arguments]      ${ue_nr_capa_value}=${ue_nr_capabilities_SRS_SA}
+    Modify Field in WtsEmu Cfg File
+    ...                             field=ue_nr_capabilities                 value=${ue_nr_capa_value}
+
+Modify Ue Capa for WTS
+   [Arguments]       ${ue_nr_capa_value}=${ue_nr_capabilities_SRS_SA}
+   Dated Log New Line   Set Ue capa for SA
+   Set UE capa on EPCSim   ${ue_nr_capa_value}
+
+Update Basic Configuration File for actDlSrsBm Test Mode
+    dated log   ----------> Update Basic Configuration File for actDlSrsBm with cell_testmode_set_nr (${tl.core.dir_path}/${tl.core.cfg_filename})
+    wts_cfg.Load Wts Cfg    ${tl.core.dir_path}/${tl.core.cfg_filename}
+    # /opt/iphy/latest/basic_setup.cfg
+    wts_cfg.insert   cell_srs_beam_pos_nr profile_id=1 num_of_ue_positions=4 azimuth=-40,-13,13,40    after    uec_param id=1
+    wts_cfg.insert   cell_testmode_set_nr cell_id=3 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate    after    cell_srs_beam_pos_nr
+    wts_cfg.insert   cell_testmode_set_nr cell_id=2 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate    after    cell_srs_beam_pos_nr
+    wts_cfg.insert   cell_testmode_set_nr cell_id=1 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate    after    cell_srs_beam_pos_nr
+    wts_cfg.insert
+    ...     sim_param_set NR_PDCP_CIPHERING=distributed NR_PDCP_TRUNCATE_DL_SIZE=47 NR_PDCP_BUNDLE_DL_MAX_SIZE=1200 NR_PDCP_BUNDLE_DL_TIMEOUT=100
+    ...         after    cell_srs_beam_pos_nr
+    wts_cfg.Save Wts Cfg    ${tl.core.dir_path}/${tl.core.cfg_filename}
+    # /opt/iphy/latest/basic_setup.cfg
+    Return From Keyword
+
+Update Basic Configuration File for actDlSrsBm Test Mode with azimuth=-70,-19,20,70
+    dated log   ----------> Update Basic Configuration File for actDlSrsBm with cell_testmode_set_nr (${tl.core.dir_path}/${tl.core.cfg_filename})
+    wts_cfg.Load Wts Cfg    ${tl.core.dir_path}/${tl.core.cfg_filename}
+    # /opt/iphy/latest/basic_setup.cfg
+    wts_cfg.insert    cell_srs_beam_pos_nr profile_id=1 num_of_ue_positions=4 azimuth=-70,-19,20,70    after    uec_param id=1
+    wts_cfg.insert    cell_testmode_set_nr cell_id=3 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate    after    cell_srs_beam_pos_nr
+    wts_cfg.insert    cell_testmode_set_nr cell_id=2 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate    after    cell_srs_beam_pos_nr
+    wts_cfg.insert    cell_testmode_set_nr cell_id=1 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate    after    cell_srs_beam_pos_nr
+    wts_cfg.insert
+    ...        sim_param_set NR_PDCP_CIPHERING=distributed NR_PDCP_TRUNCATE_DL_SIZE=47 NR_PDCP_BUNDLE_DL_MAX_SIZE=1200 NR_PDCP_BUNDLE_DL_TIMEOUT=100
+    ...         after    cell_srs_beam_pos_nr
+    wts_cfg.Save Wts Cfg    ${tl.core.dir_path}/${tl.core.cfg_filename}
+    # /opt/iphy/latest/basic_setup.cfg
+    Return From Keyword
+
+Update Basic Configuration File for actDlSrsBm Test Mode with azimuth=-70,-19,20,70 for 4cells
+    dated log   ----------> Update Basic Configuration File for actDlSrsBm with cell_testmode_set_nr (${tl.core.dir_path}/${tl.core.cfg_filename})
+    wts_cfg.Load Wts Cfg    ${tl.core.dir_path}/${tl.core.cfg_filename}
+    # /opt/iphy/latest/basic_setup.cfg
+    wts_cfg.insert    cell_srs_beam_pos_nr profile_id=1 num_of_ue_positions=4 azimuth=-70,-19,20,70    after    uec_param id=1
+    wts_cfg.insert    cell_testmode_set_nr cell_id=4 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate    after    cell_srs_beam_pos_nr
+    wts_cfg.insert    cell_testmode_set_nr cell_id=3 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate    after    cell_srs_beam_pos_nr
+    wts_cfg.insert    cell_testmode_set_nr cell_id=2 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate    after    cell_srs_beam_pos_nr
+    wts_cfg.insert    cell_testmode_set_nr cell_id=1 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate    after    cell_srs_beam_pos_nr
+    wts_cfg.insert
+    ...        sim_param_set NR_PDCP_CIPHERING=distributed NR_PDCP_TRUNCATE_DL_SIZE=47 NR_PDCP_BUNDLE_DL_MAX_SIZE=1200 NR_PDCP_BUNDLE_DL_TIMEOUT=100
+    ...         after    cell_srs_beam_pos_nr
+    wts_cfg.Save Wts Cfg    ${tl.core.dir_path}/${tl.core.cfg_filename}
+    # /opt/iphy/latest/basic_setup.cfg
+    Return From Keyword
+
+Fetch UE type
+    [Documentation]    :
+    ...    [PRIVATE]
+    [Arguments]    ${ue_id}=0
+    ${ueType}=    Set Variable If
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'TM500'   viavi
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'Android'    qualcomm
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'Simulator'    airphone
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'Airphone'    airphone
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'Prisma'    prisma
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'Qualcomm'    qualcomm
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'MediaTek'    mediatek
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'iphy'    iphy
+    Set To Dictionary    ${P_UETYPE}    ue_${ue_id}    ${ueType}
+    Set Suite Variable    ${P_UETYPE}
+
+Get UE type
+    [Documentation]    :
+    ...    The keyword accepts the gnb number as an argument and returns
+    ...    the type of the UE (viavi, qualcomm, airphone)
+    ...
+    ...    :param ue_id: (default=0) Id/Number of UE
+    ...    :return: type of UE    (viavi, qualcomm, airphone)
+    ...
+    [Arguments]  ${ue_id}=0
+    ${ueType}=    Get Variable Value    ${P_UETYPE.ue_${ue_id}}
+    Run Keyword If    '${ueType}'=='None'
+    ...    Fetch UE type    ue_id=${ue_id}
+    [Return]    ${P_UETYPE.ue_${ue_id}}
+
+Get Common Unit SW Version
+    [Documentation]    :
+    ...    [PRIVATE]    used to get GNB/Airphone SW on board
+    ...    :param alias:               ssh connnection alias to common unit board
+    ...    :return: software version
+    [Arguments]    ${alias}
+    ssh.Force Reconnect    ${alias}
+    ssh.send command    cat /ffs/run/Target*xml   connection=${alias}
+    ${cmd_output}=    ssh.read output   connection=${alias}
+    ${parsed_xml}=    parse xml    ${cmd_output}
+    ${software}=    get element attribute    ${parsed_xml}    cbtsSoftwareReleaseVersion
+    ${rest}    ${sw_version}=    Split String    ${software}    separator=_
+    [Return]    ${sw_version}
+
+
+Get Airphone SW version
+    [Documentation]    :
+    ...    reads active software from Airphone
+    ...
+    ...    :param ue_id: (default=0) Id/Number of UE
+    ...    :return: active Software version on Airphone
+    ...
+    [Arguments]  ${ue_id}=0
+    ${ap_alias}=    Connect to Airphone Common Unit    ue_id=${ue_id}
+    ${ap_version}=    Get Common Unit SW Version    alias=${ap_alias}
+    Set Suite Metadata    AirPhone Version    ${ap_version}
+    [Return]    ${ap_version}
+
+Get WTS Version
+    [Documentation]    This keyword is to get WTS version including below 1 suite variable.
+    ...
+    ...    | Suite variable | Example | Description |
+    ...    | ${WTS_VERSION} | 4.0.13303 | WTS version |
+    ...
+    # ${rc}    ${output}    OperatingSystem.Run And Return Rc And Output    ls -la /opt/iphy/latest
+    ${rc}    ${output}    OperatingSystem.Run And Return Rc And Output    ls -la /opt/wts/latest
+    @{split_list}    String.Split String    ${output}    /
+    Set Suite Variable    ${WTS_VERSION}    ${split_list[-1]}
+    # Log to console     WTS Version: ${WTS_VERSION}
+
+Get PYTHON Version
+    [Documentation]    This keyword is to get PYTHON version including below 1 suite Metadata variable.
+    ${pythonVersion}=    nps_11028_tools.return_python_version
+    Set Suite Metadata    Python Version    ${pythonVersion}
+
+COAM Get SCF
+    [Arguments]   ${gnb_id}=0   ${bts_host}=${EMPTY}   ${local_dir_path}=${LOG_PATH}   ${file}=SCF.xml    ${w_setup_admin}=False   ${alias}=coam_gnb
+    ${bts_host}=  Set Variable if  '${bts_host}'=='${EMPTY}'  ${tl.gnbs[${gnb_id}].cu.oam_http_connection_details.addr}  ${bts_host}
+    # admin.connect_to    bts_host=${bts_host}    name=gnb
+    run Keyword if     '${w_setup_admin}'=='True'    coam.setup_admin    bts_host=${bts_host}    name=${alias}
+    ${scf_xml}   coam.get_current_scf_file
+    ...   local_dir_path=${local_dir_path}
+    ...   file_name=${file}
+    ...   timeout=${300}
+    ...   connection=${alias}
+    [Return]   ${scf_xml}
+
+COAM Get SCF Content
+    [Documentation]   export_type: configuration, configurationAndRuntimeObjects, runtimeObjects
+    [Arguments]   ${export_type}=configurationAndRuntimeObjects   ${connection}=COAM
+    ${scf_xml}   coam.get_scf
+    ...   export_type=${export_type}
+    ...   timeout=${300}
+    ...   connection=${connection}
+    [Return]   ${scf_xml}
+
+Set_XL_mod_ListParam
+    [Documentation]
+    ...              This KW will help to set actDl256Qam on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${arg}    ${value}    ${cell}  ${modiflist}
+    Dated Log      "${arg} set ${value}"
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell}
+    &{modify_param}   Create Dictionary
+    ...                    parameter=${arg}
+    ...                    dist_name=${dn}
+    ...                    value=${value}
+    Append To List     ${modiflist}          ${modify_param}
+    [return]     ${modiflist}
+
+Update local SCF
+    ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    Set Suite Variable              ${test_scf_file}
+
+Get_Private_variables_Suite_setup
+    # ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    ${test_scf_file}             COAM Get SCF        local_dir_path=${LOG_PATH}      file=SCF.xml   alias=coam_gnb
+    Set Suite Variable              ${test_scf_file}
+    ${nodeType}=     set variable if   ${isAic}     Vdu
+    ...                                             Classical
+    ${actBeamforming_cell1}=   Get actBeamforming from SCF    nodeType=${nodeType}  CellId=1
+    ${status}  ${actBeamforming_cell2}=   run Keyword and ignore error    Get actBeamforming from SCF    nodeType=${nodeType}  CellId=2
+    ${actBeamforming_cell2}=   set Variable if   '${status}'=='FAIL'    False
+    ...                                                                 ${actBeamforming_cell2}
+    ${actDl256Qam_cell1}=      Get actDl256Qam from SCF    nodeType=${nodeType}  CellId=1
+    ${status}   ${actDl256Qam_cell2}=      run Keyword and ignore error    Get actDl256Qam from SCF    nodeType=${nodeType}  CellId=2
+    ${actDl256Qam_cell2}=   set Variable if   '${status}'=='FAIL'    False
+    ...                                                              ${actDl256Qam_cell2}
+    ${original_Cipher}=        Get Cipher Parameters From gNB
+    ${original_Integrity}=     Get Integrity Parameters From gNB
+    Set Suite Variable   ${actBeamforming_cell1}
+    Set Suite Variable   ${actBeamforming_cell2}
+    Set Suite Variable   ${actDl256Qam_cell1}
+    Set Suite Variable   ${actDl256Qam_cell2}
+    Set Suite Variable    ${original_Cipher}
+    Set Suite Variable    ${original_Integrity}
+    StringTool.printLineWithTitle   Get Integrity and Ciphering Protection Algo Info from SCF
+    Dated log   original_Cipher_prio=${original_Cipher}
+    Dated log   original_Integrity_prio=${original_Integrity}
+    ${higher_cipher}=  get_higher_value_from_dict  ${original_Cipher}
+    # Dated log    higher_cipher algo is ${higher_cipher}
+    ${higher_integrity}=  get_higher_value_from_dict  ${original_Integrity}
+    # Dated log    higher_integrity algo is ${higher_integrity}
+    &{dict_cipher}=   Create Dictionary        nea0=no_cipher  nea1_128=snow   nea2_128=aes  nea3_128=zuc
+    &{dict_Integrity}=   Create Dictionary     nia0=no_cipher  nia1_128=snow   nia2_128=aes  nia3_128=zuc
+    ${higher_cipher}=   set Variable      ${dict_cipher["${higher_cipher}"]}
+    ${higher_Integrity}=   set Variable      ${dict_Integrity["${higher_Integrity}"]}
+    # Dated log    higher_cipher algo is ${consTraceColor}${higher_cipher}${defColor}
+    # Dated log    higher_Integrity algo is ${consTraceColor}${higher_Integrity}${defColor}
+    ${msg_display}=    StringTool.getHeaderLine    higher_cipher algo is     ${consTraceColor}${higher_cipher}${defColor}
+    dated log      ${msg_display}
+    ${msg_display}=    StringTool.getHeaderLine    higher_Integrity algo is     ${consTraceColor}${higher_Integrity}${defColor}
+    dated log      ${msg_display}
+    StringTool.printLineWithTitle   -
+    Set Suite Variable    ${higher_cipher}
+    Set Suite Variable    ${higher_Integrity}
+
+Update_Private_variables_Suite_setup
+    Dated log    ====> Update Globale Variables
+    # ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    ${test_scf_file}             COAM Get SCF        local_dir_path=${LOG_PATH}      file=SCF.xml   alias=coam_gnb
+    Set Suite Variable              ${test_scf_file}
+    ${nodeType}=     set variable if   ${isAic}     Vdu
+    ...                                             Classical
+    ${actBeamforming_cell1}=   Get actBeamforming from SCF    nodeType=${nodeType}  CellId=1
+    ${status}  ${actBeamforming_cell2}=   run Keyword and ignore error    Get actBeamforming from SCF    nodeType=${nodeType}  CellId=2
+    ${actBeamforming_cell2}=   set Variable if   ${status}!='PASSED'    False
+    ...                                                                 ${actBeamforming_cell2}
+    ${actDl256Qam_cell1}=      Get actDl256Qam from SCF    nodeType=${nodeType}  CellId=1
+    ${status}   ${actDl256Qam_cell2}=      run Keyword and ignore error    Get actDl256Qam from SCF    nodeType=${nodeType}  CellId=2
+    ${actDl256Qam_cell2}=   set Variable if   ${status}!='PASSED'    False
+    ...                                                              ${actDl256Qam_cell2}
+    ${original_Cipher}=        Get Cipher Parameters From gNB
+    ${original_Integrity}=     Get Integrity Parameters From gNB
+    Set Suite Variable   ${actBeamforming_cell1}
+    Set Suite Variable   ${actBeamforming_cell2}
+    Set Suite Variable   ${actDl256Qam_cell1}
+    Set Suite Variable   ${actDl256Qam_cell2}
+    Set Suite Variable    ${original_Cipher}
+    Set Suite Variable    ${original_Integrity}
+    StringTool.printLineWithTitle   Get Integrity and Ciphering Protection Algo Info from SCF
+    Dated log   original_Cipher_prio=${original_Cipher}
+    Dated log   original_Integrity_prio=${original_Integrity}
+    ${higher_cipher}=  get_higher_value_from_dict  ${original_Cipher}
+    # Dated log    higher_cipher algo is ${higher_cipher}
+    ${higher_integrity}=  get_higher_value_from_dict  ${original_Integrity}
+    # Dated log    higher_integrity algo is ${higher_integrity}
+    &{dict_cipher}=   Create Dictionary        nea0=no_cipher  nea1_128=snow   nea2_128=aes  nea3_128=zuc
+    &{dict_Integrity}=   Create Dictionary     nia0=no_cipher  nia1_128=snow   nia2_128=aes  nia3_128=zuc
+    ${higher_cipher}=   set Variable      ${dict_cipher["${higher_cipher}"]}
+    ${higher_Integrity}=   set Variable      ${dict_Integrity["${higher_Integrity}"]}
+    # Dated log    higher_cipher algo is ${consTraceColor}${higher_cipher}${defColor}
+    # Dated log    higher_Integrity algo is ${consTraceColor}${higher_Integrity}${defColor}
+    ${msg_display}=    StringTool.getHeaderLine    higher_cipher algo is     ${consTraceColor}${higher_Integrity}${defColor}
+    dated log      ${msg_display}
+    ${msg_display}=    StringTool.getHeaderLine    higher_Integrity algo is     ${consTraceColor}${higher_Integrity}${defColor}
+    dated log      ${msg_display}
+    StringTool.printLineWithTitle   -
+    Set Suite Variable    ${higher_cipher}
+    Set Suite Variable    ${higher_Integrity}
+
+# for SNOW
+# <list name="cipherPrefL">
+#         <item>
+#          <p name="nea0">1</p>
+#          <p name="nea1_128">3</p>
+#          <p name="nea2_128">9</p>
+#          <p name="nea3_128">4</p>
+#        </item>
+#      </list>
+#    <list name="integrityProtPrefL">
+#        <item>
+#          <p name="nia0">0</p>
+#          <p name="nia1_128">3</p>
+#          <p name="nia2_128">9</p>
+#          <p name="nia3_128">4</p>
+#         </item>
+#      </list>
+
+Modify no cipherPrefL and no integrityProtPrefL ListParam
+    [Arguments]              ${cellId}   ${modiflist}
+    &{ciphering_algo}       Create Dictionary     nea0=9
+    ...                                        nea1_128=0
+    ...                                        nea2_128=0
+    ...                                        nea3_128=0
+    &{modify_param1}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'cipherPrefL','value':[&{ciphering_algo}]}
+
+    &{integrity_algo}  Create Dictionary     nia0=9
+    ...                                      nia1_128=0
+    ...                                      nia2_128=0
+    ...                                      nia3_128=0
+    &{modify_param2}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'integrityProtPrefL','value':[&{integrity_algo}]}
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    [return]   ${modiflist}
+
+Modify no cipherPrefL and AES integrityProtPrefL ListParam
+    [Arguments]              ${cellId}   ${modiflist}
+    &{ciphering_algo}       Create Dictionary     nea0=9
+    ...                                        nea1_128=0
+    ...                                        nea2_128=0
+    ...                                        nea3_128=0
+    &{modify_param1}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'cipherPrefL','value':[&{ciphering_algo}]}
+
+    &{integrity_algo}  Create Dictionary     nia0=0
+    ...                                      nia1_128=0
+    ...                                      nia2_128=9
+    ...                                      nia3_128=0
+    &{modify_param2}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'integrityProtPrefL','value':[&{integrity_algo}]}
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    [return]   ${modiflist}
+
+Modify AES cipherPrefL and integrityProtPrefL ListParam
+    [Arguments]              ${cellId}   ${modiflist}
+    &{ciphering_algo}       Create Dictionary     nea0=1
+    ...                                        nea1_128=3
+    ...                                        nea2_128=9
+    ...                                        nea3_128=4
+    &{modify_param1}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'cipherPrefL','value':[&{ciphering_algo}]}
+
+    &{integrity_algo}  Create Dictionary     nia0=1
+    ...                                      nia1_128=3
+    ...                                      nia2_128=9
+    ...                                      nia3_128=4
+    &{modify_param2}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'integrityProtPrefL','value':[&{integrity_algo}]}
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    [return]   ${modiflist}
+
+# for SNOW
+# <list name="cipherPrefL">
+#         <item>
+#          <p name="nea0">1</p>
+#          <p name="nea1_128">9</p>
+#          <p name="nea2_128">3</p>
+#          <p name="nea3_128">4</p>
+#        </item>
+#      </list>
+#    <list name="integrityProtPrefL">
+#        <item>
+#          <p name="nia0">0</p>
+#          <p name="nia1_128">9</p>
+#          <p name="nia2_128">3</p>
+#          <p name="nia3_128">4</p>
+#         </item>
+#      </list>
+
+Modify SNOW cipherPrefL and integrityProtPrefL ListParam
+    [Arguments]              ${cellId}   ${modiflist}
+    &{ciphering_algo}       Create Dictionary     nea0=1
+    ...                                        nea1_128=9
+    ...                                        nea2_128=3
+    ...                                        nea3_128=4
+    &{modify_param1}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'cipherPrefL','value':[&{ciphering_algo}]}
+
+    &{integrity_algo}  Create Dictionary     nia0=1
+    ...                                      nia1_128=9
+    ...                                      nia2_128=3
+    ...                                      nia3_128=4
+    &{modify_param2}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'integrityProtPrefL','value':[&{integrity_algo}]}
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    [return]   ${modiflist}
+
+# for ZUC
+#      <list name="cipherPrefL">
+#        <item>
+#          <p name="nea0">1</p>
+#          <p name="nea1_128">3</p>
+#          <p name="nea2_128">4</p>
+#          <p name="nea3_128">9</p>
+#        </item>
+#      </list>
+#      <list name="integrityProtPrefL">
+#        <item>
+#          <p name="nia0">0</p>
+#          <p name="nia1_128">3</p>
+#          <p name="nia2_128">4</p>
+#          <p name="nia3_128">9</p>
+#        </item>
+
+Modify ZUC cipherPrefL and integrityProtPrefL ListParam
+    [Arguments]              ${cellId}   ${modiflist}
+    &{ciphering_algo}       Create Dictionary     nea0=1
+    ...                                        nea1_128=3
+    ...                                        nea2_128=4
+    ...                                        nea3_128=9
+    &{modify_param1}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'cipherPrefL','value':[&{ciphering_algo}]}
+
+    &{integrity_algo}  Create Dictionary     nia0=1
+    ...                                      nia1_128=3
+    ...                                      nia2_128=4
+    ...                                      nia3_128=9
+    &{modify_param2}   Evaluate  {'dist_name': 'MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}','parameter': 'integrityProtPrefL','value':[&{integrity_algo}]}
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    [return]   ${modiflist}
+
+Get dlMimoMode from SCF
+    [Arguments]          ${nodeType}=Classical  ${CellId}=1
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELL-1
+    ${dlMimoMode}	 scf.get_value_from_scf   p_name=dlMimoMode
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    # ...              nodeType=${nodeType}
+    [return]     ${dlMimoMode}
+
+Get nrCellType from SCF
+    [Arguments]          ${nodeType}=Classical  ${CellId}=1
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELL-1
+    ${nrCellType}	 scf.get_value_from_scf   p_name=nrCellType
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    # ...              nodeType=${nodeType}
+    [return]     ${nrCellType}
+
+Set 4x4 DL Mimo Mode
+    [Documentation]
+    ...              This KW will help to set 4x4 DL Mimo mode on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}
+    @{modiflist}    Create List
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cellId}
+    &{modify_param1}   Create Dictionary
+    ...                          parameter=nrCellType
+    ...                          dist_name=${dn}
+    ...                          value=4DL4UL
+    &{modify_param2}   Create Dictionary
+    ...                          parameter=dlMimoMode
+    ...                          dist_name=${dn}
+    ...                          value=4x4 or 4x2 Closed Loop Spatial Multiplexing
+
+    # Dated log                                ${modify_param1}  ${modify_param2}
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    # Dated log    \n
+    OAM Set Params            ${modiflist}            # OAM need a list ....
+
+Set 8x4 DL Mimo Mode ListParam
+    [Documentation]
+    ...              This KW will help to set 8x4 DL Mimo mode on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}   ${modiflist}
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cellId}
+    &{modify_param1}   Create Dictionary
+    ...                          parameter=nrCellType
+    ...                          dist_name=${dn}
+    ...                          value=8DL4UL
+    &{modify_param2}   Create Dictionary
+    ...                          parameter=dlMimoMode
+    ...                          dist_name=${dn}
+    ...                          value=8x4 Closed Loop Spatial Multiplexing
+
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    [return]   ${modiflist}
+
+Set 4x4 DL Mimo Mode ListParam
+    [Documentation]
+    ...              This KW will help to set 4x4 DL Mimo mode on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}   ${modiflist}
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cellId}
+    &{modify_param1}   Create Dictionary
+    ...                          parameter=nrCellType
+    ...                          dist_name=${dn}
+    ...                          value=4DL4UL
+    &{modify_param2}   Create Dictionary
+    ...                          parameter=dlMimoMode
+    ...                          dist_name=${dn}
+    ...                          value=4x4 or 4x2 Closed Loop Spatial Multiplexing
+
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    [return]   ${modiflist}
+
+Set 2x2 DL Mimo Mode
+    [Documentation]
+    ...              This KW will help to set 2x2 DL Mimo mode on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}
+    @{modiflist}    Create List
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cellId}
+    &{modify_param1}   Create Dictionary
+    ...                          parameter=nrCellType
+    ...                          dist_name=${dn}
+    ...                          value=2DL2UL
+    &{modify_param2}   Create Dictionary
+    ...                          parameter=dlMimoMode
+    ...                          dist_name=${dn}
+    ...                          value=2x2 Closed Loop Spatial Multiplexing
+
+    # Dated log                                ${modify_param1}  ${modify_param2}
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    # Dated log    \n
+    OAM Set Params            ${modiflist}            # OAM need a list ....
+
+Set 2x2 DL Mimo Mode ListParam
+    [Documentation]
+    ...              This KW will help to set 2x2 DL Mimo mode on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}   ${modiflist}
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cellId}
+    &{modify_param1}   Create Dictionary
+    ...                          parameter=nrCellType
+    ...                          dist_name=${dn}
+    ...                          value=2DL2UL
+    &{modify_param2}   Create Dictionary
+    ...                          parameter=dlMimoMode
+    ...                          dist_name=${dn}
+    ...                          value=2x2 Closed Loop Spatial Multiplexing
+
+    Append To List     ${modiflist}          ${modify_param1}   ${modify_param2}
+    [return]      ${modiflist}
+
+Set 2x2 UL Mimo Mode
+    [Documentation]
+    ...              This KW will help to set 2x2 UL Mimo mode on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}
+    @{modiflist}    Create List
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cellId}
+    &{modify_param}   Create Dictionary
+    ...                          parameter=ulMimoMode
+    ...                          dist_name=${dn}
+    ...                          value=Closed loop Spatial Multiplexing (2x2)
+
+    # Dated log                                ${modify_param}
+    Append To List     ${modiflist}          ${modify_param}
+    # Dated log    \n
+    OAM Set Params            ${modiflist}            # OAM need a list ....
+
+Set 2x2 UL Mimo Mode ListParam
+    [Documentation]
+    ...              This KW will help to set 2x2 UL Mimo mode on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}    ${modiflist}
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cellId}
+    &{modify_param}   Create Dictionary
+    ...                          parameter=ulMimoMode
+    ...                          dist_name=${dn}
+    ...                          value=Closed loop Spatial Multiplexing (2x2)
+
+    Append To List     ${modiflist}          ${modify_param}
+    [return]    ${modiflist}
+
+Get UL Mimo Mode from SCF
+    [Arguments]          ${nodeType}=Classical  ${CellId}=1
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELL-1
+    ${ulMimoMode}	 scf.get_value_from_scf   p_name=ulMimoMode
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    # ...              nodeType=${nodeType}
+    [return]     ${ulMimoMode}
+
+Get actUnlimitedDataRateDl from SCF
+    [Arguments]          ${nodeType}=Classical
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELL-1
+    ${actUnlimitedDataRateDl}	 scf.get_value_from_scf   p_name=actUnlimitedDataRateDl
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    # ...              nodeType=${nodeType}
+    [return]     ${actUnlimitedDataRateDl}
+
+Set actUnlimitedDataRateDl ListParam
+    [Documentation]
+    ...              This KW will help to set actUnlimitedDataRateDl on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${actUnlimitedDataRateDl}    ${modiflist}
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    &{modify_param}   Create Dictionary
+    ...                          parameter=actUnlimitedDataRateDl
+    ...                          dist_name=${dn}
+    ...                          value=${actUnlimitedDataRateDl}
+
+    Append To List     ${modiflist}          ${modify_param}
+    [return]    ${modiflist}
+
+Get actFdmEnhancedScheduling from SCF
+    [Arguments]          ${nodeType}=Classical
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1
+    ${actFdmEnhancedScheduling}	 scf.get_value_from_scf   p_name=actFdmEnhancedScheduling
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    # ...              nodeType=${nodeType}
+    [return]     ${actFdmEnhancedScheduling}
+
+Set actFdmEnhancedScheduling ListParam
+    [Documentation]
+    ...              This KW will help to set actFdmEnhancedScheduling on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${actFdmEnhancedScheduling}    ${modiflist}
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    &{modify_param}   Create Dictionary
+    ...                          parameter=actFdmEnhancedScheduling
+    ...                          dist_name=${dn}
+    ...                          value=${actFdmEnhancedScheduling}
+
+    Append To List     ${modiflist}          ${modify_param}
+    [return]    ${modiflist}
+
+Get dlQam256PowerBackoffSub6 from SCF
+    [Arguments]          ${nodeType}=Classical  ${CellId}=1
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELL-1
+    ${dlQam256PowerBackoffSub6}	 scf.get_value_from_scf   p_name=dlQam256PowerBackoffSub6
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    # ...              nodeType=${nodeType}
+    [return]     ${dlQam256PowerBackoffSub6}
+
+Set dlQam256PowerBackoffSub6 ListParam
+    [Documentation]
+    ...              This KW will help to set dlQam256PowerBackoffSub6 on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}   ${dlQam256PowerBackoffSub6}   ${modiflist}
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cellId}
+    &{modify_param}   Create Dictionary
+    ...                          parameter=dlQam256PowerBackoffSub6
+    ...                          dist_name=${dn}
+    ...                          value=${dlQam256PowerBackoffSub6}
+
+    Append To List     ${modiflist}          ${modify_param}
+    [return]    ${modiflist}
+
+Get btsName from SCF
+    [Arguments]          ${nodeType}=Classical
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1
+    ${param_value}	 scf.get_value_from_scf   p_name=btsName
+    ...              dist_name=MRBTS-${MRBTS_ID}
+    # ...              nodeType=${nodeType}
+    [return]     ${param_value}
+
+Set btsName ListParam
+    [Documentation]
+    ...              This KW will help to set CELL param on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${param_value}   ${modiflist}
+    ${dn}             set variable           MRBTS-${MRBTS_ID}
+    &{modify_param}   Create Dictionary
+    ...                          parameter=btsName
+    ...                          dist_name=${dn}
+    ...                          value=${param_value}
+
+    Append To List     ${modiflist}          ${modify_param}
+    [return]    ${modiflist}
+
+Update BtsName
+    [Arguments]    ${modiflist}
+
+    ${Current_btsName}=   Get btsName from SCF
+    ${PartOfBtsName}=    set Variable   Aligned with CB011028
+    ${FullbtsName}=      set Variable   CB011028 - ${testline_name} - ${PartOfBtsName}
+    ${modiflist}=  Run Keyword if   '${Current_btsName.lower()}'!='${FullbtsName.lower()}'
+    ...                                                                           Set btsName ListParam       param_value=${FullbtsName}
+    ...                                                                                                       modiflist=${modiflist}
+    ...   ELSE     set Variable    ${modiflist}
+    [return]   ${modiflist}
+
+Update OAM param to Aligned with 9890
+   [Arguments]    ${cellId}    ${modiflist}
+
+   ${modiflist}=   Update BtsName   ${modiflist}
+
+   ${actProactUlScheduling}=    Get NRCELL Param from SCF   param=actProactUlScheduling  CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actProactUlScheduling.lower()}'=='false'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=actProactUlScheduling
+   ...                                                                                                       param_value=true
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${dlDMRSAdditionalPosition}=    Get NRCELL Param from SCF   param=dlDMRSAdditionalPosition   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${dlDMRSAdditionalPosition.lower()}'!='one additional dmrs'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=dlDMRSAdditionalPosition
+   ...                                                                                                       param_value=One additional DMRS
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${actDlDataDmrsFdm}=    Get NRCELL Param from SCF   param=actDlDataDmrsFdm   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actDlDataDmrsFdm.lower()}'!='false'   Modify dlDataDmrsFdm related Parameters    cellId=${cellId}
+   ...                                                                                                       actDlDataDmrsFdm=false
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${ulDMRSAdditionalPosition}=    Get NRCELL Param from SCF   param=ulDMRSAdditionalPosition   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${ulDMRSAdditionalPosition.lower()}'!='one additional dmrs'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=ulDMRSAdditionalPosition
+   ...                                                                                                       param_value=One additional DMRS
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${maxDlHarqTx}=    Get NRCELLGRP Param from SCF   param_name=maxDlHarqTx   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${maxDlHarqTx.lower()}'!='4'   Set NRCELLGRP Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=maxDlHarqTx
+   ...                                                                                                       param_value=4
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${actBbPoolTddFr1}=    Get NRBTS Param from SCF   param_name=actBbPoolTddFr1   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actBbPoolTddFr1.lower()}'!='4'   Set NRBTS Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=actBbPoolTddFr1
+   ...                                                                                                       param_value=true
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${actSpatialStreamPooling}=    Get NRBTS Param from SCF   param_name=actSpatialStreamPooling   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actSpatialStreamPooling.lower()}'!='false'   Set NRBTS Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=actSpatialStreamPooling
+   ...                                                                                                       param_value=false
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${actTddPrePooling}=    Get NRBTS Param from SCF   param_name=actTddPrePooling   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actTddPrePooling.lower()}'!='false'   Set NRBTS Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=actTddPrePooling
+   ...                                                                                                       param_value=false
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${actBeamforming}=    Get NRCELL Param from SCF   param=actBeamforming   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actBeamforming.lower()}'!='false'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=actBeamforming
+   ...                                                                                                       param_value=true
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${actCsirsMultiplexing}=    Get NRCELL Param from SCF   param=actCsirsMultiplexing   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actCsirsMultiplexing.lower()}'!='false'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=actCsirsMultiplexing
+   ...                                                                                                       param_value=true
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${actPdschAtSsbSlots}=    Get NRCELL Param from SCF   param=actPdschAtSsbSlots   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actPdschAtSsbSlots.lower()}'!='false'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=actPdschAtSsbSlots
+   ...                                                                                                       param_value=true
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${actPdschRmCsirsForTracking}=    Get NRCELL Param from SCF   param=actPdschRmCsirsForTracking   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actPdschRmCsirsForTracking.lower()}'!='false'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=actPdschRmCsirsForTracking
+   ...                                                                                                       param_value=true
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${actRrcReconfigAtBeamSwitch}=    Get NRCELL Param from SCF   param=actRrcReconfigAtBeamSwitch   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actRrcReconfigAtBeamSwitch.lower()}'!='false'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=actRrcReconfigAtBeamSwitch
+   ...                                                                                                       param_value=true
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${actRrcReconfigAtBeamSwitch}=    Get NRCELL Param from SCF   param=actRrcReconfigAtBeamSwitch   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actRrcReconfigAtBeamSwitch.lower()}'!='false'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=actRrcReconfigAtBeamSwitch
+   ...                                                                                                       param_value=true
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${actUeCsirsCoexistCellCsirs}=    Get NRCELL Param from SCF   param=actUeCsirsCoexistCellCsirs   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actUeCsirsCoexistCellCsirs.lower()}'!='false'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=actUeCsirsCoexistCellCsirs
+   ...                                                                                                       param_value=true
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${actVoNR}=    Get NRCELL Param from SCF   param=actVoNR   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${actVoNR.lower()}'!='false'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=actVoNR
+   ...                                                                                                       param_value=true
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${mMimoAntArrayMode}=    Get NRCELL Param from SCF   param=mMimoAntArrayMode   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${mMimoAntArrayMode.lower()}'!='full 64trx array (4x8x2)'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=mMimoAntArrayMode
+   ...                                                                                                       param_value=Full 64TRX Array (4x8x2)
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${msg1FrequencyStart}=    Get NRCELL Param from SCF   param=msg1FrequencyStart   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${msg1FrequencyStart.lower()}'!='14'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=msg1FrequencyStart
+   ...                                                                                                       param_value=14
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${numberOfRxBeamforming}=    Get NRCELL Param from SCF   param=numberOfRxBeamforming   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${numberOfRxBeamforming.lower()}'!='4rx'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=numberOfRxBeamforming
+   ...                                                                                                       param_value=4Rx
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${pMaxNROwnCell}=    Get NRCELL Param from SCF   param=pMaxNROwnCell   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${pMaxNROwnCell.lower()}'!='20'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                                       param_name=pMaxNROwnCell
+   ...                                                                                                       param_value=20
+   ...                                                                                                       modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${type0SearchSpaceConfigurationIndex}=    Get NRCELL Param from SCF   param=type0SearchSpaceConfigurationIndex   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${type0SearchSpaceConfigurationIndex.lower()}'!='5'   Set NRCELL Param ListParam    cellId=${cellId}
+   ...                                                                                               param_name=type0SearchSpaceConfigurationIndex
+   ...                                                                                               param_value=5
+   ...                                                                                               modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${basicBeamSet}=    Get NRCELL beamSet Param from SCF   param=basicBeamSet   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${basicBeamSet.lower()}'!='beamset_6'   Set NRCELL beamSet Param ListParam    cellId=${cellId}
+   ...                                                                                               param_name=basicBeamSet
+   ...                                                                                               param_value=beamSet_6
+   ...                                                                                               modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${beamsMuted}=    Get NRCELL beamSet Param from SCF   param=beamsMuted   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${beamsMuted.lower()}'!='0'   Set NRCELL beamSet Param ListParam    cellId=${cellId}
+   ...                                                                                               param_name=beamsMuted
+   ...                                                                                               param_value=0
+   ...                                                                                               modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${lowerEdgeAngle}=    Get NRCELL beamSet Param from SCF   param=lowerEdgeAngle   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${lowerEdgeAngle.lower()}'!='120'   Set NRCELL beamSet Param ListParam    cellId=${cellId}
+   ...                                                                                               param_name=lowerEdgeAngle
+   ...                                                                                               param_value=120
+   ...                                                                                               modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${nrBtsBeamRefinementP2}=    Get NRCELL beamSet Param from SCF   param=nrBtsBeamRefinementP2   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${nrBtsBeamRefinementP2.lower()}'!='true'   Set NRCELL beamSet Param ListParam    cellId=${cellId}
+   ...                                                                                               param_name=nrBtsBeamRefinementP2
+   ...                                                                                               param_value=true
+   ...                                                                                               modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${tiltOffset}=    Get NRCELL beamSet Param from SCF   param=tiltOffset   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${tiltOffset.lower()}'!='0'   Set NRCELL beamSet Param ListParam    cellId=${cellId}
+   ...                                                                                               param_name=tiltOffset
+   ...                                                                                               param_value=0
+   ...                                                                                               modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${upperEdgeAngle}=    Get NRCELL beamSet Param from SCF   param=upperEdgeAngle   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${upperEdgeAngle.lower()}'!='60'   Set NRCELL beamSet Param ListParam    cellId=${cellId}
+   ...                                                                                               param_name=upperEdgeAngle
+   ...                                                                                               param_value=60
+   ...                                                                                               modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${numberOfTransmittedSsBlocks}=    Get NRCELLGRP Param from SCF   param=numberOfTransmittedSsBlocks   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${numberOfTransmittedSsBlocks.lower()}'!='6 beams'   Set NRCELLGRP Param ListParam    cellId=${cellId}
+   ...                                                                                               param_name=numberOfTransmittedSsBlocks
+   ...                                                                                               param_value=6 beams
+   ...                                                                                               modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   ${systemInformationTargetRate}=    Get NRSYSINFO_PROFILE Param from SCF   param=systemInformationTargetRate   CellId=${cellId}
+   ${modiflist}=  Run Keyword if   '${systemInformationTargetRate.lower()}'!='157'   Set NRSYSINFO_PROFILE Param ListParam    cellId=${cellId}
+   ...                                                                                               param_name=systemInformationTargetRate
+   ...                                                                                               param_value=157
+   ...                                                                                               modiflist=${modiflist}
+   ...   ELSE     set Variable    ${modiflist}
+   [return]   ${modiflist}
+
+Set_XL_mod
+    [Documentation]
+    ...              This KW will help to set actDl256Qam on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${arg}    ${value}    ${cell}
+    Dated Log      "${arg} set ${value}"
+    @{modiflist}    Create List
+           ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell}
+           &{modify_param}   Create Dictionary
+                             ...                    parameter=${arg}
+                             ...                    dist_name=${dn}
+                             ...                    value=${value}
+
+           Dated log                                ${modify_param}
+           Append To List     ${modiflist}          ${modify_param}
+           Dated log    \n
+    OAM Set Params            ${modiflist}            # OAM need a list ....
+    Dated Log  on ${modify_param.dist_name}, ${arg} have been modified with value: ${value}
+
+Get actBeamforming from SCF
+    [Arguments]          ${nodeType}=Classical  ${CellId}=1
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELL-1
+    ${actBeamforming}	 scf.get_value_from_scf   p_name=actBeamforming
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    # ...              nodeType=${nodeType}
+    [return]     ${actBeamforming}
+
+Get actDl256Qam from SCF
+    [Arguments]          ${nodeType}=Classical  ${CellId}=1
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELL-1
+    ${actDl256Qam}	 scf.get_value_from_scf   p_name=actDl256Qam
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    # ...              nodeType=${nodeType}
+    [return]     ${actDl256Qam}
+
+Get Cipher Parameters From gNB
+    ${cipher_params_list}    Create List    nea0    nea1_128    nea2_128    nea3_128
+    # Get SCF File (SCF.xml) is performed in test setup
+    ${scf_path}    set Variable      ${test_scf_file}
+    ${cipher_dict}    nps_11028_tools.get_feature_paramters_from_scf    ${scf_path}    ${cipher_params_list}
+    ...    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}    cipherPrefL
+    [Return]    ${cipher_dict}
+
+Get Integrity Parameters From gNB
+    ${integrity_params_list}    Create List    nia0    nia1_128    nia2_128    nia3_128
+    # Get SCF File (SCF.xml) is performed in test setup
+    ${scf_path}    set Variable      ${test_scf_file}
+    ${integrity_dict}    nps_11028_tools.get_feature_paramters_from_scf    ${scf_path}    ${integrity_params_list}
+    ...    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}    integrityProtPrefL
+    [Return]    ${integrity_dict}
+
+Modify Channels to support 4DL4UL nrCellType
+    [Arguments]         ${CellId}=1
+    ${Need_to_Perform_Commissioning}   set Variable   ${True}
+    FOR  ${channelId}  IN RANGE  1   3
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+    END
+    FOR  ${channelId}  IN RANGE  3   5
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+    END
+    FOR  ${channelId}  IN RANGE  5   7
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${distName_CHANNELGROUP}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        ${dist_name}=             Set Variable              ${distName_CHANNELGROUP}
+        ${version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-1    version
+        Set Object                dist_name=${distName_CHANNEL}    class_name=CHANNEL   version=${version}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        # Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+    END
+    FOR  ${channelId}  IN RANGE  7   9
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${distName_CHANNELGROUP}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        ${dist_name}=             Set Variable              ${distName_CHANNELGROUP}
+        ${version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-1     version
+        Set Object                dist_name=${distName_CHANNEL}    class_name=CHANNEL   version=${version}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        # Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+    END
+    [return]   ${Need_to_Perform_Commissioning}
+
+Modify Channels to support 8DL4UL nrCellType
+    [Arguments]           ${CellId}=1
+    ${Need_to_Perform_Commissioning}   set Variable   ${True}
+    FOR  ${channelId}  IN RANGE  1   3
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        # ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        # ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        # run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+    END
+    FOR  ${channelId}  IN RANGE  3   5
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        # ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        # ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        # run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+    END
+    FOR  ${channelId}  IN RANGE  5   7
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${distName_CHANNELGROUP}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        ${dist_name}=             Set Variable              ${distName_CHANNELGROUP}
+        ${version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-1    version
+        Set Object                dist_name=${distName_CHANNEL}    class_name=CHANNEL   version=${version}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        # Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+        # ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        # run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+    END
+    FOR  ${channelId}  IN RANGE  7   9
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${distName_CHANNELGROUP}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        ${dist_name}=             Set Variable              ${distName_CHANNELGROUP}
+        ${version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-1     version
+        Set Object                dist_name=${distName_CHANNEL}    class_name=CHANNEL   version=${version}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        # Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+        # ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        # run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+    END
+    ${distName_CHANNELGROUP}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-2
+    ${dist_name}=             Set Variable              ${distName_CHANNELGROUP}
+    ${version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-1     version
+    Set Object                dist_name=${distName_CHANNELGROUP}    class_name=CHANNELGROUP   version=${version}
+    FOR  ${channelId}  IN RANGE  1   3
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-2/CHANNEL-${channelId}
+        ${distName_CHANNELGROUP}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-2
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        ${dist_name}=             Set Variable              ${distName_CHANNELGROUP}
+        ${version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-1     version
+        Set Object                dist_name=${distName_CHANNEL}    class_name=CHANNEL   version=${version}
+        # Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        # Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+        # ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        # run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+    END
+      FOR  ${channelId}  IN RANGE  3   5
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-2/CHANNEL-${channelId}
+        ${distName_CHANNELGROUP}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-2
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        ${dist_name}=             Set Variable              ${distName_CHANNELGROUP}
+        ${version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-1     version
+        Set Object                dist_name=${distName_CHANNEL}    class_name=CHANNEL   version=${version}
+        # Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        # Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+        # ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        # run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+    END
+    [return]   ${Need_to_Perform_Commissioning}
+
+Modify Channels to support 8DL8UL nrCellType
+    [Arguments]           ${CellId}=1
+    ${Need_to_Perform_Commissioning}   set Variable   ${True}
+    FOR  ${channelId}  IN RANGE  1   3
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+    END
+    FOR  ${channelId}  IN RANGE  3   5
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+    END
+    FOR  ${channelId}  IN RANGE  5   7
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${distName_CHANNELGROUP}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        ${dist_name}=             Set Variable              ${distName_CHANNELGROUP}
+        ${version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-1    version
+        Set Object                dist_name=${distName_CHANNEL}    class_name=CHANNEL   version=${version}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        # Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+    END
+    FOR  ${channelId}  IN RANGE  7   9
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${distName_CHANNELGROUP}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        ${dist_name}=             Set Variable              ${distName_CHANNELGROUP}
+        ${version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-1     version
+        Set Object                dist_name=${distName_CHANNEL}    class_name=CHANNEL   version=${version}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        # Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+    END
+    ${distName_CHANNELGROUP}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-2
+    ${dist_name}=             Set Variable              ${distName_CHANNELGROUP}
+    ${version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-1     version
+    Set Object                dist_name=${distName_CHANNELGROUP}    class_name=CHANNELGROUP   version=${version}
+    FOR  ${channelId}  IN RANGE  1   3
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-2/CHANNEL-${channelId}
+        ${distName_CHANNELGROUP}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-2
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        ${dist_name}=             Set Variable              ${distName_CHANNELGROUP}
+        ${version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-1     version
+        Set Object                dist_name=${distName_CHANNEL}    class_name=CHANNEL   version=${version}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        # Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+    END
+      FOR  ${channelId}  IN RANGE  3   5
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-2/CHANNEL-${channelId}
+        ${distName_CHANNELGROUP}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-2
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        ${dist_name}=             Set Variable              ${distName_CHANNELGROUP}
+        ${version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-1     version
+        Set Object                dist_name=${distName_CHANNEL}    class_name=CHANNEL   version=${version}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        # Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+    END
+    FOR  ${channelId}  IN RANGE  5   7
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-2/CHANNEL-${channelId}
+        ${distName_CHANNELGROUP}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-2
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        ${dist_name}=             Set Variable              ${distName_CHANNELGROUP}
+        ${version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-1    version
+        Set Object                dist_name=${distName_CHANNEL}    class_name=CHANNEL   version=${version}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=TX
+        # Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+    END
+    FOR  ${channelId}  IN RANGE  7   9
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-2/CHANNEL-${channelId}
+        ${distName_CHANNELGROUP}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-2
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        ${dist_name}=             Set Variable              ${distName_CHANNELGROUP}
+        ${version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-1     version
+        Set Object                dist_name=${distName_CHANNEL}    class_name=CHANNEL   version=${version}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        # Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=direction  value=RX
+        ${distName_resourceDN}=  Set variable  MRBTS-${MRBTS_ID}/EQM-1/APEQM-1/RMOD-${CellId}/PHYANT-1
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=channelId  value=${channelId}
+        run keyword if   ${isObject}   Set Element  dist_name=${distName_CHANNEL}  p_name=resourceDN  value=${distName_resourceDN}
+    END
+    [return]   ${Need_to_Perform_Commissioning}
+
+Set Element
+    [Arguments]      ${dist_name}   ${p_name}   ${value}
+    ${element_exist}=         scf.is_element_in_object  dist_name=${dist_name}    p_name=${p_name}
+    Run Keyword IF            ${element_exist}
+    ...                       scf.modify_scf_element    dist_name=${dist_name}    p_name=${p_name}     value=${value}
+    ...         ELSE
+    ...                       scf.add_element_to_scf    dist_name=${dist_name}    p_name=${p_name}     value=${value}
+
+Set Object
+    [Arguments]      ${dist_name}   ${class_name}   ${version}=${NIDD_VERSION}
+    ${mo_exist}=              scf.is_object_in_scf      dist_name=${dist_name}
+    Run Keyword If            ${mo_exist}               scf.remove_mo_with_descendant_mos  dist_name=${dist_name}
+    scf.add_object_to_scf     class_name=${class_name}  dist_name=${dist_name}             version=${version}
+    # scf.add_object_to_scf     class_name=${class_name}  dist_name=${dist_name}             version=${NIDD_VERSION}
+
+Set List
+    [Arguments]      ${dist_name}   ${list_name}
+    ${list_exist}=            scf.is_list_in_object     dist_name=${dist_name}         list_name=${list_name}
+    Run Keyword if            ${list_exist}             scf.remove_list_from_scf       dist_name=${dist_name}        list_name=${list_name}
+    scf.add_list_to_scf       dist_name=${dist_name}    list_name=${list_name}
+
+Set Element To List
+    [Arguments]      ${dist_name}   ${list_name}   ${elements}
+    ${list_exist}=            scf.is_list_in_object     dist_name=${dist_name}         list_name=${list_name}
+    Run Keyword IF            ${list_exist}
+    ...                       scf.add elements to list    dist_name=${dist_name}    list_name=${list_name}  elements=${elements}
+
+Set Item To List
+    [Arguments]      ${dist_name}   ${list_name}   ${elements}
+    ${list_exist}=            scf.is_list_in_object     dist_name=${dist_name}         list_name=${list_name}
+    Run Keyword IF            ${list_exist}
+    ...                       scf.add item to list    dist_name=${dist_name}    list_name=${list_name}  elements=${elements}
+
+Remove Channels to support 2DL2UL nrCellType
+    [Arguments]           ${CellId}=1
+    ${Need_to_Perform_Commissioning}   set Variable     ${False}
+    FOR  ${channelId}  IN RANGE  5   9
+        ${distName_CHANNEL}=  Set variable  MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-${CellId}/CHANNELGROUP-1/CHANNEL-${channelId}
+        ${isObject}=   scf.is_object_in_scf    ${distName_CHANNEL}
+        run keyword if   ${isObject}   scf.remove_mo_with_descendant_mos      dist_name=${distName_CHANNEL}
+        ${Need_to_Perform_Commissioning}   run keyword if   ${isObject}   set Variable   ${True}
+    END
+    [return]   ${Need_to_Perform_Commissioning}
+
+Commissioning SCF
+    [Tags]                          INIT_AND_TEST
+    [Arguments]                     ${ScfFile}
+    Dated log                       Commisioning SCF : ${ScfFile}
+    File should exist               ${ScfFile}                              SCF file ${ScfFile} not found
+    OAM Perform Full Commissioning  scf_file=${ScfFile}
+    Dated Log    End commissioning, wait for OAM to come back
+    OAM wait available
+
+Get NRCELL Param from SCF
+    [Arguments]        ${param}   ${CellId}=1   ${nodeType}=Classical
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELL-1
+    ${param_value}	 scf.get_value_from_scf   p_name=${param}
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    # ...              nodeType=${nodeType}
+    [return]     ${param_value}
+
+Set NRCELL Param ListParam
+    [Documentation]
+    ...              This KW will help to set CELL param on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}    ${param_name}   ${param_value}   ${modiflist}
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cellId}
+    &{modify_param}   Create Dictionary
+    ...                          parameter=${param_name}
+    ...                          dist_name=${dn}
+    ...                          value=${param_value}
+
+    Append To List     ${modiflist}          ${modify_param}
+    [return]    ${modiflist}
+
+Get NRCELLGRP Param from SCF
+    [Arguments]          ${param_name}  ${CellId}=1  ${nodeType}=Classical
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELLGRP-0
+    ${cellGrpId}   Evaluate    ${cellId} - 1
+    ${param_value}	 scf.get_value_from_scf   p_name=${param_name}
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-${cellGrpId}
+    # ...              nodeType=${nodeType}
+    [return]     ${param_value}
+
+Set NRCELLGRP Param ListParam
+    [Documentation]
+    ...              This KW will help to set CELL param on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}    ${param_name}   ${param_value}   ${modiflist}
+    ${cellGrpId}   Evaluate    ${cellId} - 1
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-${cellGrpId}
+    &{modify_param}   Create Dictionary
+    ...                          parameter=${param_name}
+    ...                          dist_name=${dn}
+    ...                          value=${param_value}
+
+    Append To List     ${modiflist}          ${modify_param}
+    [return]    ${modiflist}
+
+Get NRSYSINFO_PROFILE Param from SCF
+    [Arguments]          ${param_name}  ${CellId}=1  ${nodeType}=Classical
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    ${param_value}	 scf.get_value_from_scf   p_name=${param_name}
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRSYSINFO_PROFILE
+    # ...              nodeType=${nodeType}
+    [return]     ${param_value}
+
+Set NRSYSINFO_PROFILE Param ListParam
+    [Documentation]
+    ...              This KW will help to set CELL param on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}    ${param_name}   ${param_value}   ${modiflist}
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRSYSINFO_PROFILE
+    &{modify_param}   Create Dictionary
+    ...                          parameter=${param_name}
+    ...                          dist_name=${dn}
+    ...                          value=${param_value}
+
+    Append To List     ${modiflist}          ${modify_param}
+    [return]    ${modiflist}
+
+Get NRBTS Param from SCF
+    [Arguments]          ${param_name}  ${CellId}=1  ${nodeType}=Classical
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    ${param_value}	 scf.get_value_from_scf   p_name=${param_name}
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    # ...              nodeType=${nodeType}
+    [return]     ${param_value}
+
+Set NRBTS Param ListParam
+    [Documentation]
+    ...              This KW will help to set CELL param on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}    ${param_name}   ${param_value}   ${modiflist}
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    &{modify_param}   Create Dictionary
+    ...                          parameter=${param_name}
+    ...                          dist_name=${dn}
+    ...                          value=${param_value}
+
+    Append To List     ${modiflist}          ${modify_param}
+    [return]    ${modiflist}
+
+Get NRCELL beamSet Param from SCF
+    [Arguments]        ${param}   ${CellId}=1   ${nodeType}=Classical
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELL-1
+    ${param_value}	 scf.get_value_from_scf   p_name=${param}
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}/beamSet
+    # ...              nodeType=${nodeType}
+    [return]     ${param_value}
+
+Set NRCELL beamSet Param ListParam
+    [Documentation]
+    ...              This KW will help to set CELL beamSet param on line
+    ...              OAM request is done 1 time with a dictionnary created in a loop
+    [Arguments]    ${cellId}    ${param_name}   ${param_value}   ${modiflist}
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cellId}/beamSet
+    &{modify_param}   Create Dictionary
+    ...                          parameter=${param_name}
+    ...                          dist_name=${dn}
+    ...                          value=${param_value}
+
+    Append To List     ${modiflist}          ${modify_param}
+    [return]    ${modiflist}
+
+Get NRCELL NRRIM_PROFILE-1 Param from SCF
+    [Arguments]        ${param}   ${CellId}=1   ${nodeType}=Classical
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELL-1
+    ${param_value}	 scf.get_value_from_scf   p_name=${param}
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}/NRRIM_PROFILE-1
+    # ...              nodeType=${nodeType}
+    [return]     ${param_value}
+
+Get startRbForRs Parameters From gNB
+    [Arguments]      ${CellId}=1   ${nodeType}=Classical
+    ${startRbForRs_params_list}    Create List    p    p    p    p
+    # Get SCF File (SCF.xml) is performed in test setup
+    ${scf_path}    set Variable      ${test_scf_file}
+    ${startRbForRs_dict}    nps_11028_tools.get_feature_paramters_from_scf    ${scf_path}    ${startRbForRs_params_list}
+    ...    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}/NRRIM_PROFILE-1    startRbForRs
+   [Return]    ${startRbForRs_dict}
+
+Modify dlDataDmrsFdm related Parameters
+    [Documentation]                to update dlDataDmrsFdm  (For Classical Only)
+    [Arguments]                    ${cellId}   ${actDlDataDmrsFdm}   ${modiflist}
+
+    ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cellId}
+
+    &{dlDataDmrsFdm0}    Create Dictionary     actDlDataDmrsFdm=${actDlDataDmrsFdm}
+
+    @{dlDataDmrsFdm_value}    create list
+    Append To List    ${dlDataDmrsFdm_value}    ${dlDataDmrsFdm0}
+    &{dlDataDmrsFdm_params}   Create Dictionary   dist_name=${dn}
+    ...    parameter=dlDataDmrsFdm
+    ...    value=${dlDataDmrsFdm_value}
+    dated log          dlDataDmrsFdm_params=${dlDataDmrsFdm_params}
+
+    Append To List     ${modiflist}        ${dlDataDmrsFdm_params}
+    [return]   ${modiflist}
+
+Add missing SCF parameters
+    [Arguments]          ${CellId}=1
+    ${Need_to_Perform_Commissioning}   set Variable   ${True}
+    Update local SCF
+    scf.load_scf    ${test_scf_file}
+    Set Element  dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    ...          p_name=mMimoAntArrayMode
+    ...          value=Full 64TRX Array (4x8x2)
+    Set Element  dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    ...          p_name=actUeCsirsCoexistCellCsirs
+    ...          value=false
+    &{dict}=    Create Dictionary    basicBeamSet=beamSet_1   leftEdgeAngle=60   nrBtsBeamRefinementP2=false
+    ...                              beamsMuted=0   rightEdgeAngle=60   lowerEdgeAngle=45   tiltOffset=0   upperEdgeAngle=45
+    scf.remove list from scf    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}   list_name=beamSet
+    scf.add list to scf    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}   list_name=beamSet
+    Set Item To List     dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${CellId}
+    ...                  list_name=beamSet
+    ...                  elements=&{dict}
+    scf.save_scf    ${test_scf_file}
+    Commissioning SCF  ScfFile=${test_scf_file}
+
+# ----------------------------------------------------------------------------- OAM request
+
+Get All Cell Group Id
+    [Arguments]   ${gnb_id}=0   ${bts_host}=${EMPTY}   ${connection}=coam_gnb
+    ${bts_host}=  Set Variable if  '${bts_host}'=='${EMPTY}'  ${tl.gnbs[${gnb_id}].cu.oam_http_connection_details.addr}  ${bts_host}
+    run Keyword if    '${connection}'=='${EMPTY}'    run Keywords    coam.setup_admin    bts_host=${bts_host}    name=coam_gnb_all_cell
+    ...                                                AND           set Variable    ${connection}     coam_gnb_all_cell
+    # [Arguments]    ${connection}=GNB_OAM
+    ${cell_info}   coam.get_subcells_status   timeout=20    connection=${connection}
+    Log Many      ${cell_info}    level=DEBUG
+    ${number_of_cell_group_info}    get length    ${cell_info}
+    ${cellgrp_list}    Get Dictionary Keys    ${cell_info}
+    @{cellgrp_index_list}    create list
+    FOR    ${cellgrp}    IN    @{cellgrp_list}
+        ${cellgrp_index}    Fetch from right    ${cellgrp}    -
+        ${cellgrp_index}  convert to integer  ${cellgrp_index}
+        Append to list    ${cellgrp_index_list}    ${cellgrp_index}
+    END
+    Sort List   ${cellgrp_index_list}
+    [Return]    ${cellgrp_index_list}
+
+Get Cell Group From Cell
+    [Arguments]    ${cell_id}    ${connection}=coam_gnb
+    ${cellgrp_index_list}    Get All Cell Group Id    connection=${connection}
+    FOR   ${cellgrp_index}   IN   @{cellgrp_index_list}
+        ${cell_list}   Get Cell From Cell Group   cellgrp_id=${cellgrp_index}   connection=${connection}
+        ${cellgrp_id}   Get Cell Group ID from Cell ID   cell_id=${cell_id}   cellgrp_index=${cellgrp_index}   cell_list=${cell_list}
+        exit for loop if  "${cellgrp_id}" != "${None}"
+    END
+    [Return]    ${cellgrp_id}
+
+Get Cell From Cell Group
+    # [Arguments]    ${cellgrp_id}    ${connection}=GNB_OAM
+    [Arguments]   ${cellgrp_id}     ${gnb_id}=0   ${bts_host}=${EMPTY}    ${connection}=coam_gnb
+    ${bts_host}=  Set Variable if  '${bts_host}'=='${EMPTY}'  ${tl.gnbs[${gnb_id}].cu.oam_http_connection_details.addr}  ${bts_host}
+    run Keyword if    '${connection}'=='${EMPTY}'    run Keywords    coam.setup_admin    bts_host=${bts_host}    name=coam_gnb_all_cell_grp
+    ...                                                AND           set Variable    ${connection}     coam_gnb_all_cell_grp
+    ${subcells_info}   coam.get_subcells_status   timeout=20    connection=${connection}
+    ${cell_info}    get from dictionary    ${subcells_info}    NRCELLGRP-${cellgrp_id}\
+    ${cell_list_info}    Get Dictionary Keys    ${cell_info}
+    ${cell_list}  create list
+    FOR  ${cell}  IN  @{cell_list_info}
+        ${cell_index}    Fetch from right    ${cell}    -
+        ${cell_index}    convert to integer    ${cell_index}
+        append to list  ${cell_list}  ${cell_index}
+    END
+    Sort List   ${cell_list}
+    [Return]  ${cell_list}
+
+Get Cell Group ID from Cell ID
+     [Arguments]    ${cell_id}    ${cellgrp_index}    ${cell_list}
+     FOR   ${cell_index}   IN   @{cell_list}
+         return from keyword if    '${cell_index}'=='${cell_id}'    ${cellgrp_index}
+     END
+
+# ------------------------------------------------------------------------------------------------------------------------------------
+
+SCF Enable CB009890 CB006915 CFG 1
+    [documentation]
+    ...               CB006915-N#1 CFG#1
+    ...               CFG#1	"Three cells are configured
+    ...                        3x100MHz 8DL-8UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${input_scf}    ${output_scf}   ${btsName}=${Host Name}
+    ${ret}    ${testline_name}=    OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    ${PartOfBtsName}=          set Variable   DL CL MIMO 8DL-8UL 3Cells BeamSet_6
+    ${FullbtsName}=            set Variable   CB009890 - ${testline_name} - ${PartOfBtsName}
+    set global Variable    ${SCF_btsName}   ${FullbtsName[0:78]}
+    scf.load scf    ${input_scf}
+    ${SCF_version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}      version
+    set global Variable    ${SCF_version}
+    import variables    ${CURDIR}/../python/CB011028_nidd_modify.py
+    FOR    ${item}    IN    @{Beamset_LIST_NAME_PARAMS_TO_Remove}
+        ${list_exist}=            scf.is_list_in_object     dist_name=${item}[dist_name]         list_name=${item}[list_name]
+        Run Keyword IF            ${list_exist}
+        ...                       scf.remove list from scf    dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRLIM_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_ELEMENT_PARAMS_TO_ADD}
+        Set Element     dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ITEMS_PARAMS_TO_ADD}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ELEMENTS_PARAMS_TO_ADD}
+         Set Element To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_9890_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_BF_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_4_BASE_ASOE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_8_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_PAGING_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_LIST_ITEMS_PARAMS_TO_ADD}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    Modify Channels to support 8DL8UL nrCellType    CellId=1
+    Modify Channels to support 8DL8UL nrCellType    CellId=2
+    Modify Channels to support 8DL8UL nrCellType    CellId=3
+    scf.save scf    ${output_scf}
+    [Return]     ${output_scf}
+
+SCF Enable CB011028 CB006915 CFG 1_woBSR
+    [documentation]
+    ...               CB006915-N#1 CFG#1
+    ...               CFG#1	"Three cells are configured
+    ...                        3x100MHz 8DL-8UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${input_scf}    ${output_scf}   ${btsName}=${Host Name}
+    ${ret}    ${testline_name}=    OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    ${PartOfBtsName}=          set Variable   DL CL MIMO 8DL-8UL 4Cells BeamSet_6
+    ${FullbtsName}=            set Variable   CB011028 - ${testline_name} - ${PartOfBtsName}
+    set global Variable    ${SCF_btsName}   ${FullbtsName[0:78]}
+    scf.load scf    ${input_scf}
+    ${SCF_version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}      version
+    set global Variable    ${SCF_version}
+    import variables    ${CURDIR}/../python/CB011028_nidd_modify.py
+    FOR    ${item}    IN    @{Beamset_LIST_NAME_PARAMS_TO_Remove}
+        ${list_exist}=            scf.is_list_in_object     dist_name=${item}[dist_name]         list_name=${item}[list_name]
+        Run Keyword IF            ${list_exist}
+        ...                       scf.remove list from scf    dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRLIM_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_ELEMENT_PARAMS_TO_ADD}
+        Set Element     dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ITEMS_PARAMS_TO_ADD_woBSR}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    # FOR    ${item}    IN    @{CB009890_LIST_ITEMS_PARAMS_TO_ADD}
+    #     Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    # END
+    FOR    ${item}    IN    @{CB009890_LIST_ELEMENTS_PARAMS_TO_ADD}
+         Set Element To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_9890_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_BF_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_4_BASE_ASOE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_8_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_PAGING_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_LIST_ITEMS_PARAMS_TO_ADD}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    # Modify Channels to support 8DL8UL nrCellType    CellId=1
+    # Modify Channels to support 8DL8UL nrCellType    CellId=2
+    # Modify Channels to support 8DL8UL nrCellType    CellId=3
+    scf.save scf    ${output_scf}
+    [Return]     ${output_scf}
+
+SCF Enable CB011028 CB006915 CFG 1_woBSR_wPSBWP
+    [documentation]
+    ...               CB006915-N#1 CFG#1
+    ...               CFG#1	"Three cells are configured
+    ...                        3x100MHz 8DL-8UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${input_scf}    ${output_scf}   ${btsName}=${Host Name}
+    ${ret}    ${testline_name}=    OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    ${PartOfBtsName}=          set Variable   DL CL MIMO 8DL-8UL 4Cells BeamSet_6
+    ${FullbtsName}=            set Variable   CB011028 - ${testline_name} - ${PartOfBtsName}
+    set global Variable    ${SCF_btsName}   ${FullbtsName[0:78]}
+    scf.load scf    ${input_scf}
+    ${SCF_version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}      version
+    set global Variable    ${SCF_version}
+    import variables    ${CURDIR}/../python/CB011028_nidd_modify.py
+    FOR    ${item}    IN    @{Beamset_LIST_NAME_PARAMS_TO_Remove}
+        ${list_exist}=            scf.is_list_in_object     dist_name=${item}[dist_name]         list_name=${item}[list_name]
+        Run Keyword IF            ${list_exist}
+        ...                       scf.remove list from scf    dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRLIM_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_ELEMENT_PARAMS_TO_ADD}
+        Set Element     dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ITEMS_PARAMS_TO_ADD_woBSR}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    # FOR    ${item}    IN    @{CB009890_LIST_ITEMS_PARAMS_TO_ADD}
+    #     Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    # END
+    FOR    ${item}    IN    @{CB009890_LIST_ELEMENTS_PARAMS_TO_ADD}
+         Set Element To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_9890_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_BF_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_4_BASE_ASOE_wPSBWP}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_8_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_PAGING_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_LIST_ITEMS_PARAMS_TO_ADD}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    # Modify Channels to support 8DL8UL nrCellType    CellId=1
+    # Modify Channels to support 8DL8UL nrCellType    CellId=2
+    # Modify Channels to support 8DL8UL nrCellType    CellId=3
+    scf.save scf    ${output_scf}
+    [Return]     ${output_scf}
+
+SCF Enable CB009890 CB006915 CFG 4
+    [documentation]
+    ...               CB006915-N#1 CFG#4
+    ...               CFG#4	"Three cells are configured on each BB board"
+    ...                         3x100MHz 8DL-4UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${input_scf}    ${output_scf}   ${btsName}=${Host Name}
+    ${ret}    ${testline_name}=    OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    ${PartOfBtsName}=          set Variable   DL CL MIMO 8DL-4UL 3Cells BeamSet_6
+    ${FullbtsName}=            set Variable   CB009890 - ${testline_name} - ${PartOfBtsName}
+    set global Variable    ${SCF_btsName}   ${FullbtsName[0:78]}
+    scf.load scf    ${input_scf}
+    ${SCF_version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}      version
+    set global Variable    ${SCF_version}
+    import variables    ${CURDIR}/../python/CB011028_nidd_modify.py
+    FOR    ${item}    IN    @{Beamset_LIST_NAME_PARAMS_TO_Remove}
+        ${list_exist}=            scf.is_list_in_object     dist_name=${item}[dist_name]         list_name=${item}[list_name]
+        Run Keyword IF            ${list_exist}
+        ...                       scf.remove list from scf    dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRLIM_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_ELEMENT_PARAMS_TO_ADD}
+        Set Element     dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ITEMS_PARAMS_TO_ADD}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ELEMENTS_PARAMS_TO_ADD}
+         Set Element To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_9890_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_BF_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_4_BASE_ASOE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    # FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_8_BASE}
+    #     Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    # END
+    FOR   ${item}    IN    @{MODIFY_SCF_PAGING_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_LIST_ITEMS_PARAMS_TO_ADD}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    Modify Channels to support 8DL4UL nrCellType    CellId=1
+    Modify Channels to support 8DL4UL nrCellType    CellId=2
+    Modify Channels to support 8DL4UL nrCellType    CellId=3
+    scf.save scf    ${output_scf}
+    [Return]     ${output_scf}
+
+SCF Enable CB011028 CB006915 CFG 4_woBSR
+    [documentation]
+    ...               CB006915-N#1 CFG#4
+    ...               CFG#4	"Three cells are configured on each BB board"
+    ...                         3x100MHz 8DL-4UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${input_scf}    ${output_scf}   ${btsName}=${Host Name}
+    ${ret}    ${testline_name}=    OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    ${PartOfBtsName}=          set Variable   8DL-4UL 3Cells BeamSet_6
+    ${FullbtsName}=            set Variable   CB011028 - ${testline_name} - ${PartOfBtsName}
+    set global Variable    ${SCF_btsName}   ${FullbtsName[0:78]}
+    scf.load scf    ${input_scf}
+    ${SCF_version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}      version
+    set global Variable    ${SCF_version}
+    import variables    ${CURDIR}/../python/CB011028_nidd_modify.py
+    FOR    ${item}    IN    @{Beamset_LIST_NAME_PARAMS_TO_Remove}
+        ${list_exist}=            scf.is_list_in_object     dist_name=${item}[dist_name]         list_name=${item}[list_name]
+        Run Keyword IF            ${list_exist}
+        ...                       scf.remove list from scf    dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRLIM_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_ELEMENT_PARAMS_TO_ADD}
+        Set Element     dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ITEMS_PARAMS_TO_ADD_woBSR}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ELEMENTS_PARAMS_TO_ADD}
+         Set Element To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_9890_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_BF_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_4_BASE_ASOE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    # FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_8_BASE}
+    #     Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    # END
+    FOR   ${item}    IN    @{MODIFY_SCF_PAGING_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_LIST_ITEMS_PARAMS_TO_ADD}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    Modify Channels to support 8DL4UL nrCellType    CellId=1
+    Modify Channels to support 8DL4UL nrCellType    CellId=2
+    Modify Channels to support 8DL4UL nrCellType    CellId=3
+    scf.save scf    ${output_scf}
+    [Return]     ${output_scf}
+
+SCF Enable CB009890 CB006915 CFG 6
+    [documentation]   GNB is configured with profile::
+    ...              FG#6	"Three cells are configured and setup as the below order
+    ...              1x100MHz 8DL-8UL streams NR TDD FR1 BF cell (with any TDD eCPRI 64T64R radio)
+    ...              1x100MHz 4DL-4UL streams NR TDD FR1 BF cell (with any TDD eCPRI 32T32R radio)
+    ...              1x100MHz 8DL-4UL streams NR TDD FR1 BF cell (with any TDD eCPRI 64T64R radio)
+    [Arguments]    ${input_scf}    ${output_scf}   ${btsName}=${Host Name}
+    ${ret}    ${testline_name}=    OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    ${PartOfBtsName}=          set Variable   8DL-8UL 1Cell - 4DL-4UL 1Cell - 8DL-4UL 1 Cell - BeamSet_6
+    ${FullbtsName}=            set Variable   CB009890 - ${testline_name} - ${PartOfBtsName}
+    set global Variable    ${SCF_btsName}   ${FullbtsName[0:78]}
+    scf.load scf    ${input_scf}
+    ${SCF_version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}      version
+    set global Variable    ${SCF_version}
+    import variables    ${CURDIR}/../python/CB011028_nidd_modify.py
+    FOR    ${item}    IN    @{Beamset_LIST_NAME_PARAMS_TO_Remove}
+        ${list_exist}=            scf.is_list_in_object     dist_name=${item}[dist_name]         list_name=${item}[list_name]
+        Run Keyword IF            ${list_exist}
+        ...                       scf.remove list from scf    dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRLIM_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_ELEMENT_PARAMS_TO_ADD}
+        Set Element     dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ITEMS_PARAMS_TO_ADD_CFG6}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ELEMENTS_PARAMS_TO_ADD}
+         Set Element To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_9890_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_BF_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_CFG_6_BASE_ASOE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    # FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_8_BASE}
+    #     Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    # END
+    FOR   ${item}    IN    @{MODIFY_SCF_PAGING_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    Modify Channels to support 8DL8UL nrCellType    CellId=1
+    Modify Channels to support 4DL4UL nrCellType    CellId=2
+    Modify Channels to support 8DL4UL nrCellType    CellId=3
+    scf.save scf    ${output_scf}
+    [Return]     ${output_scf}
+
+SCF Enable CB009890 CB006915 CFG 10
+    [documentation]
+    ...               CB006915-N#1 CFG#10
+    ...               CFG#10	"Three cells are configured
+    ...                        1x100MHz 8DL-8UL streams NR TDD FR1 BF cell"
+    ...                        1x100MHz 8DL-8UL streams NR TDD FR1 BF cell"
+    ...                        1x100MHz 4DL-4UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${input_scf}    ${output_scf}   ${btsName}=${Host Name}
+    ${ret}    ${testline_name}=    OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    ${PartOfBtsName}=          set Variable   8DL-8UL 2Cells 4DL-4UL 1Cell BeamSet_6
+    ${FullbtsName}=            set Variable   CB009890 - ${testline_name} - ${PartOfBtsName}
+    set global Variable    ${SCF_btsName}   ${FullbtsName[0:78]}
+    scf.load scf    ${input_scf}
+    ${SCF_version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}      version
+    set global Variable    ${SCF_version}
+    import variables    ${CURDIR}/../python/CB011028_nidd_modify.py
+    FOR    ${item}    IN    @{Beamset_LIST_NAME_PARAMS_TO_Remove}
+        ${list_exist}=            scf.is_list_in_object     dist_name=${item}[dist_name]         list_name=${item}[list_name]
+        Run Keyword IF            ${list_exist}
+        ...                       scf.remove list from scf    dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRLIM_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_ELEMENT_PARAMS_TO_ADD}
+        Set Element     dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ITEMS_PARAMS_TO_ADD}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ELEMENTS_PARAMS_TO_ADD}
+         Set Element To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_9890_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_BF_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_4_BASE_ASOE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_8_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_4_4_CFG10_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_PAGING_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_LIST_ITEMS_PARAMS_TO_ADD}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    # remove and/or disable some NIDD param for CELL3 (4DL4UL cellType)
+    # NDM-SRS related features on the last cell shall be disabled (fault 5512:EFaultId_SrsResourcesNotConfigurableAl)
+    Set Element    dist_name=${MR_NR_CELL_NAME_CELL3}   p_name=actDlMuMimoEnh    value=false
+    Set Element    dist_name=${MR_NR_CELL_NAME_CELL3}   p_name=actDlSrsBm        value=false
+    Set Element    dist_name=${MR_NR_CELL_NAME_CELL3}   p_name=actUlMuMimo       value=false
+    Set Element    dist_name=${MR_NR_CELL_NAME_CELL3}   p_name=actUlSrsBm        value=false
+    Set Element    dist_name=${MR_NR_CELL_NAME_CELL3}   p_name=dlMimoMode        value=4x4 or 4x2 Closed Loop Spatial Multiplexing
+    FOR    ${item}    IN    @{CB009890_LIST_NAME_PARAMS_TO_ADD_CFG10}
+        ${list_exist}=            scf.is_list_in_object     dist_name=${item}[dist_name]         list_name=${item}[list_name]
+        Run Keyword IF            ${list_exist}
+        ...                       scf.remove list from scf    dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_NAME_PARAMS_TO_ADD_CFG10}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{periodicCsiAcquisition_LIST_NAME_PARAMS_TO_Add_CFG10}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    Modify Channels to support 8DL8UL nrCellType    CellId=1
+    Modify Channels to support 8DL8UL nrCellType    CellId=2
+    scf.save scf    ${output_scf}
+    [Return]     ${output_scf}
+
+SCF Enable CB009890 CB006915 CFG 12
+    [documentation]
+    ...               CB006915-N#1 CFG#12
+    ...               CFG#12	"Three cells are configured
+    ...                        1x100MHz 4DL-4UL streams NR TDD FR1 BF cell"
+    ...                        1x100MHz 8DL-4UL streams NR TDD FR1 BF cell"
+    ...                        1x100MHz 8DL-8UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${input_scf}    ${output_scf}   ${btsName}=${Host Name}
+    ${ret}    ${testline_name}=    OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    ${PartOfBtsName}=          set Variable   4DL-4UL 1Cell 8DL-4UL 1Cell 8DL-8UL 1Cell BeamSet_6
+    ${FullbtsName}=            set Variable   CB009890 - ${testline_name} - ${PartOfBtsName}
+    set global Variable    ${SCF_btsName}   ${FullbtsName[0:78]}
+    scf.load scf    ${input_scf}
+    ${SCF_version}=   scf.get_mo_attribute    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}      version
+    set global Variable    ${SCF_version}
+    import variables    ${CURDIR}/../python/CB011028_nidd_modify.py
+    FOR    ${item}    IN    @{Beamset_LIST_NAME_PARAMS_TO_Remove}
+        ${list_exist}=            scf.is_list_in_object     dist_name=${item}[dist_name]         list_name=${item}[list_name]
+        Run Keyword IF            ${list_exist}
+        ...                       scf.remove list from scf    dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+         ${result}    scf.is_object_in_scf    dist_name=${item}[dist_name]
+         run keyword if    ${result}==True    scf.remove_mo_with_descendant_mos    dist_name=${item}[dist_name]
+    END
+    FOR    ${item}    IN    @{NRLIM_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRLIM_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_ELEMENT_PARAMS_TO_ADD}
+        Set Element     dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ITEMS_PARAMS_TO_ADD}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ELEMENTS_PARAMS_TO_ADD}
+         Set Element To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_9890_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_BF_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_4_BASE_ASOE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_8_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_4_4_CFG12_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_4_CFG12_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_PAGING_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRDLMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_PARAMS_TO_ADD}
+        scf.add object to scf  class_name=${item}[class_name]
+        ...                    dist_name=${item}[dist_name]
+        ...                    version=${item}[version]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_ELEMENTS_PARAMS_TO_ADD}
+        scf.add element to scf  dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{NRULMUMIMO_LIST_ITEMS_PARAMS_TO_ADD}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    # remove and/or disable some NIDD param for CELL3 (4DL4UL cellType)
+    # NDM-SRS related features on the last cell shall be disabled (fault 5512:EFaultId_SrsResourcesNotConfigurableAl)
+    Set Element    dist_name=${MR_NR_CELL_NAME_CELL1}   p_name=actDlMuMimoEnh    value=false
+    Set Element    dist_name=${MR_NR_CELL_NAME_CELL1}   p_name=actDlSrsBm        value=false
+    Set Element    dist_name=${MR_NR_CELL_NAME_CELL1}   p_name=actUlMuMimo       value=false
+    Set Element    dist_name=${MR_NR_CELL_NAME_CELL1}   p_name=actUlSrsBm        value=false
+    Set Element    dist_name=${MR_NR_CELL_NAME_CELL1}   p_name=dlMimoMode        value=4x4 or 4x2 Closed Loop Spatial Multiplexing
+    FOR    ${item}    IN    @{CB009890_LIST_NAME_PARAMS_TO_ADD_CFG12}
+        ${list_exist}=            scf.is_list_in_object     dist_name=${item}[dist_name]         list_name=${item}[list_name]
+        Run Keyword IF            ${list_exist}
+        ...                       scf.remove list from scf    dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_NAME_PARAMS_TO_ADD_CFG12}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{periodicCsiAcquisition_LIST_NAME_PARAMS_TO_Add_CFG12}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    Modify Channels to support 8DL4UL nrCellType    CellId=2
+    Modify Channels to support 8DL8UL nrCellType    CellId=3
+    scf.save scf    ${output_scf}
+    [Return]     ${output_scf}
+
+
+SCF Enable CB009890 MicroDtx
+    [Arguments]    ${input_scf}    ${output_scf}   ${btsName}=${Host Name}
+    ${ret}    ${testline_name}=    OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    ${PartOfBtsName}=          set Variable   8x4 CL DL MIMO BeamSet_6 3Cells
+    ${FullbtsName}=            set Variable   CB009890 - ${testline_name} - ${PartOfBtsName}
+    set global Variable    ${SCF_btsName}   ${FullbtsName[0:78]}
+    import variables    ${CURDIR}/../python/CB011028_nidd_modify.py
+    scf.load scf    ${input_scf}
+    FOR    ${item}    IN    @{Beamset_LIST_NAME_PARAMS_TO_Remove}
+        ${list_exist}=            scf.is_list_in_object     dist_name=${item}[dist_name]         list_name=${item}[list_name]
+        Run Keyword IF            ${list_exist}
+        ...                       scf.remove list from scf    dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB009890_ELEMENT_PARAMS_TO_ADD}
+        Set Element     dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_NAME_PARAMS_TO_ADD}
+        Set List     dist_name=${item}[dist_name]    list_name=${item}[list_name]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ITEMS_PARAMS_TO_ADD}
+        Set Item To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR    ${item}    IN    @{CB009890_LIST_ELEMENTS_PARAMS_TO_ADD}
+         Set Element To List      dist_name=${item}[dist_name]    list_name=${item}[list_name]    elements=${item}[elements]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_9890_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_BF_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_9890_BASE_MICRODTX}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_DL_MIMO_8_4_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    FOR   ${item}    IN    @{MODIFY_SCF_PAGING_BASE}
+        Set Element    dist_name=${item}[dist_name]    p_name=${item}[p_name]    value=${item}[value]
+    END
+    Modify Channels to support 8DL4UL nrCellType    CellId=1
+    Modify Channels to support 8DL4UL nrCellType    CellId=2
+    Modify Channels to support 8DL4UL nrCellType    CellId=3
+    scf.save scf    ${output_scf}
+    [Return]     ${output_scf}
+
+TL_Preparation_CB009890_SCF_CB006915_CFG_1
+    [documentation]   GNB is configured :
+    ...               CB006915-N#1 CFG#1
+    ...               CFG#1	"Three cells are configured on each BB board"
+    ...                        3x100MHz 8DL-8UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${output_scf}
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   CB009890 8x8 CL DL MIMO BeamSet_6 3Cells
+    ${FullbtsName}=      set Variable   CB009890 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB009890.xml
+    ${scf_update_9890}    SCF Enable CB009890 CB006915 CFG 1    input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                                         btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB009890_SCF_CB006915_CFG_1 Kw : SCF To commit ${scf_update_9890}
+    set suite variable     ${test_scf_file}   ${scf_update_9890}
+    [Return]     ${scf_update_9890}
+
+TL_Preparation_CB009890_SCF_CB006915_CFG_1_woBSR_wRIMRs_4Cells
+    [documentation]   GNB is configured :
+    ...               CB006915-N#1 CFG#1
+    ...               CFG#1	"Three cells are configured on each BB board"
+    ...                        3x100MHz 8DL-8UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${output_scf}
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   CB011028 8DL-8UL BeamSet_6 4Cells
+    ${FullbtsName}=      set Variable   CB011028 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB011028.xml
+    ${scf_update_11028}    SCF Enable CB011028 CB006915 CFG 1_woBSR    input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                                         btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB009890_SCF_CB006915_CFG_1_woBSR_wRIMRs_4Cells Kw : SCF To commit ${scf_update_11028}
+    set suite variable     ${test_scf_file}   ${scf_update_11028}
+    [Return]     ${scf_update_11028}
+
+TL_Preparation_CB011028_SCF_CB006915_CFG_1_4Cells_woBSR_wRIMRs
+    [documentation]   GNB is configured :
+    ...               CB006915-N#1 CFG#1
+    ...               CFG#1	"Three cells are configured on each BB board"
+    ...                        3x100MHz 8DL-8UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${output_scf}
+    # first add RIMRS obj if not present
+    # Check if RIMRS is already enabled. Otherwise, adding RIMRS structures will fail
+    # as they are already there.
+    ${is_rimrs_enabled}          coam_parameter.get_single_value_from_scf_file
+    ...                           parameter=actNrRim
+    ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...                           connection=coam_gnb
+
+    Dated Log                     actNrRim flag is set to ${is_rimrs_enabled}
+
+    Run Keyword If                '${is_rimrs_enabled}'=='disabled'           Run Keywords
+    ...                           coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${rimrs_delta_file_4cells}
+    ...                           connection=coam_gnb
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+    Run Keyword If                '${is_rimrs_enabled}'=='disabled'           Run Keywords
+    ...                           coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${actNrRim_activate_delta_file_4cells}
+    ...                           connection=coam_gnb
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+
+    # ${is_rimrs_enabled}          coam_parameter.get_single_value_from_scf_file
+    # ...                           parameter=actNrRim
+    # ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    # ...                           connection=coam_gnb
+    # Run Keyword If                '${is_rimrs_enabled}'=='framework-0'           Run Keywords
+    # ...                           coam_parameter.perform_scf_delta_commission
+    # ...                           delta_file=${Cell2_numRbForRs_96_delta_file}
+    # ...                           connection=coam_gnb
+    # Wait end of commissioning
+    # ...                           AND
+    # ...                           OAM wait available
+
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   CB011028 8DL-8UL BeamSet_6 4Cells
+    ${FullbtsName}=      set Variable   CB011028 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB011028.xml
+    ${scf_update_11028}    SCF Enable CB011028 CB006915 CFG 1_woBSR    input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                                         btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB009890_SCF_CB006915_CFG_1_woBSR_wRIMRs_4Cells Kw : SCF To commit ${scf_update_11028}
+    set suite variable     ${test_scf_file}   ${scf_update_11028}
+    [Return]     ${scf_update_11028}
+
+TL_Preparation_CB011028_SCF_CB006915_CFG_1_4Cells_woBSR_wRIMRs_wPSBWP
+    [documentation]   GNB is configured :
+    ...               CB006915-N#1 CFG#1
+    ...               CFG#1	"Three cells are configured on each BB board"
+    ...                        3x100MHz 8DL-8UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${output_scf}
+    # first add RIMRS obj if not present
+    # Check if RIMRS is already enabled. Otherwise, adding RIMRS structures will fail
+    # as they are already there.
+    ${is_rimrs_enabled}          coam_parameter.get_single_value_from_scf_file
+    ...                           parameter=actNrRim
+    ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...                           connection=coam_gnb
+
+    Dated Log                     actNrRim flag is set to ${is_rimrs_enabled}
+
+    Run Keyword If                '${is_rimrs_enabled}'=='disabled'           Run Keywords
+    ...                           coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${rimrs_delta_file_4cells}
+    ...                           connection=coam_gnb
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+    Run Keyword If                '${is_rimrs_enabled}'=='disabled'           Run Keywords
+    ...                           coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${actNrRim_activate_delta_file_4cells}
+    ...                           connection=coam_gnb
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+
+    ${is_rimrs_enabled}          coam_parameter.get_single_value_from_scf_file
+    ...                           parameter=actNrRim
+    ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...                           connection=coam_gnb
+    Run Keyword If                '${is_rimrs_enabled}'=='framework-0'           Run Keywords
+    ...                           coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${Cell2_numRbForRs_96_delta_file}
+    ...                           connection=coam_gnb
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+
+    ${is_actPowerSavingBWP_enabled}          coam_parameter.get_single_value_from_scf_file
+    ...                           parameter=actPowerSavingBWP
+    ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...                           connection=coam_gnb
+    Dated Log                     actPowerSavingBWP flag is set to ${is_actPowerSavingBWP_enabled}
+    Run Keyword If                '${is_actPowerSavingBWP_enabled}'=='false'           Run Keywords
+    ...                           coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${actPowerSavingBWP_activate_delta_file_Cell1}
+    ...                           timeout=180s
+    ...                           connection=coam_gnb
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   CB011028 8DL-8UL BeamSet_6 4Cells
+    ${FullbtsName}=      set Variable   CB011028 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB011028.xml
+    ${scf_update_11028}    SCF Enable CB011028 CB006915 CFG 1_woBSR_wPSBWP    input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                                         btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB011028_SCF_CB006915_CFG_1_4Cells_woBSR_wRIMRs_wPSBWP Kw : SCF To commit ${scf_update_11028}
+    set suite variable     ${test_scf_file}   ${scf_update_11028}
+    [Return]     ${scf_update_11028}
+
+TL_Preparation_CB009890_SCF_CB006915_CFG_4
+    [documentation]   GNB is configured with profile:
+    ...               CB006915-N#1 CFG#4
+    ...               CFG#4	"Three cells are configured on each BB board"
+    ...                         3x100MHz 8DL-4UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${output_scf}
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   CB009890 8x4 CL DL MIMO BeamSet_6 3Cells
+    ${FullbtsName}=      set Variable   CB009890 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB009890.xml
+    ${scf_update_9890}    SCF Enable CB009890 CB006915 CFG 4    input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                                         btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB009890_SCF_CB006915_CFG_4 Kw : SCF To commit ${scf_update_9890}
+    set suite variable     ${test_scf_file}   ${scf_update_9890}
+    [Return]     ${scf_update_9890}
+
+TL_Preparation_CB009890_SCF_CB006915_CFG_4_woBSR
+    [documentation]   GNB is configured with profile:
+    ...               CB006915-N#1 CFG#4
+    ...               CFG#4	"Three cells are configured on each BB board"
+    ...                         3x100MHz 8DL-4UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${output_scf}
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   CB011018 8x4 CL DL MIMO BeamSet_6 3Cells
+    ${FullbtsName}=      set Variable   CB011018 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB009890.xml
+    ${scf_update_9890}    SCF Enable CB011028 CB006915 CFG 4_woBSR    input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                                         btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB009890_SCF_CB006915_CFG_4_woBSR Kw : SCF To commit ${scf_update_9890}
+    set suite variable     ${test_scf_file}   ${scf_update_9890}
+    [Return]     ${scf_update_9890}
+
+TL_Preparation_CB011028_SCF_CFG_4_woBSR_wRIMRs
+    [documentation]   GNB is configured with profile:
+    ...               CB006915-N#1 CFG#4
+    ...               CFG#4	"Three cells are configured on each BB board"
+    ...                         3x100MHz 8DL-4UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${output_scf}
+    # first add RIMRS obj if not present
+    # Check if RIMRS is already enabled. Otherwise, adding RIMRS structures will fail
+    # as they are already there.
+    ${is_rimrs_enabled}          coam_parameter.get_single_value_from_scf_file
+    ...                           parameter=actNrRim
+    ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...                           connection=coam_gnb
+
+    Dated Log                     actNrRim flag is set to ${is_rimrs_enabled}
+
+    Run Keyword If                '${is_rimrs_enabled}'=='disabled'           Run Keywords
+    ...                           coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${rimrs_delta_file}
+    ...                           connection=coam_gnb
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+    Run Keyword If                '${is_rimrs_enabled}'=='disabled'           Run Keywords
+    ...                           coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${actNrRim_activate_delta_file}
+    ...                           connection=coam_gnb
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+
+    ${is_rimrs_enabled}          coam_parameter.get_single_value_from_scf_file
+    ...                           parameter=actNrRim
+    ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...                           connection=coam_gnb
+    Run Keyword If                '${is_rimrs_enabled}'=='framework-0'           Run Keywords
+    ...                           coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${Cell2_numRbForRs_96_delta_file}
+    ...                           connection=coam_gnb
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   CB011018 8x4 CL DL MIMO BeamSet_6 3Cells
+    ${FullbtsName}=      set Variable   CB011018 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB011028.xml
+    ${scf_update_11028}    SCF Enable CB011028 CB006915 CFG 4_woBSR    input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                                         btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB011028_SCF_CFG_4_woBSR_wRIMRs Kw : SCF To commit ${scf_update_11028}
+    set suite variable     ${test_scf_file}   ${scf_update_11028}
+    [Return]     ${scf_update_11028}
+
+TL_Preparation_CB011028_SCF_CFG_4_woBSR_wRIMRs_wPSBWP
+    [documentation]   GNB is configured with profile:
+    ...               CB006915-N#1 CFG#4
+    ...               CFG#4	"Three cells are configured on each BB board"
+    ...                         3x100MHz 8DL-4UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${output_scf}
+    # first add RIMRS obj if not present
+    # Check if RIMRS is already enabled. Otherwise, adding RIMRS structures will fail
+    # as they are already there.
+    ${is_rimrs_enabled}          coam_parameter.get_single_value_from_scf_file
+    ...                           parameter=actNrRim
+    ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...                           connection=coam_gnb
+
+    Dated Log                     actNrRim flag is set to ${is_rimrs_enabled}
+
+    Run Keyword If                '${is_rimrs_enabled}'=='disabled'           Run Keywords
+    ...                           coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${rimrs_delta_file}
+    ...                           connection=coam_gnb
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+    Run Keyword If                '${is_rimrs_enabled}'=='disabled'           Run Keywords
+    ...                           coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${actNrRim_activate_delta_file}
+    ...                           connection=coam_gnb
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+
+    ${is_rimrs_enabled}          coam_parameter.get_single_value_from_scf_file
+    ...                           parameter=actNrRim
+    ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...                           connection=coam_gnb
+    Run Keyword If                '${is_rimrs_enabled}'=='framework-0'           Run Keywords
+    ...                           coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${Cell2_numRbForRs_96_delta_file}
+    ...                           connection=coam_gnb
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+
+    ${is_actPowerSavingBWP_enabled}          coam_parameter.get_single_value_from_scf_file
+    ...                           parameter=actPowerSavingBWP
+    ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...                           connection=coam_gnb
+    Dated Log                     actPowerSavingBWP flag is set to ${is_actPowerSavingBWP_enabled}
+    Run Keyword If                '${is_actPowerSavingBWP_enabled}'=='false'           Run Keywords
+    ...                           coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${actPowerSavingBWP_activate_delta_file_3Cells}
+    ...                           connection=coam_gnb
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   CB011018 8x4 CL DL MIMO BeamSet_6 3Cells
+    ${FullbtsName}=      set Variable   CB011018 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB011028.xml
+    ${scf_update_11028}    SCF Enable CB011028 CB006915 CFG 4_woBSR    input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                                         btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB011028_SCF_CFG_4_woBSR_wRIMRs_wPSBWP Kw : SCF To commit ${scf_update_11028}
+    set suite variable     ${test_scf_file}   ${scf_update_11028}
+    [Return]     ${scf_update_11028}
+
+TL_Preparation_CB009890_SCF_CB006915_CFG_6
+    [documentation]   GNB is configured with profile:
+    ...              FG#6	"Three cells are configured and setup as the below order
+    ...              1x100MHz 8DL-8UL streams NR TDD FR1 BF cell (with any TDD eCPRI 64T64R radio)
+    ...              1x100MHz 4DL-4UL streams NR TDD FR1 BF cell (with any TDD eCPRI 32T32R radio)
+    ...              1x100MHz 8DL-4UL streams NR TDD FR1 BF cell (with any TDD eCPRI 64T64R radio)
+    [Arguments]    ${output_scf}
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   8x8 1Cell - 4x4 1Cell - 8X4 1 Cell - CL DL MIMO BeamSet_6
+    ${FullbtsName}=      set Variable   CB009890 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB009890.xml
+    ${scf_update_9890}    SCF Enable CB009890 CB006915 CFG 6    input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                                         btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB009890_SCF_CB006915_CFG_6 Kw : SCF To commit ${scf_update_9890}
+    set suite variable     ${test_scf_file}   ${scf_update_9890}
+    [Return]     ${scf_update_9890}
+
+TL_Preparation_CB009890_SCF_CB006915_CFG_10
+    [documentation]   GNB is configured :
+    ...               CB006915-N#1 CFG#10
+    ...                        1x100MHz 8DL-8UL streams NR TDD FR1 BF cell"
+    ...                        1x100MHz 8DL-8UL streams NR TDD FR1 BF cell"
+    ...                        1x100MHz 4DL-4UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${output_scf}
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   8DL-8UL 2Cells 4DL-4UL 1Cell BeamSet_6
+    ${FullbtsName}=      set Variable   CB009890 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB009890.xml
+    ${scf_update_9890}    SCF Enable CB009890 CB006915 CFG 10    input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                                          btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB009890_SCF_CB006915_CFG_10 Kw : SCF To commit ${scf_update_9890}
+    set suite variable     ${test_scf_file}   ${scf_update_9890}
+    [Return]     ${scf_update_9890}
+
+TL_Preparation_CB009890_SCF_CB006915_CFG_12
+    [documentation]   GNB is configured :
+    ...               CB006915-N#1 CFG#12
+    ...                        1x100MHz 4DL-4UL streams NR TDD FR1 BF cell"
+    ...                        1x100MHz 8DL-4UL streams NR TDD FR1 BF cell"
+    ...                        1x100MHz 8DL-8UL streams NR TDD FR1 BF cell"
+    [Arguments]    ${output_scf}
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   4DL-4UL 1Cell 8DL-4UL 1Cell 8DL-8UL 1Cell BeamSet_6
+    ${FullbtsName}=      set Variable   CB009890 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB009890.xml
+    ${scf_update_9890}    SCF Enable CB009890 CB006915 CFG 12    input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                                          btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB009890_SCF_CB006915_CFG_12 Kw : SCF To commit ${scf_update_9890}
+    set suite variable     ${test_scf_file}   ${scf_update_9890}
+    [Return]     ${scf_update_9890}
+
+TL_Preparation_CB009890_Q_SCF
+    [Arguments]    ${output_scf}
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   CB009890 8x8 CL DL MIMO 1Cell 8X4 CL MIMO 2Cells BeamSet_6
+    ${FullbtsName}=      set Variable   CB009890 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB009890.xml
+    ${scf_update_9890}    SCF Enable CB009890    input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                          btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB009890_Q_SCF Kw : SCF To commit ${scf_update_9890}
+    set suite variable     ${test_scf_file}   ${scf_update_9890}
+    [Return]     ${scf_update_9890}
+
+TL_Preparation_CB009890_L_MicroDTX_SCF
+    [Arguments]    ${output_scf}
+    ${Current_btsName}=   set Variable   ${Host Name}
+    ${PartOfBtsName}=    set Variable   CB009890 8x8 CL DL MIMO 1Cell 8X4 CL MIMO 2Cells BeamSet_6 MicroDtx
+    ${FullbtsName}=      set Variable   CB009890 - ${Current_btsName} - ${PartOfBtsName}
+    ${test_scf_file}           COAM Get SCF      file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ${current_scf_fullname}    set Variable      ${test_scf_file}
+    ${CsvFilename}      Remove String      ${current_scf_fullname}     .xml
+    ${output_scf}       set Variable       ${CsvFilename}_modified_for_CB009890.xml
+    ${scf_update_9890}    SCF Enable CB009890 MicroDtx    input_scf=${current_scf_fullname}    output_scf=${output_scf}
+    ...                                          btsName=${FullbtsName[0:78]}
+    dated log   TL_Preparation_CB009890_L_MicroDTX_SCF Kw : SCF To commit ${scf_update_9890}
+    set suite variable     ${test_scf_file}   ${scf_update_9890}
+    [Return]     ${scf_update_9890}
+
+# ------------------------------------------------------------------------------------------------------------------------------------
+
+Convert TTI trace from pcap to data frame
+    [Documentation]
+    ...  This keyword converts TTi traces to json then to a pandas data frame and requires the Library taf.converters.eventdecoder and pandas
+    ...  | input_file_path | Path to the input file (full Path with Filename) Example ${targed_Dir}/ttitraceStreaming.pcap |
+    ...  | events_list | Filter events from the tti trace, leave blank if all events are needed Example: ulTdSchedSubcellData |
+    ...  | write_to_pickle | Writes the generated dataframe to a pickle file, the pickle file will have the same name as the input_file_path |
+
+    [Arguments]  ${input_file_path}=${EMPTY}    ${events_list}=${EMPTY}     ${num_of_events}=None    ${write_to_pickle}=${False}
+    set_pandas.init_pandas
+    ${input_file_path}=  nps_ttitraces_tools.add File ending if missing  file_path=${input_file_path}  file_ending=.pcap
+    ${df}=  tti_dataframe.convert_tti_trace_to_df    ${input_file_path}    ${events_list}     ${num_of_events}
+    Run Keyword If  ${write_to_pickle}  tti_dataframe.write_df_to_pickle  df=${df}  target_path=${input_file_path}
+    [Return]  ${df}
+
+Extract TTI Trace and Convert to Pickle
+    [Arguments]  ${path_to_tti_trace_pcap}   ${ttitracepath}
+    ${events_required}=  create list  utcTimeStampData   ulTdSchedSubcellData   ulHarqRxData   dlHarqRxDataArray   dlTdSchedSubcellData
+    ...                               dlFdSchedData   csiSrReportData   ulFdSchedData    dlAllocatedPooledResourcesData     dlMetricIndData
+    ${df}=   Convert TTI trace from PCAP to data frame  input_file_path=${path_to_tti_trace_pcap}
+    ...                                                 events_list=${events_required}
+    # ...                                                 num_of_events=5000
+    ...                                                 write_to_pickle=${TRUE}
+    Convert TTI trace from data frame to csv    ${df}   ${ttitracepath}
+    ...                                         tti_trace_filename=filtered_ttitrace.csv
+
+Convert TTI Traces to Dataframe and store as pickle
+    [Arguments]     ${ttitraceFilename}     ${ttitracepath}=/tmp/
+    ${path_to_tti_trace_pcap}     set Variable   ${ttitracepath}/${ttitraceFilename}
+    Run keyword and continue on failure     Extract TTI Trace and Convert to Pickle
+    ...                                                              path_to_tti_trace_pcap=${path_to_tti_trace_pcap}
+    ...                                                              ttitracepath=${ttitracepath}
+    ${PklFilename}      Remove String      ${ttitraceFilename}     .pcap
+    set suite variable    ${path_to_ttitrace_pkl}    ${ttitracepath}/${PklFilename}.pkl
+    [return]     ${ttitracepath}/${PklFilename}.pkl
+
+Extract TTI Trace and Convert to Pickle for CB009890
+    [Arguments]  ${ttitraceFilename}     ${ttitracepath}=/tmp/
+    ${events_required}=  create list  utcTimeStampData   dlMetricIndData   dlAllocatedPooledResourcesData
+    ...                               dlFdSchedData   dlHarqRxDataArray     ulFdSchedData   ulHarqRxData   dlFlowControlData
+    ...                               dlInterL1SubpoolReconfData
+    ${path_to_tti_trace_pcap}=  set Variable   ${ttitracepath}/${ttitraceFilename}
+    ${df}=   Convert TTI trace from PCAP to data frame  input_file_path=${path_to_tti_trace_pcap}
+    ...                                                 events_list=${events_required}
+    ...                                                 write_to_pickle=${TRUE}
+    Convert TTI trace from data frame to csv    ${df}   ${ttitracepath}
+    ...                                         tti_trace_filename=filtered_ttitrace_CB009890.csv
+    ${PklFilename}      Remove String      ${ttitraceFilename}     .pcap
+    set suite variable    ${path_to_ttitrace_pkl_CB009890}    ${ttitracepath}/${PklFilename}.pkl
+    OperatingSystem.Run    cp ${ttitracepath}/${PklFilename}.pkl ${ttitracepath}/${PklFilename}_CB009890.pkl
+    [return]     ${ttitracepath}/${PklFilename}.pkl
+
+Extract TTI Trace and Convert to Pickle for CB009890 B
+    [Arguments]  ${ttitraceFilename}     ${ttitracepath}=/tmp/
+    ${path_to_tti_trace_pcap}     set Variable   ${ttitracepath}/${ttitraceFilename}
+    ${events_required}=  create list  utcTimeStampData   dlMetricIndData   dlAllocatedPooledResourcesData   ulAllocatedPooledResourcesData
+    ...                               dlFdSchedData   dlTdSchedSubcellData   dlHarqRxDataArray   ulTdSchedSubcellData   ulHarqRxData   ulFdSchedData
+    ...                               ulMetricIndData   csiSrReportData   dlFlowControlData
+    ${df}=   Convert TTI trace from PCAP to data frame  input_file_path=${path_to_tti_trace_pcap}
+    ...                                                 events_list=${events_required}
+    ...                                                 write_to_pickle=${TRUE}
+    Convert TTI trace from data frame to csv    ${df}   ${ttitracepath}
+    ...                                         tti_trace_filename=filtered_ttitrace_CB009890_B.csv
+    ${PklFilename}      Remove String      ${ttitraceFilename}     .pcap
+    set suite variable    ${path_to_ttitrace_pkl}    ${ttitracepath}/${PklFilename}_CB009890_B.pkl
+    OperatingSystem.Run    cp ${ttitracepath}/${PklFilename}.pkl ${ttitracepath}/${PklFilename}_CB009890_B.pkl
+    [return]     ${ttitracepath}/${PklFilename}_CB009890_B.pkl
+
+
+Extract TTI Trace and Convert to Pickle for CB011028
+    [Arguments]  ${ttitraceFilename}     ${ttitracepath}=/tmp/
+    ${path_to_tti_trace_pcap}     set Variable   ${ttitracepath}/${ttitraceFilename}
+    ${events_required}=  create list  utcTimeStampData   dlMetricIndData   dlAllocatedPooledResourcesData   ulAllocatedPooledResourcesData
+    ...                               dlFdSchedData   dlTdSchedSubcellData   dlHarqRxDataArray   ulTdSchedSubcellData   ulHarqRxData   ulFdSchedData
+    ...                               ulMetricIndData   csiSrReportData
+    ${df}=   Convert TTI trace from PCAP to data frame  input_file_path=${path_to_tti_trace_pcap}
+    ...                                                 events_list=${events_required}
+    ...                                                 write_to_pickle=${TRUE}
+    Convert TTI trace from data frame to csv    ${df}   ${ttitracepath}
+    ...                                         tti_trace_filename=filtered_ttitrace_CB011028.csv
+    ${PklFilename}      Remove String      ${ttitraceFilename}     .pcap
+    set suite variable    ${path_to_ttitrace_pkl}    ${ttitracepath}/${PklFilename}_CB011028_D.pkl
+    OperatingSystem.Run    cp ${ttitracepath}/${PklFilename}.pkl ${ttitracepath}/${PklFilename}_CB011028_D.pkl
+    [return]     ${ttitracepath}/${PklFilename}_CB011028_D.pkl
+
+Convert TTI Traces to Dataframe and store as pickle for CB011028
+    [Arguments]     ${ttitraceFilename}     ${ttitracepath}=/tmp/
+    ${FilePkl}=    Run keyword and continue on failure     Extract TTI Trace and Convert to Pickle for CB011028
+    ...                                                              ttitraceFilename=${ttitraceFilename}
+    ...                                                              ttitracepath=${ttitracepath}
+    [return]   ${FilePkl}
+
+Convert TTI trace from data frame to csv
+    [Documentation]
+    ...  This keyword converts TTi traces pandas data frame to csv
+    ...
+    ...  | df                 | the pandas data frame |
+    ...  | tti_trace_path     | the path where to store the tti trace file |
+    ...  | tti_trace_filename | the tti trace csv filename |
+    ...
+    [Arguments]  ${df}=${EMPTY}    ${tti_trace_path}=${EMPTY}   ${tti_trace_filename}=ttitrace_streaming.csv
+
+    set_pandas.init_pandas
+
+    ${dir_tti_trace}=  run keyword if  '${tti_trace_path}'=='${EMPTY}'
+    ...     Get testcase log directory
+    ...  ELSE
+    ...     Set Variable  ${tti_trace_path}
+
+    tti_dataframe.save_df_to_csv    ${df}    csv_file_name=${tti_trace_filename}    folder_path=${dir_tti_trace}/
+
+    [Return]  ${dir_tti_trace}/${tti_trace_filename}
+
+# ------------------------------------------------------------------------------------------------------------------------------------
+
+Collect PM Counters File
+    [Arguments]         ${pm_files_path}=${LOG_PATH}/PM
+    BuiltIn.Log     The PM counters file collected from gnb will be stored under : ${pm_files_path}
+    ${latest_pm_file_name}   Counters.Collect PM files from BTS  ${pm_files_path}
+    set Suite Variable    ${LATEST_FILE}       ${latest_pm_file_name}
+    # BuiltIn.Log     \n***Latest pm counters file : ${LATEST_FILE}  console=yes
+    Dated Log New Line     ***Latest pm counters file : ${LATEST_FILE}
+    # Log to console  \n***Latest pm counters file : ${LATEST_FILE} ***
+
+Collect PM
+    Set suite variable    ${pmDir}    ${LOG_PATH}/PM
+    Create Directory      ${pmDir}
+    Dated log          LOG_PATH/PM:${pmDir}
+    ${pm_latest}       Collect PM files from BTS    ${pmDir}
+    Set suite variable    ${LATEST_FILE}    ${pm_latest}
+
+Collect PM Counters file coam
+   [Arguments]         ${target_dir}=${LOG_PATH}
+    BuiltIn.Log To Console    \nuploading pm file from coam
+    ${webservice}				Create Dictionary
+    ...            host=${tl.gnbs[0].cu.oam_http_connection_details.addr}
+    ...            user=${tl.gnbs[0].cu.oam_http_connection_details.username}
+    ...            password=${tl.gnbs[0].cu.oam_http_connection_details.password}
+    ...            port=443
+
+    tafpmcounters.create pm collector
+    ...    name=gnb_pm_counters
+    ...    webservice=${webservice}
+    ...    oam_type=coam
+    tafpmcounters.setup collectors
+    ...    names=gnb_pm_counters
+    tafpmcounters.collect collectors
+    ...    names=gnb_pm_counters
+    ...    target_dir=${target_dir}
+    tafpmcounters.teardown collectors
+    ...    names=gnb_pm_counters
+
+Check Tput over GP period NSA
+    [Documentation]    Computes and checks the Tput UL and DL between start_per_time and end_per_time
+    ...                Tputs should be equal to maximum Tputs all along the test, with 5% margin
+    [Arguments]    ${nb_cell}=1    ${dl_expected_tput}=550    ${ul_expected_tput}=100
+
+    #M55319C00001: MEAS_PERIOD_NR_PDCP_REPORT1
+    #M55319C0200x : DL_VOL_TX_NSA_QOS_GRP_0x: DL PDCP SDU volume transmitted for NSA Bearer - QoS Group 0x: nbre de bytes
+    #M55319C02009 : Tput PDCP DL en bytes sur QoS 9
+    #M55319C0600x: UL PDCP SDU volume received for NSA Bearer - QoS Group 0x: nbre de bytes
+    #M55319C06009: Tput PDCP UL en bytes sur QoS 9
+
+    #M55304C00001: Duration of the measurement period for the NR MAC PDU throughput
+    # les compteurs suivants sont en bytes
+    #M55304C01001 a 28: Initial transmission volume on PDSCH with 64QAM MCS table using MCS x, i.e Cell PDSCH without retrans Tput
+    #M55304C02001 a 28: Initial and retransmission volume on PDSCH with 64QAM MCS table using MCS x, i.e Cell PDSCH with retrans Tput
+    #M55304C03001 a 28: Initial transmissions volume on PUSCH with CP-OFDM and 64QAM MCS table using MCS x, i.e Cell PUSCH without retrans Tput
+    #M55304C04001 a 28: Initial and retransmission volume on PUSCH with CP-OFDM and 64QAM MCS table using MCS x, i.e Cell PUSCH with retrans Tput
+    #M55304C05001 a 28: Initial transmission volume on PDSCH with 256QAM MCS table using MCS x, i.e Cell PDSCH without retrans Tput
+    #M55304C06001 a 28: Initial and retransmission volume on PDSCH with 256QAM MCS table using MCS x, i.e Cell PDSCH with retrans Tput
+
+    ${NRCELL_ID}                       set variable       1
+    # ${counter_values_M55319C02009}  Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}    M55319C02009   ${NRCELL_ID}
+    # ${counter_values_M55319C00001}  Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}    M55319C00001   ${NRCELL_ID}
+    ${counter_values_M55319C02009}     Retrieve Latest Single Counter Value From Pm File    ${LATEST_FILE}    M55319C02009
+    ${counter_values_M55319C00001}     Retrieve Latest Single Counter Value From Pm File    ${LATEST_FILE}    M55319C00001
+    BuiltIn.Log   ***DL PDCP SDU volume transmitted for NSA Bearer - QoS Group 09 (M55319C02009) = ${counter_values_M55319C02009}   console=yes
+    BuiltIn.Log   ***Duration of the measurement period for the PDCP Report 1 (M55319C00001) = ${counter_values_M55319C00001}       console=yes
+
+    ${Tput_PDCP_DL}                    set variable        ${counter_values_M55319C02009}
+    ${MEAS_PERIOD_NR_PDCP_REPORT1}     set variable        ${counter_values_M55319C00001}
+
+    ${tputDL}=              evaluate        8 * ${Tput_PDCP_DL} / (1000 * ${MEAS_PERIOD_NR_PDCP_REPORT1})
+    Dated log          TPUT PDCP DL = ${tputDL} Mbps
+
+    ${counter_values_M55319C06009}     Retrieve Latest Single Counter Value From Pm File     ${LATEST_FILE}   M55319C06009
+    BuiltIn.Log   ***UL PDCP SDU volume received for NSA Bearer - QoS Group 09 (M55319C02009) = ${counter_values_M55319C06009}   console=yes
+    ${Tput_PDCP_UL}                    set variable        ${counter_values_M55319C06009}
+
+    ${tputUL}=              evaluate        8 * ${Tput_PDCP_UL} / (1000 * ${MEAS_PERIOD_NR_PDCP_REPORT1})
+    Dated log          TPUT PDCP uL = ${tputUL} Mbps
+
+    ${dl_min_tput}           evaluate    round(${dl_expected_tput}) * 0.9
+    ${ul_min_tput}           evaluate    round(${ul_expected_tput}) * 0.9
+
+    # Should be true    ${tputDL} >= ${dl_min_tput}
+    # Should be true    ${tputUL} >= ${ul_min_tput}
+
+Check Tput over GP period SA
+    [Documentation]    Computes and checks the Tput UL and DL between start_per_time and end_per_time
+    ...                Tputs should be equal to maximum Tputs all along the test, with 5% margin
+    [Arguments]    ${nb_cell}=1    ${dl_expected_tput}=550    ${ul_expected_tput}=100
+
+    #M55319C00001: MEAS_PERIOD_NR_PDCP_REPORT1
+    #M55319C0200x : DL_VOL_TX_NSA_QOS_GRP_0x: DL PDCP SDU volume transmitted for NSA Bearer - QoS Group 0x: nbre de bytes
+    #M55319C02009 : Tput PDCP DL en bytes sur QoS 9
+    #M55319C0600x: UL PDCP SDU volume received for NSA Bearer - QoS Group 0x: nbre de bytes
+    #M55319C06009: Tput PDCP UL en bytes sur QoS 9
+
+    #M55304C00001: Duration of the measurement period for the NR MAC PDU throughput
+    # les compteurs suivants sont en bytes
+    #M55304C01001 a 28: Initial transmission volume on PDSCH with 64QAM MCS table using MCS x, i.e Cell PDSCH without retrans Tput
+    #M55304C02001 a 28: Initial and retransmission volume on PDSCH with 64QAM MCS table using MCS x, i.e Cell PDSCH with retrans Tput
+    #M55304C03001 a 28: Initial transmissions volume on PUSCH with CP-OFDM and 64QAM MCS table using MCS x, i.e Cell PUSCH without retrans Tput
+    #M55304C04001 a 28: Initial and retransmission volume on PUSCH with CP-OFDM and 64QAM MCS table using MCS x, i.e Cell PUSCH with retrans Tput
+    #M55304C05001 a 28: Initial transmission volume on PDSCH with 256QAM MCS table using MCS x, i.e Cell PDSCH without retrans Tput
+    #M55304C06001 a 28: Initial and retransmission volume on PDSCH with 256QAM MCS table using MCS x, i.e Cell PDSCH with retrans Tput
+
+    ${counter_values_M55319C11006}     Retrieve Latest Single Counter Value From Pm File    ${LATEST_FILE}    M55319C11006
+    ${counter_values_M55319C00001}     Retrieve Latest Single Counter Value From Pm File    ${LATEST_FILE}    M55319C00001
+    BuiltIn.Log   ***DL PDCP SDU volume transmitted for SA Bearer - QoS Group 06 (M55319C11006) = ${counter_values_M55319C11006}   console=yes
+    BuiltIn.Log   ***Duration of the measurement period for the PDCP Report 1 (M55319C00001) = ${counter_values_M55319C00001}       console=yes
+
+    ${Tput_PDCP_DL}                    evaluate        int(${counter_values_M55319C11006})
+    ${MEAS_PERIOD_NR_PDCP_REPORT1}     evaluate        int(${counter_values_M55319C00001})
+
+    ${tputDL}=              evaluate        8 * ${Tput_PDCP_DL} / (1000 * ${MEAS_PERIOD_NR_PDCP_REPORT1})
+    # ${tputDL}=              nps_11028_tools.compute_cell_throughput   pm_value=${Tput_PDCP_DL}  traffic_duration_sec=${MEAS_PERIOD_NR_PDCP_REPORT1}
+    Dated log          TPUT PDCP DL = ${consTraceColorBgYellow}${consTraceColorBlack}${tputDL}${defColor} Mbps
+
+    ${counter_values_M55319C16006}     Retrieve Latest Single Counter Value From Pm File     ${LATEST_FILE}   M55319C16006
+    BuiltIn.Log   ***UL PDCP SDU volume received for SA Bearer - QoS Group 06 (M55319C16006) = ${counter_values_M55319C16006}   console=yes
+    ${Tput_PDCP_UL}                    evaluate        int(${counter_values_M55319C16006})
+
+    ${tputUL}=              evaluate        8 * ${Tput_PDCP_UL} / (1000 * ${MEAS_PERIOD_NR_PDCP_REPORT1})
+    # ${tputUL}=              nps_11028_tools.compute_cell_throughput   pm_value=${Tput_PDCP_UL}  traffic_duration_sec=${MEAS_PERIOD_NR_PDCP_REPORT1}
+    Dated log          TPUT PDCP UL = ${consTraceColorBgYellow}${consTraceColorBlack}${tputUL}${defColor} Mbps
+
+    ${dl_min_tput}           evaluate    round(${dl_expected_tput}) * 0.9
+    ${ul_min_tput}           evaluate    round(${ul_expected_tput}) * 0.9
+
+    # DL RLC data PDU volume transmitted by Low RLC - QoS Group 06 (M55310C01006)
+    # UL RLC data PDU volume received by Low RLC - QoS Group 06 (M55310C03006)
+    ${counter_values_M55310C01006}     Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}    M55310C01006   CellID=1
+    BuiltIn.Log   ***DL RLC PDU volume transmitted by Low RLC - QoS Group 06 (M55310C01006) = ${counter_values_M55310C01006}   console=yes
+
+    ${Tput_RLC_DL}                     evaluate       int(${counter_values_M55310C01006})
+    ${MEAS_PERIOD_NR_PDCP_REPORT1}     evaluate       int(${counter_values_M55319C00001})
+    ${traffic_duration_sec}            evaluate       int(300)
+
+    ${tputDL}=         nps_11028_tools.compute_cell_throughput   pm_value=${Tput_RLC_DL}  traffic_duration_sec=${traffic_duration_sec}
+    ${msg}   Catenate    Observed RLC DL TPUT = ${consTraceColorBgYellow}${consTraceColorBlack}${tputDL}${defColor} Mbps
+    ...                   for CellID=${consTraceColorRed}1${defColor}
+    Dated log          ${msg}
+
+    ${counter_values_M55310C03006}     Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}   M55310C03006    CellID=1
+    BuiltIn.Log   ***UL RLC PDU volume received by Low RLC - QoS Group 06 (M55310C03006) = ${counter_values_M55310C03006}   console=yes
+    ${Tput_RLC_UL}                   evaluate       int(${counter_values_M55310C03006})
+
+    ${tputUL}=         nps_11028_tools.compute_cell_throughput   pm_value=${Tput_RLC_UL}  traffic_duration_sec=${traffic_duration_sec}
+    ${msg}   Catenate    Observed RLC UL TPUT = ${consTraceColorBgYellow}${consTraceColorBlack}${tputUL}${defColor} Mbps
+    ...                   for CellID=${consTraceColorRed}1${defColor}
+    Dated log    ${msg}
+
+    # Should be true    ${tputDL} >= ${dl_min_tput}
+    # Should be true    ${tputUL} >= ${ul_min_tput}
+
+    ${counter_values_M55310C01006}     Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}    M55310C01006   CellID=2
+    BuiltIn.Log   ***DL RLC PDU volume transmitted by Low RLC - QoS Group 06 (M55310C01006) = ${counter_values_M55310C01006}   console=yes
+
+    ${Tput_RLC_DL}                     evaluate        int(${counter_values_M55310C01006})
+    ${MEAS_PERIOD_NR_PDCP_REPORT1}     evaluate        int(${counter_values_M55319C00001})
+
+    ${tputDL}=         nps_11028_tools.compute_cell_throughput   pm_value=${Tput_RLC_DL}  traffic_duration_sec=${traffic_duration_sec}
+    ${msg}   Catenate    Observed RLC DL TPUT = ${consTraceColorBgYellow}${consTraceColorBlack}${tputDL}${defColor} Mbps
+    ...                   for CellID=${consTraceColorRed}2${defColor}
+    Dated log          ${msg}
+
+    ${counter_values_M55310C03006}     Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}   M55310C03006    CellID=2
+    BuiltIn.Log   ***UL RLC PDU volume received by Low RLC - QoS Group 06 (M55310C03006) = ${counter_values_M55310C03006}   console=yes
+    ${Tput_RLC_UL}                    evaluate        int(${counter_values_M55310C03006})
+
+    ${tputUL}=         nps_11028_tools.compute_cell_throughput   pm_value=${Tput_RLC_UL}  traffic_duration_sec=${traffic_duration_sec}
+    ${msg}   Catenate    Observed RLC UL TPUT = ${consTraceColorBgYellow}${consTraceColorBlack}${tputUL}${defColor} Mbps
+    ...                   for CellID=${consTraceColorRed}2${defColor}
+    Dated log          ${msg}
+
+    ${counter_values_M55310C01006}     Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}    M55310C01006   CellID=3
+    BuiltIn.Log   ***DL RLC PDU volume transmitted by Low RLC - QoS Group 06 (M55310C01006) = ${counter_values_M55310C01006}   console=yes
+
+    ${Tput_RLC_DL}                     evaluate        int(${counter_values_M55310C01006})
+    ${MEAS_PERIOD_NR_PDCP_REPORT1}     evaluate        int(${counter_values_M55319C00001})
+
+    ${tputDL}=         nps_11028_tools.compute_cell_throughput   pm_value=${Tput_RLC_DL}  traffic_duration_sec=${traffic_duration_sec}
+    ${msg}   Catenate    Observed RLC DL TPUT = ${consTraceColorBgYellow}${consTraceColorBlack}${tputDL}${defColor} Mbps
+    ...                   for CellID=${consTraceColorRed}3${defColor}
+    Dated log          ${msg}
+
+    ${counter_values_M55310C03006}     Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}   M55310C03006    CellID=3
+    BuiltIn.Log   ***UL RLC PDU volume received by Low RLC - QoS Group 06 (M55310C03006) = ${counter_values_M55310C03006}   console=yes
+    ${Tput_RLC_UL}                    evaluate        int(${counter_values_M55310C03006})
+
+    ${tputUL}=         nps_11028_tools.compute_cell_throughput   pm_value=${Tput_RLC_UL}  traffic_duration_sec=${traffic_duration_sec}
+    ${msg}   Catenate    Observed RLC UL TPUT = ${consTraceColorBgYellow}${consTraceColorBlack}${tputUL}${defColor} Mbps
+    ...                   for CellID=${consTraceColorRed}3${defColor}
+    Dated log          ${msg}
+
+Calculate Average throughput per cell using PMC
+    [Arguments]  ${cell_dist_name}  ${max_traffic_duration_for_scenario}
+    Log to console  Calculating Average throughput for cell: ${cell_dist_name}
+    ${average_cell_throughput}=  nps_11028_tools.get_average_cell_throughput_for_interval
+    ...  traffic_duration_sec=${max_traffic_duration_for_scenario}
+    ...  cell_dist_name=${cell_dist_name}
+    ...  unit=Mbps
+    ${msg}   Catenate   Observed UL TP: ${consTraceColorBgBlue}${consTraceColorYellow}${average_cell_throughput['throughput_ul']}
+    ...                                  ${average_cell_throughput['unit_ul']}${defColor}
+    dated log    ${msg}
+    ${msg}   Catenate   Observed DL TP: ${consTraceColorBgBlue}${consTraceColorYellow}${average_cell_throughput['throughput_dl']}
+    ...                                  ${average_cell_throughput['unit_dl']}${defColor}
+    dated log    ${msg}
+    [Return]  ${average_cell_throughput}
+
+Calculate Throughput using PM Counters
+    [Arguments]  ${cell_distName_params}   ${max_traffic_duration}=300
+    ${througput_per_cell}=  Create Dictionary
+    ${max_traffic_duration_int}   evaluate   int(${max_traffic_duration})
+    FOR  ${cell_dist_name}  IN  @{cell_distName_params}
+        ${average_cell_throughput}=  Calculate Average throughput per cell using PMC
+        ...  cell_dist_name=${cell_dist_name}
+        ...  max_traffic_duration_for_scenario=${max_traffic_duration_int}
+        Set to dictionary  ${througput_per_cell}  ${cell_dist_name}=${average_cell_throughput}
+    END
+    [Return]  ${througput_per_cell}
+
+Get Cell Dist Parameters
+    ${cell_distName_params}=  create List   MRBTS-1/NRBTS-1/NRCELL-1
+    ...                                     MRBTS-1/NRBTS-1/NRCELL-2
+    ...                                     MRBTS-1/NRBTS-1/NRCELL-3
+    sort list   ${cell_distName_params}
+    Set Suite Variable  ${cell_distName_params}
+
+Collect PM Counters and process throughput using PM counters
+    Return From Keyword If        '${ENABLE_CHECK_COUNTERS}' == '0'
+    Dated log     =========> Collect PM Counters File
+    CB011028-D-Keywords.Collect PM Counters File   pm_files_path=${testCaseDir}/PMC
+    Get Cell Dist Parameters
+    Dated log     =========> Calculate Throughput using PM Counters
+    ${througput_per_cell}=   Calculate Throughput using PM Counters    ${cell_distName_params}
+    nps_11028_tools.write_dictionary_to_json  dir_path=${testCaseDir}/
+    ...                                      dictionary=${througput_per_cell}    filename=pmc_average_tp_per_cell.json
+    # PRB_DL_MU_MIMO_2PAIR_UE ( M55308C34013 ) & PRB_DL_MU_MIMO_4LAYER (M55308C34007) are incremented
+    # PRB_DL_MU_MIMO_8LAYER ( M55308C34011)
+    FOR  ${cell_dist_name}  IN  @{cell_distName_params}
+        ${counter_values_M55308C34013}    get_counter_value       ${cell_dist_name}    M55308C34013
+        ${counter_values_M55308C34007}    get_counter_value       ${cell_dist_name}    M55308C34007
+        ${counter_values_M55308C34011}    get_counter_value       ${cell_dist_name}    M55308C34011
+        ${counter_values_M55308C35007}    get_counter_value       ${cell_dist_name}    M55308C35007
+        ${counter_values_M55308C35003}    get_counter_value       ${cell_dist_name}    M55308C35003
+        ${counter_values_M55308C35005}    get_counter_value       ${cell_dist_name}    M55308C35005
+        ${msg}=   Set Variable   counter_values_M55308C34013[PRB_DL_MU_MIMO_2PAIR_UE]
+        dated log   ${msg}=${consTraceColorBgBlue}${counter_values_M55308C34013}${defColor} for ${consTraceColorBgBlue}${cell_dist_name}${defColor}
+        ${msg}=   Set Variable   counter_values_M55308C34007[PRB_DL_MU_MIMO_4LAYER]
+        dated log   ${msg}=${consTraceColorBgBlue}${counter_values_M55308C34007}${defColor} for ${consTraceColorBgBlue}${cell_dist_name}${defColor}
+        ${msg}=   Set Variable   counter_values_M55308C34011[PRB_DL_MU_MIMO_8LAYER]
+        dated log   ${msg}=${consTraceColorBgBlue}${counter_values_M55308C34011}${defColor} for ${consTraceColorBgBlue}${cell_dist_name}${defColor}
+        ${msg}=   Set Variable   counter_values_M55308C35007[PRB_UL_MU_MIMO_2PAIR_UE]
+        dated log   ${msg}=${consTraceColorBgBlue}${counter_values_M55308C35007}${defColor} for ${consTraceColorBgBlue}${cell_dist_name}${defColor}
+        ${msg}=   Set Variable   counter_values_M55308C35003[PRB_UL_MU_MIMO_2LAYER]
+        dated log   ${msg}=${consTraceColorBgBlue}${counter_values_M55308C35003}${defColor} for ${consTraceColorBgBlue}${cell_dist_name}${defColor}
+        ${msg}=   Set Variable   counter_values_M55308C35005[PRB_UL_MU_MIMO_4LAYER]
+        dated log   ${msg}=${consTraceColorBgBlue}${counter_values_M55308C35005}${defColor} for ${consTraceColorBgBlue}${cell_dist_name}${defColor}
+    END
+    robot_extension.Run Keyword And Warn On Failure    CB011028-D-Keywords.Collect PM Counters file coam   target_dir=${testCaseDir}
+
+# ------------------------------------------------------------------------------------------------------------------------------------
+
+Extract Usefull info from itf_l2_ps_cell_cellsetupreq Pcap
+    [Arguments]                     ${File}    ${subdir}
+    [Documentation]                 Extract itf_l2_ps_cell_cellsetupreq info from Pcap
+
+    Dated log                   Extract itf_l2_ps_cell_cellsetupreq info from PCAP file [${File}]
+
+    set test variable   ${pcapprocessed_itf_l2_ps_cell_cellsetupreq}    pcapprocessed_Extract_pcapprocessed_itf_l2_ps_cell_cellsetupreq.txt
+    set test variable   ${pcapprocessed_itf_l2_ps_cell_cellsetupreq_path}  ${testCaseDir}/${pcapprocessed_itf_l2_ps_cell_cellsetupreq}
+    ${cmd1}=   set variable     tshark
+    ${cmd}    catenate      ${cmd1} -r
+    ...        ${File} -T fields -Y "itf_l2_ps_cell_cellsetupreq" -e _ws.col.Info
+    ...           -e itf_l2_ps_cell_CellSetupReq_t.physCellId
+    ...           -e itf_l2_ps_cell_CellSetupReq_t.lcrId
+    ...           -e 3gpp.subcellid
+    ...           -E header=y -E separator=';' > ${pcapprocessed_itf_l2_ps_cell_cellsetupreq_path}
+    Run       ${cmd}
+    # remove space if present
+    Run      command=sed -i -e 's/ //g' ${pcapprocessed_itf_l2_ps_cell_cellsetupreq_path}
+
+    ${extract_col_info}   OperatingSystem.grep file        ${pcapprocessed_itf_l2_ps_cell_cellsetupreq_path}   _ws.col.Info
+    ${pattern}=     set variable   itf_l2_ps_cell_CellSetupReq
+    ${extract}  OperatingSystem.grep file  ${pcapprocessed_itf_l2_ps_cell_cellsetupreq_path}
+    ...                                    ${pattern}
+    run keyword if  len($extract)==0     fail   itf_l2_ps_cell_CellSetupReq not found
+    OperatingSystem.copy file    ${pcapprocessed_itf_l2_ps_cell_cellsetupreq_path}
+    ...                          ${testCaseDir}/${subdir}/msg_itf_l2_ps_cell_cellsetupreq_pcap.csv
+
+Convert PCAP to PDML
+    [Documentation]
+    ...
+    ...    | source             | Path to the pcap file that has to be converted to pdml |
+    ...    | target             | Path where the converted pdml file has to be stored |
+    ...    | filter             | Define message filter  eg. "dldata_csirssendreq || uldata_pucchreceivereq || uldata_pucchreceiverespps" |
+    ...    | option             | User defined options for tshark can be included here |
+    ...
+    [Arguments]  ${source}  ${target}  ${filter}=${EMPTY}  ${option}=${EMPTY}
+
+    CB011028-D-Keywords.Connect to TestPC  alias=testPC_pdmlconversion
+    ${filter_arg}=    Set variable if    '${filter}'!='${EMPTY}'    -Y ${filter}    ${EMPTY}
+    ${command}=  Set Variable      tshark -r "${source}" ${option} -T pdml ${filter_arg} >"${target}_"
+    ssh.send_command  ${command}  connection=testPC_pdmlconversion
+    ssh.await execution end  connection=testPC_pdmlconversion  timeout=60min
+    nps_11028_tools.strip headers  source_file=${target}_  target_file=${target}
+    ssh.send command  sudo rm ${target}_  connection=testPC_pdmlconversion
+    ssh.await execution end  connection=testPC_pdmlconversion  timeout=5min
+    [Teardown]  ssh.disconnect  connection=testPC_pdmlconversion
+
+verify CellSetup SysCom Traces
+    [Arguments]    ${isCaptureCPRT}=${False}
+    return from keyword if   ${isCaptureCPRT}==${False}
+    Prepare Logs Directory Path    subdir=syscom
+    ${cmd}=   Catenate    basename ${CaptureCPRT.path}
+    ${file_name}=   OperatingSystem.Run   ${cmd}
+    Extract Usefull info from itf_l2_ps_cell_cellsetupreq Pcap   File=${testCaseDir}/${file_name}   subdir=syscom
+    ${PdmlFilename}      Remove String      ${file_name}     .pcap
+    Convert PCAP to PDML     source=${testCaseDir}/${file_name}
+    ...                      filter="sctp"
+    ...                      target=${testCaseDir}/syscom/${PdmlFilename}.pdml
+    set test variable       ${path_to_syscom_pdml}    ${testCaseDir}/syscom/${PdmlFilename}.pdml
+    run keyword and ignore error    verify_CellSetup_SysCom_Pdml_Traces
+
+Extract Cell Mapping Info from cellSetup Pcap
+    [Arguments]                     ${File}      ${w_display}=False
+    [Documentation]                 Display Cell Mapping Info from CPRT -> L2PS in GNB_CPRT_NODE Pcap
+
+    ${tm}=    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}
+    Dated log                   Display Cell Mapping Info from CPRT -> L2PS in GNB_CPRT_NODE PCAP file ${File}
+
+    set test variable    ${pcapprocessed_Display_CPRT}    pcapprocessed_Cell_Mapping_itf_l2_ps_cell_CellSetupReq_CPRT.txt
+    set test variable    ${pcapprocessed_Display_CPRT_path}    ${testCaseDir}/${pcapprocessed_Display_CPRT}
+    # -Y "icom_5g"
+    ${cmd_mcshark}    Catenate      tshark -r
+    ...        ${File} -T fields  -Y "icom_5g" -Y "itf_l2_ps_cell_cellsetupreq" -e _ws.col.Info
+    ...           -e itf_l2_ps_cell_CellSetupReq_t.physCellId -e 3gpp.subcellid
+    ...           -e itf_l2_ps_DlSubcell.dlSubcellPoolId
+    ...           -e itf_l2_ps_DlSubcell.l1PoolId
+    ...           -e itf_l2_ps_UlSubcell.ulSubcellPoolId
+    ...           -e itf_l2_ps_UlSubcell.l1PoolId
+    ...           -E header=y -E separator=';' > ${pcapprocessed_Display_CPRT_path}
+    Run       ${cmd_mcshark}
+
+    ${extract_col_info}   OperatingSystem.grep file        ${pcapprocessed_Display_CPRT_path}   _ws.col.Info
+    ${pattern}=     set variable     itf_l2_ps_cell_CellSetupReq
+    ${extract}   OperatingSystem.grep file        ${pcapprocessed_Display_CPRT_path}   ${pattern}
+    run keyword if  len($extract)==0     fail   ${pattern} not found
+    OperatingSystem.copy file    ${pcapprocessed_Display_CPRT_path}
+    ...                          ${testCaseDir}/pcapprocessed_Cell_Mapping_itf_l2_ps_cell_CellSetupReq_CPRT.csv
+    OperatingSystem.copy file    ${pcapprocessed_Display_CPRT_path}
+    ...                          ${testCaseDir}/pcapprocessed_Cell_Mapping_itf_l2_ps_cell_CellSetupReq_CPRT_${tm}.csv
+
+
+Verify l1SubPoolStreamPrbCapacity within Dl_PrbPoolingAllocationSubpool_45 Report is included between 2 values
+    [Documentation]
+    [Arguments]             ${subpool_id}
+    ...                     ${min_l1SubPoolStreamPrbCapacity_value}
+    ...                     ${max_l1SubPoolStreamPrbCapacity_value}
+    ...                     ${result_req}=True
+    ${file_path_report}     Set Variable        Dl_PrbPoolingAllocationSubpool_45_.csv
+    Dated Log               ${consTraceColor}Verify the l1SubPoolStreamPrbCapacity for subpool_id=${subpool_id} within ${file_path_report}${defColor}
+    ${min_result}           Verify value with operator in csv Files with Prerequisite
+    ...                                         CsvName=${file_path_report}
+    ...                                         ColumnName=l1SubPoolStreamPrbCapacity
+    ...                                         valuetocheck=${min_l1SubPoolStreamPrbCapacity_value}
+    ...                                         check_operator=<=
+    ...                                         directory=${sherpa_output_path}
+    ...                                         colum_prereq=SubPoolId
+    ...                                         regex_prereq=${subpool_id}
+    ${max_result}           Verify value with operator in csv Files with Prerequisite
+    ...                                         CsvName=${file_path_report}
+    ...                                         ColumnName=l1SubPoolStreamPrbCapacity
+    ...                                         valuetocheck=${max_l1SubPoolStreamPrbCapacity_value}
+    ...                                         check_operator=>=
+    ...                                         directory=${sherpa_output_path}
+    ...                                         colum_prereq=SubPoolId
+    ...                                         regex_prereq=${subpool_id}
+    ${msg}=    Catenate    ${consTraceColor}The l1SubPoolStreamPrbCapacity for subpool_id: ${subpool_id} is included
+    ...                              between ${min_l1SubPoolStreamPrbCapacity_value} and ${max_l1SubPoolStreamPrbCapacity_value}${defColor}
+    ${msg_err}=    Catenate    ${consTraceColorRed}The l1SubPoolStreamPrbCapacity for subpool_id: ${subpool_id} is outside
+    ...                                 the range :${min_l1SubPoolStreamPrbCapacity_value} and ${max_l1SubPoolStreamPrbCapacity_value}${defColor}
+    Run Keyword If          ${min_result} == True and ${max_result} == True
+    ...                     Dated Log    ${msg}
+    ...      ELSE
+    ...                     Dated Log    ${msg_err}
+    should be true          ${min_result} == ${result_req}
+    should be true          ${max_result} == ${result_req}
+
+Check NumMinPrbAlloc and NumMaxPrbAlloc in Dl PrbPoolingAllocationReport
+#     [Arguments]             ${param}
+    ${numRbForRs_scf}=   Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=numRbForRs   CellId=1
+    ${numRbForRs}=     Set Variable If     '${numRbForRs_scf}' == '48 RBs'    48
+    ...                                                                       96
+    CB011028-D-Keywords.Verification of Number PRB Allocated within PRB Pooling Report with RIM-RS
+    ...                                                             num_min_prb=${numRbForRs}
+    ...                                                             num_max_prb=546
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=0x4001
+    ...                                                             direction=Dl
+    ${numRbForRs_scf}=   Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=numRbForRs   CellId=2
+    ${numRbForRs}=     Set Variable If     '${numRbForRs_scf}' == '48 RBs'    48
+    ...                                                                       96
+    CB011028-D-Keywords.Verification of Number PRB Allocated within PRB Pooling Report with RIM-RS
+    ...                                                             num_min_prb=${numRbForRs}
+    ...                                                             num_max_prb=273
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=0x4002
+    ...                                                             direction=Dl
+    ${numRbForRs_scf}=   Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=numRbForRs   CellId=3
+    ${numRbForRs}=     Set Variable If     '${numRbForRs_scf}' == '48 RBs'    48
+    ...                                                                       96
+    CB011028-D-Keywords.Verification of Number PRB Allocated within PRB Pooling Report with RIM-RS
+    ...                                                             num_min_prb=${numRbForRs}
+    ...                                                             num_max_prb=546
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=0x4003
+    ...                                                             direction=Dl
+    ${numRbForRs_scf}=   Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=numRbForRs   CellId=4
+    ${numRbForRs}=     Set Variable If     '${numRbForRs_scf}' == '48 RBs'    48
+    ...                                                                       96
+    CB011028-D-Keywords.Verification of Number PRB Allocated within PRB Pooling Report with RIM-RS
+    ...                                                             num_min_prb=${numRbForRs}
+    ...                                                             num_max_prb=273
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=0x4004
+    ...                                                             direction=Dl
+
+Check NumMinPrbAlloc and NumMaxPrbAlloc in Dl PrbPoolingAllocationReport Version1 not compliant with RIM-RS
+#     [Arguments]             ${param}
+    ${numRbForRs_scf}=   Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=numRbForRs   CellId=1
+    ${numRbForRs}=     Set Variable If     '${numRbForRs_scf}' == '48 RBs'    48
+    ...                                                                       96
+    CB011028-D-Keywords.Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${numRbForRs}
+    ...                                                             num_max_prb=546
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=0x4001
+    ...                                                             direction=Dl
+    ${numRbForRs_scf}=   Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=numRbForRs   CellId=2
+    ${numRbForRs}=     Set Variable If     '${numRbForRs_scf}' == '48 RBs'    48
+    ...                                                                       96
+    CB011028-D-Keywords.Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${numRbForRs}
+    ...                                                             num_max_prb=273
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=0x4002
+    ...                                                             direction=Dl
+    ${numRbForRs_scf}=   Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=numRbForRs   CellId=3
+    ${numRbForRs}=     Set Variable If     '${numRbForRs_scf}' == '48 RBs'    48
+    ...                                                                       96
+    CB011028-D-Keywords.Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${numRbForRs}
+    ...                                                             num_max_prb=546
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=0x4003
+    ...                                                             direction=Dl
+    ${numRbForRs_scf}=   Get NRCELL NRRIM_PROFILE-1 Param from SCF   param=numRbForRs   CellId=4
+    ${numRbForRs}=     Set Variable If     '${numRbForRs_scf}' == '48 RBs'    48
+    ...                                                                       96
+    CB011028-D-Keywords.Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${numRbForRs}
+    ...                                                             num_max_prb=273
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=0x4004
+    ...                                                             direction=Dl
+
+Verification of Number PRB Allocated within PRB Pooling Report
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${num_min_prb} ${num_max_prb} ${num_prb_alloc} ${prereq_data} ${prereq_value} ${result_req}
+    ...                     ${check_operator}
+    ...     Actions:        it verifies all the numMinPrbAlloc, numMaxPrbAlloc and numPrbAlloc values of the recommended data
+    ...     Checks:         it checks the values within PRB Pooling Allocation SubPool Report
+    ...     Verdict:        numMinPrbAlloc, numMaxPrbAlloc and numPrbAlloc values are as expected
+    [Arguments]             ${num_min_prb}=${NUM_MIN_PRB_DEFAULT}
+    ...                     ${num_max_prb}=${NUM_MAX_PRB_DEFAULT}
+    ...                     ${num_prb_alloc}=${NUM_MAX_PRB_DEFAULT}
+    ...                     ${prereq_data}=${COL_NAME_SUBPOOLID}
+    ...                     ${prereq_value}=0
+    ...                     ${result_req}=True
+    ...                     ${check_operator}===
+    ...                     ${direction}=Dl
+
+    ${file_path_report}     Set Variable        ${direction}_PrbPoolingAllocationReport_45_.csv
+    # numMinPrbAlloc
+    @{listOfValues}         Create List         ${num_min_prb}
+    Dated Log New Line      Check if ${COL_NAME_NUMMINPRBALLOC}=${listOfValues} for ${prereq_data}=${prereq_value}
+    Dated Log               ${file_path_report}
+    ${verif_result}         Verify Value List In csv File Column
+    ...                                         CsvName=${file_path_report}
+    ...                                         Column_name=${COL_NAME_NUMMINPRBALLOC}
+    ...                                         value_list=${listOfValues}
+    ...                                         prereq_column=${prereq_data}
+    ...                                         prereq_column_val=${prereq_value}
+    Run Keyword If          ${verif_result} == True
+    ...                     Dated Log    ${direction} Num Min PRB Alloc is equal to ${num_min_prb} for ${prereq_data}=${prereq_value}
+    ...         ELSE        Dated Log    ${direction} Num Min PRB Alloc IS NOT EQUAL TO ${num_min_prb} for ${prereq_data}=${prereq_value}
+    should be true          ${verif_result} == True
+    # numMaxPrbAlloc
+    @{listOfValues}         Create List         ${num_max_prb}
+    Dated Log New Line      Check if ${COL_NAME_NUMMAXPRBALLOC}=${listOfValues} for ${prereq_data}=${prereq_value}
+    Dated Log               ${file_path_report}
+    ${verif_result}         Verify Value List In csv File Column
+    ...                                         CsvName=${file_path_report}
+    ...                                         Column_name=${COL_NAME_NUMMAXPRBALLOC}
+    ...                                         value_list=${listOfValues}
+    ...                                         prereq_column=${prereq_data}
+    ...                                         prereq_column_val=${prereq_value}
+    Run Keyword If          ${verif_result} == True
+    ...                     Dated Log    ${direction} Num Max PRB Alloc is equal to ${num_max_prb} for ${prereq_data}=${prereq_value}
+    ...         ELSE        Dated Log    ${direction} Num Max PRB Alloc IS NOT EQUAL TO ${num_max_prb} for ${prereq_data}=${prereq_value}
+    should be true          ${verif_result} == True
+
+Verification of Number PRB Allocated within PRB Pooling Report with RIM-RS
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${num_min_prb} ${num_max_prb} ${num_prb_alloc} ${prereq_data} ${prereq_value} ${result_req}
+    ...                     ${check_operator}
+    ...     Actions:        it verifies all the numMinPrbAlloc, numMaxPrbAlloc and numPrbAlloc values of the recommended data
+    ...     Checks:         it checks the values within PRB Pooling Allocation SubPool Report
+    ...     Verdict:        numMinPrbAlloc, numMaxPrbAlloc and numPrbAlloc values are as expected
+    [Arguments]             ${num_min_prb}=${NUM_MIN_PRB_DEFAULT}
+    ...                     ${num_max_prb}=${NUM_MAX_PRB_DEFAULT}
+    ...                     ${num_prb_alloc}=${NUM_MAX_PRB_DEFAULT}
+    ...                     ${prereq_data}=${COL_NAME_SUBPOOLID}
+    ...                     ${prereq_value}=0
+    ...                     ${result_req}=True
+    ...                     ${check_operator}===
+    ...                     ${direction}=Dl
+
+    ${file_path_report}     Set Variable        ${direction}_PrbPoolingAllocationReport_45_.csv
+    # numMinPrbAlloc where RIM_RS is present
+    @{listOfValues}         Create List         ${num_min_prb}
+    Dated Log New Line      Check if ${COL_NAME_NUMMINPRBALLOC}=${listOfValues} for ${prereq_data}=${prereq_value} where RIM-RS present
+    Dated Log               ${file_path_report}
+    ${verif_result}         verify_numminprb_for_cellid_where_rim_rs_is_present_in_csv_File
+    ...                                         CsvName=${file_path_report}
+    ...                                         NRCellid=${prereq_value}
+    ...                                         expected_values_rim_rs=${num_min_prb}
+    ...                                         expected_values_no_rim_rs=48
+    Run Keyword If          '${verif_result}' == 'passed'
+    ...                     Dated Log    ${direction} Num Min PRB Alloc is equal to ${num_min_prb} for ${prereq_data}=${prereq_value}
+    ...         ELSE        Dated Log    ${direction} Num Min PRB Alloc IS NOT EQUAL TO ${num_min_prb} for ${prereq_data}=${prereq_value}
+    should be true          '${verif_result}' == 'passed'
+    # numMaxPrbAlloc
+    @{listOfValues}         Create List         ${num_max_prb}
+    Dated Log New Line      Check if ${COL_NAME_NUMMAXPRBALLOC}=${listOfValues} for ${prereq_data}=${prereq_value}
+    Dated Log               ${file_path_report}
+    ${verif_result}         Verify Value List In csv File Column
+    ...                                         CsvName=${file_path_report}
+    ...                                         Column_name=${COL_NAME_NUMMAXPRBALLOC}
+    ...                                         value_list=${listOfValues}
+    ...                                         prereq_column=${prereq_data}
+    ...                                         prereq_column_val=${prereq_value}
+    Run Keyword If          ${verif_result} == True
+    ...                     Dated Log    ${direction} Num Max PRB Alloc is equal to ${num_max_prb} for ${prereq_data}=${prereq_value}
+    ...         ELSE        Dated Log    ${direction} Num Max PRB Alloc IS NOT EQUAL TO ${num_max_prb} for ${prereq_data}=${prereq_value}
+    should be true          ${verif_result} == True
+
+# "STEP Number; Tput UE1; Tput UE2; Tput UE3; Tput UE4; Tput UE5; Tput UE6"
+Create Header Csv Tput Test result
+  [Arguments]                    ${text}=""
+    ${testCase}    Replace String    ${TEST_NAME[0:30]}    ${SPACE}    _
+    ${testCase}    Replace String    ${testCase}    .    _
+    ${testCase}    Remove String     ${testCase}    [1]
+    ${testCase}    Remove String     ${testCase}    [1.0]
+    ${testCase}    Remove String     ${testCase}    [2.0]
+    ${testCase}    Remove String     ${testCase}    [
+    ${testCase}    Remove String     ${testCase}    ]
+    ${text}        Catenate   "STEP Number; DL Tput UE1 (Mbps); UL Tput UE1 (Mbps); DL Tput UE2 (Mbps); UL Tput UE2 (Mbps);
+    ...                        DL Tput UE3(Mbps) ; UL Tput UE3 (Mbps);
+    ...                        DL Tput UE4(Mbps); UL Tput UE4(Mbps); DL Tput UE5(Mbps); UL Tput UE5(Mbps); DL Tput UE6(Mbps); UL Tput UE6(Mbps)"
+    Run Keyword And Ignore Error    OperatingSystem.touch    ${testCaseDir}/TestResults_Tput_${testCase}.csv
+    Run Keyword And Ignore Error    OperatingSystem.run      echo ${text} > ${testCaseDir}/TestResults_Tput_${testCase}.csv
+    set suite variable      ${csv_file_tput_results}       ${testCaseDir}/TestResults_Tput_${testCase}.csv
+
+Log Test Tput results
+    [Arguments]                    ${text}   ${file}
+    Run Keyword And Ignore Error    OperatingSystem.run      echo "${text}" >> ${file}
+
+ADMIN Update Software
+    [Arguments]    ${sw_package}
+    ...            ${should_activate}
+    ...            ${timeout}=1800
+    ...            ${alias}=coam_gnb
+    coam.update_software
+    ...    sw_package=${sw_package}
+    ...    should_activate=${should_activate}
+    ...    timeout=${timeout}
+    ...    connection=${alias}
+
+ADMIN Update Software With Activation
+    [Arguments]    ${sw_package}
+    ...            ${timeout}=1800
+    ...            ${alias}=coam_gnb
+    ADMIN Update Software
+    ...    sw_package=${sw_package}
+    ...    should_activate=${True}
+    ...    timeout=${timeout}
+    ...    alias=${alias}
+
+Get and Update BSR SW
+     [Arguments]      ${sw_path}   ${sw_folder}    ${sw_file_name}    ${dir_to_keep_package}
+     ${target}=  Download software package    ${sw_path}   ${sw_folder}    ${sw_file_name}    ${dir_to_keep_package}
+     # ${target}   set Variable   /home/ute/BSR/BSR_AEQE_6_H6_ALN60_ARP60_P00_COVERAGE_00424_00001.zip
+     log to console   Update Software With Activation: ${target}
+     ADMIN Update Software With Activation
+     ...           sw_package=${target}
+     ...           alias=coam_gnb
+
+Get and Update BSR SW Using Git
+     [Arguments]      ${sw_path}   ${sw_folder}    ${sw_file_name}    ${dir_to_keep_package}
+     ${target}=  Download software package Using Git    ${sw_path}   ${sw_folder}    ${sw_file_name}    ${dir_to_keep_package}
+     # ${target}   set Variable   /home/ute/BSR/BSR_AEQE_6_H6_ALN60_ARP60_P00_COVERAGE_00424_00001.zip
+     log to console   Update Software With Activation: ${target}
+     ADMIN Update Software With Activation
+     ...           sw_package=${target}
+     ...           alias=coam_gnb
+
+Download software package Using Git
+    [Documentation]  Downloads sw package from Artifactory using wget
+    [Arguments]   ${sw_path}   ${sw_folder}    ${sw_file_name}    ${dir_to_keep_package}
+    ${artifactory}  set variable    ${sw_path}
+    ${target}   set variable  ${dir_to_keep_package}
+    ${exists}   nps_11028_tools.check_if_sw_already_exists  ${target}/${sw_file_name}
+    run keyword if  ${exists}==${False}  Perform Download from Git  ${artifactory}  ${target}
+    [Return]  ${target}/${sw_file_name}
+
+Perform Download from Git
+    [Arguments]   ${target}   ${dir_to_keep_package}
+    log to console  SW download: ${target}
+    Run  mkdir -p ${dir_to_keep_package}
+    Run  git clone ${target} ${dir_to_keep_package}/repo
+    Run  test -d ${dir_to_keep_package}/repo || (echo "Clone failed" && false)
+    Run  mv ${dir_to_keep_package}/repo/*/BSR/* ${dir_to_keep_package}/ 2>/dev/null || true
+    Run  mv ${dir_to_keep_package}/repo/BSR/* ${dir_to_keep_package}/ 2>/dev/null || true
+    Run  rm -rf ${dir_to_keep_package}/repo
+
+Download software package
+    [Documentation]  Downloads sw package from Artifactory using wget
+    [Arguments]   ${sw_path}   ${sw_folder}    ${sw_file_name}    ${dir_to_keep_package}
+    ${artifactory}  set variable    ${sw_path}
+    ${source}   set variable  ${artifactory}/${sw_folder}/${sw_file_name}
+    ${target}   set variable  ${dir_to_keep_package}/${sw_file_name}
+    ${exists}   nps_11028_tools.check_if_sw_already_exists  ${target}
+    run keyword if  ${exists}==${False}  Perform Download  ${target}  ${dir_to_keep_package}  ${source}
+    [Return]  ${target}
+
+
+Perform Download
+    [Arguments]   ${target}   ${dir_to_keep_package}  ${source}
+    log to console  SW download: ${target}
+    Run  mkdir -p ${dir_to_keep_package}; touch ${dir_to_keep_package}downloading
+    Run  unset http_proxy; wget --progress=dot:giga ${source} -O ${target}
+    Run  rm -f ${dir_to_keep_package}downloading
+
+Update WTS config file for SA MUEs
+    [Arguments]    ${start_ue_id}    ${no_of_ues}
+    ${current_cfg_file}    Set Variable    ${tl.core.dir_path}/${tl.core.cfg_filename}
+    ${new_cfg_filename}    Set Variable    new_after_adding_${no_of_ues}_Ues_${tl.core.cfg_filename}
+    ${new_cfg_file}    Set Variable    ${tl.core.dir_path}/${new_cfg_filename}
+
+    wts_cfg.Load Wts Cfg        ${current_cfg_file}
+    Move file    ${current_cfg_file}    ${current_cfg_file}_bkp
+
+    ${sa_ue_ids_list}=  nps_11028_tools.generate_list_of_ue_ids    start_ue_id=${start_ue_id}
+    ...    number_of_ues=${no_of_ues}
+    ${ue_nat_ip}=     wts_cfg.get_parameter     set_pdu_gateway id=1  ue_nat_ip
+    ${suci}=     wts_cfg.get_parameter    set_ue simulated id=1    suci
+    FOR  ${ue}  IN  @{sa_ue_ids_list}
+        ${new_ip}=  nps_11028_tools.obtain_new_ip  ${ue}  ${ue_nat_ip}
+        ${new_suci}=  nps_11028_tools.obtain_new_suci    ${ue}    ${suci}
+        wts_cfg.clone_and_modify    set_ue simulated id=1      id=${ue} suci=${new_suci}         after   ue_param id=${ue-1}
+        wts_cfg.clone_and_modify    ue_param id=1              id=${ue}                          after   set_ue simulated id=${ue}
+        wts_cfg.clone_and_modify    set_pdu_gateway id=1       id=${ue} ue_nat_ip=${new_ip}      after   set_pdu_gateway id=${ue-1}
+    END
+    #---------------------------------------------------------------------------------------------------
+    # Save and Use it
+    #---------------------------------------------------------------------------------------------------
+    wts_cfg.Save Wts Cfg        ${new_cfg_file}
+    # update variable which contain the WTS (basic_*.cfg) config filename
+    ${tl.core.cfg_filename}   set variable     ${new_cfg_filename}
+    dated log   ----------> Update Basic Configuration File to add ${no_of_ues} SA MUEs (${tl.core.dir_path}/${tl.core.cfg_filename})
+
+Update SpecificParameters to setup Ue configuration In WTS Cfg File
+    [Documentation]        Update WTS basic.cfg config file with settings needed to setup Ue configuration
+    ...       mme_pool_area
+    ...               id=1
+    ...               plmn
+    ...
+    [Arguments]                     ${ueId}     ${mcc}    ${mnc}
+
+    ${current_cfg_file}    Set Variable    ${tl.core.dir_path}/${tl.core.cfg_filename}
+    ${new_cfg_filename}    nps_11028_tools.return_basename   ${current_cfg_file}
+    ${new_cfg_file}    Set Variable    ${tl.core.dir_path}/${new_cfg_filename}
+
+    wts_cfg.Load Wts Cfg        ${current_cfg_file}
+    Move file    ${current_cfg_file}    ${current_cfg_file}_bkp
+
+    #---------------------------------------------------------------------------------------------------
+    # EPC CONFIGURATION
+    #---------------------------------------------------------------------------------------------------
+    # wts_cfg.Modify    mme_pool_area id=1    plmn=${testParam.scfFile.nrbts.mcc}:${testParam.scfFile.nrbts.mnc}
+
+    #---------------------------------------------------------------------------------------------------
+    # UE CONFIGURATION
+    #---------------------------------------------------------------------------------------------------
+
+    # to prevent againt suci is not present in cfg file
+    ${status}    ${ue_suci}=  Run Keyword And Ignore Error       wts_cfg.Get parameter    set_ue simulated id=${ueId}    suci
+    ${new_ue_suci}=     Run Keyword if    '${ue_suci}'!='None'
+    ...                nps_11028_tools.Modify suci for UE  ${ue_suci}  ${mcc}:${mnc}
+    Run Keyword if    '${ue_suci}'!='None'     Run keywords
+    ...                      wts_cfg.Modify     set_ue simulated id=${ueId}  suci=${new_ue_suci}     AND
+    ...                      Dated log     cfg Modify : new_ue_suci is ${new_ue_suci}
+
+    #---------------------------------------------------------------------------------------------------
+    # Save and Use it
+    #---------------------------------------------------------------------------------------------------
+    wts_cfg.Save Wts Cfg        ${new_cfg_file}
+    # update variable which contain the WTS (basic_*.cfg) config filename
+    ${tl.core.cfg_filename}   set variable     ${new_cfg_filename}
+    dated log   ----------> Update Basic Configuration File for ${ueId} Ue configuration (${tl.core.dir_path}/${tl.core.cfg_filename})
+    # Move file    ${new_cfg_file}    ${new_cfg_file}_bkp
+
+Update WTS config file for SA MUEs with target cells
+    [Documentation]        Update WTS basic.cfg config file with settings needed to setup Ue configuration
+    [Arguments]                     ${ueId}     ${target_cells}
+
+    ${current_cfg_file}    Set Variable    ${tl.core.dir_path}/${tl.core.cfg_filename}
+    ${new_cfg_filename}    nps_11028_tools.return_basename   ${current_cfg_file}
+    ${new_cfg_file}    Set Variable    ${tl.core.dir_path}/${new_cfg_filename}
+
+    wts_cfg.Load Wts Cfg        ${current_cfg_file}
+    Move file    ${current_cfg_file}    ${current_cfg_file}_bkp
+
+    #---------------------------------------------------------------------------------------------------
+    # UE CONFIGURATION
+    #---------------------------------------------------------------------------------------------------
+
+    Run keywords     wts_cfg.Modify     set_ue simulated id=${ueId}  cell=${target_cells}     AND
+    ...              Dated log     cfg Modify : target_cells is ${target_cells} for UeId${ueId}
+
+    #---------------------------------------------------------------------------------------------------
+    # Save and Use it
+    #---------------------------------------------------------------------------------------------------
+    wts_cfg.Save Wts Cfg        ${new_cfg_file}
+    # update variable which contain the WTS (basic_*.cfg) config filename
+    ${tl.core.cfg_filename}   set variable     ${new_cfg_filename}
+    dated log   ----------> Update Basic Configuration File for ${ueId} Ue configuration (${tl.core.dir_path}/${tl.core.cfg_filename})
+
+Run ${traffic_rate:\d+}kbps ${direction:(UL|DL)} traffic on UE${ue_id:\d+} PDU${pdu_id:\d+} QFI${qfi_id:\d+} and wait ${seconds:\d+} seconds
+    ${dir_param}    Convert To Lowercase    ${direction}
+    Execute egate command
+    ...  cmd=trf_data_start ue=${ue_id} pdu=${pdu_id} qfi=${qfi_id} dir=${dir_param} kbps=${traffic_rate}
+    ...  pass_regexp=Started .* Internal traffic
+    Sleep  ${seconds}
+
+Run small ${direction:(UL|DL)} traffic on UE${ue_id:\d+} and wait ${seconds:\d+} seconds and verify change to PS-BWP
+    ${dir_param}    Convert To Lowercase    ${direction}
+    wtsemu.trf_data_start     ue=${ue_id}   pdu=1    qfi=1    dir=${dir_param}   kbps=100
+    # ${output}    wtsemu.read_wtsemu_output_until_re    expected=UDP ${direction} TRF: .*    timeout=10
+    # ${output}         Get Lines Matching Regexp    ${output}    Bwp Switched from bwpId 1 to 2   partial_match=${TRUE}
+    ${output}    wtsemu.read_wtsemu_output_until_re    expected=Bwp Switched from bwpId 1 to 2    timeout=10
+    ${output_1}         Get Lines Matching Regexp    ${output}    Bwp Switched from bwpId 1 to 2   partial_match=${TRUE}
+    Log to Console    ${output_1}
+    ${output}         Get Lines Matching Regexp    ${output}    UDP ${direction} TRF: .*   partial_match=${TRUE}
+    Log to Console    ${output}
+    Sleep  ${seconds}
+
+Run bigger ${direction:(UL|DL)} traffic on UE${ue_id:\d+} and wait ${seconds:\d+} seconds and verify change to dedicated BWP
+    ${dir_param}    Convert To Lowercase    ${direction}
+    wtsemu.trf_data_start     ue=${ue_id}   pdu=1    qfi=1    dir=${dir_param}    mbps=5
+    # ${output}    wtsemu.read_wtsemu_output_until_re    expected=UDP ${direction} TRF: .*    timeout=10
+    # ${output}         Get Lines Matching Regexp    ${output}    Bwp Switched from bwpId 2 to 1   partial_match=${TRUE}
+    ${output}    wtsemu.read_wtsemu_output_until_re    expected=Bwp Switched from bwpId 2 to 1    timeout=10
+    ${output_1}         Get Lines Matching Regexp    ${output}    Bwp Switched from bwpId 2 to 1   partial_match=${TRUE}
+    Log to Console    ${output_1}
+    ${output}         Get Lines Matching Regexp    ${output}    UDP ${direction} TRF: .*   partial_match=${TRUE}
+    Log to Console    ${output}
+    Sleep  ${seconds}
+
+Run bigger ${direction:(UL|DL)} traffic on UE${ue_id:\d+} and wait ${seconds:\d+} seconds
+    ${dir_param}    Convert To Lowercase    ${direction}
+    wtsemu.trf_data_start     ue=${ue_id}   pdu=1    qfi=1    dir=${dir_param}    mbps=5
+    ${output}    wtsemu.read_wtsemu_output_until_re    expected=UDP ${direction} TRF: .*    timeout=10
+    ${output}         Get Lines Matching Regexp    ${output}    UDP ${direction} TRF: .*   partial_match=${TRUE}
+    Log to Console    ${output}
+    Sleep  ${seconds}
+
+Run ${direction:(UL|DL)} traffic to switch to dedicated BWP then run smaller traffic to switch to PS-BWP for UE${ue_id:\d+}
+    Run bigger ${direction} traffic on UE${ue_id} and wait 5 seconds and verify change to dedicated BWP
+    Run small ${direction} traffic on UE${ue_id} and wait 5 seconds and verify change to PS-BWP
+
+Run ${direction:(UL|DL)} traffic then run smaller traffic to switch to PS-BWP for UE${ue_id:\d+}
+    Run bigger ${direction} traffic on UE${ue_id} and wait 5 seconds
+    Run small ${direction} traffic on UE${ue_id} and wait 5 seconds and verify change to PS-BWP
+
+Activate CB010544 feature flag in NRCELL-${cell_id}
+    Set NRCELL-${cell_id}.actInitialBWPFlexibility to True
+    Wait 30s for cells [${cell_id}] operationalState change to [enabled]
+
+Deactivate CB010544 feature flag in NRCELL-${cell_id}
+    Set NRCELL-${cell_id}.actInitialBWPFlexibility to False
+    Wait 30s for cells [${cell_id}] operationalState change to [enabled]
+
+#=======================================================================================================================
+# IPHY settings
+#=======================================================================================================================
+
+Set Context_AP IPHY gscn Cell1 with ${gscn}
+    WtsXmlConfig.startSession           file=iphy
+    # update only gscn for cell1
+    WtsXmlConfig.setListEltText         //RE[1]//GSCN                   ${gscn}
+    WtsXmlConfig.stopSession            file=iphy
+
+#=======================================================================================================================
+# TOOLS Gnblogs
+#=======================================================================================================================
+
+clone Gnblogs Tool
+    [Arguments]    ${gnb_logs_dir}=${f}/gnb_logs-tool
+    ${exist}    List Directory    ${f}
+    Return From Keyword If    'gnb_logs-tool' in ${exist}
+    dated log    =====> Installing gnb_logs-tool...
+    dated log    cd ${f};git clone https://gitlabe1.ext.net.nokia.com/p5li/gnb_logs-tool.git
+    ${result}=   Run Process    cd ${f};git clone https://gitlabe1.ext.net.nokia.com/p5li/gnb_logs-tool.git
+    ...    cwd=${f}
+    ...    shell=True
+    ...    stdout=${f}/gnblogs_install_result.txt
+    Run Process    unzip ${gnb_logs_dir}/gnb_logs.zip -d ${gnb_logs_dir}
+    ...    shell=True
+    Run Process    chmod 774 ${gnb_logs_dir}/gnb_logs/gnb_logs
+    ...    shell=True
+    dated log     clone Gnblogs Tool completed
+
+Start collect log by gnb tool
+    [Arguments]    ${command}=./gnb_logs 192.168.255.1 -E -f0
+    ${exist}    List Directory    ${f}
+    Run keyword if    'gnb_logs-tool' not in ${exist}    OperatingSystem.Run
+    ...     cd ${f};git clone https://gitlabe1.ext.net.nokia.com/p5li/gnb_logs-tool;unzip -d ${f}/gnb_logs-tool ${f}/gnb_logs-tool/gnb_logs.zip
+    OperatingSystem.Run    rm ${f}/gnb_logs-tool/gnb_logs/stop_mon.log
+    OperatingSystem.Run    rm ${f}/gnb_logs-tool/gnb_logs/*.zip
+    ssh.Connect To    127.0.0.1    ute    ute    alias=bsh
+    ssh.Execute    chmod 777 ${f}/gnb_logs-tool/gnb_logs/gnb_logs    connection=bsh
+    ssh.Send Command    cd ${f}/gnb_logs-tool/gnb_logs;${command}    connection=bsh
+    ssh.Read Output Until    (Q)uit    connection=bsh
+
+Stop collect log by gnb tool
+#    Wait '${time}' for stability
+    OperatingSystem.Run    touch ${f}/gnb_logs-tool/gnb_logs/stop_mon.log
+    Wait Until Keyword Succeeds    300    10    file should contain
+    ...    ${f}/gnb_logs-tool/gnb_logs/tool.log    Tool finished running
+    OperatingSystem.Run    mv ${f}/gnb_logs-tool/gnb_logs/*.zip ${testCaseDir}/gnblogs_tool

@@ -1,0 +1,92 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for 5GC000679 feature FDD tests cases
+...               Modified Date               : 12-November-2021
+...               Last Modified by            : vincent.boulet@nokia.com
+...               Last Modification           : remove SWconfig and limit traffic deviation
+
+Resource          5GC000679_Keywords.robot
+
+*** Variables ***
+${testTag}        679_CC
+
+&{scf_CC}         btsName="Nokia Paris-Saclay 100MHz Feature 679-CC"              actFdmScheduling=true
+
+
+&{Test_CC}        seq=${T_CC}         checkPucch=${False}       scfFile=${scf100MHz}     captureName=CC
+...               filtermsg=@{ListOfMsgTrf}      setUecapabilities=${False}    dtxLimit=10    crcLimit=10
+&{Test_CC_1857}   seq=${T_CC_1857}         checkPucch=${False}       scfFile=${scf100MHz}     captureName=CC
+...               filtermsg=@{ListOfMsgTrf}      setUecapabilities=${True}    dtxLimit=10    crcLimit=10 
+
+
+&{T_CC}           feature679=${True}       totalUE=4     loop=1      bandwidth=100    technology=TDD    throughput=2
+...               trafficDuration=10   captureDuration=10    stopTraffic=${False}     dirTraffic=ul     deviation=90
+&{T_CC_1857}      feature679=${True}       totalUE=1     loop=1      bandwidth=100    technology=TDD    throughput=2
+...               trafficDuration=10   captureDuration=10    stopTraffic=${False}     dirTraffic=ul     deviation=90
+
+*** Keywords ***
+Run Test 679 CC
+    [Arguments]                      ${testParam}
+    Get Pucch Mode Select
+    Run Keyword If     ${testParam.setUecapabilities}      Run Test 679 CC UeCapabilities     ${testParam}
+    ...                ELSE                  Test 679 Loop CC                 ${testParam}
+
+Run Test 679 CC UeCapabilities
+    [Arguments]                              ${testParam}
+    Test Setup 679 CC Ue Capabilities        ${testParam}
+    Restart
+    WTS Preparation 679 CC UeCapabilities    ${testParam}
+    Run Keyword If                           ${enable_sherpa}==${True}        Activate Sherpa
+    Test 679 Loop CC                         ${testParam}
+    Run Keyword If                           ${enable_sherpa}==${True}        Deactivate Sherpa and Stop Collect
+
+Test 679 Loop CC
+    [Arguments]                      ${testParam}
+    Dated log                        Start Test:Name=${TEST_NAME}
+    FOR    ${index}    IN RANGE     1        ${testParam.seq.loop}+1
+            Attach UE Multi          ${testParam}
+            ${trafficPcap}           Start Traffic Multi UE with Filter    ${testParam}
+            Run keyword if           ${testParam.seq.stopTraffic}==${False}
+            ...                      Stop Traffic Multi UE                 ${testParam}
+            sleep                    3s
+            Detach UE Multi          ${testParam.seq.totalUE}
+            Set Test Variable        ${TRAFFIC_PCAP.pcapTrf${index}}         ${trafficPcap}
+            Dated Log                TRAFFIC_PCAP.pcapTrf=${TRAFFIC_PCAP.pcapTrf${index}}
+            Check Traffic Quality    pcapInput=${TRAFFIC_PCAP.pcapTrf${index}}    index=${index}     
+            ...                      dtxLimit=${testParam.dtxLimit}     
+            ...                      crcLimit=${testParam.crcLimit}     
+            ...                      direction=${testParam.seq.dirTraffic}
+            Dated Log                TRAFFIC_PDML.pcapTrf${index}=${TRAFFIC_PDML.pdmlTrf${index}}
+            Check Feature CC         ${TRAFFIC_PDML.pdmlTrf${index}}     ${testParam}
+    END
+
+Check Feature CC
+    [Arguments]              ${pdmlFile}
+    ...                      ${testParam}
+    Check StartPrb Allocation and NumOfPrb       pdmlFile=${pdmlFile}
+    ...                             dirTraffic=${testParam.seq.dirTraffic}
+    ...                             prbMax=${TDD_PRB_MAX}
+    Run Keyword If     ${testParam.setUecapabilities}
+    ...                Check UeCapabilities    pdmlFile=${pdmlFile}       dirTraffic=${testParam.seq.dirTraffic}
+
+WTS Preparation 679 CC UeCapabilities
+    [Arguments]       ${testParam}
+    Set UE capa on EPCSim           ue_nr_capa_value=${ue_nr_capa_onePortsPTRS_01_fr1}
+    WTS Setup         nbUe=${testParam.seq.totalUE}        shouldUseLua=${True}
+
+Test Setup 679 CC Ue Capabilities
+   [Arguments]         ${testParam}
+   Set SCF CC UeCapabilities       ${testParam}   
+
+Set SCF CC UeCapabilities
+    [Arguments]          ${testParam}
+    &{modify_param1}    Create Dictionary
+    ...    parameter=actFdmScheduling
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ...    value=${testParam.scfFile.actFdmScheduling}
+#    &{modify_param2}    Create Dictionary
+#    ...    parameter=ulPtrsFreqDensityThresNrb1
+#    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+#    ...    value=${frequencyDensityThresNrb1}
+    @{modify_param}    Create List     ${modify_param1}
+#    ...                ${modify_param2}
+    OAM Set Params    modify_param=@{modify_param}

@@ -1,0 +1,665 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   testline-Keywords.robot
+...               Prerequisite :
+...               Scope :
+...               Test Case Scenario author   : christophe.samson@nokia.com
+...               Creation Date               : 10-03-2024
+...               Modified Date               : 10-03-2024
+...               Last Modified by            : christophe.samson@nokia.com
+...               Version   Date          Author                                   Notes
+...               0.1       10-03-2024    christophe.samson@nokia.com              Creation
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Libraries
+Library      BuiltIn
+Library      taf.transport.ssh                                   WITH NAME          ssh
+Library      taf.sbts.oam.coam.admin.interface
+Library      taf.sbts.oam.coam.admin                             WITH NAME          coam
+Library      taf.collectors.tcpdump                              WITH NAME          tcpdump
+Library      taf.collectors.core                                 WITH NAME          core
+Library      taf.hw.pdu                                          WITH NAME          pdu
+Library      ute_wtssim
+Library      taf.config.wts                                      WITH NAME          wts_cfg
+Library      re
+Library      XML    True
+Library      json
+Library      taf.rfrl.common_resources.python.SWConfig           WITH NAME          swconf
+
+# Libraries SWENG
+Library      ../../../../../resources/SWENG/python/StringTool.py
+
+# Libraries TRF
+Library      ../python/tools.py                                  WITH NAME          nps_1586_tools
+
+# Resources
+Resource     connect.robot
+
+*** Variables ***
+
+&{P_COMMON_UNIT_TYPE}      &{EMPTY}
+&{P_UE_COMMON_UNIT_TYPE}   &{EMPTY}
+&{P_UE_CAPA_UNIT_TYPE}     &{EMPTY}
+&{P_CAPA_UNIT_TYPE}        &{EMPTY}
+&{P_GNBSWVERSION}          &{EMPTY}
+${P_console}               ${False}    # output to console can be enabled via "Set Console Output" from testline-Keywords.robot
+${P_gNbCuType}             None
+${P_cellTechnology}        None
+${P_nrarfcn}               None
+${P_resultSuiteBaseDir}    None
+${P_resultSuiteLogDir}     None
+${P_resultSuiteConfigDir}  None
+${P_lteNrDssMode}          None
+
+*** Keywords ***
+
+# ------------------------------------------------------------------------------------------------------------------------------------
+# testline Kw
+# ------------------------------------------------------------------------------------------------------------------------------------
+
+Get Node Deployment Type
+    [Documentation]
+    ...    The keyword accepts the gnb number as an argument and returns
+    ...    the type of the BTS (aic, classical)
+    ...
+    ...    *Note:* supports classical and AiC vran2.0
+    ...
+    ...    | node_type | type of node, either gnb or enb |
+    ...    | node_id   | Id/Number of node |
+    ...
+    ...    *Returns* type of BTS    (classical|aic|simulated)
+    ...
+    [Arguments]   ${node_id}=0   ${node_type}=gnb
+    ${bts_type}   Set Variable If
+    ...   $tl.${node_type}s[${node_id}].__class__.__name__=='ClassicalBts'   classical
+    ...   $tl.${node_type}s[${node_id}].__class__.__name__=='RealEnb'        classical
+    ...   $tl.${node_type}s[${node_id}].__class__.__name__=='LTEEmuEnb'      simulated
+    ...   $tl.${node_type}s[${node_id}].dus[0].__class__.__name__=='VDU'     aic
+    [Return]   ${bts_type}
+
+Fetch UE type
+    [Documentation]    :
+    ...    [PRIVATE]
+    [Arguments]    ${ue_id}=0
+    ${ueType}=    Set Variable If
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'TM500'   viavi
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'Android'    qualcomm
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'Simulator'  airphone
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'Airphone'   airphone
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'Prisma'    prisma
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'Qualcomm'    qualcomm
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'MediaTek'    mediatek
+    ...    '${tl.ues[${ue_id}].__class__.__name__}' == 'iphy'    iphy
+    Set To Dictionary    ${P_UETYPE}    ue_${ue_id}    ${ueType}
+    Set Suite Variable    ${P_UETYPE}
+
+Get UE type
+    [Documentation]    :
+    ...    The keyword accepts the gnb number as an argument and returns
+    ...    the type of the UE (viavi, qualcomm, airphone)
+    ...
+    ...    :param ue_id: (default=0) Id/Number of UE
+    ...    :return: type of UE    (viavi, qualcomm, airphone)
+    ...
+    [Arguments]  ${ue_id}=0
+    ${ueType}=    Get Variable Value    ${P_UETYPE.ue_${ue_id}}
+    Run Keyword If    '${ueType}'=='None'
+    ...    Fetch UE type    ue_id=${ue_id}
+    [Return]    ${P_UETYPE.ue_${ue_id}}
+
+Get OAM Type
+    [Documentation]
+    ...    This KW is used to determine which OAM interface the gnb supports.
+    ...    Classical gNB uses the admin API whereas the AiC uses the REST API.
+    ...
+    ...    *Note*  This KW is deprecated, it is recommended to use tl_info.deployment_type() instead!
+    ...    | Run Keyword If   '${tl_info.deployment_type()}'=='aic'
+    ...    | ...              Bring Airphone TL to On air status with aic
+    ...
+    ...    | gnb_id | Id/Number of gNB |
+    ...
+    ...    *Returns* type of OAM
+    ...
+    [Arguments]   ${gnb_id}=0
+    ${oam_type}   Set Variable If
+    ...   $tl_info.deployment_type(${gnb_id})=='classical'   coam
+    ...   $tl_info.deployment_type(${gnb_id})=='aic'   cloud_aic
+    [Return]   ${oam_type}
+
+Get Core type
+    [Documentation]
+    ...    Returns the information which core type the testline is connected to.
+    ...
+    ...    *Returns* type of CORE (real, epcsim)
+    ...
+    ${coreType}   Set Variable If
+    ...   $tl.core.__class__.__name__=='LTEEmuCore'   lte_core
+    ...   $tl.core.__class__.__name__=='RealCore4G'   real
+    ...   $tl.core.__class__.__name__=='EPCSim'       epcsim
+    ...   $tl.core.__class__.__name__=='RealCore5G'   real
+    [Return]   ${coreType}
+
+Get Common Unit SW Version
+    [Documentation]    :
+    ...    [PRIVATE]    used to get GNB/Airphone SW on board
+    ...    :param alias:               ssh connnection alias to common unit board
+    ...    :return: software version
+    [Arguments]    ${alias}
+    ssh.Force Reconnect    ${alias}
+    ssh.send command    cat /ffs/run/Target*xml   connection=${alias}
+    ${cmd_output}=    ssh.read output   connection=${alias}
+    ${parsed_xml}=    parse xml    ${cmd_output}
+    ${software}=    get element attribute    ${parsed_xml}    cbtsSoftwareReleaseVersion
+    ${rest}    ${sw_version}=    Split String    ${software}    separator=_
+    [Return]    ${sw_version}
+
+
+Get Airphone SW version
+    [Documentation]    :
+    ...    reads active software from Airphone
+    ...
+    ...    :param ue_id: (default=0) Id/Number of UE
+    ...    :return: active Software version on Airphone
+    ...
+    [Arguments]  ${ue_id}=0
+    ${ap_alias}=    connect.Connect to Airphone Common Unit    ue_id=${ue_id}
+    ${ap_version}=    testline-Keywords.Get Common Unit SW Version    alias=${ap_alias}
+    Set Suite Metadata    AirPhone Version    ${ap_version}
+    ssh.disconnect     ${ap_alias}
+    [Return]    ${ap_version}
+
+Get WTS Version
+    [Documentation]    This keyword is to get WTS version including below 1 suite variable.
+    ...
+    ...    | Suite variable | Example | Description |
+    ...    | ${WTS_VERSION} | 4.0.13303 | WTS version |
+    ...
+    # ${rc}    ${output}    OperatingSystem.Run And Return Rc And Output    ls -la /opt/iphy/latest
+    ${rc}    ${output}    OperatingSystem.Run And Return Rc And Output    ls -la /opt/wts/latest
+    @{split_list}    String.Split String    ${output}    /
+    Set Suite Variable    ${WTS_VERSION}    ${split_list[-1]}
+    # Log to console     WTS Version: ${WTS_VERSION}
+
+
+Fetch Common Unit Type
+    [Documentation]
+    ...    Detects and returns type of common unit eg. ASIL.
+    ...
+    ...    *Note*    for classical gNB only!
+    ...
+    ...    *Scope*  Internal
+    ...
+    ...    | gnb_id         | Id of gnb [0.. ] |
+    ...    | du_id          | Id of DU [0.. ] |
+    ...    | common_unit_id | Id of Common Unit [0.. ] |
+    ...
+    [Arguments]   ${gnb_id}=${0}   ${du_id}=${0}   ${common_unit_id}=${0}
+    ${alias_gnb_common_unit_identify_device_type}   connect.Connect to Node Common Unit
+    ...   node_id=${gnb_id}   du_id=${du_id}   comu_id=${common_unit_id}
+    ${common_unit}   nps_1586_tools.identify_module   connection=${alias_gnb_common_unit_identify_device_type}
+    Collections.Set To Dictionary   ${P_COMMON_UNIT_TYPE}   gNB${gnb_id}_DU${du_id}_CM${common_unit_id}   ${common_unit}
+    Set Suite Variable   ${P_COMMON_UNIT_TYPE}
+
+Get Common Unit Type
+    [Documentation]
+    ...    Detects and returns type of gnb common unit eg. ASIK / ASIB.
+    ...
+    ...    | gnb_id         | Id of gnb [0.. ] |
+    ...    | du_id          | Id of DU [0.. ] |
+    ...    | common_unit_id | Id of Common Unit [0.. ] |
+    ...
+    ...    *Returns*    gnb common unit HW board name
+    ...
+    [Arguments]   ${gnb_id}=${0}   ${du_id}=${0}   ${common_unit_id}=${0}
+
+    ${common_unit}   Get Variable Value   ${P_COMMON_UNIT_TYPE.gNB${gnb_id}_DU${du_id}_CM${common_unit_id}}
+
+    Run Keyword If   '${common_unit}'=='None'
+    ...   Fetch Common Unit Type   gnb_id=${gnb_id}   du_id=${du_id}   common_unit_id=${common_unit_id}
+    [Return]   ${P_COMMON_UNIT_TYPE.gNB${gnb_id}_DU${du_id}_CM${common_unit_id}}
+
+Get Capacity Slave IP
+    [Documentation]
+    ...    Calculate Capacity Unit IP depending on slave a(master)|b|loner.
+    ...
+    ...    | gnb_id  | Id of gnb [0.. ] |
+    ...    | du_id   | Id of DU [0.. ] |
+    ...    | comu_id | Id of Common Unit [0..1] |
+    ...    | capu_id | Id of Capacity Unit [0..5] |
+    ...    | slave   | Name of Slave of Capacity unit (a/0|b/1|loner/2) |
+    ...
+    ...    *Returns*    slave_ip (Ip of Slave on capacity unit)
+    ...
+    [Arguments]   ${gnb_id}=${0}   ${du_id}=${0}   ${comu_id}=${0}   ${capu_id}=${0}   ${slave}=a
+    # Run Keyword If   $tl_info.deployment_type(${gnb_id})=='aic'   Run Keywords
+    # ...            Log To Console   ${\n}AiC isn't supported!
+    # ...   AND      Return From Keyword   ${None}
+
+    ${comu_type}   Get Common Unit Type   gnb_id=${gnb_id}   du_id=${du_id}   common_unit_id=${comu_id}
+    Run Keyword And Return If   $comu_type=='ASOE'
+    ...   Log To Console   ${\n}KW 'Get Capacity Slave IP' is not applicable for ${comu_type}!
+
+    ${gnb_comu_alias}   connect.Connect to Node Common Unit   node_id=${gnb_id}   du_id=${du_id}   comu_id=${comu_id}
+    ${grep_ipv6_cmd}    Set Variable   echo "ifconfig etha01.212 | grep inet6 | grep -i global | grep -oE '(\\w{1,4}:){7}(\\w{1,4})'"
+
+    ${slave_ip}   Run Keyword If   '${slave}'=='a' or '${slave}'=='0'   ssh.execute
+    ...       command=${grep_ipv6_cmd} | bsh ${${capu_id}+1}:0
+    ...       connection=${gnb_comu_alias}
+    ...       timeout=30s
+    ...   ELSE IF   '${slave}'=='b' or '${slave}'=='1'                  ssh.execute
+    ...       command=${grep_ipv6_cmd} | bsh ${${capu_id}+1}:1
+    ...       connection=${gnb_comu_alias}
+    ...       timeout=30s
+    ...   ELSE IF   '${slave}'=='loner' or '${slave}'=='2'              ssh.execute
+    ...       command=${grep_ipv6_cmd} | bsh ${${capu_id}+1}:2
+    ...       connection=${gnb_comu_alias}
+    ...       timeout=30s
+    ...   ELSE   Fail   Unknown Capacity Unit Slave name. Must a/0|b/1|loner/2 !
+
+    nps_1586_tools.should_be_valid_ip     ${slave_ip.strip()}
+
+    [RETURN]   ${slave_ip.strip()}
+
+Get Common Unit Slave IP
+    [Documentation]
+    ...    Calculate Common Unit Slave IP.
+    ...
+    ...    *Note*   usable for ASIK
+    ...
+    ...    | gnb_id  | Id of gnb [0.. ] |
+    ...    | du_id   | Id of DU [0.. ] |
+    ...    | comu_id | Id of Common Unit [0..1] |
+    ...
+    ...    *Returns*    slave_ip (Ip of Slave on common unit)
+    ...
+    [Arguments]   ${gnb_id}=${0}   ${du_id}=${0}   ${comu_id}=${0}
+    # Run Keyword If   $tl_info.deployment_type(${gnb_id})=='aic'   Run Keywords
+    # ...              Log To Console   ${\n}AiC is not supported!
+    # ...   AND        Return From Keyword   ${None}
+
+    ${comu_type}   Get Common Unit Type   gnb_id=${gnb_id}   du_id=${du_id}   common_unit_id=${comu_id}
+
+    Run Keyword And Return If   $comu_type!='ASIK'
+    ...   Log To Console   ${\n}KW 'Get Common Unit Slave IP' is not applicable for ${comu_type}!
+
+    ${gnb_comu_alias}   connect.Connect to Node Common Unit   node_id=${gnb_id}   du_id=${du_id}   comu_id=${comu_id}
+    ${grep_ipv6_cmd}    Set Variable   echo "ifconfig etha01.212 | grep inet6 | grep -i global | grep -oE '(\\w{1,4}:){7}(\\w{1,4})'"
+    ${slave_ip}   ssh.execute  command=${grep_ipv6_cmd} | bsh ${${comu_id}}:1   connection=${gnb_comu_alias}   timeout=30s
+    [RETURN]   ${slave_ip.strip()}
+
+Set Console Output
+    [Documentation]
+    ...    Enable/Disable Console output. This defines the value of the global variable P_console.
+    ...    This variable could be used with -v to control the output from robot command line!
+    ...
+    ...    | Output | ${True} to enable console output of common keywords, ${False} disable output |
+    ...
+    [Arguments]   ${Output}=${True}
+    Set Global Variable   ${P_console}   ${Output}
+
+
+Get Airphone Common Unit Type
+    [Documentation]
+    ...    Detects and returns type of Airphone common unit eg. ASIK / ASIB.
+    ...
+    ...    | ue_id | Id of ue(ap) [0.. ] |
+    ...
+    ...    *Returns*    AP common unit HW board name
+    ...
+    [Arguments]   ${ue_id}=${0}   ${comu_id}=${0}
+    ${common_unit}   Get Variable Value   ${P_UE_COMMON_UNIT_TYPE.ue${ue_id}}
+
+    Run Keyword If   '${common_unit}'=='None'
+    ...   Fetch Airphone Common Unit Type   ue_id=${ue_id}   comu_id=${comu_id}
+    [Return]   ${P_UE_COMMON_UNIT_TYPE.ue${ue_id}}
+
+
+Get Airphone Capacity Unit Type
+    [Documentation]
+    ...    Detects and returns type of Airphone capacity unit eg. ABIL / ABIO
+    ...
+    ...    | ue_id   | Id of ue [0.. ] |
+    ...    | comu_id | Id of Common Unit [0.. ] |
+    ...    | capu_id | Id of Capacity Unit [0.. ] |
+    ...
+    ...    *Returns*    AP capacity unit HW board name
+    ...
+    [Arguments]   ${ue_id}=${0}   ${comu_id}=${0}   ${capu_id}=${0}
+    ${capa_unit}   Get Variable Value  ${P_UE_CAPA_UNIT_TYPE.ap${ue_id}_CM${comu_id}_CA${capu_id}}
+
+    Run Keyword If   '${capa_unit}'=='None'
+    ...   Fetch Airphone Capacity Unit Type   ue_id=${ue_id}   comu_id=${comu_id}   capu_id=${capu_id}
+    [Return]   ${P_UE_CAPA_UNIT_TYPE.ap${ue_id}_CM${comu_id}_CA${capu_id}}
+
+
+Get Capacity Unit Type
+    [Documentation]
+    ...    Detects and returns type of capacity unit eg. ABIL / ABIO.
+    ...
+    ...    *Note* only for classical gNB
+    ...
+    ...    | gnb_id         | Id of gnb [0.. ] |
+    ...    | du_id          | Id of DU [0.. ] |
+    ...    | common_unit_id | Id of Common Unit [0.. ] |
+    ...    | capu_id        | Id of Capacity Unit [0.. ] |
+    ...
+    ...    *Returns*    gNB capacity unit HW board name
+    ...
+    [Arguments]   ${gnb_id}=${0}   ${du_id}=${0}   ${common_unit_id}=${0}   ${capu_id}=${0}
+    ${capa_unit}   Get Variable Value   ${P_CAPA_UNIT_TYPE.gNB${gnb_id}_DU${du_id}_CM${common_unit_id}_CA${capu_id}}
+    Run Keyword If   '${capa_unit}'=='None'
+    ...   Fetch Capacity Unit Type   gnb_id=${gnb_id}   du_id=${du_id}   common_unit_id=${common_unit_id}   capu_id=${capu_id}
+    [Return]   ${P_CAPA_UNIT_TYPE.gNB${gnb_id}_DU${du_id}_CM${common_unit_id}_CA${capu_id}}
+
+
+Save Current Workspace Info
+    [Documentation]
+    ...    Save robotws5g branch and commit ID information for debugging or reproducing
+    ...    Save modified files in robotws5g
+    ${resultSuiteBaseDir}=    Get test suite result base directory
+    ${workspaceDir}=    Get Workspace Directory
+    ${output_1}=   Run    cd ${workspaceDir}; git rev-parse --abbrev-ref HEAD
+    ${output_2}=   Run    cd ${workspaceDir}; git rev-parse HEAD
+    Save Modified Files in Git
+    Create file    ${resultSuiteBaseDir}/robotws5gInfo.txt   Working on branch: ${output_1} with Commit-ID ${output_2}
+    StringTool.printLineWithTitle   title=-
+    ${msg}=    StringTool.getHeaderLine    Git Branch     ${output_1}
+    run Keyword if   "${msg}"!="${EMPTY}"      Dated log      ${msg}
+    ${msg}=    StringTool.getHeaderLine    Git Commit     ${output_2}
+    run Keyword if   "${msg}"!="${EMPTY}"      Dated log      ${msg}
+    StringTool.printLineWithTitle   title=-
+
+
+Save Modified Files in Git
+    [Documentation]
+    ...    [PRIVATE]
+    ${resultSuiteBaseDir}=    Get test suite result base directory
+    ${workspaceDir}=    Get Workspace Directory
+    ${modifiedFiles}=    Run    cd ${workspaceDir}; git ls-files -m
+    ${modifiedFiles}=    Replace String    ${modifiedFiles}    search_for=\n    replace_with=${SPACE}
+    Run Keyword If    '${modifiedFiles}'!=''
+    ...    Run    cd ${workspaceDir}; tar czvf ${resultSuiteBaseDir}/modifedFiles.tgz ${modifiedFiles}
+
+
+Get Workspace Directory
+    [Documentation]
+    ...    Returns path to local repository root folder.
+    ...
+    ...    *Returns* Path to repository
+    ...
+    ${separator}   Set Variable If
+    ...   'robotws/' in '${SUITE SOURCE}'     robotws
+    ...   'Auto5G' in '${SUITE SOURCE}'       Auto5G    robotws
+    ${workspaceDir}    ${_}    String.Split String    ${SUITE SOURCE}    separator=${separator}    max_split=1
+    [Return]   ${workspaceDir}${separator}
+
+set resultSuiteBaseDir
+    ${P_resultSuiteBaseDir}    set variable    ${LOG_PATH}
+    set suite variable     ${P_resultSuiteBaseDir}
+
+Get test suite result base directory
+    [Documentation]
+    ...    Retuns path for Log base directory
+    ...    If Log base directory does not exist it will created automatically
+    ...
+    ...    :returns: Path for Log base folder
+    ...
+    ${P_resultSuiteBaseDir}=    Get Variable Value    ${P_resultSuiteBaseDir}
+    Run Keyword If    '${P_resultSuiteBaseDir}'=='None' or '${P_resultSuiteBaseDir}'=='${EMPTY}'
+    ...    Run Keywords    set resultSuiteBaseDir
+    ...      AND           BuiltIn.Log     P_resultSuiteBaseDir is ${P_resultSuiteBaseDir}       level=INFO
+    [Return]    ${P_resultSuiteBaseDir}
+
+Get Test Suite Config Directory
+    [Documentation]
+    ...    Returns folder for TestSuite config, if TestSuite config folder
+    ...    does not exist it will created automatically.
+    ...
+    ...    *Returns* Path for Testsuites logs
+    ...
+    ${P_resultSuiteConfigDir}    Get Variable Value    ${P_resultSuiteConfigDir}
+    Run Keyword If    '${P_resultSuiteConfigDir}'=='None'
+    ...    Create Test Suite Config Directory
+    [Return]   ${P_resultSuiteConfigDir}
+
+create Test Suite Config Directory
+    [Documentation]
+    ...    Creates global Configs directory for the running test suite.
+    ...    Naming rule: ${OUTPUT_DIR}/${SUITE_NAME}/${gnbSwVersion}/${timeStamp}/Configs
+    ...    legacy: return should not be used
+    ...
+    ...    *Scope*  Internal
+    ...
+    ${resultSuiteBaseDir}   Get Test Suite Result Base Directory
+
+    Set Suite Variable   ${P_resultSuiteConfigDir}   ${resultSuiteBaseDir}/Configs
+
+    OperatingSystem.Create Directory   ${P_resultSuiteConfigDir}
+    [Return]   ${P_resultSuiteConfigDir}
+
+Get Test Suite Directory
+    [Documentation]
+    ...    Returns path for current test suite on running system.
+    ...
+    ...    *Returns* Path for current test suite
+    ...
+    ${suiteDir}   ${_}   String.Split String From Right   ${SUITE SOURCE}   separator=/   max_split=1
+    [Return]   ${suiteDir}
+
+Fetch Capacity Unit Type
+    [Documentation]
+    ...    Detects type of gnb capacity unit eg. ABIO and stores it in a global
+    ...    dictionary P_CAPA_UNIT_TYPE.
+    ...
+    ...    They keys follow the naming rule:
+    ...    gNB${gnb_id}_DU${du_id}_CM${common_unit_id}_CA${capu_id}
+    ...
+    ...    Don't use this KW directly, use wrapper KW `Get Capacity Unit Type` instead!
+    ...
+    ...    *Note*    for classical gNB only!
+    ...
+    ...    *Scope*  Internal
+    ...
+    ...    | gnb_id         | Id of gnb [0.. ] |
+    ...    | du_id          | Id of DU [0.. ] |
+    ...    | common_unit_id |  Id of Common Unit [0.. ] |
+    ...    | capu_id        | Id of Capacity Unit [0.. ] |
+    ...
+    [Arguments]   ${gnb_id}=${0}   ${du_id}=${0}   ${common_unit_id}=${0}   ${capu_id}=${0}
+    ${comu_type}   Get Common Unit Type   gnb_id=${gnb_id}   du_id=${du_id}   common_unit_id=${common_unit_id}
+
+    Run Keyword If   $comu_type=='ASOE'   Run Keywords
+    ...         Log To Console        ${\n}ASOE has no Capacity Unit!
+    ...   AND   Collections.Set To Dictionary    ${P_CAPA_UNIT_TYPE}   gNB${gnb_id}_DU${du_id}_CM${common_unit_id}_CA${capu_id}   ${None}
+    ...   AND   Set Suite Variable    ${P_CAPA_UNIT_TYPE}
+    ...   AND   Return From Keyword   ${P_CAPA_UNIT_TYPE}
+
+    ${comu_alias}   connect.Connect to Node Common Unit   node_id=${gnb_id}   du_id=${du_id}   comu_id=${common_unit_id}
+    ${capa_unit_type}   nps_1586_tools.identify_module   connection=${comu_alias}   capu_id=${capu_id}
+    Set To Dictionary   ${P_CAPA_UNIT_TYPE}   gNB${gnb_id}_DU${du_id}_CM${common_unit_id}_CA${capu_id}   ${capa_unit_type}
+    Set Suite Variable   ${P_CAPA_UNIT_TYPE}
+
+Power Cycle UE
+    [Documentation]
+    ...     Performs a power off/on cycle for the given `ue_id`. The off duration is specified by `time_interval`.
+    ...
+    ...     *Note*  Currently only supports AirPhone
+    ...
+    [Arguments]   ${ue_id}=${0}   ${common_unit_id}=${0}   ${time_interval}=10
+    ${pdu}        Set Variable   ${tl.ues[${ue_id}].l1.common_units[${common_unit_id}].pdu_port.pdu}
+    ${pdu_port}   Set Variable   ${tl.ues[${ue_id}].l1.common_units[${common_unit_id}].pdu_port.port_no}
+    PDU power reset   ${pdu}   ${pdu_port}   time_interval=${time_interval}
+
+PDU power reset
+    [Documentation]
+    ...    KW is used to reset a device which is connected to PDU.
+    ...
+    ...    *Note* Needs proper SMNP settings on PDU aligned with settings in testline configuration file!
+    ...
+    ...    *Scope*  Internal
+    ...
+    ...    | pdu           | pdu object |
+    ...    | pdu_port      | port on the PDU: Bank A - Port 1 -> Port 6, Bank B - Port 7 -> Port 12 |
+    ...    | time_interval |  number of seconds to wait between OFF/ON actions |
+    ...
+    ...    *Example*
+    ...    | PDU power reset  pdu=${tl.gnbs[0].dus[0].airscale.common_units[0].pdu_port.pdu}
+    ...    | ...              pdu_port=${tl.gnbs[0].dus[0].airscale.common_units[0].pdu_port.port_no}
+    ...    | ...              time_interval=5
+    ...
+    [Arguments]   ${pdu}   ${pdu_port}   ${time_interval}=10
+    ${pdu_alias}   pdu.setup pdu   ${pdu}
+    ${pdu_ports}   Create list   ${pdu_port}
+    pdu.reset_ports   ports=${pdu_ports}   time_interval=${time_interval}   pdu_device=${pdu_alias}
+
+
+Get PDU power status
+    [Documentation]
+    ...    This KW checks the status of the given `pdu_port` of the PDU the TL is connected to.
+    ...    So the `pdu` must be the one define in the testline configuration file.
+    ...
+    ...    *Note* Needs proper SMNP settings on PDU aligned with settings in testline configuration file!
+    ...
+    ...    | pdu      | pdu object |
+    ...    | pdu_port | port on the PDU: Bank A - Port 1 -> Port 6, Bank B - Port 7 -> Port 12 |
+    ...
+    ...    *Example*
+    ...    | Get PDU power status  pdu=${tl.gnbs[0].dus[0].airscale.common_units[0].pdu_port.pdu}
+    ...    | ...                   pdu_port=${tl.gnbs[0].dus[0].airscale.common_units[0].pdu_port.port_no}
+    ...
+    ...    *Returns*   port status (off|on)
+    ...
+    [Arguments]   ${pdu}   ${pdu_port}
+    ${pdu_alias}     pdu.setup pdu   ${pdu}
+    ${port_status}   pdu.get_port_status   port=${pdu_port}   pdu_device=${pdu_alias}
+    [Return]   ${port_status}
+
+
+Fetch Airphone Common Unit Type
+    [Documentation]
+    ...    Detects type of Airphone common unit eg. ASIK
+    ...
+    ...    *Scope*  Internal
+    ...
+    ...    | ue_id | Id of ue (ap) [0.. ] |
+    ...
+    ...    *Returns*    AP common unit board name
+    ...
+    [Arguments]   ${ue_id}=${0}   ${comu_id}=${0}
+    ${alias_ap_common_unit_identify_device_type}   Connect.Connect to Airphone Common Unit   ue_id=${ue_id}   ue_comu_id=${comu_id}
+    ${common_unit}   nps_1586_tools.identify_module   connection=${alias_ap_common_unit_identify_device_type}
+    Collections.Set To Dictionary   ${P_UE_COMMON_UNIT_TYPE}   ue${ue_id}   ${common_unit}
+    Set Suite Variable   ${P_UE_COMMON_UNIT_TYPE}
+
+
+Fetch Airphone Capacity Unit Type
+    [Documentation]
+    ...    Detects type of Airphone capacity unit eg. ABIL.
+    ...
+    ...    *Scope*  Internal
+    ...
+    ...    | ue_id          | Id of ue [0.. ] |
+    ...    | common_unit_id |  Id of Common Unit [0.. ] |
+    ...    | capu_id        |         Id of Capacity Unit [0.. ] |
+    ...
+    ...    *Returns*    AP capacity unit board name
+    ...
+    [Arguments]   ${ue_id}=${0}   ${comu_id}=${0}   ${capu_id}=${0}
+    ${ap_alias}   Connect.Connect to Airphone Common Unit   ue_id=${ue_id}   ue_comu_id=${comu_id}
+    ${capa_unit_type}   nps_1586_tools.identify_module   connection=${ap_alias}   capu_id=${capu_id}
+    Collections.Set To Dictionary   ${P_UE_CAPA_UNIT_TYPE}   ap${ue_id}_CM${comu_id}_CA${capu_id}   ${capa_unit_type}
+
+Get File Path on Target
+    [Documentation]
+    ...
+    ...    | file_pattern | file location and pattern, e.g. /ffs/run/swpool/OAM/psconfig_*.txz |
+    ...    | connection   | alias name |
+    ...
+    ...    *Returns* file_path
+    [Arguments]    ${file_pattern}    ${connection}
+    ${output}=    ssh.execute    ls ${file_pattern}    connection=${connection}
+    ${file_path}=    String.Strip String    ${output}
+    [Return]    ${file_path}
+
+Get RU Info from TargetBD
+    [Arguments]    ${ru_type}=AEQE
+    ${gnb_alias}=    connect.Connect to gNB Capacity Unit
+    ${file_path}=    testline-Keywords.Get File Path on Target    file_pattern=/ffs/run/TargetBD*ENB*.xml    connection=${gnb_alias}
+    ssh.download file    remote_path=${file_path}    local_path=${configuration_directory}/TargetBD.xml    connection=${gnb_alias}
+    ssh.disconnect    ${gnb_alias}
+    ${ru_version}  ${frm_sw}    nps_1586_tools.get_values_from_targetbd    ${configuration_directory}/TargetBD.xml    ${ru_type}
+    [Return]    ${ru_version}    ${frm_sw}
+
+Get Topology from Common Agent File
+    [Arguments]    ${file_path}=/home/ute/testline_init_results/agent.log
+    ${file_content}           OperatingSystem.Get File    ${file_path}
+    ${label_from_install}     Should Match Regexp         ${file_content}    LABEL:\\s+(\\S+)
+    ${variant_from_install}   Should Match Regexp         ${file_content}    VARIANT:\\s+(\\S+)
+    Set Suite Variable        ${TOPOLOGY_LABEL}           ${label_from_install[1]}
+    Set Suite Variable        ${TOPOLOGY_VARIANT}         ${variant_from_install[1]}
+    Set Suite Metadata        Topology [Common Agent]     ${TOPOLOGY_LABEL}
+    Set Suite Metadata        Variant [Common Agent]      ${TOPOLOGY_VARIANT}
+
+Get AP Capacity Slave IP
+    [Documentation]
+    ...    Calculate Capacity Unit IP depending on slave a(master)|b|loner.
+    ...
+    ...    | ue_id   | Id of ue [0.. ] |
+    ...    | comu_id | Id of Common Unit [0..1] |
+    ...    | capu_id | Id of Capacity Unit [0..5] |
+    ...    | slave   | Name of Slave of Capacity unit (a|b|phoner) |
+    ...
+    ...    *Returns*    slave_ip (Ip of Slave on capacity unit)
+    ...
+    [Arguments]   ${ue_id}=${0}   ${comu_id}=${0}   ${capu_id}=${0}   ${slave}=a
+    ${slave_ip}   Run Keyword If   $slave=='a'   Set Variable
+    ...             ${tl.ues[${ue_id}].l1.common_units[${comu_id}].capacity_units[${capu_id}].addr}
+    ...   ELSE IF   $slave=='b'   tools.increment_ip
+    ...             ${tl.ues[${ue_id}].l1.common_units[${comu_id}].capacity_units[${capu_id}].addr}   factor=1
+    ...   ELSE IF   $slave=='phoner'    tools.increment_ip
+    ...           ${tl.ues[${ue_id}].l1.common_units[${comu_id}].capacity_units[${capu_id}].addr}   factor=2
+    ...   ELSE    Fail   Unknown Capacity Unit Slave name. Must a|b|phoner
+    RETURN   ${slave_ip}
+
+Identify Interface With IP
+    [Documentation]
+    ...    Searches for the network interface by the given ``ip`` on a local or remote host depending whether
+    ...    or not ``connection`` is given.
+    ...
+    ...    | ip | the ip address for which the corrosponding interface name needs to be found |
+    ...    | connection | optional alias for a ssh connection to a remote host on which the interface name has to be determined |
+    ...
+    ...    *Returns* interface name, None if nothing found
+    ...
+    [Arguments]   ${ip}   ${connection}=${None}
+    ${cl_output}   Run Keyword If   '${connection}'=='${None}'
+    ...          OperatingSystem.Run   ip -o -4 addr show | awk '{print $2" "$4}' | grep ${ip}
+    ...   ELSE   ssh.execute  ip -o -4 addr show | awk '{print $2" "$4}' | grep ${ip}   connection=${connection}   timeout=30s
+
+    @{words}     String.Split String   ${cl_output}
+    ${if_name}   Run Keyword And Ignore Error   Set Variable   ${words[0]}
+    ${interface_name}   Set Variable If   $if_name[0]=='PASS'   ${if_name[1]}
+    RETURN   ${interface_name}
+
+Update SW Config file on AP System Module
+    [Documentation]
+    ...    This KW connects to the ``comu_id`` of the Airphone given by ``ue_id`` and
+    ...    sets the RND params given by ``param_list`` in the swconfig.txt.
+    ...    The `param_list` is a list of key:value pairs, e.g. ["0x4600BA=6", "0x460002=6"].
+    ...
+    ...    | param_list | list the update content   |
+    ...    | ue_id      | Id of ue                  |
+    ...    | ue_comu_id | Id of Common Unit         |
+    ...
+    [Arguments]   ${param_list}   ${ue_id}=${0}   ${ue_comu_id}=${0}
+    ${ap_alias}   connect.Connect to Airphone Common Unit   ue_id=${ue_id}   ue_comu_id=${ue_comu_id}
+    swconf.download_swConfig_file_from_asik_to_test_pc   localFilePath=/tmp/swconfig_tmp.txt   asik_alias=${ap_alias}
+    swconf.modify_swConfig_file   parametersList=${param_list}   filePath=/tmp/swconfig_tmp.txt
+    swconf.upload_swConfig_file_to_asik_and_crasign   localFilePath=/tmp/swconfig_tmp.txt   asik_alias=${ap_alias}
+
+Add RD Parameters in AP swconfig File Exemple
+    [Documentation]    Additional AP RD flags
+    @{ap_params}=  create list  0x300010=1   # Prevent SW fallback if SCFC validation fails
+    Update SW Config file on AP System Module  param_list=${ap_params}
+    Set suite variable    ${force_reboot}    ${true}

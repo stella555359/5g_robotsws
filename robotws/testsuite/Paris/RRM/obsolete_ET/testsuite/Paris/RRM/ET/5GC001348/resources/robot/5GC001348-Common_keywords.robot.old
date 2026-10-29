@@ -1,0 +1,750 @@
+*** Settings ***
+Documentation       CNI GENERIC TEST
+...               Test Case Scenario author   :
+...               Test Case Scenario contact  :
+...               Test Case automation author :
+...               Test Case automation contact:
+...               Creation Date               :
+...               Then Modified by            : loic.marzin@nokia.com
+...               Last Modification           : update for supporting TCP protocol in CPRT logs
+...               Modified Date               : 27-June-2022
+...               Modified Date               : 26-Sep-2022
+...               Last Modification           : vincent.boulet@Nokia.com - timing problem during the verification of the cell configuration
+...               13/12/2022: MH + MLLB : adaptation for FDD ORAN (test case _OR)
+...               Last Modification           : 6-Apr-2023 jean.bolea@Nokia.com - introduction of FDD VRAN DU SCF update
+...               Last Modification           : 18-Sep-2024 : Scout data
+
+Library             OperatingSystem
+Library             Collections
+Library             DateTime
+Library             taf.transport.ssh    WITH NAME    csn
+Library             taf.config.scf       WITH NAME    scf
+Library             taf.wts.runner           WITH NAME    wtsemu
+Library             ute_wtssim
+Library             ../../../resources/python/luashark_tools.py
+Library             luashark_tools.analyzer       WITH NAME       analyzer
+Library             ../../../../../resources/SWENG/python/StringTool.py
+Resource            ../../../../../resources/SWENG/robot/Setup.robot
+Resource            ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource            ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource            ../../../../../resources/SWENG/robot/Tools.robot
+Resource            ../../../../../resources/SWENG/robot/Connect.robot
+Resource            ../../../../../resources/SWENG/robot/Restart.robot
+Resource            ../../../../../resources/SWENG/robot/Oam.robot
+Resource            ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource            ../../../../../resources/SWENG/robot/Traffic.robot
+Resource            ../../../../../resources/SWENG/robot/Restart.robot
+Resource            ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource            ../../../../../resources/SWENG/robot/PacketSearch.robot
+Resource            ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource            ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource            ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource            ../../../../../resources/SWENG/robot/Counters.robot
+Resource            Trigger.robot
+
+*** Variables ***
+
+${gNB_BIP_Attach}              gNB_BIP_ASIK_Slave
+${Ap_BIP_Attach}               Ap_BIP_ASIK_Slave
+${BIP_capture_Path}            ${EMPTY}
+${Traffic_Duration}            120s
+${gNB_Mplane_IP}               10.0.1.111
+${Udp_Receiver_wts_IP}         10.0.1.1
+${Destination_port}            5678
+${Sherpa_logs_local_path}
+@{UL_PDCP_PDU_MSG_ID}          L2HI_DU(0x82)    L2HI_DU(0x02)
+@{DDDS_FLOW_CONTROL_MSG_ID}    UlDl DU:FlowControl3GppF1(0x4c)
+${TMP_PATH}                    /tmp
+
+
+&{Config_FDD_20MHz}    chBwDl=20MHz
+...                    chBwUl=20MHz
+...                    nrarfcnDl=126380
+...                    nrarfcnUl=135760
+...                    gscn=1582
+#...                    gscn=1
+
+&{Config_FDD_20MHz_OR}     chBwDl=20MHz
+...                        chBwUl=20MHz
+...                        nrarfcnDl=428000
+...                        nrarfcnUl=390000
+...                        gscn=5350
+#...                       gscn=1
+
+&{Config_FDD_10MHz}    chBwDl=10MHz
+...                    chBwUl=10MHz
+...                    nrarfcnDl=127420
+...                    nrarfcnUl=136620
+...                    gscn=1592
+
+&{Config_FDD_5MHz}     chBwDl=5MHz
+...                    chBwUl=5MHz
+...                    nrarfcnDl=125900
+...                    nrarfcnUl=135100
+...                    gscn=1
+
+${MORE_OR_EQUAL_THAN_1}             1
+
+&{M55308C00011}      counter=M55308C00011    obj=NRCELL    objId=1
+...                  name=Random_Access_Channel_slot_with_PUSCH
+
+&{PM_COUNTER_ID}     Random_Access_Channel_slot_with_PUSCH=${M55308C00011}
+
+
+# List of fields to catch per packets
+@{MSG_FIELDS_SLOT_SFN}              slot    sfn
+@{ULDATA_PUSCH_REQ_FIELDS}          rnti$   startPrb$    numOfPrb$    numOfPuschSymbols$    startSymbol$
+@{ULDATA_PUSCH_RESP_HARQU_FIELDS}   rnti$   dtx$         crc$
+@{ULDATA_PUSCH_RESP_PS_FIELDS}      rnti$   dtx$
+@{ULDATA_PUCCH_REQ_FIELDS}          rnti$       pucchFormat$    startPrb$    numOfPrb$    nANPucch$    numOfSymbols$    firstSymbol$
+@{DLDATA_PDCCH_SEND_REQ_FIELDS}     rnti$
+
+# Response definition : packet name and list of fields to collect for each message
+&{ULDATA_PUSCH_RECEIVE_Req}                 msg=uldata_puschreceivereq          fields=${ULDATA_PUSCH_REQ_FIELDS}
+&{ULDATA_PUSCH_RECEIVE_RESP_HARQU}          msg=uldata_puschreceiverespharqu    fields=${ULDATA_PUSCH_RESP_HARQU_FIELDS}
+&{ULDATA_PUSCH_RECEIVE_RESP_PS}             msg=uldata_puschreceiverespps       fields=${ULDATA_PUSCH_RESP_PS_FIELDS}
+&{ULDATA_PUCCH_REQ}                         msg=uldata_pucchreceivereq          fields=${ULDATA_PUCCH_REQ_FIELDS}
+&{DLDATA_PDCCH_SEND_REQ}                    msg=dldata_pdcchsendreq             fields=${DLDATA_PDCCH_SEND_REQ_FIELDS}
+
+
+# Global response definition for UL Data Prachs
+@{UlDataPrachRespDefList}           ${ULDATA_PUSCH_RECEIVE_Req}         ${ULDATA_PUSCH_RECEIVE_RESP_HARQU}          ${ULDATA_PUSCH_RECEIVE_RESP_PS}
+@{DlDataScBlockSendReqDefList}      ${DLDATA_PDCCH_SEND_REQ}
+
+
+*** Keywords ***
+
+Teardown TC
+    Dated log           Test ending
+    Produce Scout Data
+    [Teardown]          GenericTest.Display diagnosis
+
+Teardown If TC Failed
+    #vbo#adding message for debugging wo/ other action
+    Dated log           Teardown because TC Failed
+    Run Keyword If    not ${isAic}    Setup.Get Sos Report
+
+Restart gNB and Ap
+    Restart TL                      isOAMRebooted=True
+
+Set Gscn in IPHY Xml
+    Dated log                           Set gscn in iphy.xml
+    WtsXmlConfig.startSession           file=iphy
+    #set GSCN
+    Run Keyword If     not ${isORAN}      WtsXmlConfig.setListEltText         //GSCN                ${Config_FDD_20MHz.gscn}
+	...         ELSE
+    ...                                   WtsXmlConfig.setListEltText         //GSCN                ${Config_FDD_20MHz_OR.gscn}
+    WtsXmlConfig.stopSession            file=iphy
+
+Set Arfcn in Wts cfg
+    WtsCfgConfig.startSession
+    ${oldValue}          getParam           prefix=set_cell          param=nr_arfcn
+    Run Keyword If       not ${isORAN}      replaceValue             prefix=set_cell
+    ...                  param=nr_arfcn
+    ...                  oldValue=${oldValue}
+    ...                  newValue=${Config_FDD_20MHz.nrarfcnUl}:${Config_FDD_20MHz.nrarfcnDl}
+    ...         ELSE
+    ...                  replaceValue             prefix=set_cell
+    ...                  param=nr_arfcn
+    ...                  oldValue=${oldValue}
+    ...                  newValue=${Config_FDD_20MHz_OR.nrarfcnUl}:${Config_FDD_20MHz_OR.nrarfcnDl}
+    WtsCfgConfig.stopSession         rename=modified
+
+Lock_Cell_2
+   Oam.OAM Cell Lock  cell_id=2
+
+Set MRBTSID and NRBTSID
+    ${dist_name} =           Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ${ch_dist_name} =        Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-0
+    ${ch_dist_name_Aic} =    Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-1
+    ${nrcell_dist_name} =     Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ${nrcell_dist_name_fdd} =    Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1/NRCELL_FDD-1
+    ${pmcadm_dist_name} =    Set Variable    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/PMCADM-1
+    ${pmnrl_dist_name} =     Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRPMRNL-1
+    set suite variable    &{FRAME_PARAMETER_TYPE}    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1    p_name=frameStructureType
+    Set Suite Variable    ${dist_name}
+    Set Suite Variable    ${ch_dist_name}
+    Set Suite Variable    ${ch_dist_name_Aic}
+    Set Suite Variable    ${nrcell_dist_name}
+    Set Suite Variable    ${nrcell_dist_name_fdd}
+    Set Suite Variable    ${pmcadm_dist_name}
+    Set Suite Variable    ${pmnrl_dist_name}
+
+Update gNB Scf
+    [Arguments]                    ${testParam}
+    &{modify_param0}   Create Dictionary
+    ...                     dist_name=MRBTS-${MRBTS_ID}
+    ...                     parameter=btsName
+    ...                     value=${testParam.TC}
+    &{modify_param1}    Create Dictionary
+    ...    parameter=actPrachMultiplexing
+    ...    dist_name=${nrcell_dist_name}
+    ...    value=${testParam.actPrachMultiplexing}
+    &{modify_param2}    Create Dictionary
+    ...    parameter=actFdmScheduling
+    ...    dist_name=${dist_name}
+    ...    value=${testParam.actFdmScheduling}
+    &{param3}    Create Dictionary    csiReportPeriodicity=${testParam.csiReportPeriodicity}
+    &{csiReportPeriodicity}    Evaluate
+    ...         {'dist_name': '${nrcell_dist_name}', 'parameter': 'periodicCsiAcquisition','value':[&{param3}]}
+    &{modify_param4}    Create Dictionary
+    ...    parameter=msg1FrequencyStart
+    ...    dist_name=${nrcell_dist_name}
+    ...    value=${testParam.msg1FrequencyStart}
+    &{modify_param5}    Create Dictionary
+    ...    parameter=prachConfigurationIndex
+    ...    dist_name=${nrcell_dist_name}
+    ...    value=${testParam.prachConfigurationIndex}
+    &{modify_param6}    Create Dictionary
+    ...    parameter=ssBurstSetPeriod
+    ...    dist_name=${ch_dist_name}
+    ...    value=${testParam.ssBurstSetPeriod}
+    &{modify_param7}    Create Dictionary
+    ...    parameter=nrarfcnDl
+    ...    dist_name=${nrcell_dist_name_fdd}
+    ...    value=${Config_FDD_20MHz.nrarfcnDl}
+    &{modify_param8}    Create Dictionary
+    ...    parameter=nrarfcnUl
+    ...    dist_name=${nrcell_dist_name_fdd}
+    ...    value=${Config_FDD_20MHz.nrarfcnUl}
+    &{modify_param9}    Create Dictionary
+    ...    parameter=${gscnParameterName}
+    ...    dist_name=${nrcell_dist_name}
+    ...    value=${Config_FDD_20MHz.gscn}
+    &{modify_param10}    Create Dictionary
+    ...    parameter=chBwDl
+    ...    dist_name=${nrcell_dist_name_fdd}
+    ...    value=${Config_FDD_20MHz.chBwDl}
+    &{modify_param11}    Create Dictionary
+    ...    parameter=chBwUl
+    ...    dist_name=${nrcell_dist_name_fdd}
+    ...    value=${Config_FDD_20MHz.chBwUl}
+
+    &{param}    Create Dictionary
+    ...        frameStructureType=${testParam.frameStructure.frameStructureType}
+    ...        guardPeriodLength=${testParam.frameStructure.guardPeriodLength}
+    ...        ulDlDataSlotRatio=${testParam.frameStructure.ulDlDataSlotRatio}
+
+    &{framestructure}    Evaluate
+    ...         {'dist_name': '${nrcell_dist_name}', 'parameter': 'tddFrameStructure','value':[&{param}]}
+
+    #vbo#configuration for vRAN2.0 only.
+    &{modify_param20}    Run Keyword If    ${isAic}
+    ...                  Create Dictionary    parameter=tddFrameStructure/0/frameStructureType
+    ...                                       dist_name=${nrcell_dist_name}
+    ...                                       value=${testParam.frameStructure.frameStructureType}
+    &{modify_param21}    Run Keyword If    ${isAic}
+    ...                  Create Dictionary    parameter=tddFrameStructure/0/guardPeriodLength
+    ...                                       dist_name=${nrcell_dist_name}
+    ...                                       value=${testParam.frameStructure.guardPeriodLength}
+    &{modify_param22}    Run Keyword If    ${isAic}
+    ...                  Create Dictionary    parameter=tddFrameStructure/0/ulDlDataSlotRatio
+    ...                                       dist_name=${nrcell_dist_name}
+    ...                                       value=${testParam.frameStructure.ulDlDataSlotRatio}
+#   &{delete_param23}    Run Keyword If    ${isAic}
+#    ...                  Create Dictionary    parameter=tddFrameStructure/0/lteToNrFrameShift
+#    ...                                       dist_name=${nrcell_dist_name}
+#    ...                                       value=none
+#    ...                                       operation=remove
+#    &{delete_param24}    Run Keyword If    ${isAic}
+#    ...                  Create Dictionary    parameter=tddFrameStructure/0/tdLteUlDlConfig
+#    ...                                       dist_name=${nrcell_dist_name}
+#    ...                                       value=none
+#    ...                                       operation=remove
+
+	#MLLB-MH#configuration for O-RAN only.
+    &{modify_param25}    Run Keyword If    ${isORAN}
+    ...                  Create Dictionary    parameter=nrarfcnDl
+    ...                                       dist_name=${nrcell_dist_name_fdd}
+    ...                                       value=${Config_FDD_20MHz_OR.nrarfcnDl}
+    &{modify_param26}    Run Keyword If    ${isORAN}
+    ...                  Create Dictionary    parameter=nrarfcnUl
+    ...                                       dist_name=${nrcell_dist_name_fdd}
+    ...                                       value=${Config_FDD_20MHz_OR.nrarfcnUl}
+    &{modify_param27}    Run Keyword If    ${isORAN}
+    ...    Create Dictionary                  parameter=${gscnParameterName}
+    ...                                       dist_name=${nrcell_dist_name}
+    ...                                       value=${Config_FDD_20MHz_OR.gscn}
+
+    @{modify_param}=     Run Keyword If       not ${isAic} and '${cellTechnology}'=='TDD'
+    ...                                                    Create List
+    ...                                                    ${modify_param0}
+    ...                                                    ${modify_param1}
+    ...                                                    ${modify_param2}
+    ...                                                    ${csiReportPeriodicity}
+    ...                                                    ${modify_param4}
+    ...                                                    ${modify_param5}
+    ...                                                    ${modify_param6}
+    ...                                                    ${framestructure}
+    ...                  ELSE IF             ${isAic} and '${cellTechnology}'=='TDD'
+    ...                                                    Create List
+    ...                                                    ${modify_param0}
+    ...                                                    ${modify_param1}
+    ...                                                    ${modify_param4}
+    ...                                                    ${modify_param5}
+    ...                                                    ${modify_param20}
+    ...                                                    ${modify_param21}
+    ...                                                    ${modify_param22}
+#    ...                                                    ${delete_param23}
+#    ...                                                    ${delete_param24}
+	...                  ELSE IF             ${isORAN}
+	...                                                    Create List
+	...                                                    ${modify_param0}
+    ...                                                    ${modify_param1}
+    ...                                                    ${modify_param2}
+    ...                                                    ${csiReportPeriodicity}
+    ...                                                    ${modify_param4}
+    ...                                                    ${modify_param5}
+    ...                                                    ${modify_param6}
+    ...                                                    ${modify_param25}
+    ...                                                    ${modify_param26}
+    ...                                                    ${modify_param27}
+    ...                                                    ${modify_param10}
+    ...                                                    ${modify_param11}
+	...                  ELSE IF             not ${isAic}          # FDD Classical
+    ...                                                    Create List
+    ...                                                    ${modify_param0}
+    ...                                                    ${modify_param1}
+    ...                                                    ${modify_param2}
+    ...                                                    ${csiReportPeriodicity}
+    ...                                                    ${modify_param4}
+    ...                                                    ${modify_param5}
+    ...                                                    ${modify_param6}
+    ...                                                    ${modify_param7}
+    ...                                                    ${modify_param8}
+    ...                                                    ${modify_param9}
+    ...                                                    ${modify_param10}
+    ...                                                    ${modify_param11}
+
+    #vbo#correction to support vRAN2.0.
+    Run Keyword If    ${isAic}    Run Keywords
+    ...                               Dated log            Parameters to modify:\n
+    ...    AND                        Dated log            ${modify_param0}
+    ...    AND                        Dated log            ${modify_param1}
+    ...    AND                        Dated log            ${modify_param4}
+    ...    AND                        Dated log            ${modify_param5}
+    ...    AND                        Dated log            ${modify_param20}
+    ...    AND                        Dated log            ${modify_param21}
+    ...    AND                        Dated log            ${modify_param22}
+#    ...    AND                        Dated log            Parameters to delete:\n
+#    ...    AND                        Dated log            ${delete_param23}
+#    ...    AND                        Dated log            ${delete_param24}
+
+    #MLLB-MH#correction to support O-RAN
+    Run Keyword If    ${isORAN}       Run Keywords
+    ...                               Dated log            Parameters to modify for O-RAN:\n
+    ...    AND                        Dated log            ${modify_param0}
+    ...    AND                        Dated log            ${modify_param1}
+    ...    AND                        Dated log            ${modify_param2}
+    ...    AND                        Dated log            ${csiReportPeriodicity}
+    ...    AND                        Dated log            ${modify_param4}
+    ...    AND                        Dated log            ${modify_param5}
+    ...    AND                        Dated log            ${modify_param6}
+    ...    AND                        Dated log            ${modify_param25}
+    ...    AND                        Dated log            ${modify_param26}
+    ...    AND                        Dated log            ${modify_param27}
+	...    AND                        Dated log            ${modify_param10}
+	...    AND                        Dated log            ${modify_param11}
+
+    OAM Set Params                    ${modify_param}
+
+    #vbo#correction to support vRAN2.0.
+    Run Keyword If    ${isAic}    Run Keywords
+    ...                               Wait Vcu And Vdu Available
+    ...    AND                        OAM Get SCF File     oam=${GNB_DU.oam}    file=SCF_DU_Updated.xml
+    #vbo#disabling the restart    ...    AND                        Restart Airphone
+    #vbo#                         ...    AND                        Wait Airphone Available
+    #vbo#                         ...    AND                        Wait Vcu And Vdu Available
+
+Update gNB Scf Vran Fdd
+    [Arguments]                    ${testParam}
+    Dated log            Update gNB Scf Vran Fdd
+    Copy File            ${SCF_SETUP_PATH}     ${SCF_SETUP_PATH}.VranFdd
+    ${newSCF}            Set Variable          ${SCF_SETUP_PATH}.VranFdd
+    Dated log            ${newSCF}
+    SCF StartSession     scf_file=${newSCF}
+    SCF Set element      dist_name=MRBTS-${MRBTS_ID}
+    ...                  element_name=btsName
+    ...                  element_value=${testParam.TC}
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=${nrcell_dist_name}
+    ...                  element_name=actPrachMultiplexing
+    ...                  element_value=${testParam.actPrachMultiplexing}
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=${dist_name}
+    ...                  element_name=actFdmScheduling
+    ...                  element_value=${testParam.actFdmScheduling}
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=${nrcell_dist_name}
+    ...                  element_name=msg1FrequencyStart
+    ...                  element_value=${testParam.msg1FrequencyStart}
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=${nrcell_dist_name}
+    ...                  element_name=prachConfigurationIndex
+    ...                  element_value=${testParam.prachConfigurationIndex}
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=${ch_dist_name_Aic}
+    ...                  element_name=ssBurstSetPeriod
+    ...                  element_value=${testParam.ssBurstSetPeriod}
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=${pmcadm_dist_name}
+    ...                  element_name=reportingIntervalPm
+    ...                  element_value=5min
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=${pmnrl_dist_name}
+    ...                  element_name=miNrCellUtilization
+    ...                  element_value=5min
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF StopSession    ${newSCF}
+    Dated Log    ----> Modifications completed. in ${newSCF}
+    Oam.OAM Perform Full Commissioning          scf_file=${newSCF}
+# sleep to ensure the completion of the commissionning
+    sleep    100s
+
+Set lowBound To 1 In gNBaddition Messages
+    [Tags]     Set lowBound=1 in gNBaddition
+    eGate Command    enb_endc_param id=1 serving_cell_index_range_scg=1:0
+
+Start Capture CPRT
+    ${CaptureCPRT}                  Capture CPRT Set Upon Config            airscale=${GNB_DU}
+    ${CaptureCPRT.filter}           Get Filter For SCTP
+#    Keep code for future use regarding Syscom over TCP
+#    ${CaptureCPRT.filter}           Run Keyword If    'SBTS22R3' in '${TLConfig.topo.gnbVersion}'
+#    ...                             Get Filter For SCTP
+#    ...         ELSE
+#    ...                             Get Filter For TCP
+    #vbo#keyword 'Capture.Capture Init' expected 1 to 3 arguments before got 0.
+    Run Keyword If    not ${isAic}
+    ...                             Capture Init    ${CaptureCPRT}
+    ...         ELSE
+    ...                             Capture Init    ${CaptureCPRT}    withTN=True
+    Capture Start                   ${CaptureCPRT}
+    Set Suite Variable              ${CaptureCPRT}
+
+Stop Capture CPRT
+    Capture Stop                    ${CaptureCPRT}
+
+setup Mirroring for BIP capture
+    [Tags]    ActivateL1L2traces
+    ${Capture_BIP_GNB}    Run Keyword If    not ${isAic}
+    ...                                     Capture L1L2 Set Upon Config
+    ...                               ELSE
+    ...                                     Capture L1L2 Set Upon Config        airscale=${GNB_DU}
+    ${Capture_BIP_AP}                       Capture L1L2 Set Upon Config        ${AP_DU}
+    Run Keyword If    ${isAic}              Capture Init    ${Capture_BIP_GNB}  withTN=True
+    set suite variable                      ${Capture_BIP_GNB}
+    set suite variable                      ${Capture_BIP_AP}
+
+Capture Start AP
+    [Tags]      CAPTURE
+    [Arguments]             ${prefix}=Ap_Attach
+    Capture Init                              ${Capture_BIP_AP}
+    ${Capture_BIP_AP.prefix}                  set Variable                ${prefix}
+    Capture Start                             ${Capture_BIP_AP}
+
+Capture Start GNB
+    [Tags]      CAPTURE
+    [Arguments]            ${prefix}=gNB_Attach
+    ${bipMsgList}=                            Set Variable If      '${prefix}' == 'gNB_Attach'
+    ...                                       ${AttachFilter}             ${TrafficFilter}
+    Capture Init                              ${Capture_BIP_GNB}
+    ${Capture_BIP_GNB.prefix}                 set Variable                ${prefix}
+    # Patch from Alina
+    #vbo#disable because error maybe due to ${AP_DU.profil} or need SWENG 3.20.0
+    ${Capture_BIP_GNB.filter}     Run Keyword If  not ${isAic}      Get Filter For Particular Msgs    ${bipMsgList}
+    Capture Start                             ${Capture_BIP_GNB}
+
+Capture Stop GNB
+    [Tags]      CAPTURE
+    Capture Stop                             ${Capture_BIP_GNB}
+
+Capture Stop AP
+    [Tags]      CAPTURE
+    Capture Stop                             ${Capture_BIP_AP}
+
+UE attach
+    [Arguments]          ${testParam}
+    run keyword if       "${testParam.NsaCallFlag}"=="${True}"     UE attach NSA                          ${testParam}
+    ...                  ELSE                                      UE attach And PDU Session SA           ${testParam}
+
+UE attach NSA
+    [Arguments]         ${testParam}
+    FOR      ${idUE}       IN RANGE      1          ${testParam.seq.totalUE}+1
+         ${ueProfile}           Copy Dictionary     ${UE_PROFILE}
+         Set To Dictionary      ${ueProfile}        ue       ${idUE}
+         SgNB Addition to ENB   ueSetting=${ueProfile}
+         sleep    5s
+         Dated log              ${idUE} Verify UE Attach
+         UE Attach Check
+    END
+
+UE attach Ue id
+    [Arguments]         ${idUE}
+    ${ueProfile}            Copy Dictionary         ${UE_PROFILE}
+    Set To Dictionary       ${ueProfile}            ue       ${idUE}
+    SgNB Addition ENB       ueSetting=${ueProfile}
+#    sleep    5s
+    Dated log               ${idUE} Verify UE Attach
+    UE Attach Check
+
+UE attach And PDU Session SA
+    [Arguments]         ${testParam}
+    # CallSetup.UE Register
+    # Dated log          Check UE Attach SA
+    # CallSetup.UE Attach Check
+    CallSetup.UE Register
+    sleep     5s
+    CallSetup.Launch PDU Session
+
+UE Attach SA MultiUe
+    [Arguments]         ${testParam}
+    FOR      ${id}      IN RANGE      1        ${testParam.seq.totalUE}+1
+         Run Keyword And Continue On Failure         Launch UE Attach PDU Session SA MultiUe
+         ...                                         ueId=${id}
+         ...                                         pdu=${id}
+         ...                                         gw=${id}
+    END
+
+SgNB Addition ENB
+    [Documentation]                 Start gnb attach to enb. A SCTP capture is also started during the SgNB addition
+    ...                             Also, another capture (for instance, for BIP messages) may be performed on demand
+    ...                             Meaning if a <captureCallback> and its asociated <capture> structure is provided
+    [Arguments]                     ${ueSetting}=${UE_NO_PROFILE}           # Reference to UE Settings
+    ...                             ${captureCallback}=None                 # Reference to a KW call back or None
+    ...                             ${capture}=None                         # Associated <Capture> structure if Callback is provided
+    ...                             ${expected_gnb_log}=Successfully reconfigured dual connectivity
+    ...                             ${withTN}=${False}
+    Dated Log New Line              Starting GNB attach to ENB
+    ${captureCORE}                  Capture CORE Set Upon Config
+    Capture Init                    ${captureCORE}
+    ...                                 withTN=${WithTN}
+    ...                                 suffix=_GNB_ADDITION_UE${ueSetting.ue}
+#    Capture Start                   ${captureCORE}
+    UE Attach Enb                   ueSetting=${ueSetting}
+#    Traced Sleep                    duration=5s                    msg=Workaround for pb Attach Gnb
+    UE Attach To Gnb                   ueSetting=${ueSetting}
+    ...                             captureCallback=${captureCallback}
+    ...                             capture=${capture}
+    ...                             expected_gnb_log=${expected_gnb_log}
+#    Capture Stop                    ${captureCORE}
+    [Teardown]                      Run keyword if                          '${KEYWORD_STATUS}'!='PASS'
+    ...                             Capture Stop                            ${captureCORE}
+    [Return]                        ${captureCORE.path}
+
+UE Attach To Gnb
+    [Arguments]                     ${ueSetting}=${UE_NO_PROFILE}           # Reference to UE Settings
+    ...                             ${captureCallback}=None                 # Reference to a KW call back or None
+    ...                             ${capture}=None                         # Associated <Capture> structure if Callback is provided
+    ...                             ${expected_gnb_log}=Successfully reconfigured dual connectivity
+    # Start tcpdump on BIP if required
+    Callback Start Capture          callback=${captureCallback}             capture=${capture}
+    sleep                           400 ms
+    # Launch Enb Start
+    wtsemu.enb_ue_dc_start          ue=${ueSetting.ue}
+    ...                             target_gnb=${ueSetting.target_gnb}
+    ...                             target_cells=${ueSetting.target_cells}
+    ...                             bearer=${ueSetting.bearer}
+    ...                             type=split_scg
+    # Force testModeValue to csi_report_override if not already defined
+    ${IsKeyExist}                   Is Key Exist
+    ...                             ${ueSetting}                            testModeValue}
+    ${ueSetting.testModeValue}      set variable if                         ${IsKeyExist}
+    ...                             ${ueSetting.testModeValue}              csi_report_override
+    run keyword if                  ${ueSetting.testMode}                   wtsemu.ue testmode set
+    ...                             id=${ueSetting.ue}
+    ...                             profile_index=${ueSetting.profile}
+    ...                             action=activate
+    ...                             test_mode=${ueSetting.testModeValue}
+#    sleep                           1800 ms
+    # Stop BIP capture (if required)
+    Callback Stop Capture           callback=${captureCallback}              capture=${capture}
+    # Check console result
+    Dated Log                       sgNb Addition procedure check ${expected_gnb_log}
+#    wtsemu.Read Wtsemu Output Until  expected=${expected_gnb_log}            timeout=30
+    Dated Log                       sgNb Addition procedure is completed successfully
+
+Cell Setup
+    [Arguments]          ${testParam}
+    run keyword if       "${param.NsaCallFlag}"=="${True}"    WTS Setup
+    ...                                                       nbUe=${testParam.seq.totalUE}+1
+    ...                   ELSE                                Setup Wtsemu SA
+
+Launch DL UL Traffic
+    [Arguments]              ${testParam}
+    Traffic UE DL            ueSetting=${UE_PROFILE}    throughput=${testParam.seq.Dlthroughput}    duration=${testParam.seq.timeDuration}
+    ...    shouldBeCheck=False
+#    sleep    2s
+    Traffic UE UL            ueSetting=${UE_PROFILE}    throughput=${testParam.seq.Ulthroughput}    duration=${testParam.seq.timeDuration}
+    ...    shouldBeCheck=False
+
+Check actPrachMultiplexing and get prachPrbOffset values in ps_CellSetupReq
+    [Arguments]                    ${testParam}
+    Dated log                      path: ${CaptureCPRT.path}
+    ${pdmlFile}=                   analyzer.pcap_to_pdml           ${CaptureCPRT.path}
+
+#    Check Field In Message         ${pdmlFile}
+#    ...                            itf_l2_ps_cell_CellSetupReq
+#    ...                            CellSetupReq.actPrachMultiplexing
+#    ...                            ${testParam.ActFlag}
+
+    ${prachPrbOffset_hex}          get_unique         pdmlFile=${pdml_file}
+#    ...                                               packetName=itf_l2_ps_cell_CellSetupReq
+#    ...                                               path=.*/itf_l2_ps_cell_CellSetupReq.rachConfig.prachPrbOffset
+    ...                                               packetName=itf_l2_ps_rachconfig
+    ...                                               path=.*/itf_l2_ps_RachConfig.prachPrbOffset
+    ...                                               kind=show
+    ...                                               startPacket=${1}
+    ...                                               endPacket=${1}
+
+    ${prachPrbOffset_int}           Convert To Integer     ${prachPrbOffset_hex}
+
+    Set Suite Variable        ${prachPrbOffset_int}
+
+Check IE In Message
+    [Arguments]                     ${message}    ${message_ie_dictionary}    ${Bip}
+    ${pdmlFile}=                    analyzer.pcap_to_pdml          ${Bip}
+    ${items}     Get Dictionary Items   ${message_ie_dictionary}
+    FOR  ${key}   IN  @{message_ie_dictionary.keys()}
+         builtin.log     The current key is: ${key}
+         analyzer.check_field                pdmlFile=${pdmlFile}
+         ...                                 packetName=${message}
+         ...                                 fieldName=${key}
+         ...                                 value=${message_ie_dictionary["${key}"]}
+    END
+
+Check Field In Message
+    [Arguments]                     ${pdmlFile}
+    ...                             ${msg}
+    ...                             ${field}
+    ...                             ${value}
+    Dated log                       In message ${msg}, check ${field}=${value}         first=True
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${msg}.${field}$
+    ...                             value=${value}
+
+SgNBadditionReject_No_Resource_Available
+    [Arguments]                 ${testParam}
+    Dated log                   testParam : ${testParam.seq.totalUE}
+    ${UeId}                     Evaluate       ${testParam.seq.totalUE}+1
+    Dated log                   UeId : ${UeId}
+    wtsemu.Ue Attach            id=${UeId}       profile=1
+    wtsemu.Read Wtsemu Output Until Re     expected=UE IS ACTIVE               timeout=10
+    BuiltIn.Log                 \n4G Attach is successful    console=yes
+    sleep    2s
+    wtsemu.Enb Ue Dc Start      ue=${UeId}
+    ...                         target_gnb=${UE_PROFILE.target_gnb}
+    ...                         target_cells=${UE_PROFILE.target_cells}
+    ...                         bearer=${UE_PROFILE.bearer}
+    ...                         type=split_scg
+    wtsemu.Read Wtsemu Output Until        expected=SgNBAdditionRequestReject                                     timeout=30
+    wtsemu.Read Wtsemu Output Until        expected=value Cause : radioNetwork : no-radio-resources-available     timeout=30
+    BuiltIn.Log                 sgNb Addition Reject (Cause No resource available) for ue ${UeId}                 console=yes
+
+SA_RrcReject
+    [Arguments]                 ${testParam}
+    Dated log                   testParam : ${testParam.seq.totalUE}
+    ${UeId}                     Evaluate       ${testParam.seq.totalUE}+1
+    Dated log                   UeId : ${UeId}
+    wtsemu.Ue Register          id=${UeId}    profile=${UeId}
+    wtsemu.Read Wtsemu Output Until        expected=T300 expiration: No response to RRCSetupRequest     timeout=30
+    BuiltIn.Log                 RRC Reject (Cause No resource available) for ue ${UeId}                 console=yes
+
+Launch UE Attach PDU Session SA MultiUe
+    [Arguments]                 ${ueId}=1    ${pdu}=1    ${gw}=1    ${profile}=1
+    BuiltIn.Log                 UE ${ueId} Register
+    CallSetup.UE Register       ue=${ueId}
+    wtsemu.Read Wtsemu Output Until Re    expected=UE now in NG RM Registered state       timeout=30
+    BuiltIn.Log                 \nUE ${ueId} now in NG RM Registered state    console=yes
+    sleep    10s
+    BuiltIn.Log                 UE ${ueId} Pdu Session Setup
+    wtsemu.ue_pdu_session_setup             ue=${ueId}    pdu=${pdu}    gw=${gw}    nwslice=1
+    CallSetup.Launch PDU Session
+    wtsemu.Read Wtsemu Output Until Re      expected=Initial Context Setup Successful for UE with AMF
+    ...                                     timeout=20
+    sleep    10s
+    BuiltIn.Log                 UE ${ueId} Attach Check
+    CallSetup.UE Attach Check
+
+Traffic DL SA MultiUE
+    [Arguments]                 ${result}
+    ...                         ${iteration}=1
+    ...                         ${rate}=${testParam.seq.Dlthroughput}
+    ...                         ${time}=1800
+    ...                         ${prefix}=${EMPTY}
+    ${prefix}=  rootute_prefix
+    ${alias}                    SSH Connect             host=${HOST_EPCSIM}
+    Set test variable  ${command_str}    ${prefix} iperf -c ${result} -u -l 1400 -b ${rate}M -i 1 -t ${time} >/dev/null 2>&1
+    ssh.Send command    ${command_str}       connection=${alias}
+
+Traffic UL SA MultiUE
+    [Arguments]                 ${result}
+    ...                         ${iteration}=1
+    ...                         ${rate}=${testParam.seq.Ulthroughput}
+    ...                         ${time}=1800
+    ...                         ${prefix}=${EMPTY}
+    ${prefix}=                  rootute_prefix
+    ${alias}                    SSH Connect             host=${HOST_EPCSIM}
+    Set test variable           ${command_str}    ${prefix} iperf -c ${result} -u -l 1400 -b ${rate}M -i 1 -t ${time} >/dev/null 2>&1
+    ssh.Send command            ${command_str}       connection=${alias}
+
+Set_simultaneousHARQ-ACK-CSI in ue capabilities in cfg file
+    WtsCfgConfig.startSession
+    WtsCfgConfig.replaceValue         prefix=ue_param
+    ...                               param=ue_nr_capabilities
+    ...                               oldValue=01000000010800000004D780000000000001150000000000000150
+    ...                               newValue=05000000010900000004D0100000000A00000000003018800803C00000000000008A80000000000000A8
+    WtsCfgConfig.stopSession          rename=modified
+
+Check Pucch Ue1 And Prach Ue2 in rach slot
+    [Arguments]                     ${pcapFile}
+    Get Triggers and responses UL Data PrachReceiveInd         pcapFile=${pcapFile}
+    Check message in PrachReceiveInd slot                      MsgName=${ULDATA_PUSCH_RECEIVE_Req.msg}
+    Check message in PrachReceiveInd slot                      MsgName=${ULDATA_PUCCH_REQ.msg}
+
+rootute_prefix
+    ${prefix}    Set variable if    '${HOST_EPCSIM.sshConnection.password}'=='root'    '${EMPTY}'    'sudo'
+    Dated log    ${prefix}          ${HOST_EPCSIM.sshConnection.password}
+    [Return]     ${prefix}
+
+Check Feature Counters
+    [Arguments]             ${reportingIntervalPm}=5min
+    Traced Sleep            ${reportingIntervalPm}
+    ${date}                 Get Current Date
+    ${date_in_dir_name}     Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}          Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+    #vbo#collect pm is done only in case not vRAN2.0.
+    ${pm_latest}            Run Keyword If       not ${isAic}
+    ...                     Collect PM files from BTS    ${log_path_pm}
+    ${myexpected_val}=      Set Variable         ${MORE_OR_EQUAL_THAN_1}
+    ${mycomparison}=        Set Variable         '>'
+    ${foundOrNot}           Check Counter 1348
+    ...                     ${log_path_pm}    ${myexpected_val}    ${mycomparison}    &{PM_COUNTER_ID.Random_Access_Channel_slot_with_PUSCH}
+    Log Counter             counter=&{PM_COUNTER_ID.Random_Access_Channel_slot_with_PUSCH}
+    ...                     expectedValue=MORE_OR_EQUAL_THAN_1    result=${foundOrNot}
+
+
+Check Counter 1348
+    [Arguments]         ${log_path_pm}
+    ...                 ${expected_val}
+    ...                 ${comparison}
+    ...                 &{expected_dict}
+    Run Keyword If      ${isAic}            Traced Sleep
+    ...                                     duration=5min
+    ...                                     msg=VRAN as it needs sometime more time
+    ${foundOrNot}       Run Keyword If      ${isAic}
+    ...                 Counters.Check At Least One Value Is In Criteria From Pm Files For Object With ID on vDU
+    ...                 ${expected_val}     ${comparison}           &{expected_dict}
+    ...          ELSE
+    ...                 Counters.Check At Least One Value Is In Criteria From Pm Files For Object With ID
+    ...                 ${log_path_pm}      ${expected_val}         ${comparison}         &{expected_dict}
+    [Return]            ${foundOrNot}
+
+
+Log Counter
+    [Arguments]         ${counter}
+    ...                 ${expectedValue}
+    ...                 ${result}
+    Dated Log           ${counter.name}=${counter.counter}
+    Dated Log           ${counter.name}:${expectedValue}=${result}
+    Should Be True      '${result}'=='True'

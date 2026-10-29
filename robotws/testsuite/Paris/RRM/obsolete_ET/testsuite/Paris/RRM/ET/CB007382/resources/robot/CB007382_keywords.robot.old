@@ -1,0 +1,1395 @@
+*** Settings ***
+Documentation
+...               CB007382
+...
+...               Test Case Scenario author   : riyad.ferrag@nokia.com
+...               Creation Date               : 04-Avril-2022
+...               Modified Date               : 04-Avril-2022
+...               Last Modified by            : riyad.ferrag@nokia.com
+
+Library             OperatingSystem
+Library             Collections
+Library             DateTime
+Library             taf.transport.ssh    WITH NAME    csn
+Library             taf.config.scf       WITH NAME    scf
+Library             taf.lteemu           WITH NAME    lteemu
+Library             ute_wtssim           WITH NAME    wts
+Library             ../../../resources/python/luashark_tools.py
+Library             luashark_tools.analyzer       WITH NAME       analyzer
+Library             ../../../../../resources/SWENG/python/StringTool.py
+Library             ../../../../../resources/SWENG/python/OsTool.py
+
+Library              ../python/tools.py                                         WITH NAME       nps_2574_tools
+Library              ../../../resources/DSS/python/dss_tools.py                 WITH NAME       nps_dss_tools
+Library              ../../../resources/DSS/python/Common.py
+Library              ../../../resources/common/TtiTrace/python/ttitrace.py      WITH NAME       nps_ttitraces_tools
+
+Resource             ../../../../../resources/SWENG/robot/Counters.robot
+Resource             ../../../../../resources/SWENG/robot/Capture.robot
+
+Resource          ../../../../../resources/SWENG/robot/Connect.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+
+
+
+
+*** Variables ***
+${OAM_TYPE}           coam
+
+
+*** Keywords ***
+
+    # Start Keyword for TCs
+
+CB007382_TDD_test_model_for_power_measurement
+    [Arguments]           ${param}     ${freq}     ${feat}     ${load}
+    [Documentation]       Test Model for power measurement
+
+    Set Suite Variable    ${param}
+    Init Sequence         ${param}
+
+    Set Suite Variable    ${freq}
+    Set Suite Variable    ${feat}
+
+    Step                   Test Line Preparation                              argument=${param}
+
+    Critical Step          Activate Test dedicated Mode                       depends=Test Line Preparation
+    Step                   Start 5g downlink test                             argument=${load}              depends=Activate Test dedicated Mode
+    Step                   Check CpRtCm_StartConformanceTestReq parameters    argument=${CAPTURE_CPRT}      depends=Start 5g downlink test
+    Run Keyword If         '${test_mode.load_type}'=='flatLoad'
+    ...            Step    Check TM for power measurement flat load           argument=${CAPTURE_GNB}       depends=Start 5g downlink test
+    ...    ELSE    Step    Check TM for power mesurement burst load           argument=${CAPTURE_GNB}       depends=Start 5g downlink test
+
+    [Teardown]            Teardown TC
+
+Start 5g downlink test
+    [Documentation]         Prepare capture CPRT and gNB, start and stop downlink Test
+    [Arguments]             ${test_mode}
+
+    Set Suite Variable      ${test_mode}
+
+    ${CAPTURE_CPRT.prefix}    Set Variable If
+    ...    '${test_mode.load_type}'=='flatLoad'    Cprt${test_mode.load_level_flat}    Cprt${test_mode.load_level_burst}
+
+    ${CAPTURE_GNB.prefix}     Set Variable If
+    ...    '${test_mode.load_type}'=='flatLoad'    gNB${test_mode.load_level_flat}     gNB${test_mode.load_level_burst}
+
+    Dated log               Cprt capture prefix: ${CAPTURE_CPRT.prefix} & Gnb capture prefix: ${CAPTURE_GNB.prefix}
+
+    Start Capture CPRT      ${CAPTURE_CPRT}
+    Start Capture GNB       ${CAPTURE_GNB}
+
+    run keyword if          '${test_mode.load_type}'=='flatLoad'
+    ...                     Start 5g downlink test flat Load     ${test_mode}
+    ...    ELSE             Start 5g downlink test Burst Load    ${test_mode}
+
+    Traced Sleep   2        msg=CPRT and BIP L1L2 logs capture is ongoing
+
+    Run Keyword And Ignore Error    Stop 5g downlink Test
+
+    Stop Capture            ${CAPTURE_GNB}
+    Stop Capture            ${CAPTURE_CPRT}
+
+Check TM for power mesurement burst load
+    [Documentation]    KW's purpose is to check burst load
+    [Arguments]     ${BIP_L1L2}
+
+    ${SymbolsPer5ms}        Evaluate        104
+    ${level}                Evaluate        float(${test_mode.burstlevel})
+    ${TotalPdschSlots}      set variable    ${test_mode.NumOfPdschSlots}
+    ${sum}                  Evaluate        0
+
+    Set Suite Variable      ${SymbolsPer5ms}
+    Set Suite Variable      ${sum}
+    Set Suite Variable      ${level}
+    Set Suite Variable      ${TotalPdschSlots}
+
+    Dated log               Convert pcap to pdml file [pdschsendreq filtered]...
+
+    ${pcapFiltered}         analyzer.filter_pcap
+    ...                     pcapInFile=${BIP_L1L2.path}
+    ...                     filterName=dldata_pdschsendreq
+    ...                     filterExp=(dldata_pdschsendreq)&&(3gpp.rnti==0)
+
+    ${pdml}=                analyzer.pcap_to_pdml    ${pcapFiltered}
+
+    @{ListOfPdschSendReqIEs}        Create List      slot       numOfPdschSymbols
+
+    @{lisOfPdschSendReq}    Get Packet Match List
+    ...                     pdmlFile=${pdml}
+    ...                     packetName=dldata_pdschsendreq
+    ...                     pathList=@{ListOfPdschSendReqIEs}
+    ...                     startPacket=${1}
+    ...                     endPacket=${TotalPdschSlots}
+
+    ${lenPdschSendReq}      get length          ${lisOfPdschSendReq}
+    Dated Log New Line      Total number of PdschSendReq msgs: ${lenPdschSendReq}
+    should be true          ${lenPdschSendReq}!=0
+
+    FOR     ${packet}       IN      @{lisOfPdschSendReq}
+            ${numOfPdschSymbols}    Get Value In Packet Match
+            ...                     packetMatch=${packet}
+            ...                     field=numOfPdschSymbols
+            ${numOfPdschSymbols}    Convert To Integer    ${numOfPdschSymbols}
+            ${sum}                  Evaluate              ${sum}+${numOfPdschSymbols}
+    END
+
+    Dated log           Sum of "numOfPdschSymbols": ${sum}
+
+    ${EstimatedLoad}    Evaluate             (round(${sum})*100)/round(${SymbolsPer5ms})
+
+    Dated log           Estimated burst load from Bip L1L2 capture: ${EstimatedLoad}
+
+    ${EstimatedLoad}    Convert to Number    ${EstimatedLoad}       1
+
+    Dated log           Estimated burst load from Bip L1L2 capture: ${EstimatedLoad}
+
+    Dated log           Estimated load ${EstimatedLoad} should be equal to : ${test_mode.burstlevel}
+
+    should be true      ${EstimatedLoad}==${level}
+
+
+Check TM for power measurement flat load
+    [Documentation]   This KWs aims to check BIP L1L2 logs for subfeature A-B-C and flat load level
+    [Arguments]     ${CAPTURE_GNB}
+
+    #Subfeature A
+    run Keyword If       '${feat}'=='A' and '${test_mode.load_level_flat}'=='low'      run keywords
+    ...     Dated Log       Check SIB1 IEs for CB007382-${feat} and load level=${test_mode.load_level_flat}
+    ...     AND             Check SIB1 IEs    ${CAPTURE_GNB}
+
+    run Keyword If      '${feat}'=='A' and '${test_mode.load_level_flat}'!='low'
+    ...    run keywords    Check PdschSendReq IEs - Subfeature A    ${CAPTURE_GNB}
+    ...    AND             Check PDCCH IEs    ${CAPTURE_GNB}
+
+    #Subfeature B
+    run Keyword If      '${feat}'=='B' and '${test_mode.load_level_flat}'=='low'      run keywords
+    ...     Dated Log       Check SIB1 IEs for CB007382-${feat} and load level=${test_mode.load_level_flat}
+    ...     AND             Check SIB1 IEs    ${CAPTURE_GNB}
+
+    run Keyword If      '${feat}'=='B' and '${test_mode.load_level_flat}'!='low'
+    ...    run keywords    Check PdschSendReq IEs - Subfeature B    ${CAPTURE_GNB}
+    ...    AND             Check PDCCH IEs    ${CAPTURE_GNB}
+
+    #Subfeature C
+    run Keyword If      '${feat}'=='C' and '${test_mode.load_level_flat}'=='low'
+    ...                    Check SIB1 IEs    ${CAPTURE_GNB}
+
+    run Keyword If      '${feat}'=='C' and '${test_mode.load_level_flat}'!='low'
+    ...    run keywords    Check PdschSendReq IEs - Subfeature C    ${CAPTURE_GNB}
+    ...    AND             Check PDCCH IEs    ${CAPTURE_GNB}
+
+
+Check CpRtCm_StartConformanceTestReq parameters
+    [Documentation]
+    ...     Check CpRtCm_StartConformanceTestReq parameters
+    ...    -testModel: Indicate which test model for the testing (TM1_1_ETSI)
+    ...    -loadType:
+    ...     a) flatLoad is equally distributed in time and the used bandwidth is constant (CB007382-A-B-C)
+    ...     b) burstLoad indicate concentrated load in time and uses the full bandwidth (CB007382-D)
+    ...    -loadLevelFlat (CB007382-A-B-C): Indicate the used traffic load levels. Low load (0%), medium load (30%,
+    ...     busy load (50%) and full load (100%)
+    ...    -loadLevelBurst (CB007382-D), Indicate the used traffic load levels. The load levels are for RF thermal
+    ...     heat measurements with burst load type. enum {burst_13_5; burst_19_2; burst_32_7; burst_46_2;
+    ...     burst_59_6; burst_73_1; burst_86_5; burst_100}
+    ...    -numOfSsbBeamPatternId: This number is only valid for loadLevelFlat=low and loadType=flatLoad.
+    ...     4 for FR1≤3GHz; 8 for 3 GHz < FR1 ≤ 6 GHz and 32 for FR2
+    ...    -ssbBeamPatternId: This number is only valid for loadLevelFlat=low and loadType=flatLoad. The beam
+    ...     pattern ID used for SSB during the power measurement.
+
+    [Arguments]         ${CAPTURE_CPRT}
+
+    ${CB007382_TestModel}    set variable    TM1_1_ETSI
+
+    Dated Log       Capture_CPRT_path ${CAPTURE_CPRT.path}  ${CAPTURE_CPRT}
+
+    ${pdmlFileCprt}     analyzer.pcap_to_pdml       ${CAPTURE_CPRT.path}
+
+    Dated Log       Check CpRtCm_StartConformanceTestReq parameters
+
+    @{msg_field}    Create List     testModel
+    ...                             loadType
+    ...                             numOfSsbBeamPatternId
+    ...                             loadLevelFlat
+    ...                             loadLevelBurst
+
+    @{listPacketMatch}              Get Packet Match List
+    ...                             pdmlFile=${pdmlFileCprt}
+    ...                             packetName=itf_l2_ps_tm_cell_startconformancetestreq_t
+    ...                             pathList=@{msg_field}
+
+    ${packet}                       set variable                  ${listPacketMatch[0]}
+
+    ${testModel}                    Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=testModel
+    ...                             kind=showname
+
+    Should contain                  ${testModel}        ${CB007382_TestModel}
+
+    ${loadLevelFlat}                Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=loadLevelFlat
+    ...                             kind=showname
+
+    ${loadLevelBurst}               Get Value In Packet Match
+    ...                             ${packet}
+    ...                             field=loadLevelBurst
+    ...                             kind=showname
+
+    Run Keyword If    '${test_mode.load_type}'=='flatLoad'
+    ...                Should contain    ${loadLevelFlat}     ${test_mode.load_level_flat}
+    ...        ELSE    Should contain    ${loadLevelBurst}    ${test_mode.load_level_burst}
+
+
+
+Check PDCCH IEs
+    [Documentation]     Check PDCCH IEs
+    [Arguments]         ${BIP_L1L2}
+
+    ${pcapFiltered}          analyzer.filter_pcap
+    ...                      pcapInFile=${BIP_L1L2.path}
+    ...                      filterName=dldata_pdcchsendreq
+    ...                      filterExp=(dldata_pdcchsendreq)&&(3gpp.rnti==0)
+
+    ${pdml}=                 analyzer.pcap_to_pdml         ${pcapFiltered}
+
+    @{ListOfPdcchSendReqIEs}           Create List      beamId        rnti      startSymbolNumber     numOfSymbols
+    ...     startCce    aggregationLevel    dmrsReferencePoint     dmrsScramblingSequenceInt    pdcchDciTransmitPower
+    ...     dciSize     coresetFreqDomain       cceRegMappingType      regBundleSize     precoderGranularity
+    ...     coresetFreqDomainRbShift    pdcchPrecodingOption4x4    polarizationSelection
+
+    @{lisOfPdcchSendReq}            Get Packet Match List
+    ...                             pdmlFile=${pdml}
+    ...                             packetName=dldata_pdcchsendreq
+    ...                             pathList=@{ListOfPdcchSendReqIEs}
+    ...                             startPacket=${1}
+    ...                             endPacket=${16}
+
+    ${lenPdcchSendReq}              get length          ${lisOfPdcchSendReq}
+    Dated Log New Line              Total number of PdcchSendReq msgs: ${lenPdcchSendReq}
+    should be true                  ${lenPdcchSendReq}!=0
+
+    Dated Log  =====> Start check PDCCH IEs
+
+    #Check PDCCH IEs
+    FOR    ${packet}   IN           @{lisOfPdcchSendReq}
+           #beamId
+           ${beamId}                Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=beamId
+           should be true           ${beamId}==0
+           #rnti
+           ${rnti}                  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rnti
+           should be true           ${rnti}==0
+           #startSymbolNumber
+           ${startSymbolNumber}     Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startSymbolNumber
+           should be true           ${startSymbolNumber}==0
+           #numOfSymbols
+           ${numOfSymbols}          Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfSymbols
+           should be true           ${numOfSymbols}==2
+           #startCce
+           ${startCce}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startCce
+           should be true           ${startCce}==0
+           #aggregationLevel
+           ${aggregationLevel}      Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=aggregationLevel
+           should be true           ${aggregationLevel}==1
+           #dmrsReferencePoint
+           ${dmrsReferencePoint}    Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=dmrsReferencePoint
+           should be true           ${dmrsReferencePoint}==0
+           #dmrsScramblingSequenceInt
+           ${dmrsScramblingSequenceInt}     Get Value In Packet Match
+           ...                              packetMatch=${packet}
+           ...                              field=dmrsScramblingSequenceInt
+           should be true                   ${dmrsScramblingSequenceInt}==50
+           #pdcchDciTransmitPower
+           ${pdcchDciTransmitPower}     Get Value In Packet Match
+           ...                          packetMatch=${packet}
+           ...                          field=pdcchDciTransmitPower
+           run Keyword If    '${feat}'=='A'    should be true       ${pdcchDciTransmitPower}==-352
+           ...    ELSE IF    '${feat}'=='B'    should be true       ${pdcchDciTransmitPower}==-279
+           ...    ELSE                         should be true       ${pdcchDciTransmitPower}==-290
+           #dciSize
+           ${dciSize}               Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=dciSize
+           should be true           ${dciSize}==48
+           #coresetFreqDomain
+           ${coresetFreqDomain}     Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=coresetFreqDomain
+           should be true           ${coresetFreqDomain}==9223372036854775808
+           #cceRegMappingType
+           ${cceRegMappingType}     Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=cceRegMappingType
+           should be true           ${cceRegMappingType}==1
+           #regBundleSize
+           ${regBundleSize}         Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=regBundleSize
+           should be true           ${regBundleSize}==6
+           #precoderGranularity
+           ${precoderGranularity}   Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=precoderGranularity
+           should be true           ${precoderGranularity}==0
+           #coresetFreqDomainRbShift
+           ${coresetFreqDomainRbShift}      Get Value In Packet Match
+           ...                              packetMatch=${packet}
+           ...                              field=coresetFreqDomainRbShift
+           should be true                   ${coresetFreqDomainRbShift}==0
+           #pdcchPrecodingOption4x4
+           ${pdcchPrecodingOption4x4}       Get Value In Packet Match
+           ...                              packetMatch=${packet}
+           ...                              field=pdcchPrecodingOption4x4
+           should be true                   ${pdcchPrecodingOption4x4}==0
+           #polarizationSelection
+           ${polarizationSelection}         Get Value In Packet Match
+           ...                              packetMatch=${packet}
+           ...                              field=polarizationSelection
+           should be true                   ${polarizationSelection}==0
+    END
+
+Check SIB1 IEs
+    [Documentation]     Check SIB1 IE - low load level
+    [Arguments]         ${BIP_L1L2}
+
+    ${pcapFiltered}          analyzer.filter_pcap          ${BIP_L1L2.path}
+    ...                      filterName=dldata_pdschsendreq
+    ...                      filterExp=(dldata_pdschsendreq)&&(3gpp.rnti==65535)
+
+    ${pdml}=                 analyzer.pcap_to_pdml         ${pcapFiltered}
+
+    @{ListOfPdschSendReqIEs}        Create List             rnti            mcs             mcsTable        startSymbol
+    ...                             numOfPdschSymbols       startPrb        numOfPrb        rat0Bitmap
+    ...                             pdschTbTransmitPower    modulationOrder
+
+    @{lisOfPdschSendReq}            Get Packet Match List
+    ...                             pdmlFile=${pdml}
+    ...                             packetName=dldata_pdschsendreq
+    ...                             pathList=@{ListOfPdschSendReqIEs}
+    ...                             startPacket=${1}
+    ...                             endPacket=${16}
+
+    #Dated Log  =====> Start check SIB1 IEs
+
+    #Check SIB1 IEs
+    FOR    ${packet}   IN           @{lisOfPdschSendReq}
+           #rnti
+           ${rnti}                  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rnti
+           should be true           ${rnti}==65535
+           #mcs
+           ${mcs}                   Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcs
+           should be true           ${mcs}==0
+           #mcsTable
+           ${mcsTable}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcsTable
+           run Keyword If           '${freq}'=='FR1'    should be true       ${mcsTable}==1
+           ...                                  ELSE         should be true       ${mcsTable}==0
+           #startSymbol
+           ${startSymbol}           Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startSymbol
+           should be true           ${startSymbol}==0
+          # numOfPdschSymbols
+           ${numOfPdschSymbols}     Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPdschSymbols
+           should be true           ${numOfPdschSymbols}==14
+           #startPrb
+           ${startPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startPrb
+           run Keyword If           '${feat}'=='A'    should be true       ${startPrb}==270
+           ...    ELSE IF           '${feat}'=='B'    should be true       ${startPrb}==48
+           ...    ELSE                                should be true       ${startPrb}==63
+           #numOfPrb
+           ${numOfPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPrb
+           should be true           ${numOfPrb}==3
+           #rat0Bitmapny
+           ${rat0Bitmap}            Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rat0Bitmap
+           should be true           ${rat0Bitmap}==0
+           #pdschTbTransmitPower
+           ${pdschTbTransmitPower}  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=pdschTbTransmitPower
+           run Keyword If           '${feat}'=='A'    should be true       ${pdschTbTransmitPower}==-352
+           ...    ELSE IF           '${feat}'=='B'    should be true       ${pdschTbTransmitPower}==-279
+           ...    ELSE                                should be true       ${pdschTbTransmitPower}==-290
+           #modulationOrder
+           ${modulationOrder}       Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=modulationOrder
+           should be true           ${modulationOrder}==2
+    END
+
+Check PdschSendReq IEs - Subfeature A
+    [Documentation]     Check PdschSendReq IEs for UE1 (rnti=0) and UE2 (rnti=2) - Subfeature A
+    [Arguments]         ${BIP_L1L2}
+
+    ${load_level}            set variable    ${test_mode.load_level_flat}
+
+    ${pcapFiltered_rnti0}           analyzer.filter_pcap
+    ...                             pcapInFile=${BIP_L1L2.path}
+    ...                             filterName=dldata_pdschsendreq_ue1
+    ...                             filterExp=(dldata_pdschsendreq)&&(3gpp.rnti==0)
+
+    ${pdml_rnti0}=                  analyzer.pcap_to_pdml         ${pcapFiltered_rnti0}
+
+    @{ListOfPdschSendReqIEs}        Create List     rnti          mcs             mcsTable      startSymbol
+    ...                             numOfPdschSymbols       startPrb        numOfPrb            rat0Bitmap
+    ...                             pdschTbTransmitPower    modulationOrder
+
+    @{lisOfPdschSendReq_rnti0}      Get Packet Match List
+    ...                             pdmlFile=${pdml_rnti0}
+    ...                             packetName=dldata_pdschsendreq
+    ...                             pathList=@{ListOfPdschSendReqIEs}
+    ...                             startPacket=${1}
+    ...                             endPacket=${16}
+
+
+    Dated Log  =====> Start check PdschSendReq IEs for UE1 (rnti=0)
+
+    #Check PdschSendReq IEs for UE1 (rnti=0)
+    FOR    ${packet}   IN           @{lisOfPdschSendReq_rnti0}
+           #rnti
+           ${rnti}                  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rnti
+           should be true           ${rnti}==0
+           #mcs
+           ${mcs}                   Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcs
+           should be true           ${mcs}==0
+           #mcsTable
+           ${mcsTable}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcsTable
+           should be true           ${mcsTable}==1
+           #startSymbol
+           ${startSymbol}           Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startSymbol
+           should be true           ${startSymbol}==0
+          # numOfPdschSymbols
+           ${numOfPdschSymbols}     Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPdschSymbols
+           should Contain Any       ${numOfPdschSymbols}    14      6
+           #startPrb
+           ${startPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startPrb
+           should be true           ${startPrb}==3
+           #numOfPrb
+           ${numOfPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPrb
+           run Keyword If           '${load_level}'=='medium'    should Contain Any    ${numOfPrb}    104    81    84
+           ...    ELSE IF           '${load_level}'=='busy'      should Contain Any    ${numOfPrb}    147    124    138    135
+           ...    ELSE                                           should be true        ${numOfPrb}==270
+           #rat0Bitmapny
+           ${rat0Bitmap}            Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rat0Bitmap
+           should be true           ${rat0Bitmap}==0
+           #pdschTbTransmitPower
+           ${pdschTbTransmitPower}  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=pdschTbTransmitPower
+           should be true           ${pdschTbTransmitPower}==-352
+           #modulationOrder
+           ${modulationOrder}       Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=modulationOrder
+           should be true           ${modulationOrder}==2
+    END
+
+    ${pcapFiltered_rnti2}           analyzer.filter_pcap
+    ...                             pcapInFile=${BIP_L1L2.path}
+    ...                             filterName=dldata_pdschsendreq_ue2
+    ...                             filterExp=(dldata_pdschsendreq)&&(3gpp.rnti==2)
+
+    ${pdml_rnti2}=                  analyzer.pcap_to_pdml         ${pcapFiltered_rnti2}
+
+    @{lisOfPdschSendReq_rnti2}      Get Packet Match List
+    ...                             pdmlFile=${pdml_rnti2}
+    ...                             packetName=dldata_pdschsendreq
+    ...                             pathList=@{ListOfPdschSendReqIEs}
+    ...                             startPacket=${1}
+    ...                             endPacket=${16}
+
+    Dated Log  =====> Start check PdschSendReq IEs for UE2 (rnti=2)
+
+    #Check PdschSendReq IEs for UE2 (rnti=2)
+    FOR    ${packet}   IN           @{lisOfPdschSendReq_rnti2}
+           #rnti
+           ${rnti}                  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rnti
+           should be true           ${rnti}==2
+           #mcs
+           ${mcs}                   Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcs
+           should be true           ${mcs}==0
+           #mcsTable
+           ${mcsTable}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcsTable
+           should be true           ${mcsTable}==1
+           #startSymbol
+           ${startSymbol}           Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startSymbol
+           should be true           ${startSymbol}==2
+          # numOfPdschSymbols
+           ${numOfPdschSymbols}     Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPdschSymbols
+           should Contain Any       ${numOfPdschSymbols}    12      4
+           #startPrb
+           ${startPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startPrb
+           should be true           ${startPrb}==0
+           #numOfPrb
+           ${numOfPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPrb
+           run Keyword If           '${load_level}'=='medium'    should be true    ${numOfPrb}==1
+           ...    ELSE IF           '${load_level}'=='busy'      should be true    ${numOfPrb}==2
+           ...    ELSE                                           should be true    ${numOfPrb}==3
+           #rat0Bitmapny
+           ${rat0Bitmap}            Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rat0Bitmap
+           should be true           ${rat0Bitmap}==0
+           #pdschTbTransmitPower
+           ${pdschTbTransmitPower}  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=pdschTbTransmitPower
+           should be true           ${pdschTbTransmitPower}==-352
+           #modulationOrder
+           ${modulationOrder}       Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=modulationOrder
+           should be true           ${modulationOrder}==2
+    END
+
+Check PdschSendReq IEs - Subfeature B
+    [Documentation]     Check PdschSendReq IEs for UE1 (rnti=0) and UE2 (rnti=2) - Subfeature B
+    [Arguments]         ${BIP_L1L2}
+
+    ${load_level}            set variable    ${test_mode.load_level_flat}
+
+    ${pcapFiltered_rnti0}           analyzer.filter_pcap
+    ...                             pcapInFile=${BIP_L1L2.path}
+    ...                             filterName=dldata_pdschsendreq_ue1
+    ...                             filterExp=(dldata_pdschsendreq)&&(3gpp.rnti==0)
+
+    ${pdml_rnti0}=                  analyzer.pcap_to_pdml         ${pcapFiltered_rnti0}
+
+    ${pcapFiltered_rnti2}           analyzer.filter_pcap
+    ...                             pcapInFile=${BIP_L1L2.path}
+    ...                             filterName=dldata_pdschsendreq_ue2
+    ...                             filterExp=(dldata_pdschsendreq)&&(3gpp.rnti==2)
+
+    ${pdml_rnti2}=                  analyzer.pcap_to_pdml         ${pcapFiltered_rnti2}
+
+    @{ListOfPdschSendReqIEs}        Create List     rnti        mcs         mcsTable            startSymbol
+    ...                             numOfPdschSymbols       startPrb        numOfPrb            rat0Bitmap
+    ...                             pdschTbTransmitPower    modulationOrder
+
+    @{lisOfPdschSendReq_rnti0}      Get Packet Match List
+    ...                             pdmlFile=${pdml_rnti0}
+    ...                             packetName=dldata_pdschsendreq
+    ...                             pathList=@{ListOfPdschSendReqIEs}
+    ...                             startPacket=${1}
+    ...                             endPacket=${16}
+
+    @{lisOfPdschSendReq_rnti2}      Get Packet Match List
+    ...                             pdmlFile=${pdml_rnti2}
+    ...                             packetName=dldata_pdschsendreq
+    ...                             pathList=@{ListOfPdschSendReqIEs}
+    ...                             startPacket=${1}
+    ...                             endPacket=${16}
+
+    Dated Log  =====> Start check PdschSendReq IEs for UE1 (rnti=0)
+
+    #Check PdschSendReq IEs for UE1 (rnti=0)
+    FOR    ${packet}   IN           @{lisOfPdschSendReq_rnti0}
+           #rnti
+           ${rnti}                  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rnti
+           should be true           ${rnti}==0
+           #mcs
+           ${mcs}                   Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcs
+           should be true           ${mcs}==0
+           #mcsTable
+           ${mcsTable}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcsTable
+           should be true           ${mcsTable}==1
+           #startSymbol
+           ${startSymbol}           Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startSymbol
+           should be true           ${startSymbol}==0
+          # numOfPdschSymbols
+           ${numOfPdschSymbols}     Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPdschSymbols
+           should Contain Any       ${numOfPdschSymbols}    14      6
+           #startPrb
+           ${startPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startPrb
+           should be true           ${startPrb}==3
+           #numOfPrb
+           ${numOfPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPrb
+           run Keyword If           '${load_level}'=='medium'    should Contain Any    ${numOfPrb}    36    13    18    15
+           ...    ELSE IF           '${load_level}'=='busy'      should Contain Any    ${numOfPrb}    36    13    27    24
+           ...    ELSE                                           should be true        ${numOfPrb}==48
+           #rat0Bitmapny
+           ${rat0Bitmap}            Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rat0Bitmap
+           should be true           ${rat0Bitmap}==0
+           #pdschTbTransmitPower
+           ${pdschTbTransmitPower}  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=pdschTbTransmitPower
+           should be true           ${pdschTbTransmitPower}==-279
+           #modulationOrder
+           ${modulationOrder}       Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=modulationOrder
+           should be true           ${modulationOrder}==2
+    END
+
+    Dated Log  =====> Start check PdschSendReq IEs for UE2 (rnti=2)
+
+    #Check PdschSendReq IEs for UE2 (rnti=2)
+    FOR    ${packet}   IN           @{lisOfPdschSendReq_rnti2}
+           #rnti
+           ${rnti}                  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rnti
+           should be true           ${rnti}==2
+           #mcs
+           ${mcs}                   Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcs
+           should be true           ${mcs}==0
+           #mcsTable
+           ${mcsTable}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcsTable
+           should be true           ${mcsTable}==1
+           #startSymbol
+           ${startSymbol}           Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startSymbol
+           should be true           ${startSymbol}==2
+          # numOfPdschSymbols
+           ${numOfPdschSymbols}     Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPdschSymbols
+           should Contain Any       ${numOfPdschSymbols}    12      4
+           #startPrb
+           ${startPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startPrb
+           should be true           ${startPrb}==0
+           #numOfPrb
+           ${numOfPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPrb
+           run Keyword If           '${load_level}'=='medium'    should be true    ${numOfPrb}==1
+           ...    ELSE IF           '${load_level}'=='busy'      should be true    ${numOfPrb}==2
+           ...    ELSE                                           should be true    ${numOfPrb}==3
+           #rat0Bitmapny
+           ${rat0Bitmap}            Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rat0Bitmap
+           should be true           ${rat0Bitmap}==0
+           #pdschTbTransmitPower
+           ${pdschTbTransmitPower}  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=pdschTbTransmitPower
+           should be true           ${pdschTbTransmitPower}==-279
+           #modulationOrder
+           ${modulationOrder}       Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=modulationOrder
+           should be true           ${modulationOrder}==2
+    END
+
+Check PdschSendReq IEs - Subfeature C
+    [Documentation]     Check PdschSendReq IEs for UE1 (rnti=0) and UE2 (rnti=2) - Subfeature C
+    [Arguments]         ${BIP_L1L2}
+
+    ${load_level}            set variable    ${test_mode.load_level_flat}
+
+    ${pcapFiltered_rnti0}           analyzer.filter_pcap
+    ...                             pcapInFile=${BIP_L1L2.path}
+    ...                             filterName=dldata_pdschsendreq_ue1
+    ...                             filterExp=(dldata_pdschsendreq)&&(3gpp.rnti==0)
+
+    ${pdml_rnti0}=                  analyzer.pcap_to_pdml         ${pcapFiltered_rnti0}
+
+    ${pcapFiltered_rnti2}           analyzer.filter_pcap
+    ...                             pcapInFile=${BIP_L1L2.path}
+    ...                             filterName=dldata_pdschsendreq_ue2
+    ...                             filterExp=(dldata_pdschsendreq)&&(3gpp.rnti==2)
+
+    ${pdml_rnti2}=                  analyzer.pcap_to_pdml         ${pcapFiltered_rnti2}
+
+    @{ListOfPdschSendReqIEs}        Create List     rnti    mcs             mcsTable            startSymbol
+    ...                             numOfPdschSymbols       startPrb        numOfPrb            rat0Bitmap
+    ...                             pdschTbTransmitPower    modulationOrder
+
+    @{lisOfPdschSendReq_rnti0}      Get Packet Match List
+    ...                             pdmlFile=${pdml_rnti0}
+    ...                             packetName=dldata_pdschsendreq
+    ...                             pathList=@{ListOfPdschSendReqIEs}
+    ...                             startPacket=${1}
+    ...                             endPacket=${16}
+
+    @{lisOfPdschSendReq_rnti2}      Get Packet Match List
+    ...                             pdmlFile=${pdml_rnti2}
+    ...                             packetName=dldata_pdschsendreq
+    ...                             pathList=@{ListOfPdschSendReqIEs}
+    ...                             startPacket=${1}
+    ...                             endPacket=${16}
+
+    Dated Log  =====> Start check PdschSendReq IEs for UE1 (rnti=0)
+
+    #Check PdschSendReq IEs for UE1 (rnti=0)
+    FOR    ${packet}   IN           @{lisOfPdschSendReq_rnti0}
+           #rnti
+           ${rnti}                  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rnti
+           should be true           ${rnti}==0
+           #mcs
+           ${mcs}                   Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcs
+           should be true           ${mcs}==0
+           #mcsTable
+           ${mcsTable}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcsTable
+           should be true           ${mcsTable}==0
+           #startSymbol
+           ${startSymbol}           Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startSymbol
+           should be true           ${startSymbol}==0
+          # numOfPdschSymbols
+           ${numOfPdschSymbols}     Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPdschSymbols
+           should Contain Any       ${numOfPdschSymbols}    14      6
+           #startPrb
+           ${startPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startPrb
+           should be true           ${startPrb}==3
+           #numOfPrb
+           ${numOfPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPrb
+           run Keyword If           '${load_level}'=='medium'    should Contain Any    ${numOfPrb}    42    19    22
+           ...    ELSE IF           '${load_level}'=='busy'      should Contain Any    ${numOfPrb}    43    20    35    32
+           ...    ELSE                                           should be true        ${numOfPrb}==63
+           #rat0Bitmapny
+           ${rat0Bitmap}            Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rat0Bitmap
+           should be true           ${rat0Bitmap}==0
+           #pdschTbTransmitPower
+           ${pdschTbTransmitPower}  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=pdschTbTransmitPower
+           should be true           ${pdschTbTransmitPower}==-290
+           #modulationOrder
+           ${modulationOrder}       Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=modulationOrder
+           should be true           ${modulationOrder}==2
+    END
+
+    Dated Log  =====> Start check PdschSendReq IEs for UE2 (rnti=2)
+
+    #Check PdschSendReq IEs for UE2 (rnti=2)
+    FOR    ${packet}   IN           @{lisOfPdschSendReq_rnti2}
+           #rnti
+           ${rnti}                  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rnti
+           should be true           ${rnti}==2
+           #mcs
+           ${mcs}                   Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcs
+           should be true           ${mcs}==0
+           #mcsTable
+           ${mcsTable}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=mcsTable
+           should be true           ${mcsTable}==0
+           #startSymbol
+           ${startSymbol}           Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startSymbol
+           should be true           ${startSymbol}==2
+          # numOfPdschSymbols
+           ${numOfPdschSymbols}     Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPdschSymbols
+           should Contain Any       ${numOfPdschSymbols}    12      4
+           #startPrb
+           ${startPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=startPrb
+           should be true           ${startPrb}==0
+           #numOfPrb
+           ${numOfPrb}              Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=numOfPrb
+           run Keyword If           '${load_level}'=='medium'    should be true    ${numOfPrb}==1
+           ...    ELSE IF           '${load_level}'=='busy'      should be true    ${numOfPrb}==2
+           ...    ELSE                                           should be true    ${numOfPrb}==3
+           #rat0Bitmapny
+           ${rat0Bitmap}            Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=rat0Bitmap
+           should be true           ${rat0Bitmap}==0
+           #pdschTbTransmitPower
+           ${pdschTbTransmitPower}  Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=pdschTbTransmitPower
+           should be true           ${pdschTbTransmitPower}==-290
+           #modulationOrder
+           ${modulationOrder}       Get Value In Packet Match
+           ...                      packetMatch=${packet}
+           ...                      field=modulationOrder
+           should be true           ${modulationOrder}==2
+    END
+
+Check BTS status in WEM for cOAM
+    [Documentation]   This keyword is used to Check BTS status in WEM for cOAM.
+    ...               author: Ch SAMSON
+    [Arguments]     ${cell_id}=0
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+    ${bts_status}=    coam.get_bts_statuses    timeout=30    connection=${GNB_DU.oam.httpAlias}
+    Dated log      =======> Current bts status is ${bts_status}
+    should Contain Any    ${bts_status['operationalState']}    Enabled   Disabled       ignore_case=true
+    # should Contain Any    ${bts_status['proceduralState']}     configured   Test    msg=ENB is not in Test Mode, Current status is ${bts_status}
+    should be equal    ${bts_status['proceduralState']}     Test    msg=BTS is not in Test Mode, Current status is ${bts_status}
+    ...                                                                           ignore_case=true
+    should be equal    ${bts_status['blockingState']}       Unblocked            ignore_case=true
+
+    ${cell_info}=    coam.get_cells_info    cell_type=nr    timeout=30    connection=${GNB_DU.oam.httpAlias}
+    # Dated log      =======> Current cell(s) info is ${cell_info}
+    FOR    ${elem}    IN    @{cell_info}
+        should Contain Any    ${elem['status']['proceduralStatus']}    not initialized   configured   OnAir    ignore_case=true
+        Should be equal    ${elem['status']['administrativeState']}    Unlocked    ignore_case=true
+    END
+    OAM Disconnect                  ${GNB_DU.oam}
+
+    #Riyad
+Wait gNB Test Mode State
+    [Documentation]       Wait gNB Test Mode State
+    Dated Log       Get gNB in Test Mode
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+    ${bts_status}=  coam.get_bts_statuses   connection=${GNB_DU.oam.httpAlias}
+    OAM Disconnect                  ${GNB_DU.oam}
+    Dated Log New Line      =======> BTS procedural state is now: ${bts_status["proceduralState"]}
+    ${gnb_status}=     evaluate    '${bts_status["proceduralState"]}'.lower()
+    Return From Keyword If    '${gnb_status}'=='Test'.lower()
+    run keyword and ignore error        wait until keyword succeeds    3min    30s      Check BTS status in WEM for cOAM
+
+    #Riyad
+    #agf
+    # Activate Test dedicated Mode
+    #     [Documentation]         CB007382: Enable Test Dedicated State
+    #     Dated Log New Line      CB007382 - Enable Test Dedicated State (TDS)
+    #     coam.connect to                     bts_host=${WEBUI_IP}    name=coam_admin
+    #     coam.Reset_To_Test_Dedicated        connection=coam_admin
+    #     OAM wait available
+    #     Wait gNB Test Mode State
+    #     [Teardown]      coam.teardown       connection=coam_admin
+
+
+Start Capture CPRT
+    [Arguments]                     ${capture}
+    [Tags]                          CAPTURE
+    ${capture.filter}               Get Filter For SCTP
+    Get Filter For TCP
+    Set Suite Variable              ${capture}
+    Capture Init                    ${capture}           withTN=True
+    Capture Start                   ${capture}
+
+Start Capture GNB
+    [Arguments]                     ${capture}
+    [Tags]                          CAPTURE
+    Set Suite Variable              ${capture}
+    Capture Init                    ${capture}           withTN=True
+    Capture Start                   ${capture}
+
+Stop Capture
+    [Arguments]                     ${capture}
+    [Tags]                          CAPTURE
+    ${stop_path}                    Capture Stop                    ${capture}
+    Dated Log  log dans ${stop_path}
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${Capture.path}     AND
+    Run Keyword And Ignore Error    OperatingSystem.Copy File    ${Capture.path}    ${testCaseDir}
+    Dated Log              log saved to ${testCaseDir}\n
+
+
+Set SCF CB007382
+    [Arguments]                    ${testParam}
+    Dated log New Line                       NRCELL_DIST_NAME=${NRCELL_DIST_NAME}
+    &{modify_param0}    Create Dictionary
+    ...    parameter=nrarfcn
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scf.nrcell.nrarfcn}
+    &{modify_param1}    Create Dictionary
+    ...    parameter=chBw
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scf.nrcell.chBw}
+    &{modify_param2}    Create Dictionary
+    ...    parameter=ssbScs
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scf.nrcell.ssbScs}
+    &{modify_param3}    Create Dictionary
+    ...    parameter=freqBandIndicatorNR
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scf.nrcell.freqBandIndicatorNR}
+    &{modify_param4}    Create Dictionary
+    ...    parameter=gscnOrSsPbchArfcn
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${testParam.scf.nrcell.gscn}
+    &{modify_param5}    Create Dictionary
+    ...    parameter=ssBurstSetPeriod
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-0
+    ...    value=${testParam.scf.nrcellgrp.ssBurstSetPeriod}
+    &{modify_param6}    Create Dictionary
+    ...    parameter=scs
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-0
+    ...    value=${testParam.scf.nrcellgrp.scs}
+    &{modify_param7}    Create Dictionary
+    ...    parameter=freqBandIndicatorNR
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRSYSINFO_PROFILE-1/NRIRFIM-1
+    ...    value=${testParam.scf.nrirfim.freqBandIndicatorNR}
+    &{modify_param8}    Create Dictionary
+    ...    parameter=ssbScs
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRSYSINFO_PROFILE-1/NRIRFIM-1
+    ...    value=${testParam.scf.nrirfim.ssbScs}
+    &{modify_param9}    Create Dictionary
+    ...    parameter=btsName
+    ...    dist_name=MRBTS-${MRBTS_ID}
+    ...    value=${testParam.scf.mrbts.btsName}
+
+    @{modify_param_FR1}     Create List
+    ...     ${modify_param0}        ${modify_param1}        ${modify_param2}
+    ...     ${modify_param3}        ${modify_param4}        ${modify_param5}
+    ...     ${modify_param6}        ${modify_param7}        ${modify_param8}
+    ...     ${modify_param9}
+
+    @{modify_param_FR2}     Create List
+    ...     ${modify_param0}        ${modify_param1}        ${modify_param2}
+    ...     ${modify_param3}        ${modify_param4}        ${modify_param5}
+    ...     ${modify_param6}        ${modify_param9}
+
+    Dated Log       Frequency Range: ${freq}
+
+    run Keyword If      '${freq}'=='FR1'
+    ...                     OAM Set Params      ${modify_param_FR1}
+    ...     ELSE            OAM Set Params      ${modify_param_FR2}
+
+    #Common
+PrintTLInformation
+    log many    EGATE_CFG_NAME=${tl.core.cfg_filename}    WTS_FILE_PATH=${tl.core.dir_path}   GNB_IP=${GNB_IP}
+    log many    UTE_IP=${tl.core.default_ssh_connection_details.addr}
+    ...         UTE_USERNAME=${tl.core.default_ssh_connection_details.username}
+    ...         UTE_PASSWORD=${tl.core.default_ssh_connection_details.password}
+
+    #Common
+gNB BackupSCF
+    [Arguments]   ${oam_type}=${OAM_TYPE}
+    ${bakupfolder}    set variable    backups
+    run   command=mkdir ${LOG_PATH}${/}${bakupfolder}
+    set global variable    ${BACKUP_DIR}    ${LOG_PATH}${/}${bakupfolder}
+
+    ${sufix}=     set variable if          ${isAic}            _DU
+    ...                                                        ${EMPTY}
+    ${scffile}                   set variable                old_commission${sufix}.xml
+    ${scf_file_path}             OAM Get SCF File           dir=${BACKUP_DIR}      file=${scffile}
+    set global variable    ${BACKUP_SCF}    ${scf_file_path}
+    return from Keyword if      '${isAic}'=='${FALSE}'
+    ${sufix}=     set variable if       ${isAic}     _CU
+    ...                                              ${EMPTY}
+    ${scffile}                   set variable                old_commission${sufix}.xml
+    ${scf_file_path}             OAM Get SCF File           dir=${BACKUP_DIR}      file=${scffile}     oam=${GNB_CU.oam}
+    # OperatingSystem.Copy File    ${scffile}    ${BACKUP_DIR}
+    set global variable    ${BACKUP_CU_SCF}    ${scf_file_path}
+
+Create Test Case Folder
+    [Documentation]    create test case folder
+    ${testCaseDir}    Replace String    ${TEST_NAME[0:30]}    ${SPACE}    _
+    ${testCaseDir}    Replace String    ${testCaseDir}    .    _
+    ${testCaseDir}    Remove String    ${testCaseDir}    [1]
+    ${testCaseDir}    Remove String    ${testCaseDir}    [
+    ${testCaseDir}    Remove String    ${testCaseDir}    ]
+    Dated log       Create Test Case Folder ${testSuiteDir}/${testCaseDir}
+    Set Suite Variable    ${testCaseDir}    ${testSuiteDir}/${testCaseDir}
+    Create Directory    ${testCaseDir}
+
+    #Common
+Get testcase log directory
+    [Documentation]    :Author: Ch SAMSON
+    ...    Retuns path for Testcase log directory
+    ...    If Testcase Log directory does not exist it will created automatically
+    ...
+    ...    :returns: Path for Testcase log
+    ...
+    ${P_resultTestDir}=    Get Variable Value    ${testCaseDir}
+    Run Keyword If    '${P_resultTestDir}'=='None'
+    ...    CB007382_keywords.Create Test Case Folder
+    ${P_resultTestDir} =    Get Variable Value   ${testCaseDir}
+    #${P_resultTestDir} =    Set Variable If    '${P_resultTestDir}'=='None'
+    #...              ${testCaseDir}
+    [Return]    ${P_resultTestDir}
+
+Prepare Test Name
+    [Documentation]    :Author: Ch SAMSON
+    ...    Retuns formated test name
+    ...
+    ...    :returns: formated test name
+    ...
+    ${TEST_NAME}=       replace string  ${TEST_NAME}      ${SPACE}        _
+    set test variable      ${TEST_NAME}
+    [Return]    ${TEST_NAME}
+
+Prepare Logs Directory Path
+    [Arguments]    ${resultDir}=None   ${subdir}=${EMPTY}    ${with_timestamp}=${FALSE}
+    [Documentation]
+    ...    Creates directory for storing logs, based on current execution context.
+    ...    An absolute path to created directory is returned.
+    [Tags]    PRIVATE
+    ${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    ${subdir}    set variable if    '${with_timestamp}'=='${TRUE}'   ${subdir}_${timestamp}
+    ...                                                              ${subdir}
+    ${resultDir}=    Run Keyword If    '${resultDir}'=='None'    CB007382_keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${resultDir}
+    ${logs_dir}   set variable     ${resultDir}/${subdir}
+    OperatingSystem.Create Directory    ${logs_dir}
+    [Return]    ${logs_dir}
+
+    #CB007382_Kw_TestSetup.robot
+get cellDepType from SCF
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${LOG_PATH}/SCF.xml
+    scf.load_scf	 ${current_scf_fullname}
+    # MRBTS-1/NRBTS-1/NRCELL-1
+    ${cellDepType}	 scf.get_value_from_scf   p_name=cellDepType
+    ...              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    [return]     ${cellDepType}
+
+    #Common
+Get Testline Name
+    ${ret}    ${testline_name}=    OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    Dated log     Testline Name: ${testline_name}      console=${True}
+    Dated log     Testline init file is /home/ute/testline_configuration/${testline_name}/       console=${True}
+    Set Suite Metadata    Testline Name    ${testline_name}
+    Set global variable   ${testline_name}
+    # add here some info about  UTE TL
+    ${reserve_file}=    Set Variable     /opt/ute/reservation.json
+    ${file_exist}=    Run Keyword And Return Status    OperatingSystem.file_should_exist    ${reserve_file}
+    ${cmd}=   run Keyword if   "${file_exist}"=="True"    Catenate
+    ...                                           python -c 'import json;print(json.load(open("${reserve_file}"))["topology"])'
+    ${ret}    ${ret_cmd}=       run Keyword if   "${file_exist}"=="True"       OperatingSystem.Run And Return Rc And Output    ${cmd}
+    run Keyword if   "${file_exist}"=="True"     Dated log      Topology is ${ret_cmd}       console=${True}
+    ${cmd}=   run Keyword if   "${file_exist}"=="True"    Catenate
+    ...                                           python -c 'import json;print(json.load(open("${reserve_file}"))["user"])'
+    ${ret}    ${ret_cmd}=       run Keyword if   "${file_exist}"=="True"       OperatingSystem.Run And Return Rc And Output    ${cmd}
+    run Keyword if   "${file_exist}"=="True"     Dated log      user is ${ret_cmd}       console=${True}
+    ${cmd}=   run Keyword if   "${file_exist}"=="True"    Catenate
+    ...                                           python -c 'import json;print(json.load(open("${reserve_file}"))["enb_build"])'
+    ${ret}    ${ret_cmd}=       run Keyword if   "${file_exist}"=="True"       OperatingSystem.Run And Return Rc And Output    ${cmd}
+    run Keyword if   "${file_exist}"=="True"     Dated log      enb_build is ${ret_cmd}       console=${True}
+    printLineWithTitle              title=-
+    [return]    ${testline_name}
+
+    #CB007382_Kw_TestSetup.robot
+Test Line Preparation
+   [Arguments]       ${testParam}
+
+    #    Log to Console like Next Step    0    ${SUITE NAME} - ${TEST NAME.replace(" ", "_")}
+    CB007382_keywords.PrintTLInformation
+    CB007382_keywords.gNB BackupSCF
+    #    CB007382_keywords.Get Testline Name
+    CB007382_keywords.Set SCF CB007382       ${testParam}
+
+    #Franck
+Teardown TC
+    Dated log              Test ${TEST_NAME} CB007382 ending
+    Produce Scout Data
+    #Step                   Setup.Get Sos Report
+    [Teardown]             GenericTest.Display diagnosis
+
+    #Common
+Create Test Suite Folder
+    [Documentation]    create test suite folder
+    ${timeStamp}    get current date    result_format=%Y%m%d_%H%M%S
+    #agf1608 Set Suite Variable    ${testSuiteDir}    ${LOG_PATH}/${SUITE_NAME}/${timeStamp}
+    Set Suite Variable    ${testSuiteDir}    ${LOG_PATH}/${SUITE_NAME}
+    create directory    ${testSuiteDir}
+
+    #Common
+
+
+Get Orignal Configuration
+    [Arguments]                   ${BACKUP_DIR}=original_config_files
+
+    # Save current  SCF file
+    ${file_name}   set variable     SCF_Original.xml
+    ${original_scf_file}            OAM Get SCF File                file=${file_name}
+    Set Suite Variable              ${original_scf_file}
+    Dated Log New Line         Original SCF file stored to ${original_scf_file}
+    Run keyword and Ignore error   OperatingSystem.Copy File    ${original_scf_file}
+    ...                                                         ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    # Get swconfig file that will be restored during test suite teardown
+    ${alias_gnb}                    SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    ${file_name}   set variable     swconfig_to_be_restored.txt
+    csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${LOG_PATH}/${file_name}
+    ...                             connection=${alias_gnb}
+    Dated Log                  Default swconfig file stored to ${LOG_PATH}/${file_name}
+    Run keyword and Ignore error   OperatingSystem.Copy File    ${LOG_PATH}/${file_name}
+    ...                                                         ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    # Get EPC file configuration:
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    ${file_name}   set variable     basic_wts_to_be_restored.cfg
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/${file_name}
+    ...                             connection=${alias_epc}
+    Dated Log                  Default basic cfg file stored to ${LOG_PATH}/${file_name}
+    Run keyword and Ignore error   OperatingSystem.Copy File    ${LOG_PATH}/${file_name}    ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    ${file_name}   set variable     new_iphy_to_be_restored.xml
+    Run keyword and Ignore error      Get iPhy.xml file from Airphone    target_dir=${LOG_PATH}    file_name=${file_name}
+    Dated Log                  Default /ffs/run/simmode/new_iphy.xml from Airphone stored to ${LOG_PATH}/${file_name}
+    Run keyword and Ignore error     OperatingSystem.Copy File    ${LOG_PATH}/${file_name}    ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    # store original Airphone swconfig
+    ##agf1608  Store Current swconfig from Airphone     target_dir=${LOG_PATH}/${BACKUP_DIR}
+
+    # Get AP configuration file
+    ${ap_configfile}                Get XML AirPhoneConfig Path
+    return from Keyword if     '${ap_configfile}'=='${EMPTY}'
+    ${file_name}   set variable     ApOamConfig_to_be_restored.xml
+    csn.download_file               remote_path=${tl.core.dir_path}/${ap_configfile}
+    ...                             local_path=${LOG_PATH}/${file_name}
+    ...                             connection=${alias_epc}
+    Dated Log                  Default AP Oam Config file stored to ${LOG_PATH}/${file_name}
+    Run keyword and Ignore error     OperatingSystem.Copy File    ${LOG_PATH}/${file_name}    ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    #Common
+    #agf
+CB7382 Suite Setup From Scratch
+    Setup.Suite Setup From Scratch
+    Init Variables
+
+Init Variables
+   ${CAPTURE_GNB}                  Capture L1L2 Set Upon Config
+    #airscale=${GNB_CU}
+    Set Suite Variable                ${CAPTURE_GNB}
+    Dated Log            CAPTURE_GNB: ${CAPTURE_GNB}
+    ${CAPTURE_CPRT}      Capture CPRT Set Upon Config
+    Set Suite Variable                ${CAPTURE_CPRT}
+    Dated Log           CAPTURE_CPRT: ${CAPTURE_CPRT}
+    #agf1608   ${UE_id}                        Get UEid upon Topology
+    #agf1608   Set Suite Variable              ${UE_id}
+    CB007382_keywords.Create Test Suite Folder
+
+Start 5g downlink test flat Load
+    [Documentation]    :
+    ...    start Downlink test
+    ...    [PRIVATE]
+    [Arguments]     ${test_mode}
+    @{beam_pattern_id_list}         Create List     1
+    ${rtId}                         Get Runtime Id
+    ${tCellId}                      Set Variable    1
+    Start Downlink Test                 oam=${GNB_DU.oam}
+    ...                                 cell_dn=/MRBTS-1/RAT-1/RUNTIME_VIEW-${rtId}/MRBTS_R-${rtId}/NRBTS_R-${tCellId}/NRCELL_R-${tCellId}
+    ...                                 test_model=TM1_1_ETSI
+    ...                                 beam_pattern_id=${beam_pattern_id_list}
+    ...                                 polarization=P_plus45_or_0
+    ...                                 power_backoff=0                       ru_mode=NR_Only
+    ...                                 phys_cell_id=50                       p_max=22
+    ...                                 mimo_rank=1                           load_type=${test_mode.load_type}
+    ...                                 load_level_flat=${test_mode.load_level_flat}
+    ...                                 num_of_ssb_beam_pattern_id=${test_mode.num_of_ssb_beam_pattern_id}
+    ...                                 ssb_beam_pattern_id=${test_mode.ssb_beam_pattern_id}
+
+Start 5g downlink test Burst Load
+    [Documentation]    :
+    ...    start Downlink test
+    ...    [PRIVATE]
+    [Arguments]     ${test_mode}
+    @{beam_pattern_id_list}         Create List     1
+    ${rtId}                         Get Runtime Id
+    ${tCellId}                      Set Variable    1
+    Start Downlink Test                 oam=${GNB_DU.oam}
+    ...                                 cell_dn=/MRBTS-1/RAT-1/RUNTIME_VIEW-${rtId}/MRBTS_R-${rtId}/NRBTS_R-${tCellId}/NRCELL_R-${tCellId}
+    ...                                 test_model=TM1_1_ETSI
+    ...                                 beam_pattern_id=${beam_pattern_id_list}
+    ...                                 polarization=P_plus45_or_0
+    ...                                 power_backoff=0                       ru_mode=NR_Only
+    ...                                 phys_cell_id=50                       p_max=22
+    ...                                 mimo_rank=1                           load_type=${test_mode.load_type}
+    ...                                 load_level_burst=${test_mode.load_level_burst}
+
+Stop 5g downlink Test
+    ${rtId}                         Get Runtime Id
+    ${tCellId}                      Set Variable    1
+    Stop Downlink Test              oam=${GNB_DU.oam}
+    ...         cell_dn=/MRBTS-1/RAT-1/RUNTIME_VIEW-${rtId}/MRBTS_R-${rtId}/NRBTS_R-${tCellId}/NRCELL_R-${tCellId}
+
+Install classicalbts log collector into gNB
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist    {CURDIR}/../scripts/classicalbts_log_collector.sh
+    ${Myalias}                        SSH Wait For Connect                    ${CAPTURE_L1L2_GNB_FS_GNB_DSS.scriptDef.host}
+    Dated log     Upload classicalbts_log_collector.sh in gNB
+    SSH Upload Script           alias=${Myalias}        localPath=${CURDIR}/../scripts
+    ...                         scriptFile=classicalbts_log_collector.sh      remotePath=/ffs/run/config/scripts
+
+    #CB007382_Kw_TestSetup.robot
+Install classicalbts log collector into Airphone
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist    {CURDIR}/../scripts/classicalbts_log_collector.sh
+    ${Myalias}                        SSH Wait For Connect                    ${AP_DU.sys[0].M}
+    Dated log     Upload classicalbts_log_collector.sh in Airphone
+    SSH Upload Script           alias=${Myalias}        localPath=${CURDIR}/../scripts
+    ...                         scriptFile=classicalbts_log_collector.sh      remotePath=/ffs/run/config/scripts
+
+Get gNB cell 5g On air
+    [Documentation]       get gNB 5g cell On air
+    Return From Keyword If    "${WAIT_5G_CELL_ONAIR}" == "0"
+    Log to Console like Next Step     0     Get gNB 5g cell OnAir
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+    ${bts_status}=  coam.get_bts_statuses   connection=${GNB_DU.oam.httpAlias}
+    OAM Disconnect                  ${GNB_DU.oam}
+    Log To Console  \n BTS procedural state is now: ${bts_status["proceduralState"]}
+    ${gnb_status}=     evaluate    '${bts_status["proceduralState"]}'.lower()
+    Return From Keyword If    '${gnb_status}'=='OnAir'.lower() or '${gnb_status}'=='Configured'.lower()
+    run keyword and ignore error        5GC002574_Kw_TestSetup.Upload 2574 Configuration
+    run keyword and ignore error        Start WTS        egate_alias_default
+    run keyword and ignore error        X2Ap link Setup     egate_alias_default
+    run keyword and ignore error        wait until keyword succeeds    2min    30s      Check BTS status in WEM for cOAM
+    Dated log new line         =======> Restart TL if needed to get Cell Is OnAir/Configured
+    run keyword and ignore error        reset TL if BTS not OnAir
+    run keyword and ignore error        wait until keyword succeeds    5min    30s      Check BTS status in WEM for cOAM
+
+Test suite teardown for CB007382
+    [Documentation]          Test suite teardown for all CB007382 TCs.
+    ...                      Restores existing configuration files
+    run keyword and ignore error     common_DSS_Keywords.Restore Orignal Configuration DSS
+    Run Keyword If   '${REMOVE_PDML_FILE_END_TEST_SUITE}' == '1'  OperatingSystem.Remove File    ${LOG_PATH}/*.pdml
+    Run Keyword If   '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'     Dated Log      Recommissioning gNB with original SCF file
+    Run Keyword If   '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'     Run Keyword and Ignore Error   OAM Perform Full Commissioning  ${original_scf_file}
+    ${isOAMRebooted}      Run Keyword If    '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'   SSH Was OAM Rebooted     ${GNB_DU}     timeout=60
+    # If gNB was rebooted after re-commissioning, wait until it's ready again.
+    Run Keyword If   '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'  Run Keyword If  '${isOAMRebooted}' == 'True'  Airscale Wait for Ready  ${GNB_DU}
+    common_Dss_Keywords.Conn.ResetCache
+
+    #Common
+Prepare TL for TTITraces
+    [Documentation]    :
+    ...    This keyword helps to download and install MULTI packages needed for TTITraces
+    ...
+    nps_ttitraces_tools.install_multidynamic_if_needed
+
+Init Trace color
+    ${consTraceColor}               Evaluate                    "${CYAN}"
+    ${defColor}                     Evaluate                    "${NORMAL}"
+    Set Suite Variable              ${consTraceColor}
+    Set Suite Variable              ${defColor}
+
+
+Start Capture BIP L1L2
+    [Documentation]                 Start capture BIP L1L2 logs
+
+    Init Trace color
+
+    ${CaptureL1L2}                  Capture L1L2 Set Upon Config        airscale=${GNB_DU}
+    Capture Init                    ${CaptureL1L2}                      withTN=True
+    Set Suite Variable              ${CaptureL1L2}
+    Capture Start                   capture=${CaptureL1L2}
+
+
+Stop Capture BIP L1L2
+    [Documentation]                 Stop capture BIP L1L2 logs
+
+    Init Trace color
+
+    Capture Stop           capture=${CaptureL1L2}
+    Dated Log              BIP L1L2 log saved to ${CaptureL1L2.path}\n
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CaptureL1L2.path}     AND
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${CaptureL1L2.path}    ${testCaseDir}
+    Dated Log              BIP L1L2 log saved to ${testCaseDir}\n
+
+Get L1L2 traces
+    [Arguments]     ${time}=1s   ${prefix}=DL_UL_Tput
+    Dated Log         Get L1L2 Bip Traces
+    ${CaptureBIP}              Capture L1L2 Set Upon Config             airscale=${GNB_DU}
+    ${CaptureBIP.prefix}       set Variable   ${prefix}
+    ${CaptureBIP.withTN}       set Variable   True
+    # Capture Init   ${CaptureBIP}
+    #define options of gnbMirroring.sh (BIP only)
+    ${OPT_GNB_MIRRORING_DSS}                 Tools.Dictionary Get              ${OPT_GNB_MIRRORING}
+    ${OPT_GNB_MIRRORING_DSS.mirroring_mode}            set Variable         'manual'
+    ${OPT_GNB_MIRRORING_DSS.l2_l1_bip}                 set Variable         'true'
+    ${OPT_GNB_MIRRORING_DSS.backhaul_mirroring}        set Variable         'false'
+    Set Suite Variable              ${OPT_GNB_MIRRORING_DSS}
+    Execute Mirror Script with options for DSS      ${CaptureBIP.scriptDef}    ${OPT_GNB_MIRRORING_DSS}
+    Capture start  ${CaptureBIP}
+    Traced Sleep   ${time}     msg=take BIP L1L2 traces with DL/UL Tput
+    Capture stop   ${CaptureBIP}
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CaptureBIP.path}     AND
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${CaptureBIP.path}    ${testCaseDir}
+    [Return]    ${CaptureBIP}

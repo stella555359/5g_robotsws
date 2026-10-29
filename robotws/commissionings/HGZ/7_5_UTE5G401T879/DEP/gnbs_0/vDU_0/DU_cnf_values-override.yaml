@@ -1,0 +1,847 @@
+# - Override values for deployment in cloud-development environment
+# - Operator need to set the values base on the real scenario.
+# - This is a YAML-formatted file.
+# - Declare variables to be passed into your templates.
+
+global:
+  #########################################################
+  # global configuration shared by parent and sub charts
+  #########################################################
+
+  # - Description: sys env variable for distinguish vRAN2.0 from vRAN4.0
+  # - Value type: string
+  # - Support values: "2.0", "LOOKASIDE", "RLOOKASIDE", "4.0", "INLINE", "RINLINE"
+  # - Default value: "4.0"
+  # - Notice: "2.0", "LOOKASIDE", "RLOOKASIDE" are same. "4.0", "INLINE", "RINLINE" are same.
+  cloudRanVersion: "2.0"
+
+  # - Description: From 22R4-CB008355-K - Denote CNF layout in deployment
+  # - Support Value:
+  #     "DRAN"
+  #     "CRAN"
+  # - Default Value: "DRAN"
+  # - Dependencies:
+  #     If global.cnfLayout is "DRAN", then
+  #           global.service.sdl.deploymode should be set as standalone
+  #           rcpsdl.cluster.enabled should be set as false
+  #     If global.cnfLayout is "CRAN", then
+  #           global.service.sdl.deploymode should be set as sentinel
+  #           rcpsdl.cluster.enabled should be set as true
+  cnfLayout: "DRAN"
+
+  # - Description: securityContext configuration for vDU runAsUser/runAsGroup/fsGroup.
+  securityContext:
+    runAsUser: 9999
+    runAsGroup: 9999
+    fsGroup: 9999
+
+  # - Description: the directory for hostpath volume to storage the coredump info
+  # - Note: the default value of coredumppath is set to "", means coredump will not be saved
+  # -       this config is for internal trouble shooting if set to host path
+  # -       example: coredumppath: "/tmp/cdump"
+  coredumppath: ""
+
+  # - Description: Assigning pods to specific nodes. node lables must be pre-defined in advance.
+  # - Support Value: key-value pair. eg {nokia: winner}
+  # If sub chart is configured with nodeSelector(e.g. certman-auto-cmp.nodeSelector) and the value of sub chart with
+  #   nodeSelector is not empty, sub chart shall prevail.
+  nodeSelector: {}
+
+  # - Description: the number of ahm pod to deploy, should be same with RNNIC count.
+  #                currently support max number is 2
+  # - Support value: 1, 2
+  # - Default value: 1
+  # - Feature: CB009858-F
+  ahmCount: 1
+
+  # ======== configuration UP POD support C-RAN deploy =========
+  # - Description: the number of up POD to deploy.
+  # - Note: for D-RAN only on single node server, the value is number 1 for up pod by default
+  #         for C-RAN support deploy on multi-node server, the minimum value is 2, max support 10
+  upCount: 1
+
+  # - Description: ptp monitor flag
+  # - support values: "true","false",true,false, "true"/true means enable this function, "false"/false means disabled this function
+  # - default value: false
+  # - Note: if you want to enabled this function, must install ptp operator and OCP version >= 4.11
+  ptpMonitorEnabled: false
+
+  # - Description: device Pool List
+  # - Note: need to be filled accoring to the real environment!!!
+  devicePoolList:
+    # The SR-IOV Device Pool used by f1/bip networks (fast path)
+    fastPathCommonPool: "openshift.io/sriov_vfio_ens35f1"
+    # The SR-IOV Device Pool used by oam/tracing/f1c networks (slow path)
+    slowPathCommonPool: "openshift.io/sriov_netdevice_ens35f1"
+    # The SR-IOV Device Pool used by fhuc networks (fast path)
+    fastPathFhPool: "openshift.io/sriov_vfio_ens37"
+    # The SR-IOV Device Pool used by fhm networks (slow path)
+    slowPathFhPool: "openshift.io/sriov_netdevice_ens37"
+    # The SR-IOV Device Pool used by l1up networks (fast path)
+    fastPathRANNICPool: "nokia.com/sriov_rinline_up"
+    # The SR-IOV Device Pool used by l1cp networks (slow path)
+    slowPathRANNICPool: "nokia.com/sriov_rinline_cp"
+
+  # - Description: external network configuration for each network interface
+  # List of parameters for each network interface
+  # ----------------------------------------------------------------------------------------------------------
+  # key                   | description
+  # ----------------------------------------------------------------------------------------------------------
+  # vlanInfo              | vlanInfo.vid for guest vlan interface VLAN ID
+  #                       |   set when guest vlan applied for interface
+  #                       |   if not set, host vlan applied
+  # ----------------------------------------------------------------------------------------------------------
+  # ipInfo                | IP address pool start/end/subnet/role
+  #                       |   set when ip info applied for interface
+  #                       |     - rangeStart & rangEnd & subnet are mandatory if iface configured ipInfo
+  #                       |     - subnet set format as CIDR (e.g. ""10.0.0.0"/24" or "2001:db8::0/128")
+  #                       |     - the ip role is not recommand to change
+  #                       | NOTE: all ip addresses support family IPv4/IPv6, (e.g. "10.0.0.0" or "2001:db8::0")
+  # ----------------------------------------------------------------------------------------------------------
+  # policyRouteInfo       | policy route info for oam & tracing
+  # ----------------------------------------------------------------------------------------------------------
+  externalNetwork:
+    oam:
+      vlanInfo:
+        vid: 239
+      ipInfo:
+      - rangeStart: "10.64.163.138"
+        rangeEnd: "10.64.163.138"
+        subnet: "10.64.163.136/29"
+        type: "physical"
+        role:
+        - "oam"
+        - "certman-server"
+        - "tracecontroller"
+      policyRouteInfo:
+      - gateway: "10.64.163.137"
+        # - Description: the orderNumber of oam route
+        # Note: should different from orderNumber in the SCF file to avoid conflict
+        orderNumber: "5"
+        # - Description: the table id of oam route
+        # recommend not to modify
+        table: "2"
+    tracing:
+      vlanInfo:
+        vid: 235
+      ipInfo:
+      - rangeStart: "10.64.163.122"
+        rangeEnd: "10.64.163.122"
+        subnet: "10.64.163.120/29"
+        type: "physical"
+        role:
+        - "Tracing"
+
+    f1c:
+      vlanInfo:
+        vid: 236
+      ipInfo:
+      - rangeStart: "10.64.163.131"
+        rangeEnd: "10.64.163.131"
+        subnet: "10.64.163.128/29"
+        type: "physical"
+        role:
+        - "F1-C"
+    fhm:
+      vlanInfo:
+        vid: 234
+        pcp: ""
+      ipInfo:
+      - rangeStart: "192.168.254.33"
+        rangeEnd: "192.168.254.33"
+        subnet: "192.168.254.0/26"
+        type: "physical"
+        role:
+        - "fhm"
+    f1:
+      vlanInfo:
+        vlName: "f1uplane"
+        vid: 236
+      ipInfo:
+      - rangeStart: "10.64.163.130"
+        rangeEnd: "10.64.163.130"
+        subnet: "10.64.163.128/29"
+        type: "physical"
+        role:
+        - "Tracing"
+        - "F1-U"
+    # f1 RAN sharing for additional operator1, only available if RAN sharing function enabled
+    f1_op1:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1uplane1"
+        vid: ""
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_OP_1"
+    # f1 RAN sharing for additional operator2, only available if RAN sharing function enabled
+    f1_op2:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1uplane2"
+        vid: ""
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_OP_2"
+    # f1 RAN sharing for additional operator3, only available if RAN sharing function enabled
+    f1_op3:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1uplane3"
+        vid: ""
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_OP_3"
+    # f1 RAN sharing for additional operator4, only available if RAN sharing function enabled
+    f1_op4:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1uplane4"
+        vid: ""
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_OP_4"
+    # f1 RAN sharing for additional operator5, only available if RAN sharing function enabled
+    f1_op5:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1uplane5"
+        vid: ""
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_OP_5"
+    #  - Description: Network slice for F1-U,here just list one example for one slice
+    #    Add one network slice for F1-U according to following instruction.
+    #      1. copy the whole section from "f1_slice1" to "- 'F1-U_slice1'" including all the spaces
+    #      2. paste the whole section after line "- 'F1-U_slice1'"
+    #      3. modify the section key name "f1_slice1", align with the new vlName and role
+    #      4. configure vid( vlan id), rangeStart,rangeEnd,subnet
+    #  - Feature ID: CB008473
+    #  - Note:
+    #    vlName should be unique and can be defined by user, please not exceed 15 characters
+    #    role should be unique and format like "F1-U_X"
+    #    X is the dynamic part which can be customized by operator. The maximum length for X is 24 and the allowed characters can include [A-Za-z0-9]
+    f1_slice1:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "f1u_slice1"
+        defaultUnderlyingIface: "f1"
+        vid: ""
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "F1-U_slice1"
+    # - End example for network slice
+
+    #  - Description: this is only one twamp vlan interface example
+    #    Add one vlan interface for the Measurement network as followed steps
+    #      1. copy the whole section from "twamp_f1" to "- 'twamp_f1'" including all the spaces
+    #      2. paste the whole section after line "- 'twamp_f1'"
+    #      3. modify the section key name "twamp_f1", align with the new vlName and role
+    #      4. configure vid( vlan id), pcp ,rangeStart,rangeEnd,subnet,family
+    #  - Feature ID: CB008468
+    #  - Note:
+    #    defaultUnderlyingIface and secUnderlyingIface are not recommended to modify
+    #    vlName should be unique under twamp section and can be defined by user, please not exceed 15 characters
+    #    role should be unique and same in the SCF file
+    #    subnet should be same as the Measurement network
+    #    if f1 and f1c use the same subnet, only need create one vlan interface here
+    twamp_f1:
+      vlanInfo:
+        # vlName should be set the same as the VLAN interface name in SCF
+        vlName: "twamp_f1"
+        defaultUnderlyingIface: "twamp"
+        vid: ""
+      ipInfo:
+      - rangeStart: ""
+        rangeEnd: ""
+        subnet: ""
+        type: "physical"
+        role:
+        - "twamp_f1"
+    # - End example for twamp vlan interface
+
+    # - currently, fhuc max support 18 interface.
+    # - for Vran4.0 CB009858 feature fhuc1-fhuc3 belong to ahm-0 pod and fhuc4-fhuc6 belong to ahm-1 pod
+    fhuc1:
+      vlanInfo:
+        vid: 238
+        pcp: ""
+    fhuc2:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc3:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc4:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc5:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc6:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc7:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc8:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc9:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc10:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc11:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc12:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc13:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc14:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc15:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc16:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc17:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    fhuc18:
+      vlanInfo:
+        vid: 
+        pcp: ""
+    l1bipl1:
+      vlanInfo:
+        vid: 232
+    l1biprt:
+      vlanInfo:
+        vid: 232
+    l2biprt:
+      vlanInfo:
+        vid: 233
+    l2biphi:
+      vlanInfo:
+        vid: 233
+
+  # - Description: network attribute definition for each network.
+  #   This section is provide to set the MTU for each network
+  networkInfo:
+    fhm:
+      mtu: 1500
+    tracing:
+      mtu: 1500
+    oam:
+      mtu: 1500
+    f1c:
+      mtu: 1500
+    bip:
+      mtu: 9000
+    fhuc:
+      mtu: 1500
+    f1:
+      mtu: 1500
+
+  fecDevicePool:
+    # - Description: it is used for accelerated card supporting. the values are supported as following,
+    #   - For OCP OE20 FP2 supporting Mt. Bryce card: "intel.com/intel_fec_acc100"
+    # - Default value: "intel.com/intel_fec_acc100"
+    fecVF: "intel.com/intel_fec_acc100"
+    # - Description: fecVFNum is that number of virtual function.
+    # - Note: When you want to active the HW FEC, this value should be set to 1
+    # - Default value: "1"
+    fecVFNum: "0"
+
+  # - Description: the storageclass name of persistent volume. Will use default storageclass in case not filled.
+  # -              the storageClass will be used by up and healing controller.
+  # - Values:
+  # -   OCP multi node: ocs-storagecluster-cephfs
+  # -   OCP single node: localfs-lvm-sc
+  storageClassName: "localfs-lvm-sc"
+
+  # - Description: convention of name
+  name_convention:
+
+    pod_prefix:
+    - "po"
+    - "_NAMESPACE_"
+
+    container_prefix:
+    - "ctr"
+    - "_NAMESPACE_"
+
+    deployment_prefix:
+    - "po"
+    - "_NAMESPACE_"
+
+    statefulset_prefix:
+    - "po"
+    - "_NAMESPACE_"
+
+  # service configuration
+  service:
+    # rcpsdl services
+    sdl:
+      # - Description: From 22R4-CB008355-K - Denote CNF layout in deployment
+      # - Support Value:
+      #     standalone
+      #     sentinel
+      # - Default Value: "standalone"
+      # - Dependencies:
+      #     Please refer to global.cnfLayout
+      deploymode: standalone
+
+  # - Description: registry of image
+  # - OCP: image-registry.openshift-image-registry.svc:5000/<namespace> align with images.properties.OCP in onBoardingApp
+  image:
+    registry: "image-registry.openshift-image-registry.svc:5000/tl878du1"
+
+  # - Description: time zone in format "Region/City", e.g. "Asia/Shanghai". Default as 'UTC'.
+  timezone: "Asia/Shanghai"
+
+  #########################################################
+  # global configuration for VDU parent chart
+  #########################################################
+
+  # - Description: the name of persistent volume
+  # - Note: Ensure uniqueness for every VDU and keep same when do upgrade/update
+  # -       consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character
+  pvcName: "vdupvc"
+
+  # Custom extensions for labels which will be injected into ConfigMap,
+  # Service, Pod resources.
+  # Example:
+  #  labels: {nf-type: 5g-nf-producer}
+  custom_extensions:
+    labels: {}
+
+  # - Description: deployment type to indicate which type of cloud hardware usage.
+  # - Support Values: OE20_FULL_CAP, OE20_MEDIUM_CAP, OE19_MEDIUM_CAP, OE20, OE19, NR_UPPOD_2CL2PS_2CL2LO_2CL2HI, NR_UPPOD_4CL2PS_2CL2LO_2CL2HI
+  # - Notice: The resource consumption of OE20_MEDIUM_CAP and OE20 are the same. The resource consumption of OE19_MEDIUM_CAP and OE19 are the same.
+  # - Default value: "OE20_MEDIUM_CAP"
+  deploymentType: "OE20_MEDIUM_CAP"
+
+  # - Description: Description of a site used as auto connection site ID.
+  # - Note: As it will be used for identifying the vDU, ensure uniqueness for every vDU
+  # -       equal to the value of MRBTS/AutoConnSiteID parameter from the CM plan imported to the NMS
+  # -       1 to 50 ASCII characters
+  siteDescription: "MRBTS-1234"
+
+  # - Description: URL (containing IP address) of the NMS
+  #-  support geo-redundancy configuration for NMS, you can specify two URL here
+  #-  example:
+  #    - "http://10.20.30.40/NE3S/1.0/NE3SRegistrationNotificationsService"
+  #    - "http://10.20.30.41/NE3S/1.0/NE3SRegistrationNotificationsService"
+  urlNMS:
+  - ""
+  - ""
+
+  # - Description: external IP to access ne3sagent, used by NMS to connect back (register)  with ne3sagent
+  # - Note: current agentIP should be the same as vDU oam IP by default, due to ne3sagent run in oam container
+  agentIP: ""
+
+  # - Description: true means SeLinux enforcing + WA, not support audit log; false means seLinux permissive + no WA, support audit log.
+  # - Default value: true
+  seLinux: "true"
+  # - Description: The collection of stack trace needs to be enabled as alternative for debugging program crashes only when core dump files are not achievable.
+  # - Supported values: type string "true" or "false"
+  # - Default value: "false"
+  stackTraceEnabled: "false"
+
+  # - Description: the name of RuntimeClass which is used for high performance
+  # - Default value: "nokia-performance"
+  highPerformanceRunTimeClass: "nokia-performance"
+
+#########################################################
+# top level configuration private to RCP sub charts
+#########################################################
+
+# - Description: sub chart certman-auto-cmp private configuration
+certman-auto-cmp:
+  configuration:
+    # - Description: The CMP configuration
+    cmp:
+      # - Description: The secret name which defines the CMP server's pre-shared key, reference number
+      cmp_secret_name: ""
+      # - Description: CMP server's pre-shared key
+      cmp_psk: ""
+      # - Description: CMP server's reference number
+      cmp_refnum: ""
+      # - Description: CMP server IP. Note: Mandatory for PnP
+      ip:
+      # - Description: CMP server port. Note: Mandatory for PnP
+      port:
+      # - Description: CMP server URL path. Note: Mandatory for PnP
+      path:
+      # - Description: CA subject name to be used in CMP initialization. Note: Mandatory for PnP
+      ca_subject_name:
+      # - Description: EE certificate profile's certificate subject name. Note: Mandatory for PnP
+      ee_subject_name:
+      # - Description: EE certificate profile's FQDN value to be set as subject alternative name
+      ee_subject_fqdn: []
+      # - Description: EE certificate profile's IP address to be set as subject alternative name
+      ee_subject_ip_addr: []
+  # - Description: node selector to deploy certman-auto-cmp pod for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart pm private configuration
+pm:
+  # - Description: node seletor to deploy pm pod for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart rcpfm private configuration
+rcpfm:
+  # - Description: node selector to deploy rcpfm pod for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart logservice private configuration
+logservice:
+  # - Description: node selector to deploy logservice pod for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart healing-controller private configuration
+healing-controller:
+  custom:
+    serviceAccount: "healing-controller"
+  # - Description: node selector to deploy healing-controller pod for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart secret-storage-framework private configuration
+secret-storage-framework:
+  # - Description: node selector to deploy secret-storage-framework pod for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart lwsd private configuration
+lwsd:
+  # - Description: node selector to deploy lwsd for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart rcpsdl private configuration
+rcpsdl:
+  # - Description: node selector to deploy lwsd for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+  cluster:
+    # - Description: From 22R4-CB008355-K - Denote CNF layout in deployment
+    # - Support Value:
+    #     false
+    #     true
+    # - Default Value: false
+    # - Dependencies:
+    #     Please refer to global.cnfLayout
+    enabled: false
+
+# - Description: sub chart rcpum private configuration
+rcpum:
+  # - Description: node selector to deploy rcpum for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart trsconfig private configuration
+trsconfig:
+  # - Description: node selector to deploy trsconfig for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# - Description: sub chart kubeapisymptomdataprovider private configuration
+kubeapisymptomdataprovider:
+  # - Description: node selector to deploy kubeapisymptomdataprovider for C-RAN deployment.
+  # - Note: the value is key-value nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# ========configuration oamfh POD =========
+aic-oamfh:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node selector to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+  # ========configuration about dhcp container ========
+  dhcp:
+    service:
+      # Indicate internal or external dhcp server to be used, the default value is internal
+      dhcpServerLocation: "internal"
+      # v4PoolsStart and v4PoolsEnd define the actual part of your subnet that is governed
+      v4PoolsStart: "192.168.254.34"
+      v4PoolsEnd: "192.168.254.60"
+      # v4Subnet define the whole subnet.
+      v4Subnet: "192.168.254.0/26"
+
+      # DHCP vendor specific information of master agent ip and port number
+      option43_vendor_specific_information_master_agent_ip: "192.168.254.33"
+      option43_vendor_specific_information_port_number: "13001"
+
+      # <Product code>/<Serial number> in option 61 client identifier
+      # clientIdentifier is configuerd as a list of product code/serial number of RUs.
+      # It is an optional parameter. DHCP option 61 will not be checked by DHCP server,
+      # if clientIdentifier is empty. For example:
+      #     clientIdentifier:
+      #     - "753/001"
+      #     - "753/002"
+      #     - "753/003"
+      #     - "755/001"
+      #     - "755/002"
+      clientIdentifier:
+
+aic-oamext:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oamconfig:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oampm:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oamfm:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oamasm:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oamcm:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-twamp:
+  # ======== configuration twamp POD support C-RAN deploy =========
+  # - Description: node seletor to deploy twamp pod for C-RAN deployment.
+  # - Note: twamp is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oambb:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oamkpianalyzer:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oamcalc:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node selector to deploy oam pod for C-RAN deployment, only support for global.cloudRanVersion "4.0".
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oamctp:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+aic-oamswm:
+  # ======== configuration OAM POD support C-RAN deploy =========
+  # - Description: node seletor to deploy oam pod for C-RAN deployment.
+  # - Note: oam is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# ======== configuration CPRT POD =========
+aic-vdu-cprt:
+  # ======== configuration CPRT POD support C-RAN deploy =========
+  # - Description: node seletor to deploy cprt pod for C-RAN deployment.
+  # - Note: cprt is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: AllinOne
+  nodeSelector: {}
+
+# ======== configuration UP POD =========
+aic-vdu-up:
+  # - Description: node seletor to deploy up pod for C-RAN deployment.
+  # - Note: up is required to deploy on the master node. So the value is key-value come from the master nodes' label
+  # - example: ncs.nokia.com/group: WorkerBM
+  nodeSelector: {}
+  # bipPdumpLogging storage configuration
+  bipPdumpLogging:
+    persistentVolumeClaim:
+      # 10Gi per container per pod
+      size: "10"
+
+  # - Description: add "cellFlag" and "activeSiblingCore" to support the different cpu configuration
+  #   "cellFlag" support Values: multi, two, single. "activeSiblingCore" support Values: true, false
+  #   Refer to detailed comments below in l1hi/l2hi/l2rt container, for l1hi/l2hi/l2rt container has been
+  #   keep pace with pod "cellFlag" and "activeSiblingCore".
+
+  # - Description: the different cpu configuration of l1hi container to deploy on different HW/CloudPlatform/Testing purpose
+  # Users only set activeSiblingCore and cellFlag value, and container will deploy with dedicatedNum.
+  # --------------------------------------------------------------------------------------------
+  # | platform   activeSiblingCore    cellFlag        container dedicatedNum                   |
+  # |   OCP         true               single    10(l1 apps) + 2(fh-proxy+fh-io) + 2(CCSRT)=14 |
+  # |   OCP         true               two       10(l1 apps) + 4(fh-proxy+fh-io) + 2(CCSRT)=16 |
+  # |   OCP         true               multi     16(l1 apps) + 8(fh-proxy+fh-io) + 2(CCSRT)=26 |
+  # |   OCP         false              single    5(l1 apps) + 1(fh-proxy+fh-io) + 1(CCSRT)=7   |
+  # |   OCP         false              two       5(l1 apps) + 2(fh-proxy+fh-io) + 1(CCSRT)=8   |
+  # |   OCP         false              multi     8(l1 apps) + 4(fh-proxy+fh-io) + 1(CCSRT)=13  |
+  # --------------------------------------------------------------------------------------------
+
+  # - Description: the different cpu configuration of l2hi container to deploy on different HW/CloudPlatform/Testing purpose
+  # Users only set activeSiblingCore and cellFlag value, and container will deploy with dedicatedNum.
+  # Note: below table, others means OE20_FULL_CAP, OE20_MEDIUM_CAP, OE19_MEDIUM_CAP, OE20, OE19;
+  #       XXXXCL2PS_2CL2LO_2CL2HI means NR_UPPOD_2CL2PS_2CL2LO_2CL2HI or NR_UPPOD_4CL2PS_2CL2LO_2CL2HI.
+  # ----------------------------------------------------------------------------------------------------------
+  # | platform  deployment type  activeSiblingCore    cellFlag            dedicatedNum                       |
+  # |   OCP        others             true               single         2(l2hi apps + trsw) + 2(CCSRT)=4     |
+  # |   OCP        others             true               two            2(l2hi apps + trsw) + 2(CCSRT)=4     |
+  # |   OCP        others             true               multi          6(l2hi apps) + 4(trsw) + 2(CCSRT)=12 |
+  # |   OCP        others             false              single         1(l2hi apps + trsw) + 1(CCSRT)=2     |
+  # |   OCP        others             false              two            1(l2hi apps + trsw) + 1(CCSRT)=2     |
+  # |   OCP        others             false              multi          3(l2hi apps) + 2(trsw) + 1(CCSRT)=6  |
+  # |   OCP XXXXCL2PS_2CL2LO_2CL2HI   true           single/two/multi   4(l2hi apps) + 4(trsw) + 2(CCSRT)=10 |
+  # |   OCP XXXXCL2PS_2CL2LO_2CL2HI   false          single/two/multi   2(l2hi apps) + 2(trsw) + 1(CCSRT)=5  |
+  # ----------------------------------------------------------------------------------------------------------
+
+  # - Description: the different cpu configuration of l2rt container to deploy on different HW/CloudPlatform/Testing purpose
+  # Users only set activeSiblingCore and cellFlag value, and container will deploy with dedicatedNum.
+  # +----------+---------------------------------+-------------------+------------------+----------------------------------+
+  # | platform |         deployment type         | activeSiblingCore |     cellFlag     |           dedicatedNum           |
+  # +----------+---------------------------------+-------------------+------------------+----------------------------------+
+  # |   OCP    | OE20_MEDIUM_CAP/OE19_MEDIUM_CAP |        true       | single/two/multi | 6(L2PS) + 4(L2Lo) + 2(CCSRT)=12  |
+  # |   OCP    | OE20_MEDIUM_CAP/OE19_MEDIUM_CAP |       false       | single/two/multi |  3(L2PS) + 2(L2Lo) + 1(CCSRT)=6  |
+  # |   OCP    |          OE20_FULL_CAP          |        true       | single/two/multi | 12(L2PS) + 4(L2Lo) + 2(CCSRT)=18 |
+  # |   OCP    |          OE20_FULL_CAP          |       false       | single/two/multi |  6(L2PS) + 2(L2Lo) + 1(CCSRT)=9  |
+  # |   OCP    |  NR_UPPOD_2CL2PS_2CL2LO_2CL2HI  |        true       | single/two/multi |  4(L2PS) + 4(L2Lo) + 2(CCSRT)=10 |
+  # |   OCP    |  NR_UPPOD_2CL2PS_2CL2LO_2CL2HI  |       false       | single/two/multi |  2(L2PS) + 2(L2Lo) + 1(CCSRT)=5  |
+  # |   OCP    |  NR_UPPOD_4CL2PS_2CL2LO_2CL2HI  |        true       | single/two/multi |  8(L2PS) + 4(L2Lo) + 2(CCSRT)=14 |
+  # |   OCP    |  NR_UPPOD_4CL2PS_2CL2LO_2CL2HI  |       false       | single/two/multi |  4(L2PS) + 2(L2Lo) + 1(CCSRT)=7  |
+  # +----------+---------------------------------+-------------------+------------------+----------------------------------+
+  cellFlag: "single"
+  activeSiblingCore: "true"
+
+  # ====== configuration about l1hi container =====
+  l1hi:
+    securityContext:
+      # Description: the flag that indicate if l1hi run with privileged permission. Support Values: true, false.
+      # Default: "false"
+      privilegedMode: "false"
+
+    dptrace:
+      # - Description: Enable or disable l1 container dptrace function. 0 means disable, 1 means enable.
+      enable: "0"
+      # - Description: Enable or disable l1 container payload dump. 0 means disable payload dump, 1 means enable payload dump.
+      dump_payload: "0"
+      # - Description: Config l1 container dptrace filter. Format: messageID:queueID. Example: none:1(means messageID not set ,queueID set with 1), which means will trace em packets with local queueID=1.
+      # - Note: Maximum dptrace filter condition num is 4. Example: "none:1,1:10,10:none,2:5", which means 4 type of em packets will be traced: 1. local queueID=1; 2. messageID=1 and local queueID=10; 3. messageID=10; 4. messageID=2 and local queueID=5.
+      filter: "none:none"
+
+  # ====== configuration about l2hi container =====
+  l2hi:
+    securityContext:
+      # Description: the flag that indicate if l2hi run with privileged permission. Support Values: true, false.
+      # Default: "false"
+      # Note: WA for run on RH-OCP version lower than 4.9, l2hi can only run under privilgedMode as true
+      privilegedMode: "false"
+    dptrace:
+      # - Description: Enable or disable l2hi container dptrace function. 0 means disable, 1 means enable.
+      enable: "0"
+      # - Description: Enable or disable l2hi container payload dump. 0 means disable payload dump, 1 means enable payload dump.
+      dump_payload: "0"
+      # - Description: Config l2hi container dptrace filter. Format: messageID:queueID. Example: none:1(means messageID not set ,queueID set with 1), which means will trace em packets with local queueID=1.
+      # - Note: Maximum dptrace filter condition num is 4. Example: "none:1,1:10,10:none,2:5", which means 4 type of em packets will be traced: 1. local queueID=1; 2. messageID=1 and local queueID=10; 3. messageID=10; 4. messageID=2 and local queueID=5.
+      filter: "none:none"
+
+  # ====== configuration about l2rt container =====
+  l2rt:
+    dptrace:
+      # - Description: Enable or disable l2rt container dptrace function. 0 means disable, 1 means enable.
+      enable: "0"
+      # - Description: Enable or disable l2rt container payload dump. 0 means disable payload dump, 1 means enable payload dump.
+      dump_payload: "0"
+      # - Description: Config l2rt container dptrace filter. Format: messageID:queueID. Example: none:1(means messageID not set ,queueID set with 1), which means will trace em packets with local queueID=1.
+      # - Note: Maximum dptrace filter condition num is 4. Example: "none:1,1:10,10:none,2:5", which means 4 type of em packets will be traced: 1. local queueID=1; 2. messageID=1 and local queueID=10; 3. messageID=10; 4. messageID=2 and local queueID=5.
+      filter: "none:none"

@@ -1,0 +1,386 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for 5GC001745 feature tests cases
+...
+...               Automation author           : christophe.samson@nokia.com
+...               Automation contact          : christophe.samson@nokia.com
+...               Creation Date               : 17-June-2021
+...               Modified Date               : 17-June-2021
+...               Last Modified by            : christophe.samson@nokia.com
+...               Modified Date               : 18-Sep-2024 - Scout data
+
+Library          taf.lteemu                              WITH NAME    lteemu
+Library          ute_wtssim
+Library          OperatingSystem
+Library          DateTime
+
+Library          ../../../resources/common/TtiTrace/python/ttitrace.py     WITH NAME      nps_ttitraces_tools
+
+# 1586 specific
+Library          ../python/tools.py     WITH NAME    nps_dss_tools
+Library          ../python/Common.py
+Library          ../../../resources/DSS/python/robot_extension.py      WITH NAME          robot_extension
+
+Resource         ../../../../../resources/SWENG/robot/Container.robot
+Resource         ../../../../../resources/SWENG/robot/Restart.robot
+Resource         ../../../../../resources/SWENG/robot/Tools.robot
+
+# TTI Traces resource
+Resource          ../../../resources/common/TtiTrace/ttitrace.robot
+
+# DSS specific
+Resource         ../../../resources/DSS/robot/common_Dss_Keywords.robot
+Resource         ../../../resources/DSS/robot/common_Dss_command.robot
+Resource         ../../../resources/DSS/robot/common_Dss_CellSetup.robot
+
+# 1745 specific
+Resource         5GC001745_Kw_TestSetup.robot
+Resource         pcap.robot
+
+# Variables        ../../../../../../../resources/sites/NPS/SWENG/python/Colors.py
+
+
+*** Keywords ***
+
+Start capture Backhaul XP for 1745
+   [Arguments]                    ${prefix}=BH.XP
+    ${capture_BH_GNB}=             set Backhaul Capture                     prefix=${prefix}
+    ${capture_BH_GNB}=             Initialize Filter XP message Capture     capture=${capture_BH_GNB}
+    set global variable            ${capture_BH_GNB}
+    common_Dss_Keywords.Start capture Backhaul XP for DSS New               capture=${capture_BH_GNB}
+
+Stop capture Backhaul XP for 1745 TO REMOVE
+    ${pdmlFile}      common_Dss_Keywords.Stop capture for Backhaul XP DSS New     capture=${capture_BH_GNB}
+    ...                                                             lua_path=/home/ute/tools/luashark/generated_luashark-9.1800.330/luashark.lua
+    [return]    ${pdmlFile}
+
+Stop capture Backhaul XP for 1745
+    # 21/03/2022 : remove lua_path=/home/ute/tools/luashark/generated_luashark-9.1800.330/luashark.lua to point to xpshark lua delivered by UTE
+    # 24/03/2022 : make it dynamic...
+    ${mcshark_present}  ${MCShark}=    pcap.Check MCShark if present
+    run Keyword if   "${mcshark_present}"=="True"    Dated log    Stop capture for Backhaul XP and decode using MCShark plugin ${MCShark}
+    ${pdmlFile}   run Keyword if   "${mcshark_present}"=="False"   common_Dss_Keywords.Stop capture for Backhaul XP DSS New
+    ...                                                                capture=${capture_BH_GNB}
+    ...                                                                lua_path=/home/ute/tools/luashark/generated_luashark-9.1800.330/luashark.lua
+    ...   ELSE                                                     common_Dss_Keywords.Stop capture for Backhaul XP DSS New
+    ...                                                                capture=${capture_BH_GNB}
+    ...                                                                lua_path=None
+    [return]    ${pdmlFile}
+
+Start capture Bip and Xp for 1745
+    [Documentation]                Start capture Bip and Xp for 1745
+    [Arguments]                    ${prefix}=XP_L1L2_BIP
+
+    # set a specific name to keep the trace
+    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}               Capture L1L2 Set Upon Config
+    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.prefix}         set Variable   ${prefix}
+    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.withTN}         set Variable   False
+    Set Suite Variable              ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}
+
+    ${capture_BH_GNB}=             set Backhaul Capture                     prefix=BH.XP
+    set global variable            ${capture_BH_GNB}
+    ${capture_BH_GNB}=             Initialize Filter XP message Capture     capture=${capture_BH_GNB}
+
+    # ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.filter}       Get Filter all BIP msgs
+    # to manage the case vlan218 encapsulated within vlan305 (seen with ABIO / ABIP) and the case vlan218 only (seen with ABIP & ABIL)
+    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.filter}       set variable   ether[12:2]=0x8951 or ether[16:2]=0x8951
+    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.filter}       Catenate    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.filter}
+
+    # Initialize Capture                ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}
+    #    ==== Capture Init Kw introduce 30s sleep , not very good !!!!
+    Capture Init                    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}
+    Capture Start                   ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}
+    # Start capture BH data on GNB
+    common_Dss_Keywords.Start capture Backhaul XP for DSS New               capture=${capture_BH_GNB}
+
+Stop capture Bip and Xp for 1745
+    [Arguments]
+    ${alias}                        SSH Connect                             host=${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.target.host}
+    Capture Stop                   ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}
+    common_Dss_Keywords.Stop capture for Backhaul XP DSS New     capture=${capture_BH_GNB}    w_pdml=False    w_traces_archived=False
+    Run               cp ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.path} ${PCAP_PATH_TMP_VM}
+    @{pcap_files_list}     set variable   ${PCAP_PATH_TMP_VM}    ${capture_BH_GNB.path}
+    Merge pcap files    ${pcap_files_list}    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.path}
+
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.path}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.path}    ${testCaseDir}
+    Dated Log     dss pcap file ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.path} copied into ${testCaseDir}
+
+TC 1745 CellSetup
+    [Documentation]                Generic test for 1745: test purpose is to setup X2, Xp and DSS CellSetup Phase3
+    [Arguments]                    ${param}     ${alias}=default
+    Init Sequence                  ${param}
+    common_Dss_Keywords.Restart     OwnTLReset=${False}    GNBCallback=common_Dss_Keywords.Set Reset Loop Counter
+    Step                           Start capture Backhaul XP for 1745     argument=BH.XP.CellSetup     depends=common_Dss_Keywords.Restart
+    Step                           Start WTS                   argument=${alias}
+    Step                           Wait Xp link Up             argument=${alias}        depends=Start WTS
+    Step                           X2Ap link Setup             argument=${alias}        depends=Start WTS
+    # Step                           common_Dss_CellSetup.DSS_CRM_Cell_Setup_Phase3    argument=${alias}        depends=Wait Xp link Up
+    Step                           common_Dss_CellSetup.DSS_CRM_Cell_Setup_Phase3    alias=${alias}  wtsObj=${wtsObj}   depends=Wait Xp link Up
+    ${pdmlFile}                    Stop capture Backhaul XP for 1745
+    Run Keyword if       '${CELLSETUP_SHOULD_BE_CHECK}' == '1' and "${mcshark_present}"=="False"
+    ...      Step    common_Dss_CellSetup.Check DSS CellSetup Phase3    argument=${pdmlFile}  depends=common_Dss_CellSetup.DSS_CRM_Cell_Setup_Phase3
+    Run Keyword if       '${CELLSETUP_SHOULD_BE_CHECK}' == '1' and "${mcshark_present}"=="True"
+    ...      Step    common_Dss_CellSetup.Check DSS CellSetup Phase3 Using MCShark    argument=${pdmlFile}
+    ...                                                                               depends=common_Dss_CellSetup.DSS_CRM_Cell_Setup_Phase3
+    Critical Step                  common_Dss_CellSetup.Verify AP Classical Cell Setup
+    [Teardown]               GenericTest.Display diagnosis
+
+TC 1745 CellSetup TC21
+    [Documentation]                Generic test for 1745: test purpose is to check enDssDlCellResourceAreaCoordinationUpdateInd
+    [Arguments]                    ${param}     ${alias}=default
+    Init Sequence                  ${param}
+    common_Dss_Keywords.Restart     OwnTLReset=${False}     GNBCallback=common_Dss_Keywords.Set Reset Loop Counter
+    Step                           Start capture Backhaul XP for 1745     argument=BH.XP.CellSetup   depends=common_Dss_Keywords.Restart
+    Step                           Start WTS                    argument=${alias}
+    Step                           Wait Xp link Up                argument=${alias}        depends=Start WTS
+    Step                           X2Ap link Setup              argument=${alias}        depends=Start WTS
+    Step                           common_Dss_CellSetup.DSS_CRM_Cell_Setup_Phase3_TC21    argument=${alias}    depends=Wait Xp link Up
+    ${pdmlFile}                    Stop capture Backhaul XP for 1745
+    Run Keyword if   "${mcshark_present}"=="False"     Step    common_Dss_CellSetup.Check enDssDlCellResourceAreaCoordinationUpdateInd
+    ...                                                          argument=${pdmlFile}
+    ...                                                          depends=common_Dss_CellSetup.DSS_CRM_Cell_Setup_Phase3_TC21
+    ...   ELSE                                         Step    common_Dss_CellSetup.Check enDssDlCellResourceAreaCoordinationUpdateInd Using MCShark
+    ...                                                          argument=${pdmlFile}
+    ...                                                          depends=common_Dss_CellSetup.DSS_CRM_Cell_Setup_Phase3_TC21
+    Run Keyword if       '${CELLSETUP_SHOULD_BE_CHECK}' == '1'   Step     common_Dss_CellSetup.Verify AP Classical Cell Setup
+    [Teardown]               GenericTest.Display diagnosis
+
+
+####################################################################################################################################""
+#
+#       Common 1745 Test Suite Setup and Teardown
+#
+####################################################################################################################################""
+
+set WS preference
+    ${pref_items}=  set Variable   decode_as_entry: tcp.port,29211,(none),SYSCOM
+    ${profile_name}=   pcap.wireshark.CreatePersonalConfProfile   pref_items=${pref_items}
+    ...                                        profie_path=/home/ute/.config/wireshark/profiles
+    ...                                        profile_name=customized_profile
+    ...                                        filename=decode_as_entries
+    Dated log    ${profile_name} created or updated with ${pref_items} ...
+    ${profile_name}=   pcap.wireshark.CreatePersonalConfProfile   pref_items=${pref_items}
+    ...                                        profie_path=/home/ute/.config
+    ...                                        profile_name=wireshark
+    ...                                        filename=decode_as_entries
+    Dated log    ${profile_name} created or updated with ${pref_items} ...
+
+Test Suite Setup for 1745
+    [Documentation]          Test suite setup for all 1745-C TCs.
+    ...                      It calls Test Suite Setup common KW and:
+    ...                      Saves existing configuration files (swconfig + WTS)
+    ...                      Configure common SCF parameters
+    ...                      Configure common swconfig parameters
+    ...                      Configure common WTS parameters
+    # [Arguments]               ${default_mcs}=0
+
+    # Call to generic test suite setup KW
+    setup.Suite Setup
+
+    run Keyword           MyConstants.hello
+    ${mcshark_present}   ${MCShark}=      pcap.Check MCShark if present
+    ${msg}=   run Keyword if   "${mcshark_present}"=="True"    StringTool.getHeaderLine    MCShark plugin   ${MCShark}
+    ...   ELSE                                        StringTool.getHeaderLine    MCShark plugin     Not installed
+    run Keyword if   "${msg}"!="${EMPTY}"      Dated log      ${msg}
+    set suite variable    ${mcshark_present}
+    Dated Log New Line    COLLECT_LOGS if TEST STATUS is FAIL and EXCLUDE_LOGS_IF_FAIL == 0
+    Dated Log             COLLECT_LOGS if COLLECT_LOGS == 1
+    Dated log             default_test_strategy : WAIT_5G_CELL_ONAIR = ${WAIT_5G_CELL_ONAIR}
+    Dated Log             default_test_strategy : SHOULD_BE_COMMISSIONED_GNB_FIRST = ${SHOULD_BE_COMMISSIONED_GNB_FIRST}
+    Dated log             default_test_strategy : SHOULD_UPDATE_SCF_AND_RAD = ${SHOULD_UPDATE_SCF_AND_RAD}
+    Dated log             default_test_strategy : SHOULD_UPDATE_RAD = ${SHOULD_UPDATE_RAD}
+    Dated log             default_test_strategy : CELLSETUP_SHOULD_BE_CHECK = ${CELLSETUP_SHOULD_BE_CHECK}
+    Dated log             default_test_strategy : UL_TPUT_SHOULD_BE_CHECK = ${UL_TPUT_SHOULD_BE_CHECK}
+    Dated log             default_test_strategy : SHOULD_BE_RECOMMISSIONED_GNB = ${SHOULD_BE_RECOMMISSIONED_GNB}
+    Dated log             default_test_strategy : COLLECT_LOGS = ${COLLECT_LOGS}
+    Dated log             default_test_strategy : EXCLUDE_LOGS_IF_FAIL = ${EXCLUDE_LOGS_IF_FAIL}
+    Dated log             default_test_strategy : PCAP_XP_BIP_L1L2_ATTACH = ${PCAP_XP_BIP_L1L2_ATTACH}
+    Dated log             default_test_strategy : REMOVE_PDML_FILE_END_TEST_SUITE = ${REMOVE_PDML_FILE_END_TEST_SUITE}
+    Dated log             default_test_strategy : TRAFFIC_DL_RATE = ${TRAFFIC_DL_RATE}
+    Dated log             default_test_strategy : TRAFFIC_UL_RATE = ${TRAFFIC_UL_RATE}
+    Dated log             default_test_strategy : UL_DL_TPUT_CHECK_BASED_AASYSLOG = ${UL_DL_TPUT_CHECK_BASED_AASYSLOG}
+    Dated log             default_test_strategy : UL_TPUT_CHECK_BASED_TTITRACE = ${UL_TPUT_CHECK_BASED_TTITRACE}
+    Dated log             default_test_strategy : WITH_MCSHARK_INSTALATION = ${WITH_MCSHARK}
+    Dated log             default_test_strategy : SharkTool = ${SharkTool}
+
+    common_DSS_Keywords.Create Test Suite Folder
+    common_DSS_Keywords.Clean Old WTS Logs
+    common_Dss_Keywords.Get Testline Name
+    run keyword and ignore error     common_DSS_Keywords.Get Orignal Configuration DSS
+    robot_extension.Run Keyword And Warn On Failure    common_DSS_Keywords.Init Trace color
+
+    common_Dss_Keywords.Connect to COAM ADMIN
+
+    ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    Set Suite Variable              ${test_scf_file}
+    ${cellDepType}=   5GC001745_Kw_TestSetup.get cellDepType from SCF
+    ${TestDSS10Mhz_1745_C.Context.cellDepType}      set variable    ${cellDepType}
+    # BEWARE : line commented here to keep eNBId=1 and gNBId=2 defined into ${testParam} to be able to perform SA and NSA 5g Call
+    # run Keyword if    '${TestDSS10Mhz_1745_C.Context.cellDepType}' == 'SA+NSA'
+    # ...                                         5GC001745_Kw_TestSetup.update eNbId and gNBId In Context   ${TestDSS10Mhz_1745_C}   2   1
+    ${TestDSS10Mhz_1745_C.scfFile.nrdsslte.eNodeBId}    set variable     ${TestDSS10Mhz_1745_C.Context.eNBId}
+
+    common_DSS_Keywords.Update SpecificParameters to setup DSS configuration In WTS Cfg File    ${TestDSS10Mhz_1745_C}
+
+    # &{UE_SIMPLE_CellDSS}                ue=1                                    profile=1
+    # ...                                 bearer=2                                testMode=False
+    # ...                                 trf_id=1                                burst=${None}
+    # ...                                 throughput=${DEFAUT_THROUGHPUT}         testModeValue=csi_report_override
+    # ...                                 target_gnb=2                            target_cells=1
+
+    #define UE profile for Mono-Ue tests (cell-2.1)
+    ${UE_SIMPLE_CellDSS}                 Tools.Dictionary Get              ${UE_SIMPLE}
+    ${UE_SIMPLE_CellDSS.target_gnb}      set Variable	       ${TestDSS10Mhz_1745_C.Context.gNBId}
+    ${UE_SIMPLE_CellDSS.target_cells}    set Variable	       1
+    ${UE_SIMPLE_CellDSS.ue}              set Variable	       ${TestDSS10Mhz_1745_C.Context.UeId1}
+    Set Suite Variable              ${UE_SIMPLE_CellDSS}
+
+    ${CAPTURE_L1L2_GNB_FS_GNB_DSS}                Capture L1L2 Set Upon Config
+    Set Suite Variable              ${CAPTURE_L1L2_GNB_FS_GNB_DSS}
+
+    Dated log                       Get SW Version from OAM
+    ${sw_version}=    common_DSS_Keywords.Fetch common OAM SW version
+    Set Suite Variable              ${my_sw_version}                           ${sw_version}
+    Set Suite Metadata    gNB sw    ${sw_version}
+
+    ${ap_version}=    robot_extension.Run Keyword And Warn On Failure       common_DSS_Keywords.Get Airphone SW version
+
+    common_DSS_Keywords.Software Converter    ${my_sw_version}    0
+    ${sw_version_list}     Split String   ${my_sw_version}   _
+    Set Suite Variable     ${trunk}     False
+    Set Suite Variable     ${branch}     None
+    Run Keyword If                  '${master_version}' == '0'        Set Suite Variable     ${trunk}     False
+    Run Keyword If                  '${master_version}' == '9999'     Set Suite Variable     ${trunk}     True
+    ${branch}              Get From List    ${sw_version_list}    0
+    Dated log                       \tGNB_SW_VERSION=${my_sw_version}
+    Dated log                       \tconvert_version=${convert_version}
+    Dated log                       \tmaster_version=${master_version}
+    Dated log                       \ttrunk=${trunk}
+    Dated log                       \tbranch=${branch}
+
+    ${sw_version}=        pcap.Get Software Version
+    Set Suite Variable     ${current_sw_version_for_lua_gNB}     ${my_sw_version}
+    Dated log      sw version for lua gNB is ${current_sw_version_for_lua_gNB}
+
+    run Keyword if    '${trunk}' == 'True'         set WS preference
+
+    # needed to install only once
+    Dated Log         First Do install Mirroring scripts in GNB
+    common_DSS_Keywords.Get gNB mirroring into local repo    scriptDef=${CAPTURE_L1L2_GNB_FS_GNB_DSS.scriptDef}
+    common_DSS_Keywords.Mirror Script Install for DSS     scriptDef=${CAPTURE_L1L2_GNB_FS_GNB_DSS.scriptDef}  PathToScriptsRepo=${LOCAL_REPO_DIR}
+
+    ${the var}=    Get Variable Value    ${AF_PATH}
+    ${AF_PATH is set}=      Set Variable If    """${the var}""" != 'None'    ${True}    ${False}
+    Dated log     AF_PATH is set to ${AF_PATH is set} => set it to empty if False
+    set suite variable    ${AF_PATH is set}
+    run Keyword if   "${AF_PATH is set}"=="False"      set suite variable   ${AF_PATH}     ${empty}
+    ${the var}=    Get Variable Value    ${ENB_BUILD}
+    ${ENB_BUILD is set}=      Set Variable If    """${the var}""" != 'None'    ${True}    ${False}
+    Dated log     ENB_BUILD is set to ${ENB_BUILD is set} => set it to empty if False
+    set suite variable     ${ENB_BUILD is set}
+    run Keyword if   "${ENB_BUILD is set}"=="False"      set suite variable   ${ENB_BUILD}     ${empty}
+    Dated log    AF_PATH is ${AF_PATH}
+    Dated log    ENB_BUILD is ${ENB_BUILD}
+
+    Dated Log    First Do install Xp LuaShark
+    # make implode  => zip src dir to generated_luashark-9.1800.330.zip if needed
+    ${output}=   run   command= ls ${CURDIR}/../../../resources/DSS/XpShark/9.1800.330/generated_luashark-9.1800.330.zip
+    log many     ${output}
+    ${contains}=    Run Keyword And Return Status    Should Contain    ${output}     No such file or directory
+    run keyword if    "${contains}"=="${True}"     run    command=cd ${CURDIR}/../../../resources/DSS/XpShark/9.1800.330 && make implode
+    Do install Xp LuaShark into home     ${CURDIR}/../../../resources/DSS/XpShark/9.1800.330/generated_luashark-9.1800.330.zip
+
+    Dated log             Point AF_PATH and ENB_BUILD to local luashark XP package
+    pcap.Point AF_PATH to local luashark XP package
+    pcap.Point ENB_BUILD to local luashark XP package
+
+    Run Keyword if   '${GNB_DU.sys[0].M.boardType}'=='ASIK'   run Keywords    Dated log    Install classicalbts log collector into gNB    AND
+    ...                                                                       5GC001745_Kw_TestSetup.Install classicalbts log collector into gNB
+
+    Run Keyword if   '${GNB_DU.sys[0].M.boardType}'=='ASIK'   run Keywords    Dated log    Install classicalbts log collector into Airphone   AND
+    ...                                                                       5GC001745_Kw_TestSetup.Install classicalbts log collector into Airphone
+
+
+Test suite teardown for 1745
+    [Documentation]          Test suite teardown for all 1745 TCs.
+    ...                      Restores existing configuration files
+
+    run keyword and ignore error     common_DSS_Keywords.Restore Orignal Configuration DSS
+    Run Keyword If   '${REMOVE_PDML_FILE_END_TEST_SUITE}' == '1'  OperatingSystem.Remove File    ${LOG_PATH}/*.pdml
+    Run Keyword If   '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'     Dated Log           Recommissioning gNB with original SCF file
+    Run Keyword If   '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'     Run Keyword and Ignore Error   OAM Perform Full Commissioning  ${original_scf_file}
+    ${isOAMRebooted}      Run Keyword If        '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'      SSH Was OAM Rebooted         ${GNB_DU}
+    ...                             timeout=60
+    # If gNB was rebooted after re-commissioning, wait until it's ready again.
+    Run Keyword If   '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'  Run Keyword If  '${isOAMRebooted}' == 'True'  Airscale Wait for Ready  ${GNB_DU}
+    common_Dss_Keywords.Conn.ResetCache
+
+Teardown Edaemon And Egate Process
+    [Documentation]    This Keyword  tears down all aliases created fo Edaemon and Egate aliases created
+    ...                using ute_wtssim
+    Run Keyword And Ignore Error    wts.teardown_all_aliases_for_egate
+    Run Keyword And Ignore Error    wts.teardown_all_aliases_for_edaemon
+
+Teardown 1745
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}     ${w_TearDown_wts}=True
+
+    BuiltIn.Log      \nTest ${TEST_NAME} 1745 ending   console=yes
+    Produce Scout Data
+
+    # get Alarm at the end of the test and store it into a file
+    Dated log New Line  OAM Get Active Alarms to Save into file
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+
+    ${active_alarms}     OAM Get Active Alarms                   oam=${GNB_DU.oam}     textFormat=${False}
+    ${len}    Get Length    ${active_alarms}
+    ${alarm_id_list}    Create List
+    ${alarm_name_list}    Create List
+    FOR    ${i}    IN RANGE    ${len}
+         ${tmp_id}    Get From Dictionary    ${active_alarms[${i}]}    faultId
+         ${tmp_name_id}    Get From Dictionary    ${active_alarms[${i}]}    faultName
+         Append To List    ${alarm_id_list}    ${tmp_id}
+         Append To List    ${alarm_name_list}    ${tmp_name_id}
+    # Dated log     Active alarms: alarm_id_list=${alarm_id_list}
+    # Dated log     Active alarms: alarm_name_list=${alarm_name_list}
+    END
+    Append To File    ${LOG_PATH}/OAM_Alarms_After_${TEST_NAME}.txt     Active Alarms Id List:\n${alarm_id_list}\n\n
+    Append To File    ${LOG_PATH}/OAM_Alarms_After_${TEST_NAME}.txt     Active Alarms Name List:\n${alarm_name_list}\n\n
+
+    OAM Disconnect                          ${GNB_DU.oam}
+
+    # Restore WTS cfg file name
+    Run Keyword If   '${Param.seq.bandwidth}'!='10MHz'    restoreFilename
+
+    Run Keyword And Ignore Error     common_Dss_Keywords.Collect EGATE console Logs
+
+    run Keyword if    '${w_TearDown_wts}'=='True'      5GC001745_Keywords.Teardown Edaemon And Egate Process
+
+    [Teardown]      Run Keywords    GenericTest.Display diagnosis        AND
+    ...                             common_Dss_Keywords.Collect Logs if needed   ${alias}    AND
+    ...                             set Suite Variable  ${testCaseDir}  None
+
+Get TTI traces And Decode
+    [Arguments]     ${suffix}=${EMPTY}   ${time}=1s    ${event_nr_max}=30000   ${w_convert_pcap_to_excelCsv}=False
+    Dated Log         ======> Get TTI traces
+    ${tm}    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}    .
+    Dated Log         Start TTI Traces in Streaming Mode
+    ttitrace.Start TTI Traces in Streaming Mode      filter_bitmap2=0x0
+    Traced Sleep    ${time}      msg=Waiting for TTI Traces
+    Dated log         Stop TTI Traces in Streaming Mode...
+    ${ttiTraceSubDir}   set Variable    TtiTrace-${time}-${tm}
+    ${ttiTraceSubDir}   set Variable if    '${suffix}'!='${EMPTY}'     ${ttiTraceSubDir}-${suffix}
+    ...                                                                ${ttiTraceSubDir}
+    ${tti_trace_path}=     ttitrace.Stop TTI Traces in Streaming Mode    tti_trace_path=${testCaseDir}/${ttiTraceSubDir}
+    Dated log         Decode TTI Traces...
+    nps_ttitraces_tools.decode_tti_traces_using_TtitraceReaderEvtDec       desired_storage_directory=${testCaseDir}/${ttiTraceSubDir}
+    ...                                                                    num_of_events=${event_nr_max}
+    Run Keyword And Ignore Error   OperatingSystem.Run
+    ...                                 cp ${testCaseDir}/${ttiTraceSubDir}/msg_all.csv ${testCaseDir}/${ttiTraceSubDir}/msg-all-${time}-${tm}.csv
+    run keyword if   '${w_convert_pcap_to_excelCsv}'=='True'    run keywords
+    ...               Dated log    Convert TTI trace from pcap to excelCsv...    AND
+    ...               Run keyword and continue on failure     ttitrace.Convert TTI trace from pcap to excelCsv
+    ...                                                                    input_file_path=${tti_trace_path}
+    ...                                                                    output_file_path=${testCaseDir}/${ttiTraceSubDir}
+    [return]     ${testCaseDir}/${ttiTraceSubDir}
+

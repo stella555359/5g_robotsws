@@ -1,0 +1,42 @@
+# import numpy
+from testsuite.Paris.RRM.ET.CB011028.resources.python.tti_analysis import numpi as numpy
+
+
+def identify_cells_and_ues(df):
+    """Initalizer function"""
+    global detected_cell_id_rnti
+    detected_cell_id_rnti = None
+    if not detected_cell_id_rnti:
+        detected_cell_id_rnti = df[['rnti', 'physCellId']].where(df['csiSrReportData.isReportSaved'] == 1).dropna()
+        detected_cell_id_rnti.drop_duplicates(inplace=True)
+        detected_cell_id_rnti.set_index('physCellId', inplace=True)
+        return detected_cell_id_rnti
+    else:
+        return detected_cell_id_rnti
+
+
+def get_all_ue_rntis(on_cell=None):
+    if not on_cell:
+        return list(detected_cell_id_rnti['rnti'])
+    else:
+        try:
+            return list(detected_cell_id_rnti.loc[on_cell]['rnti'])
+        except KeyError:
+            print("Desired Cell ID is not present in trace!")
+            return None
+
+
+# Find Cell IDs where UEs are attached
+def get_cell_ids_with_ues_attached(rntis=None):
+    if not rntis:
+        return list(numpy.unique(detected_cell_id_rnti.index))
+    else:
+        cell_id_with_desired_rntis = []
+        try:
+            for rnti in rntis:
+                cell_id_with_desired_rntis += (list(detected_cell_id_rnti.where(
+                    detected_cell_id_rnti == rnti).dropna().index))
+            return list(numpy.unique(cell_id_with_desired_rntis))
+        except KeyError:
+            print("Desired RNTI is not present in trace!")
+            return None

@@ -1,0 +1,116 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   CB009915-B4 Test suite
+...               Configuration related keywords for feature CB009915-B4-IWK13 with µDTX
+...               Prerequisite : commissioning is managed automatically and basic_setup.cfg must be properly configured
+...               Scope : keywords for sub-feature
+...               Configuration done via json delta files:
+...               Cell 1 is configred with 18 blanked PRBs low
+...               Cell 2 is configured with 34 blanked PRBs low and 14 blanked PRBs high
+...               2 UEs are performing small end bursty traffic, UE1 on cell 1, UE2 on cell2
+...               At first configuration the µDTX threshold is set with dtxPrbThreshold = 13 for cell 1 and 15 for cell 2
+...               with these values and the trafic generated, taking into account the blanked PRB, all ues reach the thhreshold.
+...               This is checked with python on tti trace.
+...               Then the threshold is modified to 14 for cell 1 and 16 for cell 2.
+...               At this time it is verifed that blanking is achieved as configured (no prb used in blanked area)
+...               The threshold is no more reached. (again checked with tti and python KW.
+...               Then PM are verified to check that DTX is used.
+#
+...               Test Case Scenario author   :
+...               Creation Date               : 2023-12-01
+...               Modified Date               : 2024-01-03   Clean up for merge
+#
+...               Last Modified by            :
+...               Version    Date      Author                                Notes
+...               0.1        FB2324    Axel Gouilly-Frossard                 Creation robot based on CB9915-A
+...               0.2        FB2419    richard.duthu@nokia.com               Produce Scout data + some RF50 fixes
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+#
+Resource                                        ./resources/robot/CB009915-B4-Keywords.robot
+
+# Tags
+Force Tags                                      CA_5G_SW_FR-Villarceaux    RRM    PY36
+...                                             CLOUD_5G_I_LO_AP_LO_SANSA_FS_ECPRI_CMWV_TDD
+...                                             master_classicalbts_all    SBTS00
+...                                             CONFIGURED    5G_RAN    RAN_5G    CRT
+
+# Suites
+Suite Setup                                     CB009915-Common-Keywords.Suite Setup CB009915-Common    keep_all_data_in_file=${True}
+Suite Teardown                                  CB009915-B4-Keywords.Suite Teardown CB009915-B4
+*** Variables ***
+
+# capture setting
+&{CAPTURE_L1L2}                                 is_capture_core=${False}
+...                                             is_capture_cprt=${False}
+...                                             is_capture_l1l2=${True}
+
+# tests settings
+&{CB009915-B4}                                  act_blanking=${True}                    # blanking treatment is requested if parameter is true
+...                                             act_commissioning=${True}               # commissioning is performed if parameter is true
+...                                             capture_duration=0                      # capture duration during traffic starting phase
+...                                             deviation=10                            # default deviation for throughput and double for uplink
+...                                             dir=UL+DL
+...                                             duration=3                              # traffic duration during declaration phase
+...                                             pm_waiting_period=2                     # number of waiting periods added for observation
+...                                             target_gnb=2                            # gnb target id
+...                                             total_nb_cell=2                         # total number of cell used for ue's dispatching
+...                                             total_nb_ue=1                           # total number of ue's to configure
+
+# ue's settings # configuration based chBW=100MHz wo/ blanking
+&{dict_settings_ue_1}
+...                                             original_cell=1                         # original cell for call establishment
+...                                             throughput=251                          # dl throughput nonGBR max for ue in chBW=100MHz wo/blanking
+...                                             throughput_gbr=${NO_THROUGHPUT}         # dl throughput GBR for ue or ${NO_THROUGHPUT}
+...                                             throughput_ul=81                        # ul throughput nonGBR max for ue in chBW=100MHz wo/blanking
+...                                             ue=1
+...                                             trf_id=1
+...                                             pdu=1
+
+
+
+&{dict_settings_ue_2}
+...                                             original_cell=2
+...                                             throughput=252
+...                                             throughput_gbr=${NO_THROUGHPUT}
+...                                             throughput_ul=82
+...                                             ue=2
+...                                             trf_id=1
+...                                             pdu=1
+
+
+
+@{list_dict_settings_ue}                       ${dict_settings_ue_1}
+...                                            ${dict_settings_ue_2}
+
+${REQ_MIN_NUM_PUSCH_PRB_100MHZ_MAXI}            253    # limitation on NRCELL.reqMinNumPuschPrb for chBW=100MHz
+${REQ_MIN_NUM_PUSCH_PRB_100MHZ_DEFAULT}         213    # default value defined into MIND for our configuration or maxi as not well defined
+# configuration chBW=100MHz with PRB blanking:
+&{CONFIG_BLANKING_B4_100MHZ_default}             chBW=100MHz
+...                                             type0CoresetConfigIndex=10
+...                                             reqMinNumPuschPrb_maxi=${REQ_MIN_NUM_PUSCH_PRB_100MHZ_MAXI}
+...                                             reqMinNumPuschPrb_default=${REQ_MIN_NUM_PUSCH_PRB_100MHZ_DEFAULT}
+
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+*** Test Cases ***
+[1]CB009915-B4-11_IWK13_with_ Micro_discontinuous_transmission_100Mhz_SA
+    [Documentation]
+    ...     Conditions:     it is based on the configuration ${CB009915-B4}
+    ...     Actions:        it performs the call setup for single ue on cell1
+    ...     Checks:         it checks nothing more than already done on lib
+    ...     Verdict:        the constraints on counters and KPIs are passed
+
+    ${CB009915-B4.act_blanking}=                 Set Variable    ${True}
+    ${CB009915-B4.act_commissioning}=            Set Variable    ${True}
+    ${CONFIG_BLANKING_B4_100MHZ_default.nbBlankedPRBsHighEdge}=       Create List         18    34
+    ${CONFIG_BLANKING_B4_100MHZ_default.nbBlankedPRBsLowEdge}=        Create List         0     14
+
+    CB009915_B4_11_SA                           config_blanking=${CONFIG_BLANKING_B4_100MHZ_default}
+    ...                                         list_ues=${list_dict_settings_ue}
+    ...                                         is_capture=${CAPTURE_L1L2}
+    ...                                         param=${CB009915-B4}
+    ...                                         test_name=TC_CB009915_B4_11_SA
+    [Teardown]                                  Setup.Test Teardown

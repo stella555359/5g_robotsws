@@ -1,0 +1,164 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  verification of 5GC002255-EA feature in the case of FDD+TDD Classical Fullstack SA
+...               Prerequisite : GNB and Airphone should be installed
+...               Scope : With configuration allowing interband CA, perform call and check that
+...               Scell Good and Bad RLQ mechanisms work as expected
+...
+...
+...               Test Case Scenario author   : axel.gouilly-frossard@nokia.com
+...               Test Case Scenario contact  : axel.gouilly-frossard@nokia.com
+...               Test Case automation author : axel.gouilly-frossard@nokia.com
+...               Test Case automation contact: axel.gouilly-frossard@nokia.com
+...               Creation Date               : 20-October-2020
+...               Modified Date               : 18-August-2023
+...               Last Modified by            : loic.marzin@nokia.com
+...                    17/11/2022        Refactoring due to new QC management of test (no test dependencies allowed)
+...                    29/06/2023        Refactoring to remove ASIK/ABIL case (dead code)
+...                    18/08/2023        Refactoring due to BOO_AP_LOO Migration
+...               Last Modified by            : richard.duthu@nokia.com
+...               Last Modification           : Scout data + some fixes for RF50
+
+Resource          ../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../resources/SWENG/robot/CallSetup.robot
+Variables         ../../../resources/SWENG/python/ReadConfig.py
+Resource          robot/5GC002255_Keywords.robot
+
+
+
+Force Tags        CA_5G_SW_FR-Villarceaux   RRM
+...               PY36
+...               master_classicalbts_all
+...               CONFIGURED    5G_RAN    RAN_5G
+
+Suite Setup       5GC002255_Keywords.setup 2255
+Suite Teardown    5GC002255_Keywords.teardown 2255
+
+
+*** Variables ***
+${TestSharkTool}      MC_SHARK
+
+# variable set to ${True} to automatically save SOS report and OAM snapshot
+# (by default, these information are saved only if a test is failed)
+${ForceDebugDataCollection}    ${False}
+#${ForceDebugDataCollection}    ${True}
+
+&{EA}
+...                                 sCellActivationMethod=bufferBased
+...                                 sCellDeactivationBadRlqCount=5
+
+
+*** Test Cases ***
+
+[1][1.0] 5GC002255_EA_SCell_Suspension_Resume_Of_Scheduling_And_SCell_Deactivation
+    [Tags]                          CRT        CLOUD_5G_I_BOO_AP_LOO
+    ...                             VARIANT    VARIANT_SANSA_FS_ECPRI_CMWV_FDD+TDD
+    ...                             SBTS00
+    [Documentation]                 Carrier Aggregation 2255-1390 Sub-feature EA
+
+    Init Sequence                   ${EA}
+    Critical Step                   Set MRBTSID and NRBTSID_RWorked
+    Step                            Set SCF Context    argument=EA
+    Critical Step                   gNB_Startup_Ok_with_Flags
+    Critical Step                   Cell_Setup
+    Critical Step                   Attach_UE_FDD_CA_Capable
+    Critical Step                   PDU_Session_UE_FDD_CA_Capable
+    Step                            5GC002255_EA_B14_4_Good_RLQ_Detected_BufferBased
+    Step                            5GC002255_EA_B15_5_Bad_RLQ_Detected_BufferBased
+    [Teardown]                      Teardown 5GC002255_EA
+
+*** Keywords ***
+
+Set SCF Context
+    [Arguments]                     ${subfeature}=none
+    Dated log       ===================
+    Dated log       SCF settings for ${subfeature}
+    Dated log       ===================
+
+    &{modify_param0}   Create Dictionary
+    ...                               dist_name=MRBTS-1
+    ...                               parameter=btsName
+    ...                               value=${subfeature}
+
+    &{modify_param1}   Create Dictionary
+    ...                               parameter=sCellActivationMethod
+    ...                               dist_name=${DU}
+    ...                               value=${param.sCellActivationMethod}
+
+    &{modify_param2}   Create Dictionary
+    ...                               parameter=sCellDeactivationBadRlqCount
+    ...                               dist_name=${DU}
+    ...                               value=${param.sCellDeactivationBadRlqCount}
+
+    @{modify_param}    Create List    ${modify_param0}    ${modify_param1}    ${modify_param2}
+
+    Dated log                         Parameters to modify:\n  #${modify_param}
+    Dated log                         ${modify_param0}
+    Dated log                         ${modify_param1}
+    Dated log                         ${modify_param2}
+    OAM Set Params      ${modify_param}
+
+gNB_Startup_Ok_with_Flags
+    [Tags]  RESTART_STARTUP
+    Restart.Restart TL
+
+Cell_Setup
+    [Tags]  Cell_Setup
+    Sleep    5s
+    CallSetup.Setup Wtsemu SA
+
+Attach_UE_FDD_CA_Capable
+    sleep    5s
+    CallSetup.UE Register           ue=3
+
+PDU_Session_UE_FDD_CA_Capable
+    CallSetup.Launch PDU Session  ue=3  pdu=3  gw=3
+    sleep   1s
+
+5GC002255_EA_B14_4_Good_RLQ_Detected_BufferBased
+    ${ueSetting}        set variable    ${BASIC_UE_SA}
+    ${ueSetting.pdu}    set variable    3
+    ${ueSetting.ue}     set variable    3
+    5GC002255_Keywords.Start Capture BIP ABIO 2slots
+    Traffic.Traffic UE DL    throughput=175     ueSetting=${ueSetting}   shouldBeCheck=${False}   shouldBeStop=${False}
+    Dated Log   Bad RLQ (cqi=1) sent in UE CSI_Report
+    #Bad RLQ CQI=1
+    wtsemu.csi_override_testmode_nr    profile_id=3    ri=1    ri_mode=fixed    cqi=1    cqi_mode=fixed
+    wtsemu.ue_testmode_set_nr    id=3    testmode=csi_override    profile_id=3    scell=secondary    action=activate
+    sleep   5s
+    Dated Log   Good RLQ (cqi=15) sent in UE CSI_Report
+    #Good RLQ CQI=15
+    wtsemu.csi_override_testmode_nr    profile_id=3    ri=1    ri_mode=fixed    cqi=15    cqi_mode=fixed
+    wtsemu.ue_testmode_set_nr    id=3    testmode=csi_override    profile_id=3    scell=secondary    action=activate
+    sleep   5s
+    5GC002255_Keywords.Stop Capture L1L2
+    Traffic.Traffic Stop    ueSetting=${ueSetting}    dir=dl    throughput=175
+    Dated Log   Check SCell Deactivation then Activation
+    5GC002255_Keywords.Check_uedatadeliverystatusind    ${CaptureL1L2.path}   mode=OH
+
+5GC002255_EA_B15_5_Bad_RLQ_Detected_BufferBased
+    ${ueSetting}        set variable    ${BASIC_UE_SA}
+    ${ueSetting.pdu}    set variable    3
+    ${ueSetting.ue}     set variable    3
+    Traffic.Traffic UE DL    throughput=175     duration=15    ueSetting=${ueSetting}    shouldBeCheck=${False}   shouldBeStop=${False}
+    Dated Log   Bad RLQ (cqi=1) sent in UE CSI_Report
+    wtsemu.csi_override_testmode_nr    profile_id=3    ri=1    ri_mode=fixed    cqi=1    cqi_mode=fixed
+    wtsemu.ue_testmode_set_nr    id=3    testmode=csi_override    profile_id=3    scell=secondary    action=activate
+    sleep   5s
+    Traffic.Traffic Stop    ueSetting=${ueSetting}    dir=dl    throughput=175
+    Dated Log   Pause 10 mn to get the next PM period
+    sleep   600s
+    Dated Log   Pause ended
+    5GC002255_Keywords.Collect PM Counters File
+    5GC002255_Keywords.Check ScellDeactivationCounterChannelState    expValue1=1
+
+Teardown 5GC002255_EA
+    Dated log                       Teardown for 5GC002255_EA
+    Produce Scout Data
+    [Teardown]                      GenericTest.Display diagnosis

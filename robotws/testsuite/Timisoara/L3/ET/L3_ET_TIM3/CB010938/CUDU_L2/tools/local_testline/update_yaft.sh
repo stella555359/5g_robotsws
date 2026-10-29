@@ -1,0 +1,1 @@
+svn export https://svne1.access.nsn.com/isource/svnroot/BTS_T_YAFT/trunk/ /home/ute/YAFT/ --username ca_ute_test --password utetest --non-interactive --no-auth-cache --quiet --force --trust-server-cert

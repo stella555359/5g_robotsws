@@ -1,0 +1,311 @@
+__maintainer__ = 'barbier jean-Michel'
+__team__ = 'MN 5G RAN I&V 1 Pz 1 SG'
+__email__ = 'I_UTE_NPS_5G@internal.nsn.com'
+__owner_email__ = 'jean-michel.barbier@nokia.com'
+
+PATH_TO_SCF = ''
+
+OBJECTS_TO_CREATE = [
+    # create given object in scf
+    dict(
+        dist_name='MRBTS-1900/MNL-1/MNLENT-3',
+        class_name="com.nokia.srbts.mnl:MNLENT",
+        version="MNL5G19_1901_010"
+    ),
+    dict(
+        dist_name='MRBTS-1900/MNL-1/MNLENT-3/SYNC-1',
+        class_name="ccom.nokia.srbts.mnl:SYNC",
+        version="MNL5G19_1901_010"
+    ),
+    dict(
+        dist_name='MRBTS-1900/MNL-1/MNLENT-3/SYNC-1/TIME-1',
+        class_name="com.nokia.srbts.mnl:TIME",
+        version="MNL5G19_1901_010"
+    ),
+    dict(
+        dist_name='MRBTS-1900/MNL-1/MNLENT-3/SYNC-1/CLOCK-1',
+        class_name="com.nokia.srbts.mnl:CLOCK",
+        version="MNL5G19_1901_010"
+    ),
+    dict(
+        dist_name='MRBTS-1900/MNL-1/MNLENT-3/SYNC-1/CLOCK-1/NTP-1',
+        class_name="com.nokia.srbts.mnl:NTP",
+        version="MNL5G19_1901_010"
+    ),
+    dict(
+        dist_name='MRBTS-1900/MNL-1/MNLENT-3/SECADM-1',
+        class_name="com.nokia.srbts.mnl:SECADM",
+        version="MNL5G19_1901_010"
+    ),
+    dict(
+        dist_name='MRBTS-1900/MNL-1/MNLENT-3/FMCADM-1',
+        class_name="com.nokia.srbts.mnl:FMCADM",
+        version="MNL5G19_1901_010"
+    ),
+    dict(
+        dist_name='MRBTS-1900/MNL-1/MNLENT-3/CERTHENT-1',
+        class_name="com.nokia.srbts.mnl:CERTHENT",
+        version="MNL5G19_1901_010"
+    ),
+    dict(
+        dist_name='MRBTS-1900/MNL-1/MNLENT-3/CERTHENT-1/CRLHS-1',
+        class_name="com.nokia.srbts.mnl:CRLHS",
+        version="MNL5G19_1901_010"
+    ),
+    dict(
+        dist_name='MRBTS-1900/MNL-1/MNLENT-3/CERTHENT-1/CMPS-1',
+        class_name="com.nokia.srbts.mnl:CMPS",
+        version="MNL5G19_1901_010"
+    )
+]
+
+
+PARAMS_TO_ADD = [
+    dict(
+        value='VM',
+        dist_name='MRBTS-33/MNL-1/MNLENT-3',
+        p_name='targetDNType'
+    ),
+    dict(
+        value='PhaseSync',
+        dist_name='MRBTS-33/MNL-1/MNLENT-3/SYNC-1',
+        p_name='btsSyncMode'
+    ),
+    dict(
+        value='RAU',
+        dist_name='MRBTS-33/MNL-1/MNLENT-3/SYNC-1',
+        p_name='profileType'
+    ),
+    dict(
+        value='(GMT+1) Europe/Paris',
+        dist_name='MRBTS-33/MNL-1/MNLENT-3/SYNC-1/TIME-1',
+        p_name='timeZone'
+    ),
+    dict(
+        value='Disabled',
+        dist_name='MRBTS-33/MNL-1/MNLENT-3/SYNC-1/CLOCK-1',
+        p_name='outputConfiguration1Pps'
+    ),
+    dict(
+        value='Disabled',
+        dist_name='MRBTS-33/MNL-1/MNLENT-3/SYNC-1/TIME-1',
+        p_name='outputConfiguration2M048'
+    ),
+    dict(
+        value='10.5.116.160',
+        dist_name='MRBTS-33/MNL-1/MNLENT-3/SYNC-1/CLOCK-1/NTP-1',
+        p_name='ntpServerIpAddr'
+    ),
+    dict(
+        value='true',
+        dist_name='RBTS-33/MNL-1/MNLENT-3/SECADM-1',
+        p_name='actServiceAccountSsh'
+    ),
+    dict(
+        value='false',
+        dist_name='MRBTS-33/MNL-1/MNLENT-3/SYNC-1/TIME-1',
+        p_name='actServicePortState'
+    ),
+    dict(
+        value='45',
+        dist_name='MRBTS-33/MNL-1/MNLENT-3/SYNC-1/TIME-1',
+        p_name='sshClientAliveTimer'
+    ),
+    dict(
+        value='10',
+        dist_name='MRBTS-33/MNL-1/MNLENT-3/SYNC-1/TIME-1',
+        p_name='sshSessionLoginDelayTimer'
+    )
+]
+
+
+PARAMS_TO_MODIFY = [
+    dict(
+        value='Nokia Paris Saclay CV-33',
+        dist_name='MRBTS-1900',
+        p_name='btsName'
+    ),
+    dict(
+        value='208',
+        dist_name='MRBTS-1900/NRBTS-1',
+        p_name='mcc'
+    ),
+    dict(
+        value='64',
+        dist_name='MRBTS-1900/NRBTS-1',
+        p_name='mnc'
+    ),
+    dict(
+        value='1',
+        dist_name='MRBTS-1900/NRBTS-1',
+        p_name='nea0'
+    ),
+    dict(
+        value='3',
+        dist_name='MRBTS-1900/NRBTS-1',
+        p_name='nea1_128'
+    ),
+    dict(
+        value='4',
+        dist_name='MRBTS-1900/NRBTS-1',
+        p_name='nea2_128'
+    ),
+    dict(
+        value='2',
+        dist_name='MRBTS-1900/NRBTS-1',
+        p_name='nea3_128'
+    ),
+    dict(
+        value='dlOverF1U',
+        dist_name='MRBTS-1900/NRBTS-1',
+        p_name='dlDataSplitMode'
+    ),
+    dict(
+        value='3gppFlowControl',
+        dist_name='MRBTS-1900/NRBTS-1',
+        p_name='dlFlowControlAlgo'
+    ),
+    dict(
+        value='ulOverNr',
+        dist_name='MRBTS-1900/NRBTS-1',
+        p_name='ulDataPath'
+    ),
+    dict(
+        value='3gppFlowControl',
+        dist_name='MRBTS-1900/NRBTS-1',
+        p_name='dlFlowControlAlgo'
+    ),
+    dict(
+        value='750',
+        dist_name='MRBTS-1900/NRBTS-1',
+        p_name='tDiscardLteTimer'
+    ),
+    dict(
+        value='300',
+        dist_name='MRBTS-1900/NRBTS-1',
+        p_name='timerE1BearerProcGuard'
+    ),
+    dict(
+        value='2071591',
+        dist_name='MRBTS-1900/NRBTS-1/NRCELL-1',
+        p_name='nrarfcn'
+    ),
+    dict(
+        value='false',
+        dist_name='MRBTS-1900/NRBTS-1/NRCELL-1',
+        p_name='nrBtsBeamRefinementP2'
+    ),
+    dict(
+        value='16',
+        dist_name='MRBTS-1900/NRBTS-1/NRCELL-1',
+        p_name='nrofHARQProcessesForPDSCH'
+    ),
+    dict(
+        value='semiStatic',
+        dist_name='MRBTS-1900/NRBTS-1/NRCELL-1',
+        p_name='frameStructureType'
+    ),
+    dict(
+        value='2Symbols',
+        dist_name='MRBTS-1900/NRBTS-1/NRCELL-1',
+        p_name='guardPeriodLength'
+    ),
+    dict(
+        value='1/4',
+        dist_name='MRBTS-1900/NRBTS-1/NRCELL-1',
+        p_name='ulDlDataSlotRatio'
+    ),
+    dict(
+        value='true',
+        dist_name='MRBTS-1900/NRBTS-1/NRCELLGRP-0',
+        p_name='actProactUlScheduling'
+    ),
+    dict(
+        value='false',
+        dist_name='MRBTS-1900/MNL-1/MNLENT-1/SECADM-1',
+        p_name='ethernetPortSecurityEnabled'
+    ),
+    dict(
+        value='false',
+        dist_name='MRBTS-1900/MNL-1/MNLENT-2/SECADM-1',
+        p_name='ethernetPortSecurityEnabled'
+    ),
+    dict(
+        value='false',
+        dist_name='MRBTS-1900/MNL-1/MNLENT-3/SECADM-1',
+        p_name='ethernetPortSecurityEnabled'
+    ),
+    dict(
+        value='false',
+        dist_name='MRBTS-1900/MNL-1/MNLENT-1/FEATCADM-1',
+        p_name='systemAcctPermEnable'
+    ),
+    dict(
+        value='false',
+        dist_name='MRBTS-1900/MNL-1/MNLENT-2/FEATCADM-1',
+        p_name='systemAcctPermEnable'
+    ),
+    dict(
+        value='15min',
+        dist_name='MRBTS-1900/MNL-1/PMCADM-1',
+        p_name='reportingIntervalPm'
+    ),
+    dict(
+        value='5G19/5g_pid11_abil_l2rt_eoc',
+        dist_name='MRBTS-1900/EQM-1/APEQM-1',
+        p_name='rapProfile'
+    ),
+    dict(
+        value='(GMT+1) Europe/Paris',
+        dist_name='MRBTS-1900/MNL-1/MNLENT-1/SYNC-1/TIME-1',
+        p_name='timeZone'
+    ),
+    dict(
+        value='(GMT+1) Europe/Paris',
+        dist_name='MRBTS-1900/MNL-1/MNLENT-2/SYNC-1/TIME-1',
+        p_name='timeZone'
+    ),
+    dict(
+        value='(GMT+1) Europe/Paris',
+        dist_name='MRBTS-1900/MNL-1/MNLENT-3/SYNC-1/TIME-1',
+        p_name='timeZone'
+    ),
+    dict(
+        value='192.168.2.61',
+        dist_name='MRBTS-1900/TNLSVC-1/TNL-4/IPNO-1/IPIF-1/IPADDRESSV4-1',
+        p_name='localIpAddr'
+    ),
+    dict(
+        value='192.168.2.62',
+        dist_name='MRBTS-1900/TNLSVC-1/TNL-4/IPNO-1/IPIF-1/IPADDRESSV4-2',
+        p_name='localIpAddr'
+    ),
+    dict(
+        value='192.168.2.60',
+        dist_name='MRBTS-1900/TNLSVC-1/TNL-4/IPNO-1/IPIF-1/IPADDRESSV4-3',
+        p_name='localIpAddr'
+    ),
+    dict(
+        value='NPS CV33 RAP1',
+        dist_name='MRBTS-1900/EQM-1/APEQM-1',
+        p_name='location'
+    ),
+    dict(
+        value='1',
+        dist_name='MRBTS-1900/NRBTS-1/NRCELL-1',
+        p_name='physCellId'
+    ),
+    dict(
+        value='(GMT+1) Europe/Paris',
+        dist_name='MRBTS-1900/MNL-1/MNLENT-3/SYNC-1/TIME-1',
+        p_name='timeZone'
+    )
+]
+
+PARAMS_TO_DELETE = [
+    dict(dist_name='MRBTS-1900/NRBTS-1/NRCELL-2/NRCELL_FDD-1'),
+    dict(dist_name='MRBTS-1900/NRBTS-1/NRCELL-3/NRCELL_FDD-1'),
+    dict(dist_name='MRBTS-1900/NRBTS-1/NRCELL-4/NRCELL_FDD-1')
+]
+
+AMOUNT_OF_CELLS = 1

@@ -1,0 +1,136 @@
+from testsuite.Paris.RRM.ET.resources_KRK.python.utilities import (
+    logger_console, logger_warning, logger_console_info
+)
+from robot.libraries.BuiltIn import BuiltIn
+from time import sleep
+
+
+def run_egate_command(cmd, sec=1):
+    BuiltIn().get_library_instance('ta5g_egate')._ute_wtssim_instance.execute_egate_command(cmd)
+    sleep(sec)
+
+
+def prepare_internal_traffic_generator(ue_id=1):
+    logger_console("Set internal traffic generator for SA")
+    run_egate_command('set_pdu_param ue={} pdu=1 trf_type=internal'.format(ue_id))
+
+
+def prepare_ue_cqi_param(ue_id=1):
+    logger_console("Set UE CQI param")
+    run_egate_command('ue_cqi_param id={} on=nr nr_ri_mode=fixed nr_ri=0'.format(ue_id))
+
+
+def prepare_additional_bearer_setup_for_VoNR():
+    logger_console("Set additional bearer setup for VoNR")
+    run_egate_command('smf_param id=1 additional_qosflows_to_activate=2')
+
+
+def start_dl_traffic(ue_id, dl_mbps, trf_id):
+    run_egate_command('trf_data_start ue={} pdu=1 dir=dl trf_id={} mbps={} seconds=1800 size=1358'.format(
+        ue_id, trf_id, dl_mbps))
+
+
+def start_ul_traffic(ue_id, ul_mbps):
+    run_egate_command('trf_data_start ue={} pdu=1 dir=ul trf_id=1 mbps={} seconds=1800 size=1358'.format(
+        ue_id, ul_mbps))
+
+
+def start_dl_traffic_on_bearer_5qi_5(ue_id, dl_mbps, trf_id=2):
+    run_egate_command(
+        'trf_data_start ue={} pdu=1 qfi=1 trf_id={} mbps={} dir=dl seconds=1800'.format(
+            ue_id, trf_id, dl_mbps)
+    )
+
+
+def start_ul_traffic_on_bearer_5qi_5(ue_id, ul_mbps):
+    run_egate_command(
+        'trf_data_start ue={} pdu=1 qfi=1 trf_id=1 mbps={} dir=ul seconds=1800 size=1358'.format(
+            ue_id, ul_mbps))
+
+
+def start_dl_traffic_on_bearer_5qi_1(ue_id):
+    run_egate_command(
+        'trf_data_start ue={} pdu=1 qfi=2 trf_id=11 dir=dl rtp_codec=amr_wb_18_25 seconds=1800'.format(ue_id)
+    )
+
+
+def start_ul_traffic_on_bearer_5qi_1(ue_id):
+    run_egate_command(
+        'trf_data_start ue={} pdu=1 qfi=2 trf_id=12 dir=ul rtp_codec=amr_wb_18_25 seconds=1800'.format(ue_id)
+    )
+
+
+def add_bearer_with_5qi_for_pdu_session_for_vonr(ue_id):
+    run_egate_command('ue_pdu_session_modify ue={} pdu=1 qosflows_to_add=2 by=amf'.format(ue_id))
+
+
+def start_ul_traffic_for_multi_ue(ue_id, trf_id, ul_mbps):
+    run_egate_command(
+        'trf_data_start ue={} pdu=1 qfi=1 trf_id={} mbps={} dir=ul'.format(ue_id, trf_id, ul_mbps), sec=0)
+
+
+def start_dl_traffic_for_multi_ue(ue_id, trf_id, dl_mbps):
+    run_egate_command(
+        'trf_data_start ue={} pdu=1 qfi=1 trf_id={} mbps={} dir=dl'.format(ue_id, trf_id, dl_mbps), sec=0)
+
+
+def start_multi_ue_traffic(ues_list, ul_mbps, dl_mbps):
+    trf = 1
+    for ue_id in ues_list:
+        start_ul_traffic_for_multi_ue(ue_id=ue_id, trf_id=trf, ul_mbps=ul_mbps)
+        trf += 1
+        start_dl_traffic_for_multi_ue(ue_id=ue_id, trf_id=trf, dl_mbps=dl_mbps)
+        trf += 1
+
+
+def create_beam_profile(profile_id, ue_beam_index_initial, csirs_bestbeam, csirs_rsrp_best, csirs_rsrp_avg):
+    run_egate_command(
+        'beam_control_testmode_nr '
+        'profile_id={profile_id} '
+        'ueBeamIndexInitial={ueBeamIndexInitial} '
+        'csirs_bestbeam={csirs_bestbeam} '
+        'csirs_rsrp_best={csirs_rsrp_best} '
+        'csirs_rsrp_avg={csirs_rsrp_avg}'.format(profile_id=profile_id, ueBeamIndexInitial=ue_beam_index_initial,
+                                                 csirs_bestbeam=csirs_bestbeam, csirs_rsrp_best=csirs_rsrp_best,
+                                                 csirs_rsrp_avg=csirs_rsrp_avg)
+    )
+
+
+def associate_ue_to_testmode(ue_id, testmode="beam_control", action="activate",
+                             profile_id="1", beamaction="attach", scell=None):
+    command = 'ue_testmode_set_nr id={} testmode={} action={} profile_id={} beamaction={}'.format(
+        ue_id, testmode, action, profile_id, beamaction)
+    if beamaction == "switch" and scell:
+        command += " scell={}".format(scell)
+    run_egate_command(command)
+
+
+def display_all_ue_stats():
+    run_egate_command('ue_stats_nr id=1-6 scell=0-3')
+
+
+def display_stats_for_ue(ue_id=1):
+    run_egate_command('ue_stats_nr id={} scell=0-2'.format(ue_id))
+
+
+def check_ue_statistics_on_egate(_id, scell):
+    parser_instance = BuiltIn().get_library_instance('ta_egate_cmd_parser')
+    ue_stats_nr = parser_instance.get_command("ue_stats_nr")
+    data = ue_stats_nr(id=_id, scell=scell, type="pdsch").execute_and_parse()
+    for cellidx in data:
+        if cellidx.startswith('CellIndex-'):
+            value_raw = data[cellidx]["Average"]["value"]
+            unit_raw = data[cellidx]["Average"]["unit"]
+            value = float(value_raw)
+            unit = "" if unit_raw is None else unit_raw.lower()
+            assert value >= 1.0, "Average tput for {} is {}{} which is less than 1.0".format(cellidx, value, unit)
+            assert unit == "mbps", "Average tput is too low (not Mbps)"
+
+
+def sinr_testmode_activation(ue_id=14):
+    run_egate_command(
+        'ul_sinr_testmode_nr profile_id=2 sinr_target_srs=300 sinr_target_pusch=200 '
+        'sinr_target_pucch=-300 sinr_target_preamble=100')
+    sleep(3)
+    run_egate_command('ue_testmode_set_nr id={} testmode=ul_sinr action=activate profile_id=2'.format(ue_id))
+    sleep(3)

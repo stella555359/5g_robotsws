@@ -1,0 +1,1152 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   CB007491-Test-Template-Keywords
+...               Prerequisite :
+...               Scope :
+...               Test Case Scenario author   : christophe.samson@nokia.com
+...               Creation Date               : 03-01-2024
+...               Modified Date               : 03-01-2024
+...               Last Modified by            : christophe.samson@nokia.com
+...               Version   Date                      Author                                   Notes
+...               0.1       08-28-2024[mm-dd-yyyy]    christophe.samson@nokia.com              Creation
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+Library      ta_emss
+Library      ta_messaging
+
+# Libraries CB009836
+Library      ../python/resources.py
+Library      ../python/Dev_lib.py
+
+# Resources CB007491
+Resource     CB007491-Keywords.robot
+Resource     CB007491-TL-Preparation-Keywords.robot
+
+*** Variables ***
+
+${path_config_custom}          ${CURDIR}/../config/custom
+${LuaFileToUsed_path_ABIP}     ${path_config_custom}/basic_wts_CLOUD_5G_I_MP_AP_LOOO_SANSA_FS_ECPRI_CMWV_TDD_6Ues.lua
+${LuaFileToUsed_path_ABIO}     ${path_config_custom}/basic_wts_CLOUD_5G_I_LO_AP_LOOO_SANSA_FS_ECPRI_CMWV_TDD_6Ues.lua
+${LuaFileToUsed_path_ASOE}     ${path_config_custom}/basic_wts_CLOUD_5G_O_E_AP_LOO_8DL8UL_SANSA_FS_ECPRI_CMWV_TDD_6Ues.lua
+${LuaFileToUsed_path_TddLte_3_Canada_ASOE}
+...                            ${path_config_custom}/basic_wts_CLOUD_5G_O_E_AP_LOO_8DL8UL_SANSA_FS_ECPRI_CMWV_TDD_6Ues_TddLte_3_Canada.lua
+${LuaFileToUsed_path_TddLte_3_Canada_ASOE_TC_B1}
+...                            ${path_config_custom}/basic_wts_CLOUD_5G_O_E_AP_LOO_8DL8UL_SANSA_FS_ECPRI_CMWV_TDD_6Ues_TddLte_3_Canada_9836_B_01.lua
+${LuaFileToUsed_path_TddLte_3_Canada_ASOE_TC_B1_2}
+...                            ${path_config_custom}/basic_wts_CLOUD_5G_O_E_AP_LOO_8DL8UL_SANSA_FS_ECPRI_CMWV_TDD_6Ues_TddLte_3_Canada_9836_B_02.lua
+${LuaFileToUsed_path_ABIP}     ${path_config_custom}/basic_wts_CLOUD_5G_I_MP_AP_LOOO_SANSA_FS_ECPRI_CMWV_TDD_6Ues.lua
+${LuaFileToUsed_path_TddLte_3_Canada_ABIP}    ${path_config_custom}/basic_wts_CLOUD_5G_I_MP_AP_LOOO_SANSA_FS_ECPRI_CMWV_TDD_6Ues_TddLte_3_Canada.lua
+${LuaFileToUsed_path_TddLte_3_Canada_DLMUMIMO_ABIP}
+...                                  ${path_config_custom}/basic_wts_CLOUD_5G_I_MP_AP_LOOO_SANSA_FS_ECPRI_CMWV_TDD_6Ues_TddLte_3_Canada_DLMUMIMO.lua
+${LuaFileToUsed_path}          ${LuaFileToUsed_path_ASOE}
+# ${LuaFileToUsed_path}          ${LuaFileToUsed_path_TddLte_3_Canada_ASOE}
+
+@{PARAMS_IN_VENDOR}                               ${EMPTY}
+${PM_COUNTER_INTERVAL}                            5min
+${act9836TddCsirsAllocOptimization}               false
+
+*** Keywords ***
+
+Try Lock and Unlock cells
+    [Arguments]       ${cell_missing_list}
+    Dated log     Try Lock and Unlock cells for cell_missing_list=${cell_missing_list}
+    ${dir_syslog}=    Prepare Logs Directory Path     resultDir=${testCaseDir}    subdir=btslog2_before_Lock_Unlock_Cells
+    ${ret}    ${syslogpath}=     robot_extension.Run Keyword And Warn On Failure   btslog.Stop Btslog    target_dir=${dir_syslog}
+    robot_extension.Run Keyword And Warn On Failure     Display SLOTTYPE configuration from Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Extract L2-PS/src/sgnl/psCell/CellSetupLogger from Syslogs
+    ${fileExists}=     nps_7491_tools.file_exists   ${syslogpath}
+    ${ret}    ${syslog_filename}   Run Keyword If   ${fileExists}==${True}
+    ...                                           Run Keyword And Ignore Error    nps_7491_tools.return_basename   ${syslogpath}
+    ...                              ELSE         ObtainVariablesKeyword
+    robot_extension.Run Keyword And Warn On Failure   declare Trace in Trace List    Type=SysLog  Savedir=${dir_syslog}
+    ...                          file_name=${syslog_filename}   Trigger=btslog2_beforeLockUnlockCells
+    robot_extension.Run Keyword And Warn On Failure   btslog.Start Btslog
+    Dev_lib.start_to_capture_infomodel_log
+    FOR     ${cell}     IN     @{cell_missing_list}
+        ${cellId}=     Set Variable If    '${cell}'=='16385'     1
+        ...                               '${cell}'=='16386'     2
+        ...                               '${cell}'=='16387'     3
+        ...                               '${cell}'=='16388'     4
+        ...                               '${cell}'=='16389'     5
+        ...                               '${cell}'=='16390'     6
+        Lock Cell${cellId}
+        Unlock Cell${cellId}
+    END
+    [Teardown]     Run Keyword And Ignore Error      Dev_lib.stop_to_capture_infomodel_log
+
+Update csirsGroups and cellcsirs
+    [arguments]    ${NbrCells}=4
+    dated log     [Update csirsGroups and cellcsirs] csirsGroups=${sorted_csirsGroups}
+    ${sorted_csirsGroups}  ${sorted_cellcsirs_slotoffset}  ${uecsirs_slotoffset}  ${sorted_trscsirs_slotoffset}  ${sorted_trscsirs_ssb_slotoffset}
+    ...                     Extract l2::ps::cell::CellSetupReq_t and CellSetupResp_t from Syslog     NbrCells=${NbrCells}
+    ...                                                     csirsGroups=${sorted_csirsGroups}    cellcsirs=${sorted_cellcsirs_slotoffset}
+    ...                                                     trscsirs=${sorted_trscsirs_slotoffset}
+    # ...                                                     sysLogsDir=/home/ute/csamson/TRACES_3
+    Dated Log New Line    Update csirsGroups and cellcsirs => sorted_csirsGroups=${sorted_csirsGroups}
+    Dated Log New Line    Update csirsGroups and cellcsirs => sorted_cellcsirs_slotoffset=${sorted_cellcsirs_slotoffset}
+    Dated Log New Line    Update csirsGroups and cellcsirs => sorted_trscsirs_slotoffset=${sorted_trscsirs_slotoffset}
+    Set test Variable     ${sorted_csirsGroups}
+    Set Test Variable     ${sorted_cellcsirs_slotoffset}
+    Set Test Variable     ${sorted_trscsirs_slotoffset}
+    Set Test Variable     ${sorted_trscsirs_ssb_slotoffset}
+
+check Dl Cell mapping from Syslog ${FileDLCellMapping}
+    [documentation]    ${FileDLCellMapping} is created from syslog traces - see extract_l1sp_from_syslog in CB007491-lib.py
+    ${isFileNameDLCellMappingPresent}    Run Keyword And Return Status    Should Not Be Empty   ${FileDLCellMapping}
+    ${fileExists}=     nps_7491_tools.file_exists   ${FileDLCellMapping}
+    Run Keyword If     not ${isFileNameDLCellMappingPresent} or not ${fileExists}
+    ...      BuiltIn.Log    DL Cell mapping file not present (from Syslog), please check the config    level=WARN    console=yes
+    return from Keyword if     not ${isFileNameDLCellMappingPresent} or not ${fileExists}
+    ${json_string}=    OperatingSystem.Get File    ${FileDLCellMapping}
+    ${parsed_json}=    Evaluate    json.loads('''${json_string}''')    json
+    dated log    parsed_json=${parsed_json}
+    # ${parsed_json}[2] means PoolId
+    ${PoolIdList}=    Evaluate    set([a[2] for a in ${parsed_json}])
+    ${all_equal}=     Evaluate    len(${PoolIdList}) == ${1}
+    ${PoolId}=        Set Variable If    ${all_equal}   ${PoolIdList}    ${None}
+    ${num_of_cells}=    Get Cell Number
+    robot_extension.Run Keyword And Warn On Failure    Should be True    ${all_equal}
+    ...                                                msg=All ${num_of_cells} Cells are NOT mapped on same PoolId [${PoolId}]!!!
+    Run Keyword If    ${all_equal}     dated log     All ${num_of_cells} Cells are mapped on same PoolId ${consTraceColor}${PoolId}${defColor}
+    [return]    ${all_equal}    ${PoolId}
+
+Log config in result env file
+    [Arguments]    ${config}=None    ${run}=None
+    ${resultEnvFile}    Set Variable     ${testCaseDir}/resultEnvFile_${TEST NAME[0:30]}.log
+    Set Test Variable    ${resultEnvFile}
+    Append To File   ${resultEnvFile}  ------------------------------------------------------\n
+    Append To File   ${resultEnvFile}   TEST NAME: ${TEST NAME}\n
+    Append To File   ${resultEnvFile}   TEST CONFIG: ${config}\n
+    Append To File   ${resultEnvFile}   TEST RUN: ${run}\n
+    Append To File   ${resultEnvFile}  ------------------------------------------------------\n
+    Append To File   ${resultEnvFile}   df -kh:\n
+    Append To File   ${resultEnvFile}  ------------------------------------------------------\n
+    ${cmd}=     OperatingSystem.Run     sudo df -kh
+    Append To File   ${resultEnvFile}   ${cmd}\n
+    Append To File   ${resultEnvFile}  ------------------------------------------------------\n
+    Append To File   ${resultEnvFile}   sudo lsof -w /tmp:\n
+    Append To File   ${resultEnvFile}  ------------------------------------------------------\n
+    ${cmd}=     OperatingSystem.Run     sudo lsof -w /tmp
+    Append To File   ${resultEnvFile}   ${cmd}\n
+    Append To File   ${resultEnvFile}  ------------------------------------------------------\n
+
+TC CB007491 4 Cells
+    [Documentation]
+    ...     test template for CB009836 (Topology to used should be CLOUD_5G_O_E_AP_LOO_8DL8UL)
+    ...     Conditions:     it is based on the arguments ${param}  ${dictParam}  ${vendor_custom} ${dict_ues} ${nrCell}
+    ...     Actions:        it performs the call setup for multi-ues on different cells with DL traffic
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        calls for multi ues and PRB pooling are passed
+    [Arguments]             ${param}
+    ...                     ${dictParam}
+    ...                     ${vendor_custom}
+    ...                     ${dict_ues}
+    ...                     ${nrCell}
+    ...                     ${Kw TestLine Preparation}=${EMPTY}
+    ...                     ${kw Set RAD Params}=${EMPTY}
+    ...                     ${kw NIDD Set}=${EMPTY}
+    ...                     ${kw NIDD Check}=${EMPTY}
+    ...                     ${kw Set TestMode}=${EMPTY}
+    ...                     ${kw Active Config}=${EMPTY}
+    ...                     ${kw Specific Set TestMode Before Attach}=${EMPTY}
+    ...                     ${kw Specific Set TestMode After Attach}=${EMPTY}
+    ...                     ${NIDD_9836_PARAMS}=${NIDD_9836_Q_L_PARAMS}
+    ...                     ${Kw_Convert_TtiTrace_From_csv_to_Dict_Test}=Convert TTI trace from csv to dict CB009836
+    ...                     ${kw Check SCF parameters}=${EMPTY}
+    ...                     ${kw Specific Check Tti}=${EMPTY}
+    ...                     ${kw Specific Check}=${EMPTY}
+    ...                     ${kw Specific Check CPRT}=${EMPTY}
+    ...                     ${Kw Update NIDD Test Parameters}=${EMPTY}
+    ...                     ${NIDD_9836_TEST_PARAMS}=${EMPTY}
+    ...                     ${Json test configuration}=${EMPTY}
+    ...                     ${FrameStructure}=5GC001208
+    ...                     ${TypeCheck}=allCellsSameSSB
+    ...                     ${skip}=${False}
+
+    ${topoOK}    ${topoUsed}=    check topology used is CLOUD_5G_I_LO_AP_LO
+    ${msg_err}=     Catenate    topology USED [${topoUsed}] is not CORRECT for this test [${TEST NAME}].
+    Run Keyword If            '${topoOK}'=='False'   dated log   ${consTraceColorBgRed}${consTraceColorYellow}${msg_err}${defColor} Plz, Check it...
+    Return From Keyword If    '${topoOK}'=='False'
+    Init Sequence           ${param}
+    Create Header Csv Tput Test result
+    ${ull1spcells_syslog}=    Create List
+    ${dll1spcells_syslog}=    Create List
+    set test variable     ${ull1spcells_syslog}
+    set test variable     ${dll1spcells_syslog}
+    Run Keyword If    '${Json test configuration}'!='${EMPTY}'    load Json test data   ${Json test configuration}   ${dict_ues}
+    ...                                                                                 ${vendor_custom}   ${param}
+    StringTool.printLineWithTitle     title=Display NIDD PARAMETERS of the Test TO SET
+    FOR    ${item}    IN    @{NIDD_9836_PARAMS}
+         continue for loop if     'list_name' in ${item}
+         ${msg_display}=    StringTool.getHeaderLine    &{item}[dist_name]/&{item}[pname]     &{item}[value]
+         dated log      ${msg_display}
+         # dated log    dist_name=&{item}[dist_name] pname=&{item}[pname] value=&{item}[value]
+    END
+    StringTool.printLineWithTitle     title=-
+    Step         Init CB009836 Test Variables    vendor_custom=${vendor_custom}    dict_ues=${dict_ues}    totalNbOfUe=${param.totalNbOfUe}
+    Run Keyword If    '${kw Set RAD Params}'!='${EMPTY}'     Step         Run Keyword     ${kw Set RAD Params}
+    # return from Keyword
+
+    ${topoOK}    ${topoUsed}=    check topology used is CLOUD_5G_I_LO_AP_LO
+    dated log     Topology is ${topoUsed}
+    ${iphy_file_to_use}    Set Variable           ${iphy_file_4Cells_LO_AP_LO}
+    ${fileExists}=    nps_7491_tools.file_exists   ${iphy_file_to_use}
+    ${iphy_filename}=      Run Keyword if   ${fileExists}==${True}     return_basename    ${iphy_file_to_use}
+    ...                      ELSE                                      set Variable       ${None}
+    ${fileiphyExistsInTmp}=    nps_7491_tools.file_exists   /tmp/${iphy_filename}
+    Run Keyword if    ${fileiphyExistsInTmp}==${True}    Run Keywords     Setup.copy custom iphy file     file=/tmp/${iphy_filename}
+    ...                                                     AND           Dated log      copy custom iphy file [/tmp/${iphy_filename}] to AirPhone
+
+    # Apply delta commissioning (WITH_APPLY_DELTA_COMMISSIONING=1) if requested
+    Run Keyword if     '${SHOULD_BE_COMMISSIONED_GNB_FIRST}'=='1' and '${UPDATE_SCF}'=='1' and '${Kw TestLine Preparation}'!='${EMPTY}'
+    ...                          Run Keywords       ${Kw TestLine Preparation}      output_scf=${test_scf_file}
+    ...                              AND            Set Suite Variable              ${test_scf_file}
+    # return from Keyword
+
+    Run Keyword if     '${SHOULD_BE_COMMISSIONED_GNB_FIRST}'=='1'
+    ...                                                Set CB007491 NIDD PARAMETERS VERSION 3 with SET into SCF     list=${NIDD_9836_PARAMS}
+    # return from Keyword
+
+    # Set NIDD PARAM If Needed / Kw use ${test_scf_file} file
+    Run Keyword If    '${kw NIDD Set}'!='${EMPTY}' and '${SHOULD_BE_COMMISSIONED_GNB_FIRST}'=='0'     ${kw NIDD Set}   list=${NIDD_9836_PARAMS}
+
+    # Check if NIDD PARAM are as expected
+    Run Keyword If    '${kw NIDD Check}'!='${EMPTY}'      ${kw NIDD Check}  list=${NIDD_9836_PARAMS}
+
+    # Run Keyword If   '${SHOULD_BE_COMMISSIONED_GNB_FIRST}' == '1' and '${kw Active Config}'=='${EMPTY}'
+    # ...                                                                                  CB007491-Keywords.Commissioning SCF   ${test_scf_file}
+
+    ${w_getSCF}=    Set Variable If     '${SHOULD_BE_COMMISSIONED_GNB_FIRST}'=='0'   true
+    ...                                                                              false
+    Run Keyword If    '${kw Active Config}'!='${EMPTY}'      ${kw Active Config}    w_getSCF=${w_getSCF}
+    ...    ELSE                                              CB007491-G-Config-tests-Keywords.Log config in result file
+
+    # update local scf.xml
+    ${test_scf_file}      Run Keyword If    '${kw Active Config}'!='${EMPTY}'  COAM Get SCF    file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ...                      ELSE                                              set Variable    ${test_scf_file}
+    set suite variable     ${test_scf_file}
+
+    # add here check of NIDD configuration
+    robot_extension.Run Keyword And Warn On Failure       Admin Validate SCF     scf_path_file=${test_scf_file}
+    robot_extension.Run Keyword And Warn On Failure       Get Cipher and Integrity Parameters From SCF
+
+    # iPHY gscn update depending of chBwDl
+    # get gscn for CELL1 from SCF
+    ${gscn_cell1}          coam_parameter.get_single_value_from_scf_file
+    ...                           parameter=gscnOrSsPbchArfcn
+    ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...                           connection=coam_gnb
+    Dated Log      iPHY gscn update with ${gscn_cell1} for CELL1
+    Step           CB007491-Keywords.Set Context_AP IPHY gscn Cell1 with ${gscn_cell1}
+
+    ${gscn_cell2}          coam_parameter.get_single_value_from_scf_file
+    ...                           parameter=gscnOrSsPbchArfcn
+    ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-2
+    ...                           connection=coam_gnb
+    Dated Log      iPHY gscn update with ${gscn_cell2} for CELL2
+    Step           CB007491-Keywords.Set Context_AP IPHY gscn Cell2 with ${gscn_cell2}
+
+    robot_extension.Run Keyword And Warn On Failure   btslog.Start Btslog
+
+    ${ret}   ${bts_status}=  run Keyword and ignore Error     get bts status with COAM     oam_alias=coam_gnb
+    dated log    get bts status with COAM return is ${ret.lower()} with bts_status=${bts_status.lower()}
+    ${cond1}=          Evaluate     '${bts_status.lower()}'=='configured' or '${bts_status.lower()}'=='onair'
+    ${condResetTL}=    Evaluate     '${ret.lower()}'=='pass' and not ${cond1}
+    dated log     condResetTL=${condResetTL}
+    Run Keyword If     ${condResetTL}    Run Keywords
+    ...         Dated Log new line       ${consTraceColorRed}bts status is not Configured/OnAir [current state is ${bts status}]!!! ${defColor}
+    ...               AND          Dated Log                ${consTraceColor}=== Restart TL === ${defColor}
+    ...               AND          Restart TL               isOAMRebooted=False     F1waitTime=10min
+    ...                                                     GNBCallback=CB007491-Keywords.Set Reset Loop Counter
+
+    ${ret}   ${bts_status}=  run Keyword and ignore Error     get bts status with COAM     oam_alias=coam_gnb
+    dated log    get bts status with COAM return is ${ret.lower()} with bts_status=${bts_status.lower()}
+
+    ${test_scf_file}             COAM Get SCF        local_dir_path=${LOG_PATH}      file=SCF.xml   alias=coam_gnb
+    Set Suite Variable           ${test_scf_file}
+
+    Run Keyword If     '${ret.lower()}'=='pass' and '${bts_status.lower()}'!='configured'
+    ...             Run Keywords   Dated Log                ${consTraceColor}=== Restart TL === ${defColor}
+    ...               AND          Restart TL               isOAMRebooted=False     F1waitTime=4min
+    ...                                                     GNBCallback=CB007491-Keywords.Set Reset Loop Counter
+    # return from Keyword
+
+    ${ret}   ${bts_status}=  run Keyword and ignore Error     get bts status with COAM     oam_alias=coam_gnb
+    dated log    get bts status with COAM return is ${ret.lower()} with bts_status=${bts_status.lower()}
+    Run Keyword If     '${ret.lower()}'=='pass' and '${bts_status.lower()}'!='configured'   Run Keywords
+    ...         Dated Log new line       ${consTraceColorRed}bts status is not Configured [current state is ${bts status}]!!! ${defColor}
+    ...               AND          Dated Log                ${consTraceColor}=== Restart TL === ${defColor}
+    ...               AND          Restart TL               isOAMRebooted=False     F1waitTime=10min
+    ...                                                     GNBCallback=CB007491-Keywords.Set Reset Loop Counter
+
+    dated log      ${consTraceColorBgYellow}${consTraceColorBlack}------> Display Bbrm info from SysLogs AFTER Commissioning / TL Restart${defColor}
+    # robot_extension.Run Keyword And Warn On Failure         Display Bbrm configuration from Syslogs
+    robot_extension.Run Keyword And Warn On Failure         Extract l2::ps::cnfg::AddressDistributionReq_t from Syslog
+    robot_extension.Run Keyword And Warn On Failure         Display PRB POOLING NIDD param
+    robot_extension.Run Keyword And Warn On Failure         Display periodicCsiAcquisition NIDD parameters
+
+    # save some test parameters as vendor file or Ue settings into ${testCaseDir}
+    nps_7491_tools.write_dictionary_to_json  dir_path=${testCaseDir}/
+    ...                                      dictionary=${vendor_custom}    filename=data_test.json
+
+    # Configure the current setting for all the ue's
+    ${param.totalNbOfUe}    get length          ${dict_ues}
+    Step                    Configure the setting for the ${param.totalNbOfUe} UEs
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.totalNbOfUe}
+        ${current_ue}=                Evaluate                      ${current_id} + 1
+        ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          pdu                 1
+        Set To Dictionary             ${current_ueSetting}          trf_id              1
+        Set To Dictionary             ${current_ueSetting}          target_gnb          ${param.targetGnb}
+        Set To Dictionary             ${current_ueSetting}          size                ${dict_ues[${current_id}].packet_size}
+
+        # Dispatching each ue on the requested original cell for the call establishment
+        Set To Dictionary             ${current_ueSetting}          target_cells        ${dict_ues[${current_id}].originalCell}
+        # Set the correct requested throughput per ue
+        Set To Dictionary             ${current_ueSetting}          DL_throughput          ${dict_ues[${current_id}].DL_throughput}
+        Set To Dictionary             ${current_ueSetting}          DL_throughput_GBR      ${dict_ues[${current_id}].DL_throughput_GBR}
+        Set To Dictionary             ${current_ueSetting}          UL_throughput          ${dict_ues[${current_id}].UL_throughput}
+        Set To Dictionary             ${current_ueSetting}          protocol               ${dict_ues[${current_id}].protocol}
+
+        Append To List                ${listOfUes}                  ${current_ueSetting}
+
+        # save some test parameters as vendor file or Ue settings into ${testCaseDir}
+        add_dictionary_to_json       ${testCaseDir}     'Ue_${current_ue}'   ${current_ueSetting}    data_test.json
+    END
+    # Dated Log New Line                UE_List=${listOfUes}
+    display_list_parameters_w_name      ${listOfUes}   name=Ue   msg=Display Of listOfUes
+    CB007491-Keywords.Check Multi Ues Setting In List        multiUesList=${listOfUes}
+
+    set test Variable     ${listOfUes}
+    Run Keyword if   '${w_generic_capture}' == 'True'       Step      Captures CB007491 Init   prefix=CellSetup.Attach.SA
+    Run Keyword if   '${w_generic_capture}' == 'True'       Step      Captures CB007491 Start  actionCORE=${isCaptureCORE}
+    ...                                                                                        actionCPRT=${isCaptureCPRT}
+    ...                                                                                        actionL1L2=${isCaptureL1L2}
+    ...                                                                                        actionTti=${False}
+
+    # ${kw Set TestMode} is a robot Kw that allow to modify cfg file
+    Run Keyword If    '${kw Set TestMode}'!='${EMPTY}'       ${kw Set TestMode}
+
+    Setup devices aliases
+    robot_extension.Run Keyword And Warn On Failure    Enable internal mirroring for alias    gNB2
+
+    # to take Emil CPLANE traces
+    robot_extension.Run Keyword And Warn On Failure     CB007491-Keywords.Start collect log by gnb tool    command=./gnb_logs 192.168.255.1 -E -f0
+
+    Run Keyword If    '${Kw Update NIDD Test Parameters}'!='${EMPTY}'      Step      Run Keyword    ${Kw Update NIDD Test Parameters}
+
+    robot_extension.Run Keyword And Warn On Failure         Display periodicCsiAcquisition NIDD parameters
+
+    ${LuaFileToUsed}=      Run Keyword If    '${W_CUSTOM_LUA_FILE_TO_USED}'=='1'       Install lua File into WTS    ${LuaFileToUsed_path}
+    ...                        ELSE                                                    Set Variable                 ${EMPTY}
+
+    ${dir_syslog}=    Prepare Logs Directory Path     resultDir=${testCaseDir}    subdir=btslog2_beforeCellSetup
+    ${ret}    ${syslogpath}=     robot_extension.Run Keyword And Warn On Failure   btslog.Stop Btslog    target_dir=${dir_syslog}
+    ${fileExists}=     nps_7491_tools.file_exists   ${syslogpath}
+    ${ret}    ${syslog_filename}   Run Keyword If   ${fileExists}==${True}
+    ...                                           Run Keyword And Ignore Error    nps_7491_tools.return_basename   ${syslogpath}
+    ...                              ELSE         ObtainVariablesKeyword
+    robot_extension.Run Keyword And Warn On Failure   declare Trace in Trace List    Type=SysLog  Savedir=${dir_syslog}
+    ...                          file_name=${syslog_filename}   Trigger=btslog2_beforeCellSetup
+    robot_extension.Run Keyword And Warn On Failure   Check UL and DL l1Subpool Assignment in Syslogs
+    robot_extension.Run Keyword And Warn On Failure   btslog.Start Btslog
+
+    Run Keyword if      ${w_Basic_Call_to_Setup_Wtsemu} == ${True}
+    ...         Critical Step           Basic Call to Setup Wtsemu SA           nbUe=${param.totalNbOfUe}
+    ...                                                             nbSaUe=${param.totalNbOfUe}
+    ...                                                             nbCell=${param.totalNbOfCell}
+    ...                                                             bypassX2Setup=${True}
+    ...                                                             shouldUseLua=${True}
+    ...                                                             list_of_UE_tobe_created=${listOfUes}
+    ...                                                             bypassSIB=${True}
+    ...                                                             LuaFileToUsed=${LuaFileToUsed}
+    # ...                                                             Kw_TM=${kw Set TestMode}
+    ...   ELSE
+    ...         Critical Step           CallSetup.Setup Wtsemu SA               nbUe=${param.totalNbOfUe}
+    ...                                                             nbSaUe=${param.totalNbOfUe}
+    ...                                                             nbCell=${param.totalNbOfCell}
+    ...                                                             bypassX2Setup=${True}
+    ...                                                             shouldUseLua=${True}
+    ...                                                             list_of_UE_tobe_created=${listOfUes}
+    ...                                                             bypassSIB=${False}
+    Dev_lib.wait_ng_link_up
+    Dev_lib.start_to_capture_infomodel_log
+    CB007491-Keywords.Cells 1 and 2 Should Be Onair
+    Dev_lib.stop_to_capture_infomodel_log
+
+    dated log      ${consTraceColorBgYellow}${consTraceColorBlack}------> Display Bbrm info from SysLogs AFTER CellSetup${defColor}
+    robot_extension.Run Keyword And Warn On Failure         Display Bbrm configuration from Syslogs
+
+    # test all cells mapped on same L1 Pool
+    ${isFileNameDLCellMappingPresent}    Run Keyword And Return Status    Should Not Be Empty   ${FileNameDLCellMapping}
+    ${fileExists}=     Run Keyword If    ${isFileNameDLCellMappingPresent}    nps_7491_tools.file_exists   ${FileNameDLCellMapping}
+    ...                 ELSE                                                  set Variable     ${False}
+    ${FileNameDLCellMapping}=    Set Variable If    ${fileExists}    ${FileNameDLCellMapping}    ${None}
+    Run Keyword If   '${isFileNameDLCellMappingPresent}' == 'False' or not ${fileExists}
+    ...                BuiltIn.Log    DL Cell mapping file not present (from Syslog), please check the config   level=WARN    console=yes
+    ...    ELSE        check Dl Cell mapping from Syslog ${FileNameDLCellMapping}
+
+    ${ret}  ${output}=    robot_extension.Run Keyword And Warn On Failure
+    ...                                        Extract l2::ps::cell::CellSetupReq_t and CellSetupResp_t from Syslog     NbrCells=4
+    ${sorted_csirsGroups}            Set Variable     ${output[0]}
+    ${sorted_cellcsirs_slotoffset}   Set Variable     ${output[1]}
+    ${sorted_uecsirs_slotoffset}     Set Variable     ${output[2]}
+    ${sorted_trscsirs_slotoffset}    Set Variable     ${output[3]}
+    ${sorted_trscsirs_ssb_slotoffset}    Set Variable     ${output[4]}
+    Dated Log New Line    sorted_csirsGroups=${sorted_csirsGroups}
+    Dated Log New Line    sorted_cellcsirs_slotoffset=${sorted_cellcsirs_slotoffset}
+    Dated Log New Line    sorted_trscsirs_slotoffset=${sorted_trscsirs_slotoffset}
+    Dated Log New Line    sorted_trscsirs_ssb_slotoffset=${sorted_trscsirs_ssb_slotoffset}
+    Set test Variable     ${sorted_csirsGroups}
+    Set Test Variable     ${sorted_cellcsirs_slotoffset}
+    Set Test Variable     ${sorted_trscsirs_slotoffset}
+    Set Test Variable     ${sorted_trscsirs_ssb_slotoffset}
+
+    dated log      ${consTraceColorBgYellow}${consTraceColorBlack}------> Display Bbrm info from SysLogs AFTER CellSetup${defColor}
+    robot_extension.Run Keyword And Warn On Failure         Check cellmappingtocsirspoolinggroup Assignment in Syslogs
+    robot_extension.Run Keyword And Warn On Failure         Display Bbrm configuration from Syslogs
+
+    # ${num_of_cells}=    Get Cell Number
+    # @{cell_to_bypass}=  Create List    /MRBTS-1/RAT-1/RUNTIME_VIEW-1/MRBTS_R-1/NRBTS_R-1/NRCELL_R-4
+    # Critical Step       Wait gNB cells 5g On air    ${num_of_cells}    cell_to_bypass=${cell_to_bypass}
+
+    ${ret}   ${dll1spcells}    robot_extension.Run Keyword And Warn On Failure         Get dlsubcellid for cellId by spool with COAM
+    ...                                                                                                                 oam_alias=coam_gnb
+    ${ret}   ${ull1spcells}    robot_extension.Run Keyword And Warn On Failure         Get ulsubcellid for cellId by spool with COAM
+    ...                                                                                                                 oam_alias=coam_gnb
+    Set Suite Variable      ${dll1spcells}
+    Set Suite Variable      ${ull1spcells}
+    dated log   dlsubcellSpool0List=${dll1spcells[0]}
+    dated log   dlsubcellSpool1List=${dll1spcells[1]}
+    dated log   ulsubcellSpool0List=${ull1spcells[0]}
+    dated log   ulsubcellSpool1List=${ull1spcells[1]}
+    set test variable    ${dll1spcells[0]}
+    set test variable    ${dll1spcells[1]}
+    set test variable    ${ull1spcells[0]}
+    set test variable    ${ull1spcells[1]}
+    robot_extension.Run Keyword And Warn On Failure     update bbpoolInfo Dll1Subpool and Ull1Subpool Assignment
+
+    Run Keyword if      ${w_Basic_Call_to_Setup_Wtsemu} == ${False}   Step                      CallSetup.WTS Set X2 Link
+
+    Run Keyword If      '${kw Specific Set TestMode Before Attach}'!='${EMPTY}'
+    ...                                                    Step   Run specific keywords before attach : ${kw Specific Set TestMode Before Attach}
+
+    Run Keyword if   '${w_generic_capture}' == 'True'       Step      Captures CB007491 Start    actionTti=${isCaptureTti}
+
+    # Register and launch PDU for all the ue's except for which define on the deleted cell
+    FOR    ${current_elem}    IN    @{listOfUes}
+        # Run Keyword If      ${current_elem.target_cells} != ${nrCell}    Run Keywords
+        Run Keywords
+        ...                 Critical Step       CallSetup UE register UeId "${current_elem.ue}" on Target cell "${current_elem.target_cells}"
+        ...                                     depends=CallSetup.Setup Wtsemu SA
+        ...    AND
+        ...                 Critical Step     CallSetup.Launch PDU Session
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         gw=${current_elem.ue}
+        ###...                                                      nwslice=1
+        ...                                   depends=CallSetup UE register UeId
+    END
+
+    Run Keyword If    '${kw Specific Set TestMode After Attach}'!='${EMPTY}'
+    ...                                                   Step   Run specific keywords after attach : ${kw Specific Set TestMode After Attach}
+
+    ${rntiList}=    create list
+    FOR    ${current_elem}    IN    @{listOfUes}
+        ${UeId}      CB007491-Ue-Commands.Get Crnti From Egate Log     ue_id=${current_elem.ue}
+        Dated log       ======> Rnti[UeId=${current_elem.ue}] is ${UeId}
+        Append To List                ${rntiList}                  ${UeId}
+    END
+    Set Test Variable     ${rntiList}
+
+    Run Keyword if   '${w_generic_capture}' == 'True'       Step        Captures CB007491 Stop
+
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        set test variable   ${current_elem}
+        ${dir}=   set Variable If    ${current_elem.DL_throughput} > ${0}    DL
+        ...                                                                  NONE
+        ${kw to run}=   Catenate   ${dir} Traffic SA Not Stopped with "${current_elem.DL_throughput}"Mbps "${param.duration}"s duration
+        ...                        and "${param.deviation}" percent deviation with "${current_elem.protocol}" protocol
+        Run Keyword If      ${current_elem.DL_throughput} > ${0}
+        ...      Critical Step     ${kw to run}       depends=CallSetup.Launch PDU Session
+
+        ${dir}=   set Variable If    ${current_elem.UL_throughput} > ${0}    UL
+        ...                                                                  NONE
+        ${kw to run}=   Catenate   ${dir} Traffic SA Not Stopped with "${current_elem.UL_throughput}"Mbps "${param.duration}"s duration
+        ...                        and "${param.deviation}" percent deviation with "${current_elem.protocol}" protocol
+        Run Keyword If      ${current_elem.UL_throughput} > ${0}
+        ...      Critical Step     ${kw to run}       depends=CallSetup.Launch PDU Session
+    END
+
+    # PDU session modify reserved for the ue's configured with GBR traffic
+    ${nbOfUe_traffic_GBR}=   CB007491-Keywords.Get Number Of Ue Configured With GBR Traffic    dict_ues=${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Run Keyword If    ${current_elem.DL_throughput_GBR} > ${0}    Run Keywords
+        ...                 Critical Step    CallSetup.UE PDU Session Modify
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=2
+        ...                                                         by=amf
+        ...                                  depends=CallSetup.Launch PDU Session
+        ...    AND
+        ...                 Critical Step    CallSetup.UE PDU Session Modify
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=3
+        ...                                                         by=amf
+        ...                                  depends=CallSetup.Launch PDU Session
+    END
+
+    # Start the GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        set test variable   ${current_elem}
+        ${dir}=   set Variable If    ${current_elem.DL_throughput_GBR} > ${0}    DL
+        ...                                                                      NONE
+        ${kw to run}=   Catenate    ${dir} Traffic GBR SA Not Stopped with "${current_elem.DL_throughput_GBR}"Mbps "${param.duration}"s duration
+        ...                         and "${param.deviation}" percent deviation
+        Run Keyword If      '${current_elem.DL_throughput_GBR}' != '0'
+        ...    Critical Step   ${kw to run}    depends=CallSetup.Launch PDU Session
+    END
+
+    robot_extension.Run Keyword And Warn On Failure    CB007491-Keywords.Stop collect log by gnb tool
+
+    ${tti_trace_path}    ${tti_trace_dict}=    Omit when TtiTrace deactivated
+    ...             Process TTI Traces    Kw_Convert_TtiTrace_From_csv_to_Dict=${Kw_Convert_TtiTrace_From_csv_to_Dict_Test}   step=For_Test_Verdict
+
+    # add here Specific Check based on TtiTraces
+    run Keyword if     '${kw Specific Check Tti}'!='${EMPTY}'     Omit when TtiTrace deactivated
+    ...          Step      ${kw Specific Check Tti}     ttitraceFilename=ttitrace_streaming.pcap
+    ...                                                 ttitracepath=${tti_trace_path}
+    ...                                                 vendor_custom=${vendor_custom}
+    ...                                                 depends=CallSetup.Launch PDU Session
+
+    ${FilePkl}=           Omit when TtiTrace deactivated
+    ...      Run keyword and continue on failure      Convert TTI Traces to Dataframe and store as pickle for UL Mimo
+    ...                                                                                                     ttitraceFilename=ttitrace_streaming.pcap
+    ...                                                                                                     ttitracepath=${tti_trace_path}
+
+    ${L1L2_Pcap_File}=   Omit when L1L2BipTrace deactivated    Get L1L2 traces          time=${GetL1L2TraceTime}
+    ...                                                                                 prefix=L1L2Bip.wDLTput
+    ...                                                                                 msg=take BIP L1L2 traces with DL Tput
+    # add here Specific Check based on L1l2Bip pcap
+    run Keyword if     '${kw Specific Check}'!='${EMPTY}'     Omit when L1L2BipTrace deactivated
+    ...          Step      ${kw Specific Check}     captureL1L2=${L1L2_Pcap_File}.pcap
+    ...                    depends=CallSetup.Launch PDU Session
+
+    run Keyword if   '${L1L2_Pcap_File}' != 'None'      Run Keywords     Dated log    gzip -f ${L1L2_Pcap_File}.pcap
+    ...                                                         AND      Run    gzip -f ${L1L2_Pcap_File}.pcap
+
+    # Generate Verdict...
+    Omit when TtiTrace deactivated      Step      Generate Test Verdict    ${FilePkl}   ${vendor_custom}
+    ...                                                                    ${dictExpectedValues}
+    ...                                                                    ${kw Check SCF parameters}
+    ...                                                                    verify_TTITraces_for_csirs_4cells
+    ...                                                                    ttitraceFilename=ttitrace_streaming.pcap
+    ...                                                                    ttitracepath=${tti_trace_path}
+    ...                                                                    skip=${skip}
+
+    ${cntUes}=    Get length    ${rntiList}
+    Step      CB007491-Ue-Commands.Verify Nbr Of ${cntUes}Ues ACTIVE
+
+    # if  '${SKIP_COUNTERS}'=='False' => 'Display PDSCH and PUSCH ue_stats_nr for UEList' allow to Wait time until next PM file
+    Run Keyword And Ignore Error     Display PDSCH and PUSCH ue_stats_nr for UEList   UEsList=${listOfUes}    file=${csv_file_tput_results}
+
+    # Collect PM only if  '${SKIP_COUNTERS}'=='False'
+    Omit when SKIP_COUNTERS present      robot_extension.Run Keyword And Warn On Failure
+    ...                                           CB007491-Keywords.Collect PM Counters and process throughput using PM counters
+
+    # to bypass UE Deregister if needed
+    @{listOfUes}    run Keyword if    '${w_ue_detach}' == 'False'    Create List
+    ${len}=   Get Length   ${listOfUes}
+    run Keyword if    '${len}' != '${0}'    Step    Traced Sleep   duration=3s   msg=deregistering     depends=CallSetup.UE Register
+    # Deregister all the ue's
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Run Keyword If      ${current_elem.target_cells} != ${nrCell}
+        ...                 Step      CallSetup.UE Deregister       id=${current_elem.ue}
+        ###...                                                      ue_deregister_type=switch_off
+        ###...                                                      by=ue
+        ...                                                         depends=CallSetup.UE Register
+    END
+    [Teardown]   Teardow Kw
+
+TC CB007491 6 Cells
+    [Documentation]
+    ...     test template for CB009836 (Topology to used should be CLOUD_5G_I_MP_AP_LOOO)
+    ...     Conditions:     it is based on the arguments ${param}  ${dictParam}  ${vendor_custom} ${dict_ues} ${nrCell}
+    ...     Actions:        it performs the call setup for multi-ues on different cells with DL traffic
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        calls for multi ues and PRB pooling are passed
+    [Arguments]             ${param}
+    ...                     ${dictParam}
+    ...                     ${vendor_custom}
+    ...                     ${dict_ues}
+    ...                     ${nrCell}
+    ...                     ${Kw TestLine Preparation}=${EMPTY}
+    ...                     ${kw Set RAD Params}=${EMPTY}
+    ...                     ${kw NIDD Set}=${EMPTY}
+    ...                     ${kw NIDD Check}=${EMPTY}
+    ...                     ${kw Set TestMode}=${EMPTY}
+    ...                     ${kw Active Config}=${EMPTY}
+    ...                     ${kw Specific Set TestMode Before Attach}=${EMPTY}
+    ...                     ${kw Specific Set TestMode After Attach}=${EMPTY}
+    ...                     ${NIDD_9836_PARAMS}=${NIDD_9836_Q_L_PARAMS}
+    ...                     ${Kw_Convert_TtiTrace_From_csv_to_Dict_Test}=Convert TTI trace from csv to dict CB009836
+    ...                     ${kw Check SCF parameters}=${EMPTY}
+    ...                     ${kw Specific Check Tti}=${EMPTY}
+    ...                     ${kw Specific Check}=${EMPTY}
+    ...                     ${kw Specific Check CPRT}=${EMPTY}
+    ...                     ${NIDD_9836_TEST_PARAMS}=${EMPTY}
+    ...                     ${Json test configuration}=${EMPTY}
+    ...                     ${FrameStructure}=5GC001208
+
+    ${topoOK}    ${topoUsed}=     check topology used is CLOUD_5G_I_MP_AP_LOOO
+    ${topoOK2}    ${topoUsed}=    check topology used is CLOUD_5G_I_LO_AP_LOOO
+    ${msg_err}=     Catenate    topology USED [${topoUsed}] is not CORRECT for this test [${TEST NAME}].
+    Run Keyword If            '${topoOK}'=='False' and '${topoOK2}'=='False'
+    ...                           dated log   ${consTraceColorBgRed}${consTraceColorYellow}${msg_err}${defColor} Plz, Check it...
+    Return From Keyword If    '${topoOK}'=='False' and '${topoOK2}'=='False'
+    Init Sequence           ${param}
+    Create Header Csv Tput Test result
+    ${ull1spcells_syslog}=    Create List
+    ${dll1spcells_syslog}=    Create List
+    set test variable     ${ull1spcells_syslog}
+    set test variable     ${dll1spcells_syslog}
+    Run Keyword If    '${Json test configuration}'!='${EMPTY}'    load Json test data   ${Json test configuration}   ${dict_ues}
+    ...                                                                                 ${vendor_custom}   ${param}
+    StringTool.printLineWithTitle     title=Display NIDD PARAMETERS of the Test TO SET
+    FOR    ${item}    IN    @{NIDD_9836_PARAMS}
+         continue for loop if     'list_name' in ${item}
+         ${msg_display}=    StringTool.getHeaderLine    &{item}[dist_name]/&{item}[pname]     &{item}[value]
+         dated log      ${msg_display}
+         # dated log    dist_name=&{item}[dist_name] pname=&{item}[pname] value=&{item}[value]
+    END
+    StringTool.printLineWithTitle     title=-
+    Step         Init CB009836 Test Variables    vendor_custom=${vendor_custom}    dict_ues=${dict_ues}    totalNbOfUe=${param.totalNbOfUe}
+    Run Keyword If    '${kw Set RAD Params}'!='${EMPTY}'     Step         Run Keyword     ${kw Set RAD Params}
+    # return from Keyword
+
+    # ${iphy_file_6Cells} is dedicated to topo MP_AP_LOOO with 6 Cells
+    # ${iphy_file_3Cells} is dedicated to topo LO_AP_LOOO with 3 Cells
+    # ${fileExists}=         nps_7491_tools.file_exists   ${iphy_file_6Cells}
+    ${fileExists}=         nps_7491_tools.file_exists   ${iphy_file_to_Used}
+    ${iphy_filename}=      Run Keyword if   ${fileExists}==${True}     return_basename    ${iphy_file_to_Used}
+    ...                      ELSE                                      set Variable       ${None}
+    ${fileiphyExistsInTmp}=    nps_7491_tools.file_exists   /tmp/${iphy_filename}
+    Run Keyword if   ${fileiphyExistsInTmp}==${False}    BuiltIn.Log  /tmp/${iphy_filename} not PRESENT!!! need to do TL preparation...  level=WARN
+    Run Keyword if   ${fileiphyExistsInTmp}==${True}    Run Keywords     Setup.copy custom iphy file     file=/tmp/${iphy_filename}
+    ...                                                      AND         Dated log      copy custom iphy file [/tmp/${iphy_filename}] to AirPhone
+
+    # Apply delta commissioning (WITH_APPLY_DELTA_COMMISSIONING=1) if requested
+    Run Keyword if     '${SHOULD_BE_COMMISSIONED_GNB_FIRST}'=='1' and '${UPDATE_SCF}'=='1' and '${Kw TestLine Preparation}'!='${EMPTY}'
+    ...                          Run Keywords       ${Kw TestLine Preparation}      output_scf=${test_scf_file}
+    ...                              AND            Set Suite Variable              ${test_scf_file}
+    # return from Keyword
+
+    Run Keyword if     '${SHOULD_BE_COMMISSIONED_GNB_FIRST}'=='1'
+    ...                                                Set CB007491 NIDD PARAMETERS VERSION 3 with SET into SCF     list=${NIDD_9836_PARAMS}
+    # return from Keyword
+
+    # Set NIDD PARAM If Needed / Kw use ${test_scf_file} file
+    Run Keyword If    '${kw NIDD Set}'!='${EMPTY}' and '${SHOULD_BE_COMMISSIONED_GNB_FIRST}'=='0'     ${kw NIDD Set}   list=${NIDD_9836_PARAMS}
+
+    # Check if NIDD PARAM are as expected
+    Run Keyword If    '${kw NIDD Check}'!='${EMPTY}'      ${kw NIDD Check}  list=${NIDD_9836_PARAMS}
+
+    Run Keyword If   '${SHOULD_BE_COMMISSIONED_GNB_FIRST}' == '1' and '${kw Active Config}'=='${EMPTY}'
+    ...                                                                                  CB007491-Keywords.Commissioning SCF   ${test_scf_file}
+
+    ${w_getSCF}=    Set Variable If     '${SHOULD_BE_COMMISSIONED_GNB_FIRST}'=='0'   true
+    ...                                                                              false
+    Run Keyword If    '${kw Active Config}'!='${EMPTY}'      ${kw Active Config}    w_getSCF=${w_getSCF}
+    ...    ELSE                                              CB007491-G-Config-tests-Keywords.Log config in result file
+
+    # update local scf.xml
+    ${test_scf_file}      Run Keyword If    '${kw Active Config}'!='${EMPTY}'  COAM Get SCF    file=SCF.xml    w_setup_admin=False   alias=coam_gnb
+    ...                      ELSE                                              set Variable    ${test_scf_file}
+    set suite variable     ${test_scf_file}
+
+    # add here check of NIDD configuration
+    robot_extension.Run Keyword And Warn On Failure       Admin Validate SCF     scf_path_file=${test_scf_file}
+    robot_extension.Run Keyword And Warn On Failure       Get Cipher and Integrity Parameters From SCF
+
+    # iPHY gscn update depending of chBwDl
+    # get gscn for CELL1 from SCF
+    ${gscn_cell1}          coam_parameter.get_single_value_from_scf_file
+    ...                           parameter=gscnOrSsPbchArfcn
+    ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...                           connection=coam_gnb
+    Dated Log      iPHY gscn update with ${gscn_cell1} for CELL1
+    Step           CB007491-Keywords.Set Context_AP IPHY gscn Cell1 with ${gscn_cell1}
+
+    ${gscn_cell2}          coam_parameter.get_single_value_from_scf_file
+    ...                           parameter=gscnOrSsPbchArfcn
+    ...                           dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-2
+    ...                           connection=coam_gnb
+    Dated Log      iPHY gscn update with ${gscn_cell2} for CELL2
+    Step           CB007491-Keywords.Set Context_AP IPHY gscn Cell2 with ${gscn_cell2}
+
+    robot_extension.Run Keyword And Warn On Failure   btslog.Start Btslog
+
+    ${ret}   ${bts_status}=  run Keyword and ignore Error     get bts status with COAM     oam_alias=coam_gnb
+    dated log    get bts status with COAM return is ${ret.lower()} with bts_status=${bts_status.lower()}
+    ${cond1}=          Evaluate     '${bts_status.lower()}'=='configured' or '${bts_status.lower()}'=='onair'
+    ${condResetTL}=    Evaluate     '${ret.lower()}'=='pass' and not ${cond1}
+    dated log     condResetTL=${condResetTL}
+    Run Keyword If     ${condResetTL}   Run Keywords
+    ...         Dated Log new line       ${consTraceColorRed}bts status is not Configured [current state is ${bts status}]!!! ${defColor}
+    ...               AND          Dated Log                ${consTraceColor}=== Restart TL === ${defColor}
+    ...               AND          Restart TL               isOAMRebooted=False     F1waitTime=10min
+    ...                                                     GNBCallback=CB007491-Keywords.Set Reset Loop Counter
+
+    ${ret}   ${bts_status}=  run Keyword and ignore Error     get bts status with COAM     oam_alias=coam_gnb
+    dated log    get bts status with COAM return is ${ret.lower()} with bts_status=${bts_status.lower()}
+
+    ${test_scf_file}             COAM Get SCF        local_dir_path=${LOG_PATH}      file=SCF.xml   alias=coam_gnb
+    Set Suite Variable           ${test_scf_file}
+
+    ${actTddCsirsAllocOptimization}   set variable     ${act9836TddCsirsAllocOptimization}
+    # @{PARAMS_IN_VENDOR}    Create List     actTddCsirsAllocOptimization=${actTddCsirsAllocOptimization}
+    # @{PARAMS_IN_VENDOR_2}    Create List     actTddCsirsAllocOptimization=${actTddCsirsAllocOptimization}
+    # ${PARAMS_IN_VENDOR_2}    CB007491-TL-Preparation-Keywords.update params List for VendorFile v2    ${vendor_custom}    ${PARAMS_IN_VENDOR_2}
+    # dated log     PARAMS_IN_VENDOR_2=${PARAMS_IN_VENDOR_2}
+    # ${PARAMS_IN_VENDOR}    CB007491-TL-Preparation-Keywords.update params List for VendorFile     ${vendor_custom}    ${PARAMS_IN_VENDOR}
+    # set test variable     ${PARAMS_IN_VENDOR}
+    # ${cond1}=          Evaluate     '${bts_status.lower()}'!='configured' or '${bts_status.lower()}'!='onair'
+    # ${condResetTL}=    Evaluate     '${ret.lower()}'=='pass' and ${cond1}
+    # dated log     condResetTL=${condResetTL}
+    # Run Keyword if     '${SHOULD_BE_COMMISSIONED_GNB_FIRST}'=='1'
+    # ...      Critical Step    CB007491-TL-Preparation-Keywords.Deploy Vendor File to activate CB009836     PARAMS_IN_VENDOR=${PARAMS_IN_VENDOR}
+    # ...                                                                                                    is_perform_full_commissioning=${True}
+    # ...   ELSE
+    # ...       Run Keyword If     '${ret.lower()}'=='pass' and '${bts_status.lower()}'!='configured'
+    # ...          Run Keywords    Dated Log new line       ${consTraceColorRed}BEWARE that Deploy Vendor File Config is already DONE!!! ${defColor}
+    # ...             AND          Dated Log                ${consTraceColor}=== Restart TL === ${defColor}
+    # ...             AND          Restart TL               isOAMRebooted=False     F1waitTime=4min
+    # ...                                                   GNBCallback=CB007491-Keywords.Set Reset Loop Counter
+    # return from Keyword
+
+    Run keyword and continue on failure     Verify actTddCsirsAllocOptimization status    status=${actTddCsirsAllocOptimization}
+
+    ${ret}   ${bts_status}=  run Keyword and ignore Error     get bts status with COAM     oam_alias=coam_gnb
+    dated log    get bts status with COAM return is ${ret.lower()} with bts_status=${bts_status.lower()}
+    Run Keyword If     '${ret.lower()}'=='pass' and '${bts_status.lower()}'!='configured'   Run Keywords
+    ...         Dated Log new line       ${consTraceColorRed}bts status is not Configured [current state is ${bts status}]!!! ${defColor}
+    ...               AND          Dated Log                ${consTraceColor}=== Restart TL === ${defColor}
+    ...               AND          Restart TL               isOAMRebooted=False     F1waitTime=10min
+    ...                                                     GNBCallback=CB007491-Keywords.Set Reset Loop Counter
+
+    dated log      ${consTraceColorBgYellow}${consTraceColorBlack}------> Display Bbrm info from SysLogs AFTER Commissioning / TL Restart${defColor}
+    robot_extension.Run Keyword And Warn On Failure         Display Bbrm configuration from Syslogs
+    robot_extension.Run Keyword And Warn On Failure         Extract l2::ps::cnfg::AddressDistributionReq_t from Syslog
+    robot_extension.Run Keyword And Warn On Failure         Display PRB POOLING NIDD param
+    robot_extension.Run Keyword And Warn On Failure         Display periodicCsiAcquisition NIDD parameters
+
+    # save some test parameters as vendor file or Ue settings into ${testCaseDir}
+    nps_7491_tools.write_dictionary_to_json  dir_path=${testCaseDir}/
+    ...                                      dictionary=${vendor_custom}    filename=data_test.json
+
+    # Configure the current setting for all the ue's
+    ${param.totalNbOfUe}    get length          ${dict_ues}
+    Step                    Configure the setting for the ${param.totalNbOfUe} UEs
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.totalNbOfUe}
+        ${current_ue}=                Evaluate                      ${current_id} + 1
+        ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          pdu                 1
+        Set To Dictionary             ${current_ueSetting}          trf_id              1
+        Set To Dictionary             ${current_ueSetting}          target_gnb          ${param.targetGnb}
+        Set To Dictionary             ${current_ueSetting}          size                ${dict_ues[${current_id}].packet_size}
+
+        # Dispatching each ue on the requested original cell for the call establishment
+        Set To Dictionary             ${current_ueSetting}          target_cells        ${dict_ues[${current_id}].originalCell}
+        # Set the correct requested throughput per ue
+        Set To Dictionary             ${current_ueSetting}          DL_throughput          ${dict_ues[${current_id}].DL_throughput}
+        Set To Dictionary             ${current_ueSetting}          DL_throughput_GBR      ${dict_ues[${current_id}].DL_throughput_GBR}
+        Set To Dictionary             ${current_ueSetting}          UL_throughput          ${dict_ues[${current_id}].UL_throughput}
+        Set To Dictionary             ${current_ueSetting}          protocol               ${dict_ues[${current_id}].protocol}
+
+        Append To List                ${listOfUes}                  ${current_ueSetting}
+
+        # save some test parameters as vendor file or Ue settings into ${testCaseDir}
+        add_dictionary_to_json       ${testCaseDir}     'Ue_${current_ue}'   ${current_ueSetting}    data_test.json
+    END
+    # Dated Log New Line                UE_List=${listOfUes}
+    display_list_parameters_w_name      ${listOfUes}   name=Ue   msg=Display Of listOfUes
+    CB007491-Keywords.Check Multi Ues Setting In List        multiUesList=${listOfUes}
+
+    set test Variable     ${listOfUes}
+    Run Keyword if   '${w_generic_capture}' == 'True'       Step      Captures CB007491 Init   prefix=CellSetup.Attach.SA
+    Run Keyword if   '${w_generic_capture}' == 'True'       Step      Captures CB007491 Start  actionCORE=${isCaptureCORE}
+    ...                                                                                        actionCPRT=${isCaptureCPRT}
+    ...                                                                                        actionL1L2=${isCaptureL1L2}
+    ...                                                                                        actionTti=${False}
+
+    # ${kw Set TestMode} is a robot Kw that allow to modify cfg file
+    Run Keyword If    '${kw Set TestMode}'!='${EMPTY}'       ${kw Set TestMode}
+
+    Setup devices aliases
+    robot_extension.Run Keyword And Warn On Failure     Enable internal mirroring for alias    gNB2
+
+    # to take Emil CPLANE traces
+    robot_extension.Run Keyword And Warn On Failure     CB007491-Keywords.Start collect log by gnb tool    command=./gnb_logs 192.168.255.1 -E -f0
+
+    ${LuaFileToUsed}=      Run Keyword If    '${W_CUSTOM_LUA_FILE_TO_USED}'=='1'       Install lua File into WTS    ${LuaFileToUsed_path}
+    ...                        ELSE                                                    Set Variable                 ${EMPTY}
+
+    ${dir_syslog}=    Prepare Logs Directory Path     resultDir=${testCaseDir}    subdir=btslog2_beforeCellSetup
+    ${ret}    ${syslogpath}=     robot_extension.Run Keyword And Warn On Failure   btslog.Stop Btslog    target_dir=${dir_syslog}
+    ${fileExists}=     nps_7491_tools.file_exists   ${syslogpath}
+    ${ret}    ${syslog_filename}   Run Keyword If   ${fileExists}==${True}
+    ...                                           Run Keyword And Ignore Error    nps_7491_tools.return_basename   ${syslogpath}
+    ...                              ELSE         ObtainVariablesKeyword
+    robot_extension.Run Keyword And Warn On Failure   declare Trace in Trace List    Type=SysLog  Savedir=${dir_syslog}
+    ...                          file_name=${syslog_filename}   Trigger=btslog2_beforeCellSetup
+    robot_extension.Run Keyword And Warn On Failure   Check UL and DL l1Subpool Assignment in Syslogs
+    robot_extension.Run Keyword And Warn On Failure   btslog.Start Btslog
+
+    Run Keyword if      ${w_Basic_Call_to_Setup_Wtsemu} == ${True}
+    ...         Critical Step           Basic Call to Setup Wtsemu SA           nbUe=${param.totalNbOfUe}
+    ...                                                             nbSaUe=${param.totalNbOfUe}
+    ...                                                             nbCell=${param.totalNbOfCell}
+    ...                                                             bypassX2Setup=${True}
+    ...                                                             shouldUseLua=${True}
+    ...                                                             list_of_UE_tobe_created=${listOfUes}
+    ...                                                             bypassSIB=${True}
+    ...                                                             LuaFileToUsed=${LuaFileToUsed}
+    # ...                                                             Kw_TM=${kw Set TestMode}
+    ...   ELSE
+    ...         Critical Step           CallSetup.Setup Wtsemu SA               nbUe=${param.totalNbOfUe}
+    ...                                                             nbSaUe=${param.totalNbOfUe}
+    ...                                                             nbCell=${param.totalNbOfCell}
+    ...                                                             bypassX2Setup=${True}
+    ...                                                             shouldUseLua=${True}
+    ...                                                             list_of_UE_tobe_created=${listOfUes}
+    ...                                                             bypassSIB=${False}
+
+    Dev_lib.wait_ng_link_up
+    Dev_lib.start_to_capture_infomodel_log
+    Run Keyword If   ${topoOK} and '${topoUsed}'=='CLOUD_5G_I_MP_AP_LOOO'    CB007491-Keywords.Cells 1 and 2 Should Be Onair
+    ...    ELSE                                                              CB007491-Keywords.All Cells Should Be Onair
+    Dev_lib.stop_to_capture_infomodel_log
+    dated log      ${consTraceColorBgYellow}${consTraceColorBlack}------> Display Bbrm info from SysLogs AFTER CellSetup${defColor}
+    robot_extension.Run Keyword And Warn On Failure         Display Bbrm configuration from Syslogs
+
+    # test that all cells mapped on same L1 Pool
+    ${isFileNameDLCellMappingPresent}    Run Keyword And Return Status    Should Not Be Empty   ${FileNameDLCellMapping}
+    ${fileExists}=     Run Keyword If    ${isFileNameDLCellMappingPresent}    nps_7491_tools.file_exists   ${FileNameDLCellMapping}
+    ...                 ELSE                                                  set Variable     ${False}
+    ${fileCellMappingPresent}=    Evaluate      ${isFileNameDLCellMappingPresent} and ${fileExists}
+    ${FileNameDLCellMapping}=    Set Variable If    ${fileExists}    ${FileNameDLCellMapping}    ${None}
+    Run Keyword If      '${fileCellMappingPresent}' == 'False'
+    ...                BuiltIn.Log    DL Cell mapping file not present (from Syslog), please check the config   level=WARN    console=yes
+    ...    ELSE
+    ...                check Dl Cell mapping from Syslog ${FileNameDLCellMapping}
+
+    ${ret}  ${output}=    robot_extension.Run Keyword And Warn On Failure
+    ...                                         Extract l2::ps::cell::CellSetupReq_t and CellSetupResp_t from Syslog    NbrCells=6
+    ${sorted_csirsGroups}            Set Variable     ${output[0]}
+    ${sorted_cellcsirs_slotoffset}   Set Variable     ${output[1]}
+    ${sorted_uecsirs_slotoffset}     Set Variable     ${output[2]}
+    ${sorted_trscsirs_slotoffset}    Set Variable     ${output[3]}
+    ${sorted_trscsirs_ssb_slotoffset}    Set Variable     ${output[4]}
+    Dated Log New Line    sorted_csirsGroups=${sorted_csirsGroups}
+    Dated Log New Line    sorted_cellcsirs_slotoffset=${sorted_cellcsirs_slotoffset}
+    Dated Log New Line    sorted_trscsirs_slotoffset=${sorted_trscsirs_slotoffset}
+    Dated Log New Line    sorted_trscsirs_ssb_slotoffset=${sorted_trscsirs_ssb_slotoffset}
+    # ${sorted_csirsGroups} is used by 'Check cellcsirs Assignement' Kw but also used by 'verify_TTITraces_for_csirs' Kw
+    Set test Variable     ${sorted_csirsGroups}
+    Set Test Variable     ${sorted_cellcsirs_slotoffset}
+    Set Test Variable     ${sorted_trscsirs_slotoffset}
+    Set Test Variable     ${sorted_trscsirs_ssb_slotoffset}
+
+    # check that we have all relation cell and csrirspool for all cells
+    ${cell_csirsGroups}=  Get length   ${sorted_csirsGroups}
+    Dated log    length of cell_csirsGroups = ${sorted_csirsGroups}
+    # ${List_nrCellIdentity}   Create List     16385    16386    16387    16388    16389    16390
+    ${List_nrCellIdentity}   Create List     16385    16386    16387
+    ${cell_missing_list}=    check_all_cell_csirspool_present      ${output[0]}    ${List_nrCellIdentity}
+    ${NbrCellNoFound}=       Get length   ${cell_missing_list}
+    Dated log    Nb of cell csirsGroups relation not found = ${NbrCellNoFound} with cell_missing_list=${cell_missing_list}
+    Run Keyword If     '${NbrCellNoFound}' != '0'       Try Lock and Unlock cells    ${cell_missing_list}
+    ${sorted_csirsGroups}=   Run Keyword If    '${NbrCellNoFound}' == '3'     Create List
+    ...                          ELSE                                         Copy List    ${sorted_csirsGroups}
+    ${sorted_cellcsirs_slotoffset}=   Run Keyword If    '${NbrCellNoFound}' == '3'     Create List
+    ...                                  ELSE                                          Copy List    ${sorted_cellcsirs_slotoffset}
+    ${sorted_trscsirs_slotoffset}=   Run Keyword If    '${NbrCellNoFound}' == '3'     Create List
+    ...                                  ELSE                                         Copy List    ${sorted_trscsirs_slotoffset}
+    ${sorted_trscsirs_ssb_slotoffset}=   Run Keyword If    '${NbrCellNoFound}' == '3'     Create List
+    ...                                      ELSE                                         Copy List    ${sorted_trscsirs_ssb_slotoffset}
+    Set test Variable     ${sorted_csirsGroups}
+    Set Test Variable     ${sorted_cellcsirs_slotoffset}
+    Set Test Variable     ${sorted_trscsirs_slotoffset}
+    Set Test Variable     ${sorted_trscsirs_ssb_slotoffset}
+    Run Keyword If     '${NbrCellNoFound}' != '0'       Update csirsGroups and cellcsirs    NbrCells=3
+    # ${sorted_csirsGroups} is used by 'Check cellcsirs Assignement' Kw but also used by 'verify_TTITraces_for_csirs' Kw
+    Run keyword and continue on failure     Check cellcsirs Assignement  ${sorted_cellcsirs_slotoffset}    ${FrameStructure}
+    Run keyword and continue on failure     Check TrsCsiRs Assignement   ${sorted_trscsirs_slotoffset}    ${FrameStructure}
+
+    dated log      ${consTraceColorBgYellow}${consTraceColorBlack}------> Display Bbrm info from SysLogs AFTER CellSetup${defColor}
+    robot_extension.Run Keyword And Warn On Failure         Check cellmappingtocsirspoolinggroup Assignment in Syslogs
+    robot_extension.Run Keyword And Warn On Failure         Display Bbrm configuration from Syslogs
+
+    # ${num_of_cells}=    Get Cell Number
+    # @{cell_to_bypass}=  Create List    /MRBTS-1/RAT-1/RUNTIME_VIEW-1/MRBTS_R-1/NRBTS_R-1/NRCELL_R-4
+    # Critical Step       Wait gNB cells 5g On air    ${num_of_cells}    cell_to_bypass=${cell_to_bypass}
+
+    ${ret}   ${dll1spcells}    robot_extension.Run Keyword And Warn On Failure         Get dlsubcellid for cellId by spool with COAM
+    ...                                                                                                                 oam_alias=coam_gnb
+    ${ret}   ${ull1spcells}    robot_extension.Run Keyword And Warn On Failure         Get ulsubcellid for cellId by spool with COAM
+    ...                                                                                                                 oam_alias=coam_gnb
+
+    Set Suite Variable      ${dll1spcells}
+    Set Suite Variable      ${ull1spcells}
+    dated log   dlsubcellSpool0List=${dll1spcells[0]}
+    dated log   dlsubcellSpool1List=${dll1spcells[1]}
+    dated log   ulsubcellSpool0List=${ull1spcells[0]}
+    dated log   ulsubcellSpool1List=${ull1spcells[1]}
+    set test variable    ${dll1spcells[0]}
+    set test variable    ${dll1spcells[1]}
+    set test variable    ${ull1spcells[0]}
+    set test variable    ${ull1spcells[1]}
+    robot_extension.Run Keyword And Warn On Failure     update bbpoolInfo Dll1Subpool and Ull1Subpool Assignment
+
+    ${bbpoolInfo_json}  set variable     ${testCaseDir}/bbpoolInfo_cell_setup.json
+    # Read the contents of bbpoolInfo_cell_setup.json into the variable json_data
+    ${json_data}        OperatingSystem.Get File    ${bbpoolInfo_json}
+    # Deserialize the JSON data into a Python dictionary (bbpoolInfo)
+    ${bbpoolInfo}=      Evaluate    json.loads('${json_data}')       json
+    ${l1SpCells}=       Set Variable     ${bbpoolInfo['l1SpCells']}
+    ${dl_l1SpCells_bbpoolInfo}=    Set Variable     ${l1SpCells['dlL1SpCells']}
+    ${ul_l1SpCells_bbpoolInfo}=    Set Variable     ${l1SpCells['ulL1SpCells']}
+    ${notEmpty}    Run Keyword And Return Status    Should Not Be Empty   ${dl_l1SpCells_bbpoolInfo[0]}
+    ${dll1spcells[0]}=    Run Keyword If     ${notEmpty}    Copy List     ${dl_l1SpCells_bbpoolInfo[0]}
+    ...                          ELSE                       Copy List     ${dll1spcells[0]}
+    ${notEmpty}    Run Keyword And Return Status    Should Not Be Empty   ${dl_l1SpCells_bbpoolInfo[1]}
+    ${dll1spcells[1]}=    Run Keyword If     ${notEmpty}    Copy List     ${dl_l1SpCells_bbpoolInfo[1]}
+    ...                          ELSE                       Copy List     ${dll1spcells[1]}
+    ${notEmpty}    Run Keyword And Return Status    Should Not Be Empty   ${ul_l1SpCells_bbpoolInfo[0]}
+    ${ull1spcells[0]}=    Run Keyword If     ${notEmpty}    Copy List     ${ul_l1SpCells_bbpoolInfo[0]}
+    ...                          ELSE                       Copy List     ${ull1spcells[0]}
+    ${notEmpty}    Run Keyword And Return Status    Should Not Be Empty   ${ul_l1SpCells_bbpoolInfo[1]}
+    ${ull1spcells[1]}=    Run Keyword If     ${notEmpty}    Copy List     ${ul_l1SpCells_bbpoolInfo[1]}
+    ...                          ELSE                       Copy List     ${ull1spcells[1]}
+    set test variable    ${dll1spcells[0]}
+    set test variable    ${dll1spcells[1]}
+    set test variable    ${ull1spcells[0]}
+    set test variable    ${ull1spcells[1]}
+    dated log   dlsubcellSpool0List=${dll1spcells[0]}
+    dated log   dlsubcellSpool1List=${dll1spcells[1]}
+    dated log   ulsubcellSpool0List=${ull1spcells[0]}
+    dated log   ulsubcellSpool1List=${ull1spcells[1]}
+
+    Run Keyword if      ${w_Basic_Call_to_Setup_Wtsemu} == ${False}   Step                      CallSetup.WTS Set X2 Link
+
+    Run Keyword If      '${kw Specific Set TestMode Before Attach}'!='${EMPTY}'
+    ...                                                    Step   Run specific keywords before attach : ${kw Specific Set TestMode Before Attach}
+
+    Run Keyword if   '${w_generic_capture}' == 'True'       Step      Captures CB007491 Start  actionTti=${isCaptureTti}
+
+    # Register and launch PDU for all the ue's except for which define on the deleted cell
+    FOR    ${current_elem}    IN    @{listOfUes}
+        # Run Keyword If      ${current_elem.target_cells} != ${nrCell}    Run Keywords
+        Run Keywords
+        ...                 Critical Step       CallSetup UE register UeId "${current_elem.ue}" on Target cell "${current_elem.target_cells}"
+        ...                                     depends=CallSetup.Setup Wtsemu SA
+        ...    AND
+        ...                 Critical Step     CallSetup.Launch PDU Session
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         gw=${current_elem.ue}
+        ###...                                                      nwslice=1
+        ...                                   depends=CallSetup UE register UeId
+    END
+
+    Run Keyword If    '${kw Specific Set TestMode After Attach}'!='${EMPTY}'
+    ...                                                   Step   Run specific keywords after attach : ${kw Specific Set TestMode After Attach}
+
+    ${rntiList}=    create list
+    FOR    ${current_elem}    IN    @{listOfUes}
+        ${UeId}      CB007491-Ue-Commands.Get Crnti From Egate Log     ue_id=${current_elem.ue}
+        Dated log       ======> Rnti[UeId=${current_elem.ue}] is ${UeId}
+        Append To List                ${rntiList}                  ${UeId}
+    END
+    Set Test Variable     ${rntiList}
+
+    Run Keyword if   '${w_generic_capture}' == 'True'       Step        Captures CB007491 Stop
+
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        set test variable   ${current_elem}
+        ${dir}=   set Variable If    ${current_elem.DL_throughput} > ${0}    DL
+        ...                                                                  NONE
+        ${kw to run}=   Catenate   ${dir} Traffic SA Not Stopped with "${current_elem.DL_throughput}"Mbps "${param.duration}"s duration
+        ...                        and "${param.deviation}" percent deviation with "${current_elem.protocol}" protocol
+        Run Keyword If      ${current_elem.DL_throughput} > ${0}
+        ...      Critical Step     ${kw to run}       depends=CallSetup.Launch PDU Session
+
+        ${dir}=   set Variable If    ${current_elem.UL_throughput} > ${0}    UL
+        ...                                                                  NONE
+        ${kw to run}=   Catenate   ${dir} Traffic SA Not Stopped with "${current_elem.UL_throughput}"Mbps "${param.duration}"s duration
+        ...                        and "${param.deviation}" percent deviation with "${current_elem.protocol}" protocol
+        Run Keyword If      ${current_elem.UL_throughput} > ${0}
+        ...      Critical Step     ${kw to run}       depends=CallSetup.Launch PDU Session
+    END
+
+    # PDU session modify reserved for the ue's configured with GBR traffic
+    ${nbOfUe_traffic_GBR}=   CB007491-Keywords.Get Number Of Ue Configured With GBR Traffic    dict_ues=${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Run Keyword If    ${current_elem.DL_throughput_GBR} > ${0}    Run Keywords
+        ...                 Critical Step    CallSetup.UE PDU Session Modify
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=2
+        ...                                                         by=amf
+        ...                                  depends=CallSetup.Launch PDU Session
+        ...    AND
+        ...                 Critical Step    CallSetup.UE PDU Session Modify
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=3
+        ...                                                         by=amf
+        ...                                  depends=CallSetup.Launch PDU Session
+    END
+
+    # Start the GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        set test variable   ${current_elem}
+        ${dir}=   set Variable If    ${current_elem.DL_throughput_GBR} > ${0}    DL
+        ...                                                                      NONE
+        ${kw to run}=   Catenate    ${dir} Traffic GBR SA Not Stopped with "${current_elem.DL_throughput_GBR}"Mbps "${param.duration}"s duration
+        ...                         and "${param.deviation}" percent deviation
+        Run Keyword If      '${current_elem.DL_throughput_GBR}' != '0'
+        ...    Critical Step   ${kw to run}    depends=CallSetup.Launch PDU Session
+    END
+
+    robot_extension.Run Keyword And Warn On Failure    CB007491-Keywords.Stop collect log by gnb tool
+
+    ${tti_trace_path}    ${tti_trace_dict}=    Omit when TtiTrace deactivated
+    ...             Process TTI Traces    Kw_Convert_TtiTrace_From_csv_to_Dict=${Kw_Convert_TtiTrace_From_csv_to_Dict_Test}   step=For_Test_Verdict
+
+    # add here Specific Check based on TtiTraces
+    run Keyword if     '${kw Specific Check Tti}'!='${EMPTY}'     Omit when TtiTrace deactivated
+    ...          Step      ${kw Specific Check Tti}     ttitraceFilename=ttitrace_streaming.pcap
+    ...                                             ttitracepath=${tti_trace_path}
+    ...                                             vendor_custom=${vendor_custom}
+    ...                                             depends=CallSetup.Launch PDU Session
+
+    ${FilePkl}=           Omit when TtiTrace deactivated
+    ...      Run keyword and continue on failure      Convert TTI Traces to Dataframe and store as pickle for UL Mimo
+    ...                                                                                                     ttitraceFilename=ttitrace_streaming.pcap
+    ...                                                                                                     ttitracepath=${tti_trace_path}
+
+    ${L1L2_Pcap_File}=   Omit when L1L2BipTrace deactivated    Get L1L2 traces          time=${GetL1L2TraceTime}
+    ...                                                                                 prefix=L1L2Bip.wDLTput
+    ...                                                                                 msg=take BIP L1L2 traces with DL Tput
+
+    # add here Specific Check based on L1l2Bip pcap
+    run Keyword if     '${kw Specific Check}'!='${EMPTY}'     Omit when L1L2BipTrace deactivated
+    ...          Step      ${kw Specific Check}     captureL1L2=${L1L2_Pcap_File}.pcap
+    ...                    depends=CallSetup.Launch PDU Session
+
+    run Keyword if   '${L1L2_Pcap_File}' != 'None'      Run Keywords     Dated log    gzip -f ${L1L2_Pcap_File}.pcap
+    ...                                                         AND      Run    gzip -f ${L1L2_Pcap_File}.pcap
+
+    # Generate Verdict...
+    Omit when TtiTrace deactivated      Step      Generate Test Verdict    ${FilePkl}   ${vendor_custom}
+    ...                                                                    ${dictExpectedValues}
+    ...                                                                    ${kw Check SCF parameters}
+    ...                                                                    verify_TTITraces_for_csirs_6cells
+    ...                                                                    ttitraceFilename=ttitrace_streaming.pcap
+    ...                                                                    ttitracepath=${tti_trace_path}
+
+    ${cntUes}=    Get length    ${rntiList}
+    Step      CB007491-Ue-Commands.Verify Nbr Of ${cntUes}Ues ACTIVE
+
+    # if  '${SKIP_COUNTERS}'=='False' => 'Display PDSCH and PUSCH ue_stats_nr for UEList' allow to Wait time until next PM file
+    Run Keyword And Ignore Error     Display PDSCH and PUSCH ue_stats_nr for UEList   UEsList=${listOfUes}    file=${csv_file_tput_results}
+
+    # Collect PM only if  '${SKIP_COUNTERS}'=='False'
+    Omit when SKIP_COUNTERS present      robot_extension.Run Keyword And Warn On Failure
+    ...                                           CB007491-Keywords.Collect PM Counters and process throughput using PM counters
+
+    # to bypass UE Deregister if needed
+    @{listOfUes}    run Keyword if    '${w_ue_detach}' == 'False'    Create List
+    ${len}=   Get Length   ${listOfUes}
+    run Keyword if    '${len}' != '${0}'    Step    Traced Sleep   duration=3s   msg=deregistering     depends=CallSetup.UE Register
+    # Deregister all the ue's
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Run Keyword If      ${current_elem.target_cells} != ${nrCell}
+        ...                 Step      CallSetup.UE Deregister       id=${current_elem.ue}
+        ###...                                                      ue_deregister_type=switch_off
+        ###...                                                      by=ue
+        ...                                                         depends=CallSetup.UE Register
+    END
+    [Teardown]   Run Keywords    Run Keyword and ignore error    Captures CB007491 Stop
+    ...            AND           Run Keyword and ignore error    CB007491-Keywords.Stop collect log by gnb tool
+    ...            AND           Teardow Kw
+
+postProcess TtiTrace
+    [Arguments]             ${ttitraceFilename}=ttitrace_streaming.pcap    ${ttitracepath}=${EMPTY}
+    ...                     ${Kw_Convert_TtiTrace_From_csv_to_Dict}=Convert TTI trace from csv to dict CB009836
+    ${TTIcsv}  ${UL_TTIcsv}   Run keyword and continue on failure         Convert TTI trace from pcap to excelCsv CB009836
+    ...                                                           ttitraceFilename=${ttitraceFilename}   ttitracepath=${ttitracepath}
+    ${file_exists}=  Run Keyword and Return Status    File Should Exist    ${TTIcsv}
+    ${CsvFilename}      Remove String      ${ttitraceFilename}     .pcap
+    ${ttiLog}  set variable if   not(${file_exists})    ${ttitracepath}/${CsvFilename}.dl.csv
+    ...   ${TTIcsv}
+    dated log   ttiLog is ${ttiLog}
+    set test Variable     ${ttiLog}
+    # ${TTIcsv} is used by "Check cellcsirs Assignement" Kw
+    set test Variable     ${TTIcsv}
+    Run Keywords       dated log    Tti csv file converted using TtiTraceDecoder.py legacyCsv ${TTIcsv}
+    ...      AND       dated log    Tti csv file converted using TtiTraceDecoder.py legacyCsv ${UL_TTIcsv}
+    Set Log Level    NONE
+    ${tti_trace_dict_dl}=      Run keyword and continue on failure   ${Kw_Convert_TtiTrace_From_csv_to_Dict}    TTITraceCsv=${TTIcsv}
+    ...                                                                                                 num_of_events=${GetTtiTraceNumOfEvent}
+    ${tti_trace_dict_ul}=   Run keyword and continue on failure   Convert TTI trace from csv to dict CB007713    TTITraceCsv=${UL_TTIcsv}
+    ...                                                                                                 num_of_events=${GetTtiTraceNumOfEvent}
+    Set Log Level    TRACE
+    robot_extension.Run Keyword And Warn On Failure      Check PRB Assignment CB008940        ${tti_trace_dict_dl}
+    robot_extension.Run Keyword And Warn On Failure      Check UL PRB Assignment CB007113     ${tti_trace_dict_ul}
+    [return]    ${tti_trace_dict_dl}
+
+Get TtiTrace and L1L2Bip
+    [Arguments]     ${step}=${EMPTY}    ${duration}=1s    ${Kw_Convert_TtiTrace_From_csv_to_Dict}=Convert TTI trace from csv to dict CB009836
+    ${if_TtiTrace_not_skip}=     Evaluate     '${w_GetTtiTrace}' == 'True' and '${duration}' != '0'
+    ${if_l1l2Bip_not_skip}=      Evaluate     '${w_GetL1L2Bip}' == 'True' and '${duration}' != '0'
+    Captures CB007491 Init   prefix=${step}
+    Captures CB007491 Start  actionCORE=${False}
+    ...                      actionCPRT=${False}
+    ...                      actionL1L2=${if_l1l2Bip_not_skip}
+    ...                      actionTti=${if_TtiTrace_not_skip}
+    Traced Sleep   duration=${duration}   msg=${step}
+    ${ret_tti}   ${tti_trace_path}     Omit when TtiTrace deactivated    Run Keyword And Ignore Error    Stop and Get TTI traces    suffix=${step}
+    CB007491-Keywords.Captures Stop         actionCORE=${False}
+    ...                                     actionCPRT=${False}
+    ...                                     actionL1L2=${if_l1l2Bip_not_skip}
+    set Test Variable       ${sw_generic_capture_started}     ${False}
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CaptureCPRT.path}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${CaptureCPRT.path}    ${testCaseDir}
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CaptureCORE.path}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${CaptureCORE.path}    ${testCaseDir}
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CaptureL1L2.path}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${CaptureL1L2.path}    ${testCaseDir}
+    Run Keyword If    ${if_l1l2Bip_not_skip}    declare Trace in Trace List  Type=L1L2Bip   Savedir=${testCaseDir}
+    ...                          file_name=${CaptureL1L2.name}.pcap   Trigger=${step}
+    Run Keyword If       '${ret_tti}' == 'FAIL'    BuiltIn.Log    Failed to get TTI traces !!!!   level=ERROR
+    Should Not be True   '${ret_tti}' == 'FAIL'
+    Run Keyword If    ${if_TtiTrace_not_skip}   declare Trace in Trace List  Type=TtiTrace   Savedir=${tti_trace_path}
+    ...                          file_name=ttitrace_streaming.pcap    Trigger=${step}
+    Omit when TtiTrace deactivated    postProcess TtiTrace
+    ...                                     ttitraceFilename=ttitrace_streaming.pcap    ttitracepath=${tti_trace_path}
+    ...                                     Kw_Convert_TtiTrace_From_csv_to_Dict=${Kw_Convert_TtiTrace_From_csv_to_Dict}
+    [return]   ${tti_trace_path}    ${testCaseDir}/${CaptureL1L2.name}
+
+# ------------------------------------------------------------------------------------------------------------------------------------
+
+

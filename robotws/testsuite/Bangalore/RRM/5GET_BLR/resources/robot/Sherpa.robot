@@ -1,0 +1,545 @@
+*** Settings ***
+Documentation
+...         == Purpose ==
+...
+...         This robot library implements the usage of Sherpa.
+...
+...         == Description ==
+...         Implemention of the usage of Sherpa.
+...         - Support to configure Sherpa traces on gNB
+...         - Support to collect traces via TCP dump on WTS
+
+...         *Concepts:*.
+...         Generic sherpa capturing can be implemented in features managing this variable that is set in Setup.robot:
+...
+...         ${enable_sherpa}
+...
+...         Check value of the variable ${enable_sherpa} to run your keyword.
+...
+...         Decoding and checking is supported via taf libraries included in this file. Please refer to taf documentation for details.
+...         Better to avoid using directly taf methods and KWs,
+...         use th KWs implemented in this file as suggested in the examples.
+...
+...         *Examples:*
+...         How to use ${enable_sherpa}:
+...         | Run Keyword If \ \ \ \ \ \ \ \ \ \ \ \ ${enable_sherpa}==${True} \ \ \ \ \ \ \ \ \ \ Sherpa.Activate Sherpa
+...
+...         The variable value must be set to True using the robot -v option with variable *hire_a_sherpa*, example:
+...
+...         robot -v hire_a_sherpa:True  myrobotscript.robot
+...
+...         This must be done also in Jenkins jobs for this variable to be effective (ex: features 1248 or 679).
+...
+...         How to implement Sherpa usage for checks:
+...         Please refer to file examples/SherpaUsage.robot
+...         and use the KWs present in the section of this file named *Checking content in cvs sherpa generated files*
+
+
+Library           OperatingSystem
+Library           DateTime
+Library           String
+Library           Process
+Library           Collections
+Library           taf.transport.ssh                   WITH NAME    csn
+Library           taf.analyzer.sherpa                 WITH NAME    SherpaCsvReader
+Library           taf.converters.sherpa               WITH NAME    sherpa_converter
+Library           ../python/Sherpa_new_connect.py     WITH NAME    sherpa_new
+Resource          Scf.robot
+Library           logging
+Library           BuiltIn
+Library           Telnet
+Library          taf.transport.ssh           WITH NAME    taf_ssh
+Library          taf.wts.runner              WITH NAME    wtsrunner
+Library          ute_admin                         WITH NAME   ute_adm
+#Library          ute_syslog
+Library          ta5g_tshark
+Library          ta5g_commissioning
+Library          taf.analyzer.pdml     WITH NAME    taf_pdml_analyser
+Library          taf.collectors.core          WITH NAME    CORE
+Library          taf.collectors.tshark        WITH NAME    tshark
+Library          taf.sbts.oam.coam.admin    WITH NAME   coam
+Library          ute_fsmaccess
+Library          String
+Library          ../python/TTI_Converter.py    WITH NAME    TtiConvert
+Library          taf.collectors.tcpdump   WITH NAME    TCPDUMP
+Library          taf.collectors.l2stream3    WITH NAME    L2STREAM3
+
+*** Variables ***
+${process_handle}
+${mydocker}
+${alias_gnb}
+&{executor}         host=192.168.255.1      user=Nemuadmin     password=nemuuser       port=443
+&{curl_options}
+&{curl_options2}
+&{curl_options3}
+&{curl_options4}
+&{curl_options5}
+&{curl_options6}
+${Destination_port}                 4556
+${gNB_Mplane_IP}                    10.0.1.111
+${Udp_Receiver_wts_IP}              10.0.1.150
+${isAic}                            False
+${LOG_COLLECTOR_PATH}    /home/ute/MN/UTE/robotws/testsuite/Bangalore/RRM/5GET_BLR/resources/sh/log_collector.Sh
+
+*** Keywords ***
+
+#################################################################################################
+#                   sherpa traces activation and capture keywords
+#################################################################################################
+
+Configure gNb for sherpa traces
+    [Documentation]             Configure the gNb TRSW icom gateway for Sherpa traces (activating internal traces).
+    ${alias_gnb}                SSH Connect                    ${GNB_DU.sys[0].M}
+    set suite variable          ${alias_gnb}
+    Dated Log                   Configuring GNB for sherpa. Board Type is: ${GNB_DU.sys[0].M.boardType}        True
+    Configure gNb sherpa Asib      ${Destination_port}        ${gNB_Mplane_IP}    ${Udp_Receiver_wts_IP}                        
+#    ${output}                   run keyword if                 '${GNB_DU.sys[0].M.boardType}'=='ASIB'
+#    ...                         Configure gNb sherpa Asib      ${Destination_port}        ${gNB_Mplane_IP}
+#    ...                         ${Udp_Receiver_wts_IP}
+#    ...        ELSE             Configure gNb sherpa Asik      ${Destination_port}        ${gNB_Mplane_IP}
+#    ...                         ${Udp_Receiver_wts_IP}
+#    Dated Log                   GNB Internal trace activation output is:${output}
+#    run keyword if              '${GNB_DU.sys[0].M.boardType}'=='ASIK'
+#    ...                         Should Contain                 ${output}                  [ENABLED]
+
+Configure gNb sherpa Asik
+    [Documentation]     INTERNAL USAGE.
+    [Arguments]         ${Destination_port}    ${gNB_Mplane_IP}    ${Udp_Receiver_wts_IP}
+    SSH Cmd
+    ...    /opt/trs/bin/trs-vppctl icom set_stream_conf src_ip ${gNB_Mplane_IP} dst_ip ${Udp_Receiver_wts_IP} dscp 32 dst_port ${Destination_port}
+    ...    alias=${alias_gnb}
+    SSH Cmd    /opt/trs/bin/trs-vppctl icom classical_mode enable
+    ...        alias=${alias_gnb}
+    ${output}    SSH Cmd    /opt/trs/bin/trs-vppctl icom classical_mode status
+    ...          alias=${alias_gnb}
+    [return]    ${output}
+
+Configure gNb sherpa Asib
+    [Documentation]     INTERNAL USAGE.
+    [Arguments]         ${Destination_port}    ${gNB_Mplane_IP}    ${Udp_Receiver_wts_IP}
+    ${output}    SSH Cmd    /opt/trs/bin/vtc 5gicomgw stream_config_add ${gNB_Mplane_IP} ${Udp_Receiver_wts_IP} ${Destination_port} 32
+    ...          alias=${alias_gnb}
+    [return]     ${output}
+
+Activate Sherpa
+    [Documentation]     Activate Internal traces and Sherpa traces on gnb using COAM gui, logs the sherpa version.
+    ...                 A trace capture is then started. To stop it, use Deactivate Sherpa and Stop Collect.
+    ...                 It can work on Degraded cells, but guess it is not the ideal case.
+    ...                 Better to use it ONLY if TL has CELL SETUP ok.
+    ...                 This KW uses taf libraries, only usable on UTE TLs.
+    [Arguments]             ${l2ps}=${TRUE}    ${l2lo}=${TRUE}    ${l2hi}=${TRUE}
+    ...                     ${cell_path}=/MRBTS-1/RAT-1/RUNTIME_VIEW-1/MRBTS_R-1/NRBTS_R-1/NRCELL_R-1
+#    Run Keyword If      ${isAic}    Start To Collect Sherpa Trace On AIC
+#    Return From Keyword If          ${isAic}
+
+#    ${collector_source_ip}          Get Source IP for Collector
+    Configure gNb for sherpa traces
+    Log Sherpa Version
+    Setup Sherpa Traces
+    Activate Sherpa and Collect     10.0.1.2                  ${tl.gnbs[0].cu.oam_ssh_connection_details.addr}
+    ...                             10.0.1.1
+
+Log Sherpa Version
+    [Documentation]                 INTERNAL USAGE.
+    ${rc}    ${output} =            Run and Return RC and Output            cd /opt/Nokia/Sherpa_5G_18/;./Sherpa.run --version
+    ${result} =                     Get Lines Containing String             ${output}
+    ...                             Sherpa5G_
+    Dated Log New Line              Installed sherpa release: ${result}
+
+Get Source IP for Collector
+    [Documentation]                 INTERNAL USAGE.
+    scf.SCF StartSession            scf_file=${SCF_SETUP_PATH}
+    ${dist_name}                    Set Variable                        MRBTS-1/TNLSVC-1/TNL-1/IPNO-1/IPIF-[0-9]{1,2}/IPADDRESSV4-1
+    ${result}                       Scf.SCF Get Single Value By Pattern           ${dist_name}
+    ...                             localIpAddr
+    Dated Log New Line              LOCAL IP is: ${result}[0]
+    [Return]                        ${result}[0]
+
+Setup Sherpa Traces
+    [Documentation]      INTERNAL USAGE. Set up the lists to activate Sherpa traces on gnb using COAM gui.
+    [Arguments]    ${L2PS}=${TRUE}    ${L2LO}=${TRUE}    ${L2Hi}=${TRUE}
+    ${nr_phy_cell_ids}    Get PhyCellIds
+    @{curl_list}      Create List
+    Set To Dictionary    ${curl_options}     nr_phy_cell_ids=${nr_phy_cell_ids}    trace_type=Sherpa
+    Set To Dictionary    ${curl_options2}    nr_phy_cell_ids=${nr_phy_cell_ids}    up_sw=L2Lo       trace_type=Sherpa
+    Set To Dictionary    ${curl_options3}    nr_phy_cell_ids=${nr_phy_cell_ids}    trace_type=Component
+    Set To Dictionary    ${curl_options4}    nr_phy_cell_ids=${nr_phy_cell_ids}    up_sw=L2Lo       trace_type=Component
+    Set To Dictionary    ${curl_options5}    up_sw=L2HiPdcp                  trace_type=Sherpa
+    Set To Dictionary    ${curl_options6}    nr_phy_cell_ids=${nr_phy_cell_ids}    up_sw=L2HiRlc    trace_type=Sherpa
+    Run Keyword If    '${L2PS}'=='${TRUE}'
+    ...              Append To List    ${curl_list}    ${curl_options}    ${curl_options3}
+    Run Keyword If    '${L2LO}'=='${TRUE}'
+    ...              Append To List    ${curl_list}    ${curl_options2}    ${curl_options4}
+    Run Keyword If    '${L2Hi}'=='${TRUE}'
+    ...              Append To List    ${curl_list}    ${curl_options5}    ${curl_options6}
+    Set Suite Variable    ${curl_list}
+    [Return]    @{curl_list}
+
+Activate Sherpa and Collect
+    [Documentation]     INTERNAL USAGE. please use the KW named Activate Sherpa.
+    ...                 This KW uses taf libraries, only usable on UTE TLs.
+    [Arguments]    ${source_ip_addr}    ${gnb_ip}    ${dest_ip}=10.0.1.1
+    ${executor.host}                Set Variable                ${gnb_ip}
+    TCPDUMP.create TCPDUMP collector
+    ...    name=TCPDUMP
+    ...    options=-i eth3 udp and src ${source_ip_addr} and dst ${dest_ip} and dst port 5678
+    ...    sudo_password=ute
+    L2STREAM3.create sbts l2stream collector
+    ...    name=L2STREAM3
+    ...    webservice=${executor}
+    #...    vlan=1
+    ...    source_ip_addr=${source_ip_addr}
+    ...    destination_ip_addr=${dest_ip}
+    ...    collector=TCPDUMP
+    ...    l2_stream_configuration=${curl_list}
+    L2STREAM3.Set Suite Alias       L2STREAM3
+    core.setup_collectors           names=L2STREAM3
+    core.start_collectors           names=L2STREAM3
+
+Deactivate Sherpa and Stop Collect
+    [Documentation]     Before using activate Sherpa traces on gnb using COAM gui or the dedicated KW.
+    ...                 Condition: use ONLY after Activate Sherpa usage KW.
+    [Arguments]                     ${log_dir}          ${keep_pcap_file}=${False}
+    ${trace_dir}                    Set Variable                ${log_dir}
+    Set Suite Variable              ${trace_dir}
+#    Run Keyword If      ${isAic}    Stop And Download Sherpa Trace On AIC
+#    Return From Keyword If          ${isAic}
+    core.stop_collectors            names=L2STREAM3
+    core.collect_collectors         names=L2STREAM3             target_dir=${trace_dir}
+    core.teardown_collectors        names=L2STREAM3
+    # If required, move the pcap file into a sub dir
+    # By default, the generated .pcap files remain in the original directory and
+    # will be erased at the next call of Sherpa
+    Run Keyword If                  ${keep_pcap_file}==${True}
+    ...                             Move Sherpa Pcap Files      ${trace_dir}
+
+Move Sherpa Pcap Files
+    [Documentation]     INTERNAL USAGE
+    ...                 Rename all .pcap files existing in the trace directory by adding testcase name
+    ...                 as extension for each of them
+    ...                 ${trace_dir}    path to the directory where sherpa .pcap files are stored
+    [Arguments]         ${trace_dir}
+    # get the list of .pcap files generated by Sherpa
+    ${src_pcap_dir}                Set Variable                ${trace_dir}/L2STREAM3/TCPDUMP
+    @{pcap_files}                  OperatingSystem.List Files In Directory     ${src_pcap_dir}          *.pcap
+    # get the short test name (i.e. remove spaces, simple quotes and [x][xx] from TEST_NAME)
+    # Ex: '[1][1.0] abcd efgh' --> abcdefgh
+    ${short_test_name}             Replace String Using Regexp     ${TEST_NAME}          ${SPACE}      ${EMPTY}
+    ${short_test_name}             Replace String Using Regexp     ${short_test_name}    \\'           ${EMPTY}
+    ${short_test_name}             Replace String Using Regexp     ${short_test_name}    \\[.*\\]      ${EMPTY}
+    # Create the subdir where to move pcap files
+    ${dest_pcap_dir}               Set Variable                    ${trace_dir}/${short_test_name}
+    run                            mkdir ${dest_pcap_dir}
+    # set the suite variable to be used later
+    Set Suite Variable             ${Sherpa_subfolder_name}        ${short_test_name}
+    # move pcap files to the sub-directory
+    Dated Log                      Moving Sherpa pcap files from ${src_pcap_dir} to ${dest_pcap_dir}
+    FOR    ${file}    IN     @{pcap_files}
+        Dated Log                  Moving file ${file}
+        run                        mv ${src_pcap_dir}/${file} ${dest_pcap_dir}
+    END
+
+#################################################################################################
+#                   Checking content in cvs sherpa generated files
+#################################################################################################
+
+Verify Message presence in csv Files
+    [Documentation]     Verify the presence of a given message (or a list of msgs) in cvs files issued from sherpa.
+    ...                 - The directory parameter indicates where csv files are stored, \
+    ...                   usually default value is given by the variable sherpa_output_path.
+    ...                 - The *valuetocheck* presence is verified in column *ColumnName* for all the files named *CsvName* \
+    ...                   found in *directory* subdirectories.
+    ...                 - Return True if found, False if not.
+    [Arguments]    ${CsvName}    ${ColumnName}    ${valuetocheck}   ${directory}
+    ${found} =    Set Variable    False
+    @{my_dir} =    OperatingSystem.List Directories In Directory             ${directory}
+    FOR    ${dir}    IN     @{my_dir}
+        ${found} =    Loop on files    ${dir}    ${CsvName}    Check Values In File    ${ColumnName}    ${valuetocheck}
+        Exit For Loop If    "${found}"=="True"
+    END
+    Should be equal    "${found}"    "True"
+    [Return]    ${found}
+
+Verify value with operator in csv Files
+    [Documentation]     Verify the values in cvs files column issued from sherpa using an operator and a reference value.
+    ...                 - The directory parameter indicates where csv files are stored, \
+    ...                   usually default value is given by the variable sherpa_output_path
+    ...                 - The *valuetocheck* is checked with *check_operator* in column *ColumnName* for all the values from the files named \
+    ...                   *CsvName* found in *directory* subdirectories.
+    ...                 - Return True if the condition is verified for all the values, False if not.
+    [Arguments]    ${CsvName}    ${ColumnName}    ${valuetocheck}   ${check_operator}    ${directory}    ${skip}=0
+    ${found} =    Set Variable    False
+    @{my_dir} =    OperatingSystem.List Directories In Directory             ${directory}
+    FOR    ${dir}    IN     @{my_dir}
+        ${found} =    Loop on files    ${dir}               ${CsvName}         Check Values on Operator In File
+        ...           ${ColumnName}    ${check_operator}    ${valuetocheck}    ${skip}
+        Exit For Loop If    "${found}"=="False"
+    END
+    Should be equal    "${found}"    "True"
+    [Return]           ${found}
+
+Verify Regex in csv File Column
+    [Documentation]     Verify the presence of a given regex in a cvs file issued from sherpa.
+    ...                 Return True if found in every row for a given column, False if not.
+    [Arguments]    ${CsvName}    ${ColumnName}    ${regex_tocheck}
+    ${found} =    Set Variable    False
+    @{my_dir} =    OperatingSystem.List Directory     ${Sherpa_logs_local_path}/Sherpa_logs
+    FOR    ${dir}    IN     @{my_dir}
+        ${found} =    Loop on files    ${dir}    ${CsvName}    Check Regex Value In File Column    ${ColumnName}    ${regex_tocheck}
+        Exit For Loop If    "${found}"=="True"
+    END
+    Should be equal    "${found}"    "True"
+    [Return]    ${found}
+
+Verify Regex in csv File Column with Prerequisite
+    [Documentation]     Verify the presence of a given regex with another regex prerequisite in a cvs file issued from sherpa.
+    ...                 Return True if both regex are found in row containing the prerequisite for a given column, False if not.
+    [Arguments]    ${CsvName}    ${ColumnName}    ${regex_prereq}    ${regex_tocheck}           ${directory}
+    ${found} =    Set Variable    False
+    @{my_dir} =    OperatingSystem.List Directories In Directory                ${directory}
+    FOR    ${dir}    IN     @{my_dir}
+        ${found} =    Loop on files    ${dir}    ${CsvName}    Check Regex Value In File Column If Another
+        ...             ${ColumnName}    ${regex_prereq}    ${regex_tocheck}
+        Exit For Loop If    "${found}"=="True"
+    END
+    Should be equal    "${found}"    "True"
+    [Return]    ${found}
+
+Verify Value List In csv File Column
+    [Documentation]     Verify the presence of a given list of values in a column and for each row in cvs files generated by sherpa.
+    ...                 A check is performed with a precondition that is the presence of a value in a predefined column of the same row.
+    ...                 Returns True if checked, False if not.
+    [Arguments]    ${CsvName}    ${Column_name}    ${value_list}    ${prereq_column}    ${prereq_column_val}
+    ${found} =    Set Variable    False
+    @{my_dir} =    OperatingSystem.List Directory     ${sherpa_output_path}/TCPDUMP
+    FOR    ${dir}    IN     @{my_dir}
+        ${found} =    Loop on files    ${dir}    ${CsvName}    Check Value List In File Column With Prerequisite
+        ...                                     ${Column_name}    ${value_list}    ${prereq_column}    ${prereq_column_val}
+        Exit For Loop If    "${found}"=="True"
+    END
+    Should be equal    "${found}"    "True"
+    [Return]    ${found}
+
+Verify Regex in csv File Column with Regex Prereq
+    [Documentation]     Verify the presence of a given regex in rows
+    ...                 filtered with another regex prerequisite in a cvs file issued from sherpa.
+    ...                 Return True if both regex are found in row containing the prerequisite for a given column, False if not.
+    [Arguments]    ${CsvName}    ${ColumnName}    ${regex_prereq}    ${regex_tocheck}           ${directory}
+    @{results} =    Create List
+    @{found} =      Create List    False     @{results}
+    @{my_dir} =     OperatingSystem.List Directories In Directory                ${directory}
+    FOR    ${dir}    IN     @{my_dir}
+        @{found} =    Loop on files    ${dir}    ${CsvName}    Check Regex Value In File Column With Prerequisite
+        ...             ${ColumnName}    ${regex_prereq}    ${regex_tocheck}
+        Exit For Loop If    "@{found}[0]"=="True"
+    END
+    Should be equal    "@{found}[0]"    "True"
+    [Return]    @{found}
+
+Loop on files
+    [Documentation]     INTERNAL USAGE
+    ...                 Look for csv required file to check in csv dir; when found perform the check on it.
+    ...                 ${KW_name_torun}      the KW used to perform the check
+    ...                 @{param_list_forcsv}  the parameters for KW_name_torun
+    [Arguments]             ${my_dir}    ${CsvName}    ${KW_name_torun}    @{param_list_forcsv}
+    ${found} =    Set Variable    False
+    @{my_sub_dir} =    OperatingSystem.List Directory           ${sherpa_output_path}/${my_dir}
+    FOR  ${file}  IN  @{my_sub_dir}
+         BuiltIn.Log    File is:\n ${file}      console=yes
+         ${found}    Run Keyword if    "${file}"=="${CsvName}"    ${KW_name_torun}     ${sherpa_output_path}/${my_dir}/${file}
+         ...        @{param_list_forcsv}    ELSE    Set Variable    False
+         Exit For Loop If    "${found}"=="True"
+    END
+    [Return]    ${found}
+
+Check Values In File
+    [Documentation]     INTERNAL USAGE
+    ...                 Verify the presence of a given set of values in a cvs file generated by sherpa
+    ...                 returns True if all of them are found, False if not.
+    [Arguments]         ${file}    ${Column_name}    ${valuetocheck}
+    ###  DO NOT USE DIRECTLY! ################################
+    # Please use keyword       Verify Message presence in csv Files
+    SherpaCsvReader.setup reader    ${file}
+    BuiltIn.Log    Params are:\n${Column_name} ${valuetocheck}    console=yes
+    ${result}     SherpaCsvReader.check all values for column    ${Column_name}    ${valuetocheck}
+    [Return]    ${result}
+
+Check Values on Operator In File
+    [Documentation]     INTERNAL USAGE
+    ...                 Verify the integer numeric string values in a cvs file generated by sherpa using an operator and a reference value
+    ...                 returns True if all of them satisfy the condition, False if not.
+    [Arguments]         ${file}    ${Column_name}    ${check_operator}    ${valuetocheck}   ${skip}=0   ${column_filter}=/d*
+    ###  DO NOT USE DIRECTLY! ################################
+    # Please use keyword       Verify Message presence in csv Files
+    SherpaCsvReader.setup reader    ${file}
+    BuiltIn.Log          Params are:\n${Column_name} ${check_operator} ${valuetocheck}    console=yes
+    @{result_temp}       SherpaCsvReader.check csv column match all    ${Column_name}     ${column_filter}
+    ${result}            Set Variable                                  ${True}
+    @{values_to_check}   Set Variable     ${result_temp}[1]
+    Dated Log            values_to_check is: ${values_to_check}
+    FOR    ${elem}    IN    @{values_to_check}
+        Run keyword If      '${elem}'=='${skip}'    Continue For Loop
+        ${result}           Run keyword If              '${elem}'!=''
+        ...                 Check on Operator           ${valuetocheck}      ${check_operator}
+        ...                 ${elem}
+        Exit For Loop If    "${result}"=="${False}"
+    END
+    Dated Log            Result is: ${result}
+    [Return]    ${result}
+
+Check on Operator
+    [Documentation]     INTERNAL USAGE
+    [arguments]    ${valuetotest}      ${operator}    ${val}
+    ${normalized_val}     Evaluate    str(${val})
+    ${result}      Evaluate    ${valuetotest} ${operator} ${normalized_val}
+    Dated Log      checking ${valuetotest} ${operator} ${normalized_val}; result is ${result}
+    [return]    ${result}
+
+Check Regex Value In File Column
+    [Documentation]     INTERNAL USAGE
+    ...                 Verify a regex expression on all the values in a column from a cvs file generated by sherpa
+    ...                 returns True if all of them are found, False if not.
+    [Arguments]         ${file}    ${Column_name}    ${regex_tocheck}
+    ###  DO NOT USE DIRECTLY! ################################
+    # Please use keyword       Verify Regex in csv File Column
+    SherpaCsvReader.setup reader    ${file}
+    @{result}     SherpaCsvReader.check csv column match all    ${Column_name}    ${regex_tocheck}
+    BuiltIn.Log    \ncolumn values:\n @{result}[1]      console=yes
+    [Return]    @{result}[0]
+
+Check Regex Value In File Column If Another
+    [Documentation]     INTERNAL USAGE
+    ...                 Verify a regex expression if another is already present on all the values from a given column
+    ...                 from a cvs file generated from sherpa traces
+    ...                 returns True if both are verified in lines containing the ${regex_prereq} value, False if not.
+    [Arguments]         ${file}    ${Column_name}    ${regex_prereq}    ${regex_tocheck}
+    ###  DO NOT USE DIRECTLY! ################################
+    # Please use keyword       Verify Regex in csv File Column
+    SherpaCsvReader.setup reader    ${file}
+    @{result}     SherpaCsvReader.check values column matching regex match another    ${Column_name}    ${regex_prereq}    ${regex_tocheck}
+    BuiltIn.Log    \ncolumn values:\n @{result}[1]      console=yes
+    [Return]    @{result}[0]
+
+Check Value List In File Column With Prerequisite
+    [Documentation]     INTERNAL USAGE
+    ...                 Verify that a list of values is present in all the rows matching the required value for a given column
+    ...                 in a cvs file generated by sherpa
+    ...                 returns True if all of them are found, False if not.
+    [Arguments]         ${file}    ${Column_name}    ${value_list}    ${prereq_column}    ${prereq_column_val}
+    ###  DO NOT USE DIRECTLY! ################################
+    # Please use keyword       Verify Value List In csv File Column
+    SherpaCsvReader.setup reader    ${file}
+    @{result}         SherpaCsvReader.check value list column when value
+    ...               ${prereq_column}    ${prereq_column_val}    ${Column_name}    ${value_list}
+    BuiltIn.Log       \nlist values:\n @{result}[1]      console=yes
+    [Return]          @{result}[0]
+
+Check Regex Value In File Column With Prerequisite
+    [Documentation]     INTERNAL USAGE
+    ...                 Verify a regex expression in a given column if a value is present on the same rows
+    ...                 from another given column
+    ...                 from a cvs file generated from sherpa traces
+    ...                 return a boolean and a list of rows
+    ...                 the bolean value is True if the value condition is verified in lines containing
+    ...                 the ${regex_prereq} value for the related column, False if not.
+    [Arguments]         ${file}    ${Column_name}    ${regex_prereq}    ${regex_tocheck}
+    ###  DO NOT USE DIRECTLY! ################################
+    # Please use keyword       TODO
+    SherpaCsvReader.setup reader    ${file}
+    @{result}         SherpaCsvReader.check rows matching regex match another
+    ...               ${Column_name}    ${regex_prereq}    ${regex_tocheck}
+    BuiltIn.Log       \nlist values:\n @{result}[1]      console=yes
+    [Return]          @{result}
+
+
+#################################################################################################
+#                   Generic KWs to run sherpa on pcap files and others
+#################################################################################################
+
+Upload and decode sherpa pcap files
+    [Documentation]     Supported only on UTE Test Lines, where decoding is performed locally.
+    ...                 Sherpa command line version is run on the pcap files found in subdirectories
+    ...                 generating csv files.
+    ...                 USAGE CONDITIONS:
+    ...                     ${Sherpa_logs_local_path} parameter value must avoid '[' ']' or spaces.
+    [Arguments]         ${Sherpa_logs_local_path}
+    ...                 ${duration}=120
+    ...                 ${keep_pcap_file}=${False}
+    Set Global Variable    ${Sherpa_logs_local_path}
+#     use sub-dir if keep_pcap_file is set to ${True}
+    ${pcap_dir}         Set Variable If    ${keep_pcap_file}==${True}
+    ...                 ${Sherpa_logs_local_path}/${Sherpa_subfolder_name}
+    ...                 ${Sherpa_logs_local_path}/L2STREAM3/TCPDUMP
+    # use pcap_dit instead of ${Sherpa_logs_local_path}/L2STREAM3/TCPDUMP
+    @{my_files}            OperatingSystem.List Files In Directory    ${pcap_dir}    *.pcap
+    Loop on Sherpa Captured Files               ${my_files}           ${pcap_dir}    ${duration}
+    # use pcap_dit instead of ${Sherpa_logs_local_path}
+    Copy File              /tmp/sherpa5G.log                          ${trace_dir}
+    # remove unused sub direcory and original .pcap files (already saved by Sherpa)
+    Run KeyWord If         ${keep_pcap_file}==${True}
+    ...                    Run                  rm -r ${pcap_dir}/L2STREAM3 ${pcap_dir}/*/*.pcap
+
+Loop on Sherpa Captured Files
+    [Documentation]     Run Sherpa on a given set of pcap files. For each one a subdirectory with name based on epoch
+    ...                 is created to contain the resulting csv files.
+    ...                 Run Sherpa KW is called to generate the csv files.
+    [Arguments]             ${my_files}
+    ...                     ${Sherpa_logs_local_path}
+    ...                     ${duration}=120
+    ...                     ${keep_pcap_file}=${False}
+    FOR    ${file}    IN     @{my_files}
+        ${surrent_epoch}     Tools.Get Date Epoch
+        run    cd '${Sherpa_logs_local_path}';mkdir ${surrent_epoch};mv ${file} ${surrent_epoch}
+        ${file_path}         set Variable           ${Sherpa_logs_local_path}/${surrent_epoch}/${file}
+        ${output}            run                    if [ -f ${file_path} ] ; then echo "yes" ; else echo "no" ; fi
+        Dated Log            Checking if file exists: result is --- ${output}
+        ${pcap_size}         run                    stat -c "%s" ${file_path}
+        Dated Log            Running sherpa on pcap file of size: ${pcap_size}
+        Sherpa.Run Sherpa    ${Sherpa_logs_local_path}/${surrent_epoch}     ${Sherpa_logs_local_path}/${surrent_epoch}/${file}
+        ...                  duration=${duration}    macro_period=1000
+    END
+
+Run Sherpa
+    [Documentation]     INTERNAL USAGE
+    ...                 Run Sherpa on a given pcap file with options
+    ...                 output_path:    output dir path where csv files are generated
+    ...                 duration:       duration in seconds (optional, to limit pcap treatment)
+    ...                 macro_period:   typical default value is 1000
+    [Arguments]            ${output_path}           ${pcap_file}        ${duration}=None
+    ...                    ${macro_period}=None
+    Dated Log              Pcap file path is:${pcap_file}
+    &{optional_params}     Create Dictionary
+    Run Keyword if         '${duration}'!='None'
+    ...                    Set To Dictionary    ${optional_params}    sherpa_command_duration=${duration}
+    Run Keyword if         '${macro_period}'!='None'
+    ...                    Set To Dictionary    ${optional_params}    sherpa_command_macro_period=${macro_period}
+    ${length}              Get Length           ${optional_params}
+    BuiltIn.Log            \nSherpa output:\n ${output_path}             console=yes
+    set suite variable     ${sherpa_output_path}                        ${output_path}
+    Run Keyword if         ${length}>0
+    ...                    sherpa_converter.Create Sherpa Converter      sherpaconverter      file_path_pattern=${pcap_file}
+    ...                    output_path=${output_path}          &{optional_params}
+    ...                    ELSE
+    ...                    sherpa_converter.Create Sherpa Converter      sherpaconverter      file_path_pattern=${pcap_file}
+    ...                    output_path=${output_path}
+    sherpa_converter.setup           sherpaconverter
+    sherpa_converter.convert         sherpaconverter
+    sherpa_converter.teardown        sherpaconverter
+    @{pcap_files}                  OperatingSystem.List Files In Directory     ${output_path}/TCPDUMP          *.csv
+    FOR    ${file}    IN     @{pcap_files}
+        Dated Log                  Moving file ${file}
+        run                        mv ${output_path}/TCPDUMP/${file} ${trace_dir}
+    END
+    Move File              ${output_path}/TCPDUMP/TCPDUMP.pcap                        ${trace_dir}
+    run                    rm -rf ${Sherpa_logs_local_path}/L2STREAM3
+
+Get PhyCellIds
+    [Documentation]      INTERNAL USAGE
+    @{phycell}    Create List
+    @{cellsNr}    OAM Get Cells Nr    oam=${GNB_DU.oam}
+    FOR    ${c}    IN    @{cellsNr}
+         Dated Log       cell${c['physicalCellId']} ==> ${c['status']['blockingState']}:${c['status']['administrativeState']}
+         run keyword if    "${c['status']['blockingState']}"=="Unblocked"
+         ...                Append to List    ${phycell}    ${c['physicalCellId']}
+    END
+    [Return]    @{phycell}

@@ -1,0 +1,157 @@
+*** Settings ***
+Documentation
+...    copyright: Nokia
+
+Force Tags    CLOUD_5G_I_BOO_AP_KLLL_SANSA_L1B_ECPRI_CMWV_TDD    RAN_5G    RAN_5G_TDD    CRT     SBTS00    SBTS22R4    SBTS23R1
+
+Resource     ../resources/5G_SW_WRO_Keywords.robot
+Library      ../resources/Python/webem_alarms.py
+Library    OperatingSystem
+Library    taf.transport.ssh  WITH NAME  ssh
+Library    taf.collectors.tcpdump    WITH NAME    tcpdump
+Library    ta5g_pm_counters
+Library    CB007813-B_keywords.py
+
+
+Suite Setup    Run Keywords    Update Iphy Configuration And Modify Swconfig
+    ...                        iphy_xml_filepath=${CURDIR}/config/iphy_2AHFIB_FS.xml
+    ...                        swconfig_flags_list=@{SWCONFIG_FLAGS}
+    ...        AND             Disable L1Bypass
+    ...        AND             Start Default Logging
+    ...        AND             Find Scfc And Fix And Send Full Commissioning
+    ...                        scfc_filename=full_cb007813_FDD-FDD_2x30_10_FS.xml
+    ...        AND             Sleep    10m
+    ...        AND             Wait For Gnb To Reach Configured State
+    ...        AND             Check Radios Availability
+    ...        AND             Reach Onair    lua_cfg=${CURDIR}/config/egate_FDD_2Cells_SA_n66_n66.lua
+    ...        AND             Start Tshark With Alias
+
+Suite Teardown   Run Keywords    Print Active Alarms
+    ...    AND    Stop Default Processes And Gather Logs And Compress Logs
+
+*** Variables ***
+${TSHARK_ALIAS}=                   tshark_uu_alias_01
+${TSHARK_DIR}=                     ${OUTPUT_DIR}/Tshark_logs
+@{SWCONFIG_FLAGS}=                 0x340000 = 5
+...                                0x4F0214 = 0
+${SUM_UE_SCELL_CONF_LARGE_BWP}=    M55167C00003
+${SUM_UE_SCELL_CONF_SMALL_BWP}=    M55167C00002
+${LOCAL_MOID_PCELL}=               PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-1
+${rb_scs15_bw20}=                  106
+${rb_scs15_bw30}=                  160
+${LARGE_BWP_SCELL}=                SEPARATOR=
+...                                (nr-rrc.subcarrierSpacing == 0 && nr-rrc.carrierBandwidth ==160)
+...                                && nr-rrc.sCellToAddModList && iphy.ue_id==1
+${SMALL_BWP_SCELL}=                SEPARATOR=
+...                                (nr-rrc.subcarrierSpacing == 0 && nr-rrc.carrierBandwidth ==106)
+...                                && nr-rrc.sCellToAddModList && iphy.ue_id==2
+
+*** Test Cases ***
+CB007813_C_IWK2_FDD_FDD_CA_Scell_selection_with_asymmetric_Pcell_and_inner_guardband_SA
+    Wait For Next Full Pm Interval
+    Attach Large BWP Capable UE And Start Data Traffic
+    Verify BWP SCell Selection    ${LARGE_BWP_SCELL}
+    Verify Tput For Large BWP UE
+    Verify Scell Selection PM Counter For Large BWP
+    Stop All Data Transfers And Detach UE SA    ue_id=1    pdu=1
+
+    Attach Small BWP Capable UE And Start Data Traffic
+    Verify BWP SCell Selection    ${SMALL_BWP_SCELL}
+    Verify Tput For Small BWP UE
+    Verify Scell Selection PM Counter For Small BWP
+    Stop All Data Transfers And Detach UE SA    ue_id=2    pdu=2
+
+*** Keywords ***
+Disable L1Bypass
+    Execute Enb Command    cmd=echo "tag -fd app.btsom.nts.L1BypassMap" | nc 0 15007
+
+Start Tshark With Alias
+    Start Tshark
+    ...    log_filename=7813_uu.pcapng
+    ...    alias=${TSHARK_ALIAS}
+    ...    eth_interface=eth4
+    ...    capture_filter=''
+    ...    log_dirpath=${TSHARK_DIR}
+
+Stop Tshark With Alias
+    Stop Tshark    alias=${TSHARK_ALIAS}
+    Remove Directory    path=${TSHARK_DIR}    recursive=True
+
+Copy Tshark Logs To Different Directory
+    [Arguments]     ${dest_directory}
+    Copy Directory   source=${TSHARK_DIR}   destination=${dest_directory}
+
+Attach Large BWP Capable UE And Start Data Traffic
+    Execute Egate Command   cmd=set_pdu_param ue=1 pdu=1 trf_type=internal
+    Attach Ue    ue_id=1
+    Establish Pdu Session    ue_id=1    pdu_id=1    gw_id=1
+    Sleep    3s
+    Execute Egate Command    cmd=trf_data_start ue=1 pdu=1 dir=dl mbps=175
+    ...    pass_regexp=SCellIndex 1 activated successfully
+    Execute Egate Command    cmd=trf_data_start ue=1 pdu=1 dir=dl mbps=100 trf_id=2
+    Execute Egate Command    cmd=trf_data_start ue=1 pdu=1 dir=ul mbps=50
+    ...    pass_regexp=Started Uplink Internal traffic Receiver on Ue:1 UpfId:1 Pdu:1 Qfi:1 TrfId:1
+    Sleep    40s
+
+Attach Small BWP Capable UE And Start Data Traffic
+    Execute Egate Command   cmd=set_pdu_param ue=2 pdu=2 trf_type=internal
+    Attach Ue    ue_id=2
+    Establish Pdu Session    ue_id=2    pdu_id=2    gw_id=2
+    Sleep    3s
+    Execute Egate Command    cmd=trf_data_start ue=2 pdu=2 dir=dl mbps=175
+    ...    pass_regexp=SCellIndex 1 activated successfully
+    Execute Egate Command    cmd=trf_data_start ue=2 pdu=2 dir=ul mbps=50
+    ...    pass_regexp=Started Uplink Internal traffic Receiver on Ue:2 UpfId:1 Pdu:2 Qfi:1 TrfId:1
+    Sleep    40s
+
+Verify BWP SCell Selection
+   [Arguments]    ${packet_filter}
+    Stop Capturing    alias=${TSHARK_ALIAS}
+    Verify Tshark For At Least Given Number Of Messages
+    ...    alias=${TSHARK_ALIAS}
+    ...    packet_filter=${packet_filter}
+    ...    number_of_messages=1
+    ...    source_ip='10.0.2.1/24'
+    Start Capturing    alias=${TSHARK_ALIAS}    capture_filter=''
+
+Verify Tput For UE SA
+    [Arguments]   ${ue_id}    ${dir}    ${cc}    ${expected_tput}
+    ${avg_tput}=    Get Avg Data Traffic For Given Cc    ue_id=${ue_id}   cc=${cc}   direction=${dir}    unit=Mbps
+    Should Be True    ${avg_tput} > ${expected_tput}
+
+Verify Tput For Large BWP UE
+    Verify Tput For UE SA    ue_id=1    dir=dl    cc=0    expected_tput=70
+    Verify Tput For UE SA    ue_id=1    dir=dl    cc=1    expected_tput=140
+    Verify Tput For UE SA    ue_id=1    dir=ul    cc=0    expected_tput=40
+
+Verify Tput For Small BWP UE
+    Verify Tput For UE SA    ue_id=2    dir=dl    cc=0    expected_tput=50
+    Verify Tput For UE SA    ue_id=2    dir=dl    cc=1    expected_tput=90
+    Verify Tput For UE SA    ue_id=2    dir=ul    cc=0    expected_tput=30
+
+Verify Scell Selection PM Counter For Large BWP
+    Wait For Next Full Pm Interval
+    ${PM_COUNTERS_FILE}=    Get Latest Unpacked Raw Pm Counters File
+    Verify If Latest Pm Counter Has Exact Value
+    ...    counter_id=${SUM_UE_SCELL_CONF_LARGE_BWP}
+    ...    value=60
+    ...    local_moid=${LOCAL_MOID_PCELL}
+    ...    filepath=${PM_COUNTERS_FILE}
+
+Verify Scell Selection PM Counter For Small BWP
+    Wait For Next Full Pm Interval
+    ${PM_COUNTERS_FILE}=    Get Latest Unpacked Raw Pm Counters File
+    Verify If Latest Pm Counter Has Exact Value
+    ...    counter_id=${SUM_UE_SCELL_CONF_SMALL_BWP}
+    ...    value=60
+    ...    local_moid=${LOCAL_MOID_PCELL}
+    ...    filepath=${PM_COUNTERS_FILE}
+
+Stop All Data Transfers And Detach UE SA
+    [Arguments]    ${ue_id}    ${pdu}
+    Execute Egate Command    cmd=trf_data_stop ue=${ue_id} pdu=${pdu}
+    Sleep    5s
+    Execute Egate Command    cmd=ue_deregister id=${ue_id} ue_deregister_type=switch_off
+
+
+

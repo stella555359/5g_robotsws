@@ -1,0 +1,100 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  verification of All UL tests from CB008072 feature Classical
+...               Test Case Scenario author   : yann.ah.herve@nokia.com for 5GC001347
+...               Test Case Scenario contact  : yann.ah.herve@nokia.com
+...               Test Case automation author : bernard.hoche@nokia.com
+...               Test Case automation contact: bernard.hoche@nokia.com
+...               Creation Date               : 23-May-2019
+...               Modified Date               : 23-May-2019
+...               Then Modified by            : bernard.hoche@nokia.com
+...               Last Modified by            : Wael
+...               Then Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: adapt to CB006062
+...               Modified Date               : 15-April-2021
+...               Then Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: adapt to CB007782
+...               Modified Date               : 25-June-2021
+...               Then Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: adapt to CB008072
+...               Modified Date               : 07-December-2021
+...               Then Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: move test to SA
+...               Modified Date               : 10-March-2022
+...               Modified Date               : 26-May-2022 change BIPvalueDMrsCdmGroupWithoutData format - pdml changes - MLLB
+...               Then Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: adapt to MCShark
+...               Modified Date               : 14-Feb-2023 change to adapt to AP_KL and AP_LO the UL BLER Test Mode(migration)
+...               Then Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: AP_LO migration
+
+Variables          ./resources/python/Constants.py
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../resources/SWENG/robot/Scf.robot
+Variables         ../../../resources/SWENG/python/ReadConfig.py
+Resource          ./resources/robot/CB008072_Keywords_common.robot
+Resource          ./resources/robot/CB008072_interaction_5GC00545_Keywords_FDD_SA.robot
+
+
+Force Tags                  CA_5G_SW_FR-Villarceaux     RRM     CRT
+...                         PY36
+...                         CLOUD_5G_I_BO_AP_KL_SANSA_FS_CPRI_CMWV_FDD
+...                         CLOUD_5G_I_LO_AP_LO_SANSA_FS_CPRI_CMWV_FDD
+...                         SBTS00    SBTS23R1    SBTS22R4
+...                         CONFIGURED        5G_RAN_FDD    5G_RAN    RAN_5G_FDD    RAN_5G    master_classicalbts_all
+
+Suite Setup                 CB008072_interaction_5GC00545_Keywords_FDD_SA.Suite Setup DFT_s_OFDM
+Suite Teardown              CB008072_Keywords_common.Suite Teardown 8072
+
+*** Variables ***
+# Mapping of tests and set of data to be used in generic test case
+&{A_1}                              dir=UL_DL
+...                                 puschMappingType=TypeA
+...                                 dmrsTypeAPosition=pos2
+...                                 BIPvaluedmrsTypeAPosition=2
+...                                 RRCvaluedmrsTypeAPosition=0
+...                                 actUlDataDmrsFdm=false
+...                                 BIPvalueDMrsCdmGroupWithoutData=2
+...                                 ulDataDmrsFdmThres64QamMcs=20
+...                                 ulDMRSAdditionalPosition=One additional DMRS
+...                                 BIPvalueUlDMRSAdditionalPosition=1
+...                                 RRCvalueUlAdditionalDmrs=1
+...                                 actUlDftSOfdm=true
+...                                 ulTransPrecodeOffSinrThresh=200
+...                                 ulTransPrecodeOnSinrThresh=180
+...                                 ulTransPrecodeOffSinrThrRedCap=200
+...                                 ulTransPrecodeOnSinrThrRedCap=180
+
+${TestSharkTool}                    MC_SHARK
+
+*** Test Cases ***
+
+[1][1.0] CB008072-AD_TC22_SA_PUSCH_mapping_TypeA_FDD_FR1_TrafficUlDl_DMRS_Pos2_1AdditionalDMRS_CP_OFDM_To_DFT_S_OFDM_LongPUCCH
+     TC 8072 FDD                    ${A_1}
+    [Teardown]                      Run Keyword If Test Failed           Setup.Test Teardown
+
+*** Keywords ***
+TC 8072 FDD
+    [Documentation]                 Generic test for CB008072_A_xxx (UL or UL_DL) tests
+    [Arguments]                     ${param}
+    Init Sequence                   ${param}
+    Critical Step                   Set Context FDD
+    Critical Step                   Restart
+    Step                            Captures Init
+    Critical Step                   CallSetup.Setup Wtsemu SA
+    Critical Step                   UE Cell Setup Check
+    Step                            Captures Start
+    Critical Step                   CallSetup.UE Register                                    depends=UE Cell Setup Check
+    Critical Step                   CallSetup.UE Attach Check                                depends=CallSetup.UE Register
+    Critical Step                   CallSetup.Launch PDU Session                             depends=CallSetup.UE Attach Check
+    Step                            Decrease SINR TO Trigger TransformPrecoder Enabled
+    Step                            Captures Stop                                            depends=Captures Start
+    Run Keyword if                  ${enable_sherpa}==${True}                                Activate Sherpa
+    Step                            ${param.dir} Traffic SA                                  depends=CallSetup.Launch PDU Session
+    Run Keyword if                  ${enable_sherpa}==${True}                                Deactivate Sherpa and Stop Collect
+    Run Keyword if                  ${enable_sherpa}==${True}
+    ...                             Step                                                     Rename Of Sherpa Logs
+    Critical Step                   Check PuschMappingTypeA UL in BIP Traces
+    Critical Step                   Check transformPrecoder enabled in BIP Traces
+    Critical Step                   Check dmrs TypeA Position in BIP Traces
+    Critical Step                   Check Additional DMRS UL in BIP Traces
+    [Teardown]                      Display diagnosis
+

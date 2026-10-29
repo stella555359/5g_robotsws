@@ -1,0 +1,337 @@
+*** Settings ***
+Documentation       7738-B Kw
+
+Library              ../../../resources/common/TtiTrace/python/ttitrace.py   WITH NAME    nps_ttitraces_tools
+
+
+Resource             CB007738_keywords.robot
+Resource             ../../../../../resources/SWENG/robot/Scf.robot
+
+*** Keywords ***
+
+TC 7738 NSA CellSetup
+    [Documentation]                Generic test for 1745: test purpose is to setup X2, Xp and DSS CellSetup Phase3
+    [Arguments]                    ${param}     ${alias}=default
+    Init Sequence                  ${param}
+    common_Dss_Keywords.Restart     OwnTLReset=${False}     GNBCallback=common_Dss_Keywords.Set Reset Loop Counter
+    Step                           Start capture Backhaul XP for DSS         argument=BH.XP.CellSetup       depends=common_Dss_Keywords.Restart
+    Step                           CB007738_keywords.Start WTS For NSA       argument=${alias}
+    Step                           Wait Xp link Up                 argument=${alias}        depends=CB007738_keywords.Start WTS For NSA
+    Step                           X2Ap link Setup               argument=${alias}          depends=CB007738_keywords.Start WTS For NSA
+    # Step                           common_Dss_CellSetup.DSS_CRM_Cell_Setup_Phase3    argument=${alias}     depends=Wait Xp link Up
+    Step                           common_Dss_CellSetup.DSS_CRM_Cell_Setup_Phase3    alias=${alias}  wtsObj=${wtsObj}   depends=Wait Xp link Up
+    ${pdmlFile}                    Stop capture Backhaul XP for DSS
+    Run Keyword if       '${CELLSETUP_SHOULD_BE_CHECK}' == '1'
+    ...                    Step        Check DSS CellSetup Phase3      argument=${pdmlFile}   depends=common_Dss_CellSetup.DSS_CRM_Cell_Setup_Phase3
+    Critical Step                  common_Dss_CellSetup.Verify AP Classical Cell Setup
+    [Teardown]               GenericTest.Display diagnosis
+
+TC 7738 NSA Call
+    [Documentation]                Generic test for 1745: test purpose is to setup X2, Xp and DSS CellSetup Phase3
+    [Arguments]                    ${param}     ${alias}=default
+    BuiltIn.log                    alias is ${alias}
+    Init Sequence                  ${param}
+    Critical Step            common_Dss_SA_NSA.Test SgNB Addition PRACH
+    [Teardown]               GenericTest.Display diagnosis
+
+TC 7738 SA CellSetup
+    [Documentation]                Generic test for 7738: test purpose is to setup X2, Xp and DSS CellSetup Phase3
+    ...                            Check nGBR in Load Indication Msgs
+    [Arguments]                    ${param}     ${alias}=default
+    Init Sequence                  ${param}
+    common_Dss_Keywords.Restart     OwnTLReset=${False}      GNBCallback=common_Dss_Keywords.Set Reset Loop Counter
+    Start capture Backhaul XP for DSS     prefix=BH.XP.CellSetup
+    Start WTS                         egate_alias=${alias}
+    Wait Xp link Up                     alias=${alias}
+    X2Ap link Setup                   alias=${alias}
+    Run Keyword If     '${alias}'=='egate_TCB9'
+    ...     7738_DSS_CRM_Cell_Setup_Phase3    alias=${alias}
+    ...     max_lte_nr_dss_ratio=100    testmode_decode_PDSCH=true
+    ...     ELSE
+    ...     7738_DSS_CRM_Cell_Setup_Phase3    alias=${alias}     max_lte_nr_dss_ratio=100
+    ${pdmlFile}                    Stop capture Backhaul XP for DSS
+    Run Keyword if       '${CELLSETUP_SHOULD_BE_CHECK}' == '1'
+    ...      common_Dss_CellSetup.Check DSS CellSetup Phase3     ${pdmlFile}
+    common_Dss_CellSetup.Verify AP Classical Cell Setup
+
+
+TC 7738-5g SA Call
+   [Documentation]                Test purpose is to test 5g DSS SA Call
+   [Arguments]                    ${param}    ${alias}=default
+   Init Sequence                  ${param}
+   Start capture Bip and Xp for 7738     prefix=L1L2Bip.BH.XP.SACall
+   common_Dss_SA_NSA.DSS_5g_Call_SA           alias=${alias}
+   Stop capture Bip and Xp for 7738
+
+
+DSS_5g_Periodic_DL_Fast_Allocation
+    [Arguments]         ${param}     ${alias}=default
+    Init Sequence       ${param}
+    common_Dss_CellSetup.Periodic DL Fast Allocation      alias=${alias}
+
+DSS_5g_Periodic_UL_Fast_Allocation
+    [Arguments]         ${param}     ${alias}=default
+    Init Sequence       ${param}
+    common_Dss_CellSetup.Periodic UL Fast Allocation      alias=${alias}
+
+DSS_5g_SA_UL_DL_Traffic
+   [Arguments]         ${param}      ${ul_rate}=15      ${dl_rate}=80    ${alias}=default
+   BuiltIn.log                    ul_rate=${ul_rate} and dl_rate=${dl_rate}
+   Init Sequence                  ${param}
+   Start capture Bip and Xp for 7738     prefix=ULDL_TPUT_BH_L1L2_BIP
+   #Start Generating "${ul_rate}"mbps UL and "${dl_rate}"mbps DL Traffic for Ue="${Param.Context.UeId1}" on SA using alias "${alias}"
+   Start Traffic DSS    param=${param}      ul_rate=15      dl_rate=80    alias=${alias}
+   Stop capture Bip and Xp for 7738
+   common_Dss_SA_NSA.Display Ue Statistics       alias=${alias}
+
+Start Traffic DSS
+    [Arguments]         ${param}      ${ul_rate}=15      ${dl_rate}=80    ${alias}=default
+    [Documentation]
+    ...   Start generating Traffic for one UE. It is required to have attached UE and setup choosen bearer before.
+    ...
+    ...    :param dl_rate:  the volume of downlink traffic in megabits per second. Default value is 1mbit/s.
+    ...    :param ul_rate:  the volume of uplink traffic in megabits per second. Default value is 1mbit/s.
+    ...    :param ue: UE id
+    ...
+    ${pattern}    Set Variable    UDP DL TRF
+    ${cmd}=     Catenate         trf_data_start ue=${Param.Context.UeId1} pdu=1 qfi=1 trf_id=1 mbps=${dl_rate} dir=dl
+    ${output}      wts.execute egate command        cmd=${cmd}    pass_regexp=${pattern}    timeout=30    alias=${alias}
+    ${output}         Get Lines Matching Regexp    ${output}     ${pattern}    partial_match=True
+    Log to Console    ${output}
+    ${pattern}    Set Variable    UDP UL TRF:
+    ${cmd}=     Catenate         trf_data_start ue=${Param.Context.UeId1} pdu=1 qfi=1 trf_id=1 mbps=${ul_rate} dir=ul
+    ${output}      wts.execute egate command        cmd=${cmd}    pass_regexp=${pattern}     timeout=30    alias=${alias}
+    ${output}         Get Lines Matching Regexp    ${output}     ${pattern}    partial_match=True
+    Log to Console    ${output}
+    Log to Console     Started DL + UL Traffic for UE=${Param.Context.UeId1}
+
+Prepare TL for TTITraces
+    [Documentation]    :
+    ...    This keyword helps to download and install MULTI packages needed for TTITraces
+    ...
+    nps_ttitraces_tools.install_multidynamic_if_needed
+
+Update DSS DL pattern with
+    [Arguments]                    ${testParam}     ${dl_allocated_normal_subframes}
+
+    ${testParam_dss}                 Tools.Dictionary Get              ${testParam}
+    ${testParam_dss.seq.dl_allocated_normal_subframes}      set Variable     ${dl_allocated_normal_subframes}
+    set suite variable    ${testParam_dss}
+    [Return]      ${testParam_dss}
+
+Update DSS qos load meas timer with
+    [Arguments]                    ${testParam}     ${dl_qos_load_meas_timer}=200    ${ul_qos_load_meas_timer}=200
+
+    ${testParam_dss}                 Tools.Dictionary Get              ${testParam}
+    ${testParam_dss.seq.dl_qos_load_meas_timer}      set Variable     ${dl_qos_load_meas_timer}
+    ${testParam_dss.seq.ul_qos_load_meas_timer}      set Variable     ${ul_qos_load_meas_timer}
+    set suite variable    ${testParam_dss}
+    [Return]      ${testParam_dss}
+
+#  Keyword with embedded arguments
+Update DSS dl qos load meas timer "${dl_qos_load_meas_timer}" ms and ul qos load meas timer "${ul_qos_load_meas_timer}" ms into "${testParam}"
+    ${testParam_dss}                 Tools.Dictionary Get              ${testParam}
+    ${testParam_dss.seq.dl_qos_load_meas_timer}      set Variable     ${dl_qos_load_meas_timer}
+    ${testParam_dss.seq.ul_qos_load_meas_timer}      set Variable     ${ul_qos_load_meas_timer}
+    set suite variable    ${testParam_dss}
+    [Return]      ${testParam_dss}
+
+Set 7738 Specifc Scf Param actRateMatchedCsiIm
+    [Arguments]          ${testParam}     ${trunk}=False
+    [documentation]
+    ...                actRateMatchedCsiIm seting to True
+    ...                info from Denis Taupin 2021 Sept 08th
+
+    BuiltIn.log       bandwidth is ${testParam.seq.bandwidth}
+    BuiltIn.log       trunk=${trunk}
+    ${actRateMatchedCsiIm_objLocation}=   Catenate      ${NRCELL_DIST_NAME}/NRDSSLTE-1
+    Set Suite Variable                    ${actRateMatchedCsiIm_objLocation}
+    Dated log New Line                       NRCELL_DIST_NAME=${actRateMatchedCsiIm_objLocation}
+    &{modify_param}    Create Dictionary
+    ...    parameter=actRateMatchedCsiIm
+    ...    dist_name=${actRateMatchedCsiIm_objLocation}
+    ...    value=true
+    @{modify_param_to_apply}    Create List    ${modify_param}
+    BuiltIn.Log      \nParameters to modify:\n @{modify_param_to_apply}   console=yes
+    OAM Set Params      modify_param=@{modify_param_to_apply}
+
+Check TestLinePreparation Status
+    [Arguments]       ${TestDSSType}
+    ${tc_name}        Set variable    TestLine_preparation
+    ${tc_status}      getTcStatusByName    name=${tc_name}
+    Run keyword if    '${tc_status}'!='PASS'
+    ...               CB007738_Kw_TestSetup.Test Line Preparation    ${TestDSSType}
+    ${tc_name}        Set variable    TestLine_7738_Test_setup
+    ${tc_status}      getTcStatusByName    name=${tc_name}
+    Run keyword if    '${tc_status}'!='PASS'
+    ...           CB007738_Kw_TestSetup.Test Setup 7738    ${TestDSSType}
+
+Set Dss Ratio on EPCSim
+    Modify Field in WtsEmu Cfg File
+    ...                             field=max_lte_nr_dss_ratio                 value=100
+
+Set SCF CB007738 TC_10
+    ${actRateMatchedCsiIm_objLocation}=   Catenate      ${NRCELL_DIST_NAME}
+    Set Suite Variable                    ${actRateMatchedCsiIm_objLocation}
+    Dated log New Line                       NRCELL_DIST_NAME=${actRateMatchedCsiIm_objLocation}
+    Copy File            ${test_scf_file}     ${test_scf_file}._7738B_TC10
+    SCF StartSession     scf_file=${test_scf_file}
+    SCF Set element      dist_name=${actRateMatchedCsiIm_objLocation}
+    ...                  element_name=actCDrx
+    ...                  element_value=true
+    SCF Set element      dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-0
+    ...                  element_name=ssBurstSetPeriod
+    ...                  element_value=20
+    SCF Set element      dist_name=${NRCELL_DIST_NAME}/NRDSSLTE-1
+    ...                  element_name=actRateMatchedCsiIm
+    ...                  element_value=true
+    # SCF Set element      dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    # ...                  element_name=actGeneralConnectivityGold
+    # ...                  element_value=true
+
+    ${list_name_drx}         Set Variable    drxProfile1
+    SCF Set element in List    dist_name=${actRateMatchedCsiIm_objLocation}
+    ...                        list_name=csirsForTracking
+    ...                        element_name=csirsTrackingPeriod
+    ...                        element_value=80ms
+    SCF Set element in List    dist_name=${actRateMatchedCsiIm_objLocation}
+    ...                        list_name=${list_name_drx}
+    ...                        element_name=drxInactivityTimer
+    ...                        element_value=40ms  #40ms
+    SCF Set element in List    dist_name=${actRateMatchedCsiIm_objLocation}
+    ...                        list_name=${list_name_drx}
+    ...                        element_name=drxLongCycle
+    ...                        element_value=160ms   #160ms
+    SCF Set element in List    dist_name=${actRateMatchedCsiIm_objLocation}
+    ...                        list_name=${list_name_drx}
+    ...                        element_name=drxOnDurationTimer
+    ...                        element_value=20ms  #20ms
+    SCF Set element in List    dist_name=${actRateMatchedCsiIm_objLocation}
+    ...                        list_name=${list_name_drx}
+    ...                        element_name=drxRetransTimerDl
+    ...                        element_value=0slot
+    SCF Set element in List    dist_name=${actRateMatchedCsiIm_objLocation}
+    ...                        list_name=${list_name_drx}
+    ...                        element_name=drxRetransTimerUl
+    ...                        element_value=0slot
+    SCF StopSession      scf_file=${test_scf_file}
+    Dated Log    ----> Modifications completed.\n
+    Oam.OAM Perform Full Commissioning          scf_file=${test_scf_file}
+    WA Airscale Wait For Ready                  ${GNB_DU}
+
+Set SCF CB007738 TC_9
+    ${actRateMatchedCsiIm_objLocation}=   Catenate      ${NRCELL_DIST_NAME}
+    Set Suite Variable                    ${actRateMatchedCsiIm_objLocation}
+    Dated log New Line                       NRCELL_DIST_NAME=${actRateMatchedCsiIm_objLocation}
+    Copy File            ${test_scf_file}     ${test_scf_file}._7738B_TC10
+    SCF StartSession     scf_file=${test_scf_file}
+    SCF Set element      dist_name=${actRateMatchedCsiIm_objLocation}
+    ...                  element_name=actCDrx
+    ...                  element_value=false
+    SCF Set element      dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-0
+    ...                  element_name=ssBurstSetPeriod
+    ...                  element_value=20
+    SCF Set element      dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...                  element_name=actPdschAtSsbSlots
+    ...                  element_value=true
+    SCF Set element      dist_name=${NRCELL_DIST_NAME}/NRDSSLTE-1
+    ...                  element_name=actRateMatchedCsiIm
+    ...                  element_value=true
+    # SCF Set element      dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    # ...                  element_name=actGeneralConnectivityGold
+    # ...                  element_value=true
+
+    ${list_name_drx}         Set Variable    drxProfile1
+    SCF Set element in List    dist_name=${actRateMatchedCsiIm_objLocation}
+    ...                        list_name=csirsForTracking
+    ...                        element_name=csirsTrackingPeriod
+    ...                        element_value=80ms
+    SCF Set element in List    dist_name=${actRateMatchedCsiIm_objLocation}
+    ...                        list_name=${list_name_drx}
+    ...                        element_name=drxInactivityTimer
+    ...                        element_value=40ms
+    SCF Set element in List    dist_name=${actRateMatchedCsiIm_objLocation}
+    ...                        list_name=${list_name_drx}
+    ...                        element_name=drxLongCycle
+    ...                        element_value=40ms
+    SCF Set element in List    dist_name=${actRateMatchedCsiIm_objLocation}
+    ...                        list_name=${list_name_drx}
+    ...                        element_name=drxOnDurationTimer
+    ...                        element_value=10ms
+    SCF Set element in List    dist_name=${actRateMatchedCsiIm_objLocation}
+    ...                        list_name=${list_name_drx}
+    ...                        element_name=drxRetransTimerDl
+    ...                        element_value=16slot
+    SCF Set element in List    dist_name=${actRateMatchedCsiIm_objLocation}
+    ...                        list_name=${list_name_drx}
+    ...                        element_name=drxRetransTimerUl
+    ...                        element_value=16slot
+    SCF StopSession      scf_file=${test_scf_file}
+    Dated Log    ----> Modifications completed.\n
+    Oam.OAM Perform Full Commissioning          scf_file=${test_scf_file}
+    WA Airscale Wait For Ready                  ${GNB_DU}
+
+CheckInEgateConsoleLog_TC_B_10
+    [Documentation]    Check on Egate_console.log following messages are present and set with the same value
+    ...                     (eg here 7 but the value can be another one) :
+	...                     drx-LongCycleStartOffset ms160 : 7,
+	...                     periodicityAndOffset sl80 : 7,
+    ...                     reportSlotConfig slots40 : 7,
+    sleep   60
+    ${drxLongCycleStartOffset}     Set Variable        'drx-LongCycleStartOffset ms160'
+    ${periodicityAndOffset}      Set Variable        "periodicityAndOffset sl80"
+    ${reportSlotConfig}          Set Variable        "reportSlotConfig slots160"
+
+    ${msg}    Catenate    Check in egate_console.log:  ${drxLongCycleStartOffset}
+    ...                   ${periodicityAndOffset}  and  ${reportSlotConfig}
+    Dated Log New Line      ${msg}
+    ${alias}       SSH Connect          ${HOST_EPCSIM}
+    ${value_periodicityAndOffset}     CheckInEgateConsoleLog     searchKeyword=${periodicityAndOffset}     alias=${alias}
+    ${value_reportSlotConfig}     CheckInEgateConsoleLog     searchKeyword=${reportSlotConfig}     alias=${alias}
+    sleep   60
+    ${value_drxLongCycleStartOffset}     CheckInEgateConsoleLog     searchKeyword=${drxLongCycleStartOffset}    alias=${alias}
+    Check Parameters Values TC_10    ${value_periodicityAndOffset}
+    ...    ${value_reportSlotConfig}
+    ...    ${value_drxLongCycleStartOffset}
+
+Check Parameters Values TC_10
+    [Arguments]    ${value_periodicityAndOffset}
+    ...            ${value_reportSlotConfig}
+    ...            ${value_drxLongCycleStartOffset}
+    Should Be Equal    ${value_periodicityAndOffset}    ${value_reportSlotConfig}
+    Should Be Equal    ${value_periodicityAndOffset}    ${value_drxLongCycleStartOffset}
+
+CheckInEgateConsoleLog
+    [Arguments]    ${searchKeyword}
+    ...            ${alias}
+    ${cmd}=        Catenate    grep -m1 ${searchKeyword} ${tl.core.dir_path}/egate_console.log
+    ...            | cut -d ":" -f2 | sed 's/,.*//'
+    ${output}=     SSH Exec
+    ...            command=${cmd}
+    ...            alias=${alias}
+    ...            debug=${True}
+    Dated Log  ${output}
+    [Return]       ${output}
+
+Teardown 7738-B
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+    BuiltIn.log      alias is ${alias}
+    BuiltIn.Log      \nTest ${TEST_NAME} 7738 ending   console=yes
+    Retrieve Logs
+
+Retrieve Logs
+    [Tags]                          Retrieve Logs
+    [Timeout]                       20 minute
+    OAM Get Active Alarms
+    Setup.Get Sos Report
+    Set Suite Variable    ${testCaseDir}    None
+
+Setup Test Case 7738-B
+    Run Keywords    Set Suite Variable    ${testCaseDir}                  None    AND
+    ...       Set Suite Variable          ${dl_expect_tput_value}         90      AND
+    ...       Set Suite Variable          ${ul_expect_tput_value}         30      AND
+    #         deviation need to take into account crm ul settings
+    ...       Set Suite Variable          ${deviation}                    5       AND
+    ...       common_Dss_Keywords.Get testcase log directory                      AND
+    ...       Set Global Variable         ${CELLSETUP_SHOULD_BE_CHECK}    0       AND
+    ...       depends   TestLine_7738_Test_setup

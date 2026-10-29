@@ -1,0 +1,940 @@
+import os
+import json
+import getopt
+import sys
+from enum import Enum
+
+# TAF Libraries:
+from taf.analyzer.ttitrace_eventdecoder import TtitraceReader as TtitraceReaderEvtDec
+
+
+# classPriorityIndex class is defined according to the enum class PriorityIndex of L2PS
+# If a new value is inserted in L2PS PriorityIndex class, enum values could be shifted
+# => this will cause error as dtxOptimizedDrbTraffic enum value could be 21 instead to 20
+# => in that case, classPriorityIndex has to be updated too
+# 02/01/2024: add harqRetxDcGbr and dcGbrTraffic values
+# 02/04/2025: add largeBufferTraffic values in TRUNK priorities
+#             Define classPriorityIndex_beforeCNI145837 for TC A19 executed with branch 25R2 too
+class classPriorityIndex_beforeCNI145837(Enum):
+    rachMsg2 = 0
+    harqRetxMsg4 = 1
+    harqRetxsrb1 = 2
+    harqRetxsrb3 = 3
+    harqRetxsrb2 = 4
+    harqRetxDcGbr = 5
+    harqRetxVoip = 6
+    harqRetxGbr = 7
+    harqRetxDrb = 8
+    dlMacCe = 9
+    srb1Traffic = 10
+    srb3Traffic = 11
+    srb2Traffic = 12
+    dcGbrTraffic = 13
+    voipTraffic = 14
+    gbrTraffic = 15
+    nbrDrbTraffic = 16
+    drbTraffic = 17
+    deprioritizedVoipTraffic = 18
+    deprioritizedGbrTraffic = 19
+    dtxOptimizedDrbTraffic = 20
+    lastUnUsed = 21
+
+
+class classPriorityIndex(Enum):
+    rachMsg2 = 0
+    harqRetxMsg4 = 1
+    harqRetxsrb1 = 2
+    harqRetxsrb3 = 3
+    harqRetxsrb2 = 4
+    harqRetxDcGbr = 5
+    harqRetxVoip = 6
+    harqRetxGbr = 7
+    harqRetxDrb = 8
+    dlMacCe = 9
+    srb1Traffic = 10
+    srb3Traffic = 11
+    srb2Traffic = 12
+    dcGbrTraffic = 13
+    voipTraffic = 14
+    gbrTraffic = 15
+    nbrDrbTraffic = 16
+    subBandBfUeInPgTraffic = 17
+    largeBufferTraffic = 18
+    drbTraffic = 19
+    deprioritizedVoipTraffic = 20
+    deprioritizedGbrTraffic = 21
+    dtxOptimizedDrbTraffic = 22
+    lastUnUsed = 23
+
+
+# microDtxStatusIndex class is defined according to CNI-115810:
+# https://gates.nsn-net.net/view/00025eca#o=8557
+# This ‘MicroDtxStatus’ will be traced if DlDtxOptimEvent = ‘microDtxStatusUpdated’ (value = 7)
+# 0: spare, feature CB008238 not activated
+# 1: DTX Disable, cause Cell Load (Nb Ue in CS1 List)
+# 2: DTX Enable: Only non-DTX UE, only DTX UE or a mix of them to schedule.
+# DTX UE co-scheduled with delay sensitive UE or Cell transmission (SIB, Paging channels, SSB, TRS signals)
+# 3: DTX Enable: no Ue to schedule (empty)
+# 4: DTX Enable: No UE scheduled, Nb DTX UEs in CS1 list < dDtxCS1SizeThreshold and PrbDemand < dtxPrbThreshold
+# 5: DTX enable: DTX UEs scheduled, Nb DTX UEs in CS1 list >= dDtxCS1SizeThreshold or PrbDemand >= dtxPrbThreshold
+
+class microDtxStatusIndex(Enum):
+    DTXnotActivated = 0
+    DTXdisabled = 1
+    UEtoSchedule = 2
+    noUEtoSchedule = 3
+    noUEscheduled = 4
+    DTXUEscheduled = 5
+
+
+def checkMaxRetentionAndSIB(jsonPathName, mode, maxRetention):
+    """
+    This function analyses DTX optim in case of one UE with NGBR traffic:
+       - the retention is started when DRB DL data is received
+       - the duration of the retentions is equal to "maxRetention"
+       - data in retention are sent in SIBs slot (sensitive data) and retention timer is stopped (only in TDD)
+       - no DRB data are sent during retention (except in SIB slots)
+    Input parameters:
+       jsonPathName: json file of TTI traces to check
+       mode: TDD or FDD (TDD: 20 slots per frame, FDD: 10 slots per frame)
+       maxRetention: time of retention in ms (MaxRetentionDelay)
+    Returned value:
+       0 in case of error
+       Number of successful retentions else
+    IMPORTANT:
+       PDSCH scheduling on SIBs slot is currently only implemented in TDD.
+       So, data sent on SIB slots is not checked in FDD.
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    if mode == "TDD":
+        nbSlotPerFrame = 20
+    elif mode == "FDD":
+        nbSlotPerFrame = 10
+    else:
+        print("TTI trace ERROR: Undefined mode %s (should be TDD or FDD)" % mode)
+        return 0
+    maxRetention = int(maxRetention)
+    nbMsg = 0
+    nbSuccessfulRetention = 0
+    nbSuccessfulSIBscheduling = 0
+    RetentionState = "waitStartFirstRetention"
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if RetentionState == "waitStartFirstRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    if ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        SFN = event.data["eventHeader"]["sfn"]
+                        slot = event.data["eventHeader"]["slot"]
+                        TimeStartDTX = SFN*nbSlotPerFrame+slot
+                        RetentionState = "waitEndRetention"
+                        # print("Start retention at %s/%s" % (SFN, slot))
+            elif RetentionState == "waitStartRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    if ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        TimeStartDTX = SFN*nbSlotPerFrame+slot
+                        RetentionState = "waitEndRetention"
+                        # print("Start retention at %s/%s" % (SFN, slot))
+                    elif ClassPrio == classPriorityIndex.drbTraffic.value:
+                        print("TTI trace ERROR: class priority \"drb traffic\" \
+                            found instead of \"DTX optimised\" at %s/%s" % (SFN, slot))
+                        return 0
+            elif RetentionState == "waitEndRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    if ClassPrio == classPriorityIndex.drbTraffic.value:
+                        TimeEndDTX = SFN*nbSlotPerFrame+slot
+                        if TimeEndDTX < TimeStartDTX:
+                            TimeEndDTX = (SFN+1024)*nbSlotPerFrame+slot
+                        # print("Stop retention at %s/%s" % (SFN, slot))
+                        retentionDelay = (TimeEndDTX-TimeStartDTX)*10/nbSlotPerFrame
+                        if retentionDelay != maxRetention:
+                            print("TTI trace ERROR: retention delay is %s instead of %s at %s/%s"
+                                  % (retentionDelay, maxRetention, SFN, slot))
+                            return 0
+                        nbSuccessfulRetention = nbSuccessfulRetention+1
+                        RetentionState = "waitStartRetention"
+                    elif ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        print("TTI trace ERROR: two consecutive class priority \"DTX optimised\" \
+                            found at %s/%s" % (SFN, slot))
+                        return 0
+                elif event.type == "dlDtxOptimData":
+                    EventDtxOptim = event.data["dlDtxOptimEvent"]
+                    if EventDtxOptim == "SCHEDONSIBORPAGING" and mode == "TDD":
+                        SFNscheduling = event.data["eventHeader"]["sfn"]
+                        slotscheduling = event.data["eventHeader"]["slot"]
+                        # print("SCHEDONSIBORPAGING at %s/%s" % (SFNscheduling, slotscheduling))
+                        RetentionState = "checkDataScheduling"
+            elif RetentionState == "checkDataScheduling":
+                if event.type == "dlFdSchedData":
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    if SFN != SFNscheduling or slot != slotscheduling:
+                        print("SIB scheduling ERROR: scheduling at %s/%s, \
+                            expected at %s/%s" % (SFN, slot, SFNscheduling, slotscheduling))
+                        return 0
+                    nbSuccessfulSIBscheduling = nbSuccessfulSIBscheduling+1
+                    # print("SIB scheduling at %s/%s" % (SFN, slot))
+                    RetentionState = "waitStartRetention"
+    print("TTI trace status - successful retentions: %s, successful SIB co-scheduling: %s"
+          % (nbSuccessfulRetention, nbSuccessfulSIBscheduling))
+    return nbSuccessfulRetention
+
+
+def checkNoRetentionVoNR_beforeCNI145837(jsonPathName):
+    return checkNoRetentionVoNR(jsonPathName, classPriority=classPriorityIndex_beforeCNI145837)
+
+
+def checkNoRetentionVoNR(jsonPathName, classPriority=classPriorityIndex):
+    """
+    This function analyses DTX optim in case of one UE with VoNR traffic:
+       - there are VoNR pre-scheduling (class priority "voipTraffic")
+       - there is no retention as VoNR traffic is sensitive data
+    Input parameters:
+       jsonPathName: json file of TTI traces to check
+    Returned value:
+       0 in case of error
+       Number of VoNR pre-scheduling else
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("checkNoRetention ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    nbMsg = 0
+    nbDLPreSched = 0
+    nbDLPreSchedVoNR = 0
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if event.type == "dlPreSchedData":
+                nbDLPreSched = nbDLPreSched+1
+                ClassPrio = event.data["highestClassPriority"]
+                SFN = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                # print("dlPreSchedData found: classPriority %s at %s/%s" % (ClassPrio, SFN, slot))
+                if ClassPrio == classPriority.dtxOptimizedDrbTraffic.value:
+                    print("checkNoRetention ERROR at %s/%s:" % (SFN, slot))
+                    print("=> class priority \"DTX Optimized Drb Traffic\" found")
+                    return 0
+                if ClassPrio == classPriority.voipTraffic.value:
+                    nbDLPreSchedVoNR = nbDLPreSchedVoNR+1
+            elif event.type == "dlDtxOptimData":
+                SFN = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                if event.data["dlDtxOptimEvent"] != "MICRODTXSTATUSUPDATED":
+                    print("dlDtxOptimData ERROR at %s/%s:" % (SFN, slot))
+                    print("=> only dlDtxOptimEvent MICRODTXSTATUSUPDATED expected")
+                    return 0
+                if (event.data["microDtxStatus"] != microDtxStatusIndex.UEtoSchedule.value and
+                   event.data["microDtxStatus"] != microDtxStatusIndex.noUEtoSchedule.value):
+                    print("dlDtxOptimData ERROR at %s/%s:" % (SFN, slot))
+                    print("=> microDtxStatus should be %s or %s"
+                          % (microDtxStatusIndex.UEtoSchedule.value, microDtxStatusIndex.noUEtoSchedule.value))
+                    return 0
+    print("TTI trace status - nb of DLPreSched traces: %s including %s VoNR"
+          % (nbDLPreSched, nbDLPreSchedVoNR))
+    return nbDLPreSchedVoNR
+
+
+def checkMaxRetention2UEsNGBR(jsonPathName, mode, maxRetention):
+    """
+    This function analyses DTX optim in case of 2 UEs with NGBR traffic:
+       - the retention is started when DRB DL data is received on first UE.
+       - the duration of the retentions is equal to "maxRetention"
+       - data in retention are sent in SIBs slot (sensitive data) and retention timer is stopped (only in TDD)
+       - no DRB data are sent during retention
+       - all data in retention are sent at the end of the retention (UE1 and UE2)
+       - all retention timers are stopped at the end of a retention
+    Input parameters:
+       jsonPathName: json file of TTI traces to check
+       mode: TDD or FDD (TDD: 20 slots per frame, FDD: 10 slots per frame)
+       maxRetention: time of retention in ms (MaxRetentionDelay)
+    Returned value:
+       0 in case of error
+       Number of successful retentions else
+    IMPORTANT:
+       PDSCH scheduling on SIBs slot is currently only implemented in TDD.
+       So, data sent on SIB slots is not checked in FDD.
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    if mode == "TDD":
+        nbSlotPerFrame = 20
+    elif mode == "FDD":
+        nbSlotPerFrame = 10
+    else:
+        print("TTI trace ERROR: Undefined mode %s (should be TDD or FDD)" % mode)
+        return 0
+    maxRetention = int(maxRetention)
+    nbMsg = 0
+    nbUEinRetention = 0
+    nbSuccessfulRetention = 0
+    nbSuccessfulCoscheduling = 0
+    nbSIBinRetention = 0
+    RNTIstartRetention = "FFFF"
+    RNTIendRetention = "FFFF"
+    RetentionState = "syncEndRetention"
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if RetentionState == "syncEndRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    if ClassPrio == classPriorityIndex.lastUnUsed.value:
+                        RetentionState = "waitStartRetention"
+            elif RetentionState == "waitStartRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    TimeSFNslot = SFN*nbSlotPerFrame+slot
+                    RNTI = event.data["eventHeader"]["rnti"]
+                    if ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        TimeStartDTX = TimeSFNslot
+                        RNTIstartRetention = RNTI
+                        nbUEinRetention = 1
+                        RetentionState = "waitEndRetention"
+                        # print("Start retention at %s/%s" % (SFN, slot))
+                    elif ClassPrio == classPriorityIndex.drbTraffic.value:
+                        if TimeSFNslot > TimeEndDTX+2 or RNTI == RNTIendRetention:
+                            # print("Time %s, TimeEnd %s" % (TimeSFNslot, TimeEndDTX))
+                            print("TTI trace ERROR: class priority \"drb traffic\" \
+                                found instead of \"DTX optimised\" at %s/%s" % (SFN, slot))
+                            return 0
+            elif RetentionState == "waitEndRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    if ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        if RNTIstartRetention == event.data["eventHeader"]["rnti"]:
+                            print("TTI trace ERROR: two consecutive class priority \"DTX optimised\" \
+                                found for RNTI %s at %s/%s" % (RNTIstartRetention, SFN, slot))
+                            return 0
+                        nbUEinRetention = nbUEinRetention+1
+                    elif ClassPrio == classPriorityIndex.drbTraffic.value:
+                        TimeEndDTX = SFN*nbSlotPerFrame+slot
+                        if TimeEndDTX < TimeStartDTX:
+                            TimeEndDTX = (SFN+1024)*nbSlotPerFrame+slot
+                        # print("Stop retention at %s/%s" % (SFN, slot))
+                        retentionDelay = (TimeEndDTX-TimeStartDTX)*10/nbSlotPerFrame
+                        if retentionDelay != maxRetention:
+                            print("TTI trace ERROR: retention delay is %s instead of %s at %s/%s"
+                                  % (retentionDelay, maxRetention, SFN, slot))
+                            return 0
+                        RNTIendRetention = event.data["eventHeader"]["rnti"]
+                        nbSuccessfulRetention = nbSuccessfulRetention+1
+                        CheckTimeScheduling = 0
+                        RetentionState = "checkDataScheduling"
+                elif event.type == "dlDtxOptimData":
+                    EventDtxOptim = event.data["dlDtxOptimEvent"]
+                    if EventDtxOptim == "SCHEDONSIBORPAGING" and mode == "TDD":
+                        SFNscheduling = event.data["eventHeader"]["sfn"]
+                        slotscheduling = event.data["eventHeader"]["slot"]
+                        nbSIBinRetention = nbSIBinRetention+1
+                        CheckTimeScheduling = 1
+                        # print("SCHEDONSIBORPAGING at %s/%s" % (SFNscheduling, slotscheduling))
+                        RetentionState = "checkDataScheduling"
+            elif RetentionState == "checkDataScheduling":
+                if event.type == "dlFdSchedData":
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    # print("Scheduling at %s/%s" % (SFN, slot))
+                    if CheckTimeScheduling == 1 and (SFN != SFNscheduling or slot != slotscheduling):
+                        print("Scheduling ERROR: scheduling at %s/%s, \
+                            expected at %s/%s" % (SFN, slot, SFNscheduling, slotscheduling))
+                        return 0
+                    nbUEinRetention = nbUEinRetention-1
+                    if nbUEinRetention == 0:
+                        nbSuccessfulCoscheduling = nbSuccessfulCoscheduling+1
+                        RetentionState = "waitStartRetention"
+                    else:
+                        SFNscheduling = SFN
+                        slotscheduling = slot
+                        CheckTimeScheduling = 1
+    print("TTI trace status - successful co-scheduling: %s, DRB co-scheduling: %s, SIB co-scheduling: %s"
+          % (nbSuccessfulCoscheduling, nbSuccessfulRetention, nbSIBinRetention))
+    return nbSuccessfulCoscheduling
+
+
+def checkMaxRetention2UEsNgbrVoNR(jsonPathName, mode, maxRetention):
+    """
+    This function analyses DTX optim in case of two UEs, one with NGBR traffic, one with VoNR:
+       - the retention is started when NGBR DL data is received on first UE.
+       - the duration of the retentions is equal to "maxRetention"
+       - data in retention are sent in SIBs slot (sensitive data) and retention timer is stopped (only in TDD)
+       - data in retention are sent with VoNR and retention timer is stopped
+       - no NGBR data are sent during retention (except on SIB slots, or with VoNT)
+       - NGBR data in retention are sent at the end of the retention
+    Input parameters:
+       jsonPathName: json file of TTI traces to check
+       mode: TDD or FDD (TDD: 20 slots per frame, FDD: 10 slots per frame)
+       maxRetention: time of retention in ms (MaxRetentionDelay)
+    Returned value:
+       0 in case of error
+       Number of successful retentions else
+    IMPORTANT:
+       PDSCH scheduling on SIBs slot is currently only implemented in TDD.
+       So, data sent on SIB slots is not checked in FDD.
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    if mode == "TDD":
+        nbSlotPerFrame = 20
+    elif mode == "FDD":
+        nbSlotPerFrame = 10
+    else:
+        print("TTI trace ERROR: Undefined mode %s (should be TDD or FDD)" % mode)
+        return 0
+    maxRetention = int(maxRetention)
+    nbMsg = 0
+    nbUEinRetention = 0
+    nbSuccessfulRetention = 0
+    nbSuccessfulCoscheduling = 0
+    nbSuccessfulVoNRscheduling = 0
+    nbSIBinRetention = 0
+    nbVoNRinRetention = 0
+    RNTIstartRetention = "FFFF"
+    RNTIendRetention = "FFFF"
+    RetentionState = "syncEndRetention"
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if RetentionState == "syncEndRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    if ClassPrio == classPriorityIndex.lastUnUsed.value:
+                        RetentionState = "waitStartRetention"
+            elif RetentionState == "waitStartRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    TimeSFNslot = SFN*nbSlotPerFrame+slot
+                    RNTI = event.data["eventHeader"]["rnti"]
+                    if ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        TimeStartDTX = TimeSFNslot
+                        RNTIstartRetention = RNTI
+                        nbUEinRetention = 1
+                        RetentionState = "waitEndRetention"
+                        # print("Start retention at %s/%s" % (SFN, slot))
+                    elif ClassPrio == classPriorityIndex.drbTraffic.value:
+                        if TimeSFNslot > TimeEndDTX+2 or RNTI == RNTIendRetention:
+                            # print("Time %s, TimeEnd %s" % (TimeSFNslot, TimeEndDTX))
+                            print("TTI trace ERROR: class priority \"drb traffic\" \
+                                found instead of \"DTX optimised\" at %s/%s" % (SFN, slot))
+                            return 0
+                    elif ClassPrio == classPriorityIndex.voipTraffic.value:
+                        nbUEinRetention = nbUEinRetention+1
+                        CheckTimeScheduling = 0
+                        RetentionState = "checkSchedulingVoNR"
+            elif RetentionState == "waitEndRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    if ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        if RNTIstartRetention == event.data["eventHeader"]["rnti"]:
+                            print("TTI trace ERROR: two consecutive class priority \"DTX optimised\" \
+                                found for RNTI %s at %s/%s" % (RNTIstartRetention, SFN, slot))
+                            return 0
+                        nbUEinRetention = nbUEinRetention+1
+                    elif ClassPrio == classPriorityIndex.drbTraffic.value:
+                        TimeEndDTX = SFN*nbSlotPerFrame+slot
+                        if TimeEndDTX < TimeStartDTX:
+                            TimeEndDTX = (SFN+1024)*nbSlotPerFrame+slot
+                        # print("Stop retention at %s/%s" % (SFN, slot))
+                        retentionDelay = (TimeEndDTX-TimeStartDTX)*10/nbSlotPerFrame
+                        if retentionDelay != maxRetention:
+                            print("TTI trace ERROR: retention delay is %s instead of %s at %s/%s"
+                                  % (retentionDelay, maxRetention, SFN, slot))
+                            return 0
+                        RNTIendRetention = event.data["eventHeader"]["rnti"]
+                        nbSuccessfulRetention = nbSuccessfulRetention+1
+                        CheckTimeScheduling = 0
+                        RetentionState = "checkDataScheduling"
+                    elif ClassPrio == classPriorityIndex.voipTraffic.value:
+                        nbUEinRetention = nbUEinRetention+1
+                        nbVoNRinRetention = nbVoNRinRetention+1
+                        CheckTimeScheduling = 0
+                        RetentionState = "checkDataScheduling"
+                elif event.type == "dlDtxOptimData":
+                    EventDtxOptim = event.data["dlDtxOptimEvent"]
+                    if EventDtxOptim == "SCHEDONSIBORPAGING" and mode == "TDD":
+                        SFNscheduling = event.data["eventHeader"]["sfn"]
+                        slotscheduling = event.data["eventHeader"]["slot"]
+                        nbSIBinRetention = nbSIBinRetention+1
+                        CheckTimeScheduling = 1
+                        # print("SCHEDONSIBORPAGING at %s/%s" % (SFNscheduling, slotscheduling))
+                        RetentionState = "checkDataScheduling"
+            elif RetentionState == "checkDataScheduling":
+                if event.type == "dlFdSchedData":
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    # print("Scheduling at %s/%s" % (SFN, slot))
+                    if CheckTimeScheduling == 1 and (SFN != SFNscheduling or slot != slotscheduling):
+                        print("Scheduling ERROR: scheduling at %s/%s, \
+                            expected at %s/%s" % (SFN, slot, SFNscheduling, slotscheduling))
+                        return 0
+                    nbUEinRetention = nbUEinRetention-1
+                    if nbUEinRetention == 0:
+                        nbSuccessfulCoscheduling = nbSuccessfulCoscheduling+1
+                        RetentionState = "waitStartRetention"
+                    else:
+                        SFNscheduling = SFN
+                        slotscheduling = slot
+                        CheckTimeScheduling = 1
+            elif RetentionState == "checkSchedulingVoNR":
+                if event.type == "dlFdSchedData":
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    # print("VoNR Scheduling at %s/%s" % (SFN, slot))
+                    if CheckTimeScheduling == 1 and (SFN != SFNscheduling or slot != slotscheduling):
+                        print("Scheduling ERROR: scheduling at %s/%s, \
+                            expected at %s/%s" % (SFN, slot, SFNscheduling, slotscheduling))
+                        return 0
+                    nbUEinRetention = nbUEinRetention-1
+                    if nbUEinRetention == 0:
+                        nbSuccessfulVoNRscheduling = nbSuccessfulVoNRscheduling+1
+                        RetentionState = "waitStartRetention"
+                    else:
+                        SFNscheduling = SFN
+                        slotscheduling = slot
+                        CheckTimeScheduling = 1
+                elif event.type == "dlPreSchedData":
+                    if ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        TimeStartDTX = TimeSFNslot
+                        RNTIstartRetention = RNTI
+                        nbUEinRetention = nbUEinRetention+1
+                        # print("DTXoptimized received with VoNR to schedule at %s/%s" % (SFN, slot))
+    print("TTI trace status - successful co-scheduling: %s, DRB co-scheduling: %s, SIB co-scheduling: %s, nbMsg: %s"
+          % (nbSuccessfulCoscheduling, nbSuccessfulRetention, nbSIBinRetention, nbMsg))
+    return nbSuccessfulCoscheduling
+
+
+def CheckTTItrace_PRBthreshold_1UE(jsonPathName, mode):
+    """
+    This function analyses DTX optim in case of one UE sending packets higher than PRBthreshold:
+       - the retention is started when DRB DL data is received
+       - PRB threshold is immediatly detected and retention is stopped
+    Input parameters:
+       jsonPathName: json file of TTI traces to check
+       mode: TDD or FDD, to manage co-scheduling with SIB slot (TDD) or not (FDD)
+    Returned value:
+       0 in case of error
+       Number of PRB threshold detected else
+    IMPORTANT:
+       PDSCH scheduling on SIBs slot is currently only implemented in TDD.
+       So, data sent on SIB slots is not checked in FDD.
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    nbMsg = 0
+    nbPRBthreshold = 0
+    nbSuccessfulSIBscheduling = 0
+    RetentionState = "waitStartFirstRetention"
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if RetentionState == "waitStartFirstRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    if ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        SFN = event.data["eventHeader"]["sfn"]
+                        slot = event.data["eventHeader"]["slot"]
+                        RetentionState = "waitEndRetention"
+                        # print("Start retention at %s/%s" % (SFN, slot))
+            elif RetentionState == "waitStartRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    if ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        RetentionState = "waitEndRetention"
+                        # print("Start retention at %s/%s" % (SFN, slot))
+                    elif ClassPrio == classPriorityIndex.drbTraffic.value:
+                        print("TTI trace ERROR: class priority \"drb traffic\" \
+                            found instead of \"DTX optimised\" at %s/%s" % (SFN, slot))
+                        return 0
+            elif RetentionState == "waitEndRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    if ClassPrio == classPriorityIndex.drbTraffic.value:
+                        print("TTI trace ERROR: end of retention delay reached at %s/%s"
+                              % (SFN, slot))
+                        return 0
+                    elif ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        print("TTI trace ERROR: two consecutive class priority \"DTX optimised\" \
+                            found at %s/%s" % (SFN, slot))
+                        return 0
+                elif event.type == "dlDtxOptimData":
+                    EventDtxOptim = event.data["dlDtxOptimEvent"]
+                    if EventDtxOptim == "SCHEDONSIBORPAGING" and mode == "TDD":
+                        SFNscheduling = event.data["eventHeader"]["sfn"]
+                        slotscheduling = event.data["eventHeader"]["slot"]
+                        # print("SCHEDONSIBORPAGING at %s/%s" % (SFNscheduling, slotscheduling))
+                        RetentionState = "checkDataScheduling"
+                    elif EventDtxOptim == "DTXPRBTHRES":
+                        SFN = event.data["eventHeader"]["sfn"]
+                        slot = event.data["eventHeader"]["slot"]
+                        # print("DTXPRBTHRES at %s/%s" % (SFN, slot))
+                        nbPRBthreshold = nbPRBthreshold+1
+                        RetentionState = "waitStartRetention"
+            elif RetentionState == "checkDataScheduling":
+                if event.type == "dlFdSchedData":
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    if SFN != SFNscheduling or slot != slotscheduling:
+                        print("SIB scheduling ERROR: scheduling at %s/%s, \
+                            expected at %s/%s" % (SFN, slot, SFNscheduling, slotscheduling))
+                        return 0
+                    nbSuccessfulSIBscheduling = nbSuccessfulSIBscheduling+1
+                    # print("SIB scheduling at %s/%s" % (SFN, slot))
+                    RetentionState = "waitStartRetention"
+    print("TTI trace status - successful retentions: %s, successful SIB co-scheduling: %s"
+          % (nbPRBthreshold, nbSuccessfulSIBscheduling))
+    return nbPRBthreshold
+
+
+def CheckTTItrace_CS1sizeThreshold_2UEs(jsonPathName, mode):
+    """
+    This function analyses DTX optim in case of two UEs with CS1sizeThreshold set to 2:
+       - the retention is started when DRB DL data is received
+       - CS1 size threshold is reached when second UE enters in retention, then retention is stopped
+    Input parameters:
+       jsonPathName: json file of TTI traces to check
+       mode: TDD or FDD, to manage co-scheduling with SIB slot (TDD) or not (FDD)
+    Returned value:
+       0 in case of error
+       Number of PRB threshold detected else
+    IMPORTANT:
+       PDSCH scheduling on SIBs slot is currently only implemented in TDD.
+       So, data sent on SIB slots is not checked in FDD.
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    nbMsg = 0
+    SFNdrb = 0
+    slotdrb = 0
+    nbCS1sizeThreshold = 0
+    nbEndRetention = 0
+    nbUEinRetention = 0
+    nbSuccessfulSIBscheduling = 0
+    RetentionState = "syncEndRetention"
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if RetentionState == "syncEndRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    if ClassPrio == classPriorityIndex.lastUnUsed.value:
+                        nbUEinRetention = 0
+                        RetentionState = "waitStartRetention"
+            elif RetentionState == "waitStartRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    if ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        if SFN != SFNdrb or slot != slotdrb:
+                            # print("Start retention at %s/%s" % (SFN, slot))
+                            nbUEinRetention = nbUEinRetention+1
+                            RetentionState = "waitEndRetention"
+                    elif ClassPrio == classPriorityIndex.drbTraffic.value:
+                        print("TTI trace ERROR: class priority \"drb traffic\" \
+                            found instead of \"DTX optimised\" at %s/%s" % (SFN, slot))
+                        return 0
+            elif RetentionState == "waitEndRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    if ClassPrio == classPriorityIndex.drbTraffic.value:
+                        SFNdrb = SFN
+                        slotdrb = slot
+                        # print("End retention at %s/%s" % (SFN, slot))
+                        nbEndRetention = nbEndRetention+1
+                        nbUEinRetention = 0
+                        RetentionState = "waitStartRetention"
+                    elif ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        nbUEinRetention = nbUEinRetention+1
+                        if nbUEinRetention > 2:
+                            print("TTI trace ERROR: %s consecutive class priority \"DTX optimised\" \
+                                found at %s/%s" % (nbUEinRetention, SFN, slot))
+                            return 0
+                elif event.type == "dlDtxOptimData":
+                    EventDtxOptim = event.data["dlDtxOptimEvent"]
+                    if EventDtxOptim == "SCHEDONSIBORPAGING" and mode == "TDD":
+                        SFNscheduling = event.data["eventHeader"]["sfn"]
+                        slotscheduling = event.data["eventHeader"]["slot"]
+                        # print("SCHEDONSIBORPAGING at %s/%s" % (SFNscheduling, slotscheduling))
+                        RetentionState = "checkDataScheduling"
+                    elif EventDtxOptim == "CS1SIZETHRES":
+                        SFN = event.data["eventHeader"]["sfn"]
+                        slot = event.data["eventHeader"]["slot"]
+                        # print("CS1SIZETHRES at %s/%s" % (SFN, slot))
+                        nbCS1sizeThreshold = nbCS1sizeThreshold+1
+                        nbUEinRetention = 0
+                        RetentionState = "waitStartRetention"
+            elif RetentionState == "checkDataScheduling":
+                if event.type == "dlFdSchedData":
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    if SFN != SFNscheduling or slot != slotscheduling:
+                        print("SIB scheduling ERROR: scheduling at %s/%s, \
+                            expected at %s/%s" % (SFN, slot, SFNscheduling, slotscheduling))
+                        return 0
+                    nbSuccessfulSIBscheduling = nbSuccessfulSIBscheduling+1
+                    # print("SIB scheduling at %s/%s" % (SFN, slot))
+                    nbUEinRetention = 0
+                    RetentionState = "waitStartRetention"
+    print("TTI trace status - successful retentions: %s, successful SIB co-scheduling: %s, End retention %s"
+          % (nbCS1sizeThreshold, nbSuccessfulSIBscheduling, nbEndRetention))
+    return nbCS1sizeThreshold
+
+
+def CheckTTItrace_CellNbUeCs1PercentThreshold_2UEs(jsonPathName, mode, cs1ThresholdHigh, cs1ThresholdLow, timer):
+    """
+    This function analyses DTX optim in case of two UEs with:
+        rdDtxCellNbUeCs1ThresholdHigh_percent = 4% (2UEs)
+        rdDtxCellNbUeCs1ThresholdLow_percent = 4% (2UEs)
+        rdDtxCellEnablingTime_ms = 50ms
+        - when 2UEs is under CS1 list, DTXCELLDISABLING and no retention applied
+        - when no UE under CS1 list, DTXCELLENABLINGSTARTTIMER is triggered.
+          After rdDtxCellEnablingTime_ms, DTXCELLENABLING and microDTX is activated
+    Input parameters:
+        jsonPathName: json file of TTI traces to check
+        mode: TDD or FDD, to manage co-scheduling with SIB slot (TDD) or not (FDD)
+    Returned value:
+        0 in case of error
+        nbSuccessfulDTXEnabling else
+    IMPORTANT:
+        PDSCH scheduling on SIBs slot is currently only implemented in TDD.
+        So, data sent on SIB slots is not checked in FDD.
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    if mode == "TDD":
+        nbSlotPerFrame = 20
+    elif mode == "FDD":
+        nbSlotPerFrame = 10
+    else:
+        print("TTI trace ERROR: Undefined mode %s (should be TDD or FDD)" % mode)
+        return 0
+    cs1ThresholdHigh = int(cs1ThresholdHigh)
+    cs1ThresholdLow = int(cs1ThresholdLow)
+    timer = int(timer)
+    nbMsg = 0
+    nbDtxOptimizedDrbTraffic = 0
+    nbSuccessfulDTXEnabling = 0
+    nbSuccessfulDTXDisabling = 0
+    flagCheckSlot = 0
+    RetentionState = "waitDTXCELLENABLING"
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if RetentionState == "waitDTXCELLENABLING":
+                if event.type == "dlDtxCellEnablingData":
+                    DtxCellEvent = event.data["dlDtxCellEnablingEvent"]
+                    if DtxCellEvent == "DTXCELLENABLING":
+                        SFN = event.data["eventHeader"]["sfn"]
+                        slot = event.data["eventHeader"]["slot"]
+                        RetentionState = "DTXEnabled"
+                        # print("DTX cell state : DTXCELLENABLED at %s/%s" % (SFN, slot))
+            elif RetentionState == "DTXEnabled":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    if ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        nbDtxOptimizedDrbTraffic = nbDtxOptimizedDrbTraffic+1
+                    elif ClassPrio == classPriorityIndex.drbTraffic.value:
+                        if nbDtxOptimizedDrbTraffic == 2:
+                            SFN = event.data["eventHeader"]["sfn"]
+                            slot = event.data["eventHeader"]["slot"]
+                            DrbTrafficTime = SFN*nbSlotPerFrame+slot
+                            RetentionState = "waitDTXCELLDISABLING"
+                            flagCheckSlot = 1
+                            nbDtxOptimizedDrbTraffic = 0
+                            # print("Start drbTraffic at %s/%s" % (SFN, slot))
+                        nbDtxOptimizedDrbTraffic = 0
+                elif event.type == "dlDtxOptimData":
+                    EventDtxOptim = event.data["dlDtxOptimEvent"]
+                    if EventDtxOptim == "SCHEDONSIBORPAGING":
+                        if mode == "TDD":
+                            if nbDtxOptimizedDrbTraffic == 2:
+                                SFN = event.data["eventHeader"]["sfn"]
+                                slot = event.data["eventHeader"]["slot"]
+                                DrbTrafficTime = SFN*nbSlotPerFrame+slot
+                                flagCheckSlot = 1
+                                # print("SCHEDONSIBORPAGING at %s/%s" % (SFN, slot))
+                                RetentionState = "waitDTXCELLDISABLING"
+                        elif mode == "FDD":
+                            RetentionState = "waitDTXCELLDISABLING"
+                        nbDtxOptimizedDrbTraffic = 0
+            elif RetentionState == "waitDTXCELLDISABLING":
+                if event.type == "dlDtxCellEnablingData":
+                    DtxCellEvent = event.data["dlDtxCellEnablingEvent"]
+                    if DtxCellEvent == "DTXCELLDISABLING":
+                        SFNCellDisabling = event.data["eventHeader"]["sfn"]
+                        slotCellDisabling = event.data["eventHeader"]["slot"]
+                        # print("DTXCELLDISABLING at %s/%s" % (SFNCellDisabling, slotCellDisabling))
+                        if flagCheckSlot == 1:
+                            CellDisabledTime = SFNCellDisabling*nbSlotPerFrame+slotCellDisabling
+                            if CellDisabledTime < DrbTrafficTime:
+                                CellDisabledTime = (SFNCellDisabling+1024)*nbSlotPerFrame+slotCellDisabling
+                            if CellDisabledTime > DrbTrafficTime+4:
+                                print("DTX Cell disabling ERROR: disabled at %s/%s, \
+                                    expected at %s/%s" % (SFNCellDisabling, slotCellDisabling, SFN, slot))
+                                # return 0
+                                # As TTI trace sequence evolves regularly,and 8238 is now mature,
+                                # this check can be removed
+                            flagCheckSlot = 0
+                        cs1Ratio = event.data["dtxCellNbUeCs1Ratio"]
+                        if cs1Ratio < cs1ThresholdHigh:
+                            print("DTX Cell disabling ERROR:dtxCellNbUeCs1Ratio is lower \
+                                than DtxCellNbUeCs1ThresholdHigh")
+                            return 0
+                        RetentionState = "DTXDisabled"
+                        nbSuccessfulDTXDisabling = nbSuccessfulDTXDisabling+1
+            elif RetentionState == "DTXDisabled":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    if ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        SFN = event.data["eventHeader"]["sfn"]
+                        slot = event.data["eventHeader"]["slot"]
+                        print("DTX Cell enabling ERROR:DTX should not be activated at %s/%s" % (SFN, slot))
+                        return 0
+                elif event.type == "dlDtxCellEnablingData":
+                    DtxCellEvent = event.data["dlDtxCellEnablingEvent"]
+                    if DtxCellEvent == "DTXCELLENABLINGSTARTTIMER":
+                        SFN = event.data["eventHeader"]["sfn"]
+                        slot = event.data["eventHeader"]["slot"]
+                        # print("DTX CELL ENABLING START TIMER at %s/%s" % (SFN, slot))
+                        cs1Ratio = event.data["dtxCellNbUeCs1Ratio"]
+                        CellEnablingTimerStart = SFN*nbSlotPerFrame+slot
+                        if cs1Ratio > cs1ThresholdLow:
+                            print("DTX CELL ENABLING STARTTIMER ERROR:dtxCellNbUeCs1Ratio %s \
+                            is higher than DtxCellNbUeCs1ThresholdLow" % cs1Ratio)
+                            return 0
+                    elif DtxCellEvent == "DTXCELLENABLINGSTOPTIMER":
+                        cs1Ratio = event.data["dtxCellNbUeCs1Ratio"]
+                        SFNStopTimer = event.data["eventHeader"]["sfn"]
+                        slotStopTimer = event.data["eventHeader"]["slot"]
+                        # print("DTX CELL ENABLING STOP TIMER at %s/%s" % (SFNStopTimer, slotStopTimer))
+                        if cs1Ratio < cs1ThresholdHigh:
+                            print("DTX CELL ENABLING STOPTIMER ERROR:dtxCellNbUeCs1Ratio %s \
+                            is lower than DtxCellNbUeCs1ThresholdHigh" % cs1Ratio)
+                            return 0
+                    elif DtxCellEvent == "DTXCELLENABLING":
+                        SFN = event.data["eventHeader"]["sfn"]
+                        slot = event.data["eventHeader"]["slot"]
+                        # print("DTX CELL ENABLING at %s/%s" % (SFN, slot))
+                        CellEnabledTime = SFN*nbSlotPerFrame+slot
+                        if CellEnabledTime < CellEnablingTimerStart:
+                            CellEnabledTime = (SFN+1024)*nbSlotPerFrame+slot
+                        cellEnablingTimer = (CellEnabledTime-CellEnablingTimerStart)*10/nbSlotPerFrame
+                        if cellEnablingTimer != timer:
+                            print("TTI trace ERROR: cellEnablingTimer is %s instead of %s at %s/%s"
+                                  % (cellEnablingTimer, timer, SFN, slot))
+                            return 0
+                        nbSuccessfulDTXEnabling = nbSuccessfulDTXEnabling+1
+                        RetentionState = "DTXEnabled"
+    print("TTI trace status - successful DTXEnabled: %s" % nbSuccessfulDTXEnabling)
+    print("TTI trace status - successful DTXDisabled: %s" % nbSuccessfulDTXDisabling)
+    return nbSuccessfulDTXEnabling
+
+
+def getuDTXscheduleWeight(jsonPathName):
+    """
+    This function returns the average ratio between the nb of PRBs used for uDTX traffic
+    and the nb of PRBs for a second UE with max troughput
+    Input parameters:
+       jsonPathName: json file of TTI traces to check
+    Returned value:
+       0 in case of error
+       average ratio else
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    nbMsg = 0
+    nbScheduleWeight = 0
+    uDTXscheduleWeightSum = 0
+    RetentionState = "waitStartRetention"
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if RetentionState == "waitStartRetention":
+                if event.type == "dlPreSchedData":
+                    ClassPrio = event.data["highestClassPriority"]
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    RNTIuDTX = event.data["eventHeader"]["rnti"]
+                    if ClassPrio == classPriorityIndex.dtxOptimizedDrbTraffic.value:
+                        RetentionState = "getFirstDataScheduling"
+                        # print("Start retention at %s/%s" % (SFN, slot))
+                    elif ClassPrio == classPriorityIndex.drbTraffic.value:
+                        print("TTI WARN: class priority \"drb traffic\" found at %s/%s" % (SFN, slot))
+                        # return 0
+            elif RetentionState == "getFirstDataScheduling":
+                if event.type == "dlFdSchedData":
+                    SFN1 = event.data["eventHeader"]["sfn"]
+                    slot1 = event.data["eventHeader"]["slot"]
+                    rnti = event.data["eventHeader"]["rnti"]
+                    if rnti == RNTIuDTX:
+                        nbPRBuDTX = event.data["numOfPrb"]
+                        nbPRB2 = 0
+                    else:
+                        nbPRBuDTX = 0
+                        nbPRB2 = event.data["numOfPrb"]
+                    RetentionState = "checkDataScheduling"
+            elif RetentionState == "checkDataScheduling":
+                if event.type == "dlFdSchedData":
+                    SFN = event.data["eventHeader"]["sfn"]
+                    slot = event.data["eventHeader"]["slot"]
+                    rnti = event.data["eventHeader"]["rnti"]
+                    if SFN != SFN1 or slot != slot1:
+                        print("TTI WARN: only one UE scheduled at %s/%s" % (SFN1, slot1))
+                    else:
+                        if rnti == RNTIuDTX:
+                            nbPRBuDTX = event.data["numOfPrb"]
+                        else:
+                            nbPRB2 = event.data["numOfPrb"]
+                        uDTXscheduleWeight = nbPRBuDTX*100/(nbPRBuDTX+nbPRB2)
+                        # print("Scheduling at %s/%s, nb PRB UE uDTX: %s, nb PRB UE2: %s, uDTX weight: %s"
+                        #      % (SFN, slot, nbPRBuDTX, nbPRB2, uDTXscheduleWeight))
+                        uDTXscheduleWeightSum = uDTXscheduleWeightSum+uDTXscheduleWeight
+                        nbScheduleWeight = nbScheduleWeight+1
+                    RetentionState = "waitStartRetention"
+    uDTXscheduleWeightaverage = uDTXscheduleWeightSum/nbScheduleWeight
+    print("TTI status - uDTX schedule weight: %s" % uDTXscheduleWeightaverage)
+    return uDTXscheduleWeightaverage

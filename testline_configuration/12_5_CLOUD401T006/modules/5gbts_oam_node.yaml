@@ -1,0 +1,213 @@
+heat_template_version: 2016-10-14
+description: 'v77: Template to instantiate non-redundant management node instance'
+parameters:
+  common_metadata:
+    type: json
+    description: common metadata parameters
+  common_userdata:
+    type: json
+    description: common cloud-init userdata parameters
+  config_drive:
+    type: boolean
+    description: use config drive instead of metadata server
+  dns_forwarders:
+    type: comma_delimited_list
+    description: list of servers to forward queries to
+    default: []
+    constraints:
+    - length:
+        min: 0
+        max: 3
+  dpdk_type:
+    type: string
+    description: type information for dpdk boot configuration
+    default: oam_5g20a
+  instance_params:
+    type: json
+    description: instance specific parameters
+  key_name:
+    type: string
+    description: key pair to assign to default user
+    default: rcpkey
+    constraints:
+    - custom_constraint: nova.keypair
+  name:
+    type: string
+    description: Name to be used as the host name for the instance
+  networks:
+    type: json
+    description: network parameters
+  cinder_volumes:
+    type: json
+    description: parameters for cinder volumes
+  lvm_local_volumes:
+    type: json
+    description: Local volumes to be attached
+    default:
+      count: 0
+      volumes: []
+  lvm_nfs_volumes:
+    type: json
+    description: Volumes to ba attached an shared via NFS
+    default:
+      count: 0
+      vol_list: []
+  ntp_prefer:
+    type: string
+    description: preferred NTP server to use
+    default: ''
+  ntp_servers:
+    type: comma_delimited_list
+    description: list of servers to sync time from
+    constraints:
+    - length:
+        min: 1
+        max: 3
+  oam_port_index:
+    type: string
+    description: resource index for OAM port in netwpork pool
+    default: resource.2
+  roles:
+    type: comma_delimited_list
+    description: Deployment roles associated
+    default:
+    - management
+    - external-connectivity
+    - 5gbts_oam
+  service_ip_meta:
+    type: json
+    description: internal-service-ip-pool metadata parameters
+    default: {}
+  dual_stack:
+    type: string
+    description: configure single network or dual network
+    default: disabled
+    constraints:
+      - allowed_values: [disabled, enabled]
+  timezone:
+    type: string
+    constraints:
+      - custom_constraint: timezone
+
+resources:
+  ports:
+    type: RCP::Network::Pool
+    properties:
+      count:
+        get_param: [networks, count]
+      networks:
+        get_param: [networks, net_list_0]
+      oam_port: {get_param: oam_port_index}
+      dual_stack: {get_param: dual_stack}
+  lvm_nfs_vol:
+    type: RCP::VolumeGroup::LVMNFS
+    properties:
+      lvm_nfs_host:
+        str_replace:
+          template: <name>.local
+          params:
+            <name>: {get_param: name}
+      lvm_volumes:
+        get_param: [lvm_nfs_volumes]
+  lvm_local_vol:
+    type: RCP::VolumeGroup::LVMLocal
+    properties:
+      lvm_volumes:
+        get_param: [lvm_local_volumes]
+  shared_vol:
+    type: RCP::Volume::Cinder
+    properties:
+      vol_name:
+        get_param: [cinder_volumes, vol_list, 0, name]
+      vol_size:
+        get_param: [cinder_volumes, vol_list, 0, size]
+  shared_vol_attach:
+    type: OS::Cinder::VolumeAttachment
+    properties:
+      volume_id:
+        get_attr: [shared_vol, cinder_volume_id]
+      instance_uuid: {get_resource: server}
+
+  cloud_config:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        hostname: {get_param: name}
+        timezone: {get_param: timezone}
+        fetch_public_key:
+        - {path: /run/authorized_keys, permissions: '0600'}
+  cloud_init:
+    type: OS::Heat::MultipartMime
+    properties:
+      parts:
+      - config: {get_param: [common_userdata, add_user]}
+        subtype: cloud-config
+      - config: {get_param: [common_userdata, run_cmd]}
+        subtype: cloud-config
+      - config: {get_resource: cloud_config}
+        subtype: cloud-config
+  server:
+    type: OS::Nova::Server
+    properties:
+      name: {get_param: name}
+      image:
+        get_param: [instance_params, server, imageId]
+      flavor:
+        get_param: [instance_params, server, flavorId]
+      availability_zone:
+        get_param: [instance_params, server, azId]
+      scheduler_hints:
+        group: {get_param: [instance_params, server, server_group_id]}
+      key_name: {get_param: key_name}
+      networks:
+        get_attr: [ports, ports]
+      user_data_format: RAW
+      user_data: {get_resource: cloud_init}
+      metadata:
+        map_merge:
+        - {get_param: common_metadata}
+        - password:
+            Nemuadmin: $5$rounds=10000$0rN1p3TN$0bzxA4T3uHMqbG0gX45amM18DMgG8ZTBSr/HOQdrLR6
+            wsuser: $5$rounds=10000$6Kj3xARF$6D8XNkLOFxc8yswG4hhvCXyCdHau5WY6yxH/ZxRrle8
+            serviceuser: $5$rounds=10000$OpZaSSI2$z0XJGwQ10Qs5kaeDqaooM0P2Z/9dYspyBzwIWWbVei4
+        - dpdk-conf-type: {get_param: dpdk_type}
+          ntp-servers: {get_param: ntp_servers}
+          ntp-server-prefer: {get_param: ntp_prefer}
+          dns-forwarders: {get_param: dns_forwarders}
+          roles: {get_param: roles}
+          md_network: internal_srv
+          storage.install: true
+        - get_attr: [ports, ip-info]
+        - get_attr: [ports, ext-ip-config]
+        - get_attr: [ports, ext-ip-config-v6]
+        - oam-ip.interface: oam
+          oam-ip.type: physical
+          oam-ip.roles: [ssh, oam]
+          oam-ip.ip-addrs:
+            get_attr: [ports, oam_ips]
+          oam-default-gws:
+            get_attr: [ports, oam_gws]
+        - get_attr: [shared_vol, cinder_volume_map]
+        - get_attr: [lvm_local_vol, provider_map]
+        - get_attr: [lvm_nfs_vol, provider_map]
+      config_drive: {get_param: config_drive}
+outputs:
+  management_ip:
+    description: Primary management IP address allocated to access the system
+    value:
+      str_split:
+      - /
+      - get_attr: [ports, oam_ips, 0]
+      - 0
+  management_ips:
+    description: All management IP addresses allocated to access the system
+    value:
+      get_attr: [ports, oam_fixed_ips]
+  internal_ip:
+    description: Internal IP address allocated to the instance
+    value:
+      get_attr: [ports, internal_ip]
+  volume_map:
+    description: the storage user metadata map for shared disks
+    value:
+      get_attr: [lvm_nfs_vol, user_map]

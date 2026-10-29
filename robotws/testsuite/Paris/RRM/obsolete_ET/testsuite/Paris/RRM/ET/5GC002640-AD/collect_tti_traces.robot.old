@@ -1,0 +1,73 @@
+*** Settings ***
+Documentation
+...   author: Justyna Balcerzak, Mateusz Plinta
+...   contact: justyna.balcerzak@nokia.com, mateusz.plinta@nokia.com
+...   description: 5GC002640-AD
+
+Library     taf.collectors.tcpdump       WITH NAME  tct
+Library     taf.collectors.l2stream3     WITH NAME  tcl
+Library     taf.collectors.core          WITH NAME  tcc
+Library     taf.converters.eventdecoder  WITH NAME  tce
+
+Library    resources/suite_specific_keywords.py
+Library    ../resources_KRK/python/utilities2.py    WITH NAME    logger
+Resource   taf/rfrl/common_resources/robot/libraries_instances.robot
+
+Variables  resources/variables.py
+
+
+*** Test Cases ***
+Collect TTI Trace
+    Collect TTI Traces during 60 seconds and save to directory tti_trace
+
+
+*** Keywords ***
+# ------------ TTI Traces collection ------------
+Start TTI trace collection
+    ${configurations}=  tcc.Load Configurations
+    ...  ${CURDIR}/resources/tti_trace_collectors.yaml
+    tcc.Create Collectors
+    ...  names=l2stream3
+    ...  configurations=${configurations['collectors']}
+    tcl.Set Suite Alias
+    ...  alias=l2stream3
+    tcc.Setup Collectors
+    ...  names=l2stream3
+    tcc.Start Collectors
+    ...  names=l2stream3
+    logger.Logger Console    ${\n}TTI traces collecting started
+
+
+Stop TTI trace collection
+    logger.Logger Console    Stopping TTI traces collecting
+    tcc.Stop Collectors
+    ...  names=l2stream3
+    tcc.Collect Collectors
+    ...  names=l2stream3
+    tcc.Teardown Collectors
+    ...  names=l2stream3
+
+
+Convert TTI trace from pcap
+    [Arguments]  ${format}  ${directory_name}
+    ${prefix}   Get test prefix
+    logger.Logger Console    Converting TTI traces to ${format}
+    tce.Create eventDecoder Converter
+    ...  name=ttitrace_converter
+    ...  input_file_path=${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/l2stream3/tcpdump/tcpdump.pcap
+    ...  output_file_format=${format}
+    ...  output_file_path=${OUTPUTDIR}/${prefix}/${directory_name}/output
+    tce.Convert
+    ...  name=ttitrace_converter
+    Move Directory	${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/l2stream3/tcpdump/  ${OUTPUTDIR}/${prefix}/${directory_name}/
+    Remove Directory  ${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/   recursive=True
+
+
+Collect TTI Traces during ${duration} seconds and save to directory ${directory_name}
+    ${parent_directory}  Set variable  ${directory_name}
+    Set Test Variable  ${parent_directory}
+    Start TTI trace collection
+    logger.Logger Console    Collecting duration is ${duration}
+    Sleep  ${duration}
+    Stop TTI trace collection
+    Convert TTI trace from pcap  format=excelCsv  directory_name=${directory_name}

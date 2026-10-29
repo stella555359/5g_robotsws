@@ -1,0 +1,173 @@
+gnbParam = [
+    "NRBTS-1:actMultiDrbNSA=true",
+    "NRCELL:nrofHARQProcessesForPDSCH=16",
+    "NRCELL:maxNumPdschAllocationPerSlot=16",
+    "NRPMRNL-1:miNrInterGnbMobilityNsaPmqap=disabled",
+    "NRPMRNL-1:miNrInterGnbXnMobilitySaPmqap=disabled",
+    "NRPMRNL-1:miNrIntraGnbMobilityNsaPmqap=disabled",
+    "NRPMRNL-1:miNrIntraGnbMobilitySaPmqap=disabled",
+    "NRPMRNL-1:miNrNgcFlexInterface=disabled",
+]
+
+enableBeamforming = [
+    "NRCELL:actRrcReconfigAtBeamSwitch=true",
+    "NRBTS:actSwitchRlmConfig=true",
+    "NRCELL:actBeamforming=true",
+    "NRCELL:nrCellType=4DL4UL",
+    "NRCELL:dlMimoMode=4x4 or 4x2 Open Loop Spatial Multiplexing",
+    "NRCELL:numberOfRxBeamforming=4Rx",
+    "NRBTS:actFdmEnhancedScheduling=true",
+    "NRBTS-1/NRCELLGRP-0:numberOfTransmittedSsBlocks=4 beams",
+    "NRBTS-1/NRCELLGRP-1:numberOfTransmittedSsBlocks=4 beams",
+    "NRCELL:beamSet:basicBeamSet=beamSet_4",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-1:direction=TX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-1:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-2:direction=RX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-2:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-3:direction=TX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-3:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-4:direction=RX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-4:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-5:direction=TX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-5:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-6:direction=RX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-6:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-7:direction=TX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-7:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-8:direction=RX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-8:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-1:direction=TX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-1:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-2:direction=RX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-2:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-3:direction=TX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-3:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-4:direction=RX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-4:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-5:direction=TX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-5:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-6:direction=RX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-6:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-7:direction=TX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-7:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/PHYANT-1",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-8:direction=RX",
+    "MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-8:"
+    "resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/PHYANT-1",
+    "delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-5:antlDN",
+    "delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-6:antlDN",
+    "delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-7:antlDN",
+    "delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-8:antlDN",
+    "delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-5:antlDN",
+    "delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-6:antlDN",
+    "delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-7:antlDN",
+    "delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-8:antlDN",
+    "NRBTS/NRSYSINFO_PROFILE-1:systemInformationTargetRate=157",
+]
+
+NRHOIF = [
+    "NRBTS-1/NRCELL-1/NRHOIF-1:cellDepType=SA+NSA",
+    "NRBTS-1/NRCELL-1/NRHOIF-1:freqBandIndicatorNR=78",
+    "NRBTS-1/NRCELL-1/NRHOIF-1:ifhoSsbScs=15KHz",
+    "NRBTS-1/NRCELL-1/NRHOIF-1:ifhoSsbSmtcDuration=sf1",
+    "NRBTS-1/NRCELL-1/NRHOIF-1:ifhoSsbSmtcPeriodicity=sf10",
+    "NRBTS-1/NRCELL-1/NRHOIF-1:numberOfTransmittedSsBlocks=4 beams",
+    "NRBTS-1/NRCELL-1/NRHOIF-1:ssBurstSetPeriod=20",
+    "NRBTS-1/NRCELL-1/NRHOIF-1:ssbFrequency=633408",
+    "NRBTS-1/NRCELL-1/NRHOIF-1:a3MeasEnabled=rsrp",
+    "NRBTS-1/NRCELL-1/NRHOIF-1:a3MeasSsbRsrp:a3HysteresisSsbRsrp=0",
+    "NRBTS-1/NRCELL-1/NRHOIF-1:a3MeasSsbRsrp:a3OffsetSsbRsrp=30",
+    "NRBTS-1/NRCELL-1/NRHOIF-1:a3MeasSsbRsrp:a3TimeToTriggerSsbRsrp=ms64",
+    "MRBTS-1/NRBTS-1/NRCELL-1:sMeasConfigSsbRsrp=0",
+    "NRBTS-1/NRCELL-2/NRHOIF-1:cellDepType=SA+NSA",
+    "NRBTS-1/NRCELL-2/NRHOIF-1:freqBandIndicatorNR=78",
+    "NRBTS-1/NRCELL-2/NRHOIF-1:ifhoSsbScs=15KHz",
+    "NRBTS-1/NRCELL-2/NRHOIF-1:ifhoSsbSmtcDuration=sf1",
+    "NRBTS-1/NRCELL-2/NRHOIF-1:ifhoSsbSmtcPeriodicity=sf10",
+    "NRBTS-1/NRCELL-2/NRHOIF-1:numberOfTransmittedSsBlocks=4 beams",
+    "NRBTS-1/NRCELL-2/NRHOIF-1:ssBurstSetPeriod=20",
+    "NRBTS-1/NRCELL-2/NRHOIF-1:ssbFrequency=636576",
+    "NRBTS-1/NRCELL-2/NRHOIF-1:a3MeasEnabled=rsrp",
+    "NRBTS-1/NRCELL-2/NRHOIF-1:a3MeasSsbRsrp:a3HysteresisSsbRsrp=0",
+    "NRBTS-1/NRCELL-2/NRHOIF-1:a3MeasSsbRsrp:a3OffsetSsbRsrp=30",
+    "NRBTS-1/NRCELL-2/NRHOIF-1:a3MeasSsbRsrp:a3TimeToTriggerSsbRsrp=ms64",
+    "NRBTS-1/NRCELL-2:measGapSelectionSA=favourUeThroughput",
+]
+
+IntragNB_HO_relate = [
+    "NRBTS:actInterFreqIntraGnbMobilityNSA=true",
+    "NRBTS:actIntraFreqIntraGnbMobilityNSA=true",
+    "NRBTS-1/NRCELL:absThreshSsbRsrpConsolidation=1",
+    "NRBTS-1/NRCELL:absThreshSsbRsrqConsolidation=1",
+    "NRBTS-1/NRCELL:sMeasConfigSsbRsrp=1",
+    "NRBTS-1/NRCELL-1/NRREL-1:cellIndividualSsbRsrpOffset=0dB",
+    "NRBTS-1/NRCELL-1/NRREL-1:cellIndividualSsbRsrqOffset=0dB",
+    "NRBTS-1/NRCELL-1/NRREL-1:gNbId=1",
+    "NRBTS-1/NRCELL-1/NRREL-1:gNbIdLength=22",
+    "NRBTS-1/NRCELL-1/NRREL-1:lcrId=2",
+    "NRBTS-1/NRCELL-1/NRREL-1:gnbPlmn:mcc=311",
+    "NRBTS-1/NRCELL-1/NRREL-1:gnbPlmn:mnc=489",
+    "NRBTS-1/NRCELL-1/NRREL-1:gnbPlmn:mncLength=3",
+    "NRBTS-1/NRCELL-2/NRREL-1:cellIndividualSsbRsrpOffset=0dB",
+    "NRBTS-1/NRCELL-2/NRREL-1:cellIndividualSsbRsrqOffset=0dB",
+    "NRBTS-1/NRCELL-2/NRREL-1:gNbId=1",
+    "NRBTS-1/NRCELL-2/NRREL-1:gNbIdLength=22",
+    "NRBTS-1/NRCELL-2/NRREL-1:lcrId=1",
+    "NRBTS-1/NRCELL-2/NRREL-1:gnbPlmn:mcc=311",
+    "NRBTS-1/NRCELL-2/NRREL-1:gnbPlmn:mnc=489",
+    "NRBTS-1/NRCELL-2/NRREL-1:gnbPlmn:mncLength=3",
+]
+
+inter_fre = [
+    "NRBTS-1:actIntraFreqHoSA=true",
+    "NRPMRNL-1:miNrRelReportCu=5min",
+    "NRBTS-1:actInterFreqHoSA=true",
+    "NRPMRNL-1:miNrRSACU=5min",
+    "NRCELL-2:nrarfcn=633372",
+    "NRCELL-2:gscnOrSsPbchArfcn=7847",
+    "NRBTS-1/NRCELL:a3MeasEnabled=rsrp",
+    "NRBTS-1/NRCELL:a3MeasSsbRsrp:a3HysteresisSsbRsrp=0",
+    "NRBTS-1/NRCELL:a3MeasSsbRsrp:a3OffsetSsbRsrp=20",
+    "NRBTS-1/NRCELL:a3MeasSsbRsrp:a3TimeToTriggerSsbRsrp=ms64",
+    "NRBTS-1/NRCELL:a1MeashoEnabled=rsrp",
+    "NRBTS-1/NRCELL:a1MeashoSsbRsrp:a1HysteresishoSsbRsrp=0",
+    "NRBTS-1/NRCELL:a1MeashoSsbRsrp:a1ThresholdhoSsbRsrp=30",
+    "NRBTS-1/NRCELL:a1MeashoSsbRsrp:a1TimeToTriggerhoSsbRsrp=ms64",
+    "NRBTS-1/NRCELL:a1MeashoEnabledSA=rsrp",
+    "NRBTS-1/NRCELL:a1MeashoSsbRsrpSA:a1HysteresishoSsbRsrpSA=0",
+    "NRBTS-1/NRCELL:a1MeashoSsbRsrpSA:a1ThresholdhoSsbRsrpSA=30",
+    "NRBTS-1/NRCELL:a1MeashoSsbRsrpSA:a1TimeToTriggerhoSsbRsrpSA=ms64",
+    "NRBTS-1/NRCELL:a2MeashoEnabled=rsrp",
+    "NRBTS-1/NRCELL:a2MeashoSsbRsrp:a2HysteresishoSsbRsrp=0",
+    "NRBTS-1/NRCELL:a2MeashoSsbRsrp:a2ThresholdhoSsbRsrp=20",
+    "NRBTS-1/NRCELL:a2MeashoSsbRsrp:a2TimeToTriggerhoSsbRsrp=ms64",
+    "NRBTS-1/NRCELL:a2MeashoEnabledSA=rsrp",
+    "NRBTS-1/NRCELL:a2MeashoSsbRsrpSA:a2HysteresishoSsbRsrpSA=0",
+    "NRBTS-1/NRCELL:a2MeashoSsbRsrpSA:a2ThresholdhoSsbRsrpSA=20",
+    "NRBTS-1/NRCELL:a2MeashoSsbRsrpSA:a2TimeToTriggerhoSsbRsrpSA=ms64",
+]
+
+CNI128106 = [
+     "NRCELL-1:tmpActFeat2=16777216",
+     "delete:NRCELL-2:tmpActFeat2",
+ ]
+
+PARAMS_IN_SCF = gnbParam + enableBeamforming + NRHOIF + IntragNB_HO_relate + inter_fre + CNI128106
+
+FAFCell2on = [
+    "NRCELL-2:tmpActFeat2=16777216"
+]

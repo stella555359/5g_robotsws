@@ -1,0 +1,194 @@
+*** Settings ***
+Documentation    Suite description
+Suite Setup    Common Suite Setup And Setup Airphone Env
+Suite Teardown    Common Suite Teardown And Restore BTS Configuration Parameters
+Test Setup    Common Test Setup And Start To Capture Logs
+Test Teardown    Common Test Teardown And Stop Capture Logs
+Force Tags    QCD_MN_RAN    QCP_RAN_ET    SBTS00    RAN_5G    RAN_5G_TDD    team-Beam    owner-chunlan.yang
+...    CLOUD_5G_I_BOO_AP_LOO_SANSA_FS_ECPRI_CMWV_FDD+TDD    CRT    CB008246    release-SBTS23R3
+...    STATE_CONFIGURED
+Resource    ../../../../resources/DevHZ5_resource.robot
+
+*** Variables ***
+${SYSCOM_FLAG}    ${True}
+
+@{PARAMS_IN_SCF}
+...    NRBTS-1:cipherPrefL:nea0=8
+...    NRBTS-1:cipherPrefL:nea1_128=0
+...    NRBTS-1:cipherPrefL:nea2_128=0
+...    NRBTS-1:cipherPrefL:nea3_128=0
+...    @{online_enable_actLAForHiReliab}
+...    @{8246_related_modification}
+
+@{online_enable_actLAForHiReliab}
+...    NRCELL-14:actLAForHiReliab=true
+...    NRCELL-14:pdschHrLaConfig:dllaCqiOffsetHR=0
+...    NRCELL-14:pdschHrLaConfig:dllaDeltaCqiMaxHR=150
+...    NRCELL-14:pdschHrLaConfig:dllaDeltaCqiMinHR=-150
+...    NRCELL-14:pdschHrLaConfig:dllaDeltaCqiStepdownHR=20
+...    NRCELL-14:pdschHrLaConfig:dllaIniDeltaCqiHR=-50
+...    NRCELL-14:pdschHrLaConfig:dllaIniMcsHR=3
+
+@{8246_related_modification}
+...    NRCELL-14:cellDepType=SA
+...    delete:NRCELL-14:configuredEpsTac
+...    NRCELL-14:puschHrLaConfig:iniDeltaSinrHR=-5
+...    NRCELL-14:puschHrLaConfig:ullaDeltaSinrMaxHR=15
+...    NRCELL-14:puschHrLaConfig:ullaDeltaSinrMinHR=-30
+...    NRCELL-14:puschHrLaConfig:ullaDeltaSinrStepdownHR=2
+...    NRCELL-14:puschHrLaConfig:ullaIniMcsHR=0
+...    NRCELL-14:puschHrLaConfig:ullaSinrOffsetHR=2
+...    NRBTS-1/NRDRB-11:nrPdschHRLaDN=MRBTS-1/NRBTS-1/NRPDSCHHRLA-1
+...    NRBTS-1/NRDRB-11:nrPuschHRLaDN=MRBTS-1/NRBTS-1/NRPUSCHHRLA-1
+...    NRBTS-1/NRPDSCHHRLA-1:dllaBlerTargetHR=10
+...    NRBTS-1/NRPDSCHHRLA-2:dllaBlerTargetHR=10
+...    NRBTS-1/NRPUSCHHRLA-1:ullaBlerTargetHR=10
+...    NRBTS-1/NRPUSCHHRLA-2:ullaBlerTargetHR=10
+...    NRBTS-1/BWP_PROFILE-5/PDCCH-1:dciDedicatedAggregationLevelHR=AL4
+...    NRBTS-1/BWP_PROFILE-6/PDCCH-1:dciDedicatedAggregationLevelHR=AL4
+...    NRBTS/NRPDSCHHRLA-1:dlHRBlerOutageMcsThresh64qam=3
+...    NRBTS/NRPUSCHHRLA-1:scalFactorForHRGbrUl=110
+...    NRCELL-14:actCceSplit=false
+
+@{online_modify_dllaDeltaCqiMinHR}
+...    NRCELL-14:pdschHrLaConfig:dllaDeltaCqiMinHR=0
+
+@{online_disable_actLAForHiReliab}
+...    NRCELL-14:actLAForHiReliab=false
+
+@{online_modify_dllaCqiOffsetHR}
+...    NRCELL-14:pdschHrLaConfig:dllaCqiOffsetHR=150
+
+@{online_delete_pdschHrLaConfig}
+...    delete:NRCELL-14:pdschHrLaConfig
+
+@{online_modify_dllaBlerTargetHR}
+...    NRBTS-1/NRPDSCHHRLA-1:dllaBlerTargetHR=1
+
+@{online_delete_NRPDSCHHRLA}
+...    delete:NRPDSCHHRLA-1
+...    delete:NRBTS-1/NRDRB-11:nrPdschHRLaDN
+...    delete:NRBTS-1/NRDRB-11:nrPuschHRLaDN
+...    NRCELL-14:actLAForHiReliab=false
+
+${UE_Capa_Support_HRLA}    SEPARATOR=
+...    EDA09000575F5A13160003C320016093170019C3D09009B24C39F30C7942C0E098040623807DC6C28C0D608C21A08107482406D6C98AB1A1
+...    CF88E3D033EC09F1891C790E7D473E618F28581C0E1E0B801FF800E000BE00098000702A0D883AC1184341020F10480CAD931562439F604F
+...    88E3C62471E439F51CF9863CA1607038784FEC000003FB000000260001C0AA3626EB04610D04083A412030B64C55110E7C471E238F40CFB0
+...    27C639F30C7942C0E070F05C00FFC007003FF0004C000381506C46D608C21A0810788240656C98AB121CF88E3D813E31238F21CFA8E7CC31
+...    E50B0381C3C27FFC00001FFF00000130000E007BC3C4D000E208000010B0102A0F0A000388C0000042C0AC3C46000E208000030B02B0F0A0
+...    0038820000042C0AC3C4D000E230000010B02B17118003882001C4100000A160561E14000713400003058158B89A001C41000E140000040B
+...    02B1713400388C001C46000004160562E14000710400388C0000082C0AC5C28000E20800710400001058158B89A001C41000E230000020B0
+...    2B170A000388C001C46000004160562E2680071180038500000102C0AC3C46000E230000030B0200E0234028809B01043D02EC1F0A244D8E
+...    7C3851226C73E1C28913639F0E14489B1CF870A244D8E7C38912244D8E7C3850206C73E044810206C73E044810206C73E044810206C73E04
+...    4810206C73E044810206C73E044810206C73E044810206C73E0428103639F0005C3C6318C6318C6318C63187A09801E00140E0A00E060128
+...    03800301200203014000000000120040081F0480100000000800001004000000020000040100000400800003004000020020000140100080
+...    2008020000180100000E008004000000100001000800009004000018020000280100001600800409024010000180672A6B2A6B052B032B06
+...    6B056B296B266B016B036B012B022B07681A0800004B29282000032CA4A0800014B29202000072CA480800024B292020000B2CA480800034
+...    B292020000F2CA480800044B29202000132CA480800054B29202000172CA4A0800064B29202000062CA480669555D2AAAA55174AA2A82C55
+...    058AA0D154A62A93455018AA051549AAA83C5090178095028140A05028140A05028140A05028140A05028140018202018030080100210100
+...    2008040300610080100202018030080600C10100C018040300610080100202018030080100220100C01804030060100C0182020040100801
+...    0043543E00020406080C0E1416181A2022242628303236383A3E424A4C4E5052545A5E828305A0
+
+
+*** Test Cases ***
+CB008246_A_009_FR1_SA_FDD_DL_Link_Adaptation_for_High_Reliability_DRB_Online_Change_NIDD_Param_pdschHrLaConfig
+    [Documentation]
+    ...    1. Feature activation flag is enable for NRCELL14
+    ...    2. NIDD NRPDSCHHRLA instance is configured
+    ...    3. NIDD NRBTS/BWP_PROFILE/PDCCH/alSelection is set as 'static'
+    [Tags]    QC_282318    owner-chunlan.yang
+    stop capture wireshark log
+    Update UE capa    ue_id=81    SA_Capa_perUE_Full=${UE_Capa_Support_HRLA}
+    Update UE capa    ue_id=82    SA_Capa_perUE_Full=${UE_Capa_Support_HRLA}
+    UE Attach To Target Cell    ue_id=81    cell_id=14    pdu=1    gw=1
+    UE in Idle    ue_id=82    cell_id=14    pdu=2    gw=2
+    Online modify dllaDeltaCqiMinHR
+    Online disable actLAForHiReliab
+    Online modify dllaCqiOffsetHR
+    Online delete pdschHrLaConfig
+    OnlineParamChange    ${online_enable_actLAForHiReliab}
+
+CB008246_A_010_FR1_SA_FDD_DL_Link_Adaptation_for_High_Reliability_DRB_Online_Change_NRPDSCHHRLA
+    [Documentation]
+    ...    1. Feature activation flag is enable for NRCELL14
+    ...    2. NIDD NRPDSCHHRLA instance is configured
+    ...    3. NIDD NRBTS/BWP_PROFILE/PDCCH/alSelection is set as 'static'
+    [Tags]    QC_282317    owner-chunlan.yang
+    stop capture wireshark log
+    Update UE capa    ue_id=81    SA_Capa_perUE_Full=${UE_Capa_Support_HRLA}
+    Update UE capa    ue_id=82    SA_Capa_perUE_Full=${UE_Capa_Support_HRLA}
+    Update UE capa    ue_id=83    SA_Capa_perUE_Full=${UE_Capa_Support_HRLA}
+    UE Attach To Target Cell    ue_id=81    cell_id=14    pdu=1    gw=1
+    UE in Idle    ue_id=82    cell_id=14    pdu=2    gw=2
+    UE in Idle    ue_id=83    cell_id=14    pdu=3    gw=3
+    online modify dllaBlerTargetHR
+    online delete NRPDSCHHRLA
+
+*** Keywords ***
+Common Suite Setup And Setup Airphone Env
+    Common Suite Setup
+    Setup Airphone Env    tl_type=fddtdd_sansa_cmwv/6cells_2T4F
+
+OnlineParamChange
+    [Arguments]    ${Online_Param}
+    Delta Commission Parameters    ${Online_Param}
+    Cells Should Be Onair    check_sib=${False}
+
+Update UE capa
+    [Arguments]    ${ue_id}    ${SA_Capa_perUE_Full}=none
+    ${cmd}    catenate    ue_param id=${ue_id} ue_nr_capabilities=${SA_Capa_perUE_Full}
+    Execute Egate Command    ${cmd}
+
+UE Attach To Target Cell
+    [Arguments]    ${ue_id}    ${cell_id}    ${pdu}    ${gw}
+    Execute Egate Command    ue_change_location id=${ue_id} enb=2 cell=${cell_id}
+    Execute Egate Command    ue_register id=${ue_id}    UE now in NG RM Register
+    Execute Egate Command    set_pdu_param ue=${ue_id} pdu=${pdu} trf_type=internal
+    Execute Egate Command    ue_pdu_session_setup ue=${ue_id} pdu=${pdu} gw=${gw} nwslice=1    QoS Routing Table
+
+UE in Idle
+    [Arguments]    ${ue_id}    ${cell_id}    ${pdu}    ${gw}
+    Execute Egate Command    ue_change_location id=${ue_id} enb=2 cell=${cell_id}
+    Execute Egate Command    ue_register id=${ue_id}    UE now in NG RM Register
+    Execute Egate Command    amf_param empty_pdu_session_list=on id=1
+    Execute Egate Command    ue_pdu_session_setup ue=${ue_id} pdu=${pdu} gw=${gw} nwslice=1    QoS Routing Table
+    Execute Egate Command    ue_ng_ctx_release id=${ue_id} by=amf cause=RN_successful_handover    UE Context Release Complete
+
+Exit idle
+    [Arguments]    ${ue_id}    ${pdu}
+    Execute Egate Command    ue_im_exit id=${ue_id} by=ue    Initial Context Setup Successful
+    Execute Egate Command    set_pdu_param ue=${ue_id} pdu=${pdu} trf_type=internal
+
+Online modify dllaDeltaCqiMinHR
+    Start To Capture Wireshark Log    A_09_01
+    OnlineParamChange    ${online_modify_dllaDeltaCqiMinHR}
+    Check Wireshark Log    ${CURDIR}${/}a2a_CB008246_A_09${/}a2a.ini    name=A_09_01    wait_string=itf_l2_ps_cell_cellreconfigurationresp::3
+
+online disable actLAForHiReliab
+    Start to Capture Wireshark Log    A_09_02
+    OnlineParamChange    ${online_disable_actLAForHiReliab}
+    Exit idle    ue_id=82    pdu=2
+    Check Wireshark Log    ${CURDIR}${/}a2a_CB008246_A_09${/}a2a_A_09_02.ini    name=A_09_02    wait_string=rrcReconfigurationComplete ::2
+
+Online modify dllaCqiOffsetHR
+    Start to Capture Wireshark Log    A_09_03
+    OnlineParamChange    ${online_modify_dllaCqiOffsetHR}
+    Check Wireshark Log    ${CURDIR}${/}a2a_CB008246_A_09${/}a2a_A_09_03.ini    name=A_09_03    wait_string=itf_l2_ps_cell_cellreconfigurationresp::3
+
+Online delete pdschHrLaConfig
+    Start to Capture Wireshark Log    A_09_04
+    OnlineParamChange    ${online_delete_pdschHrLaConfig}
+    Check Wireshark Log    ${CURDIR}${/}a2a_CB008246_A_09${/}a2a_A_09_04.ini    name=A_09_04    wait_string=dlHrLinkAdaptation::1
+
+online modify dllaBlerTargetHR
+    Start to Capture Wireshark Log    A_10_01
+    OnlineParamChange    ${online_modify_dllaBlerTargetHR}
+    Exit idle    ue_id=82    pdu=2
+    Check Wireshark Log    ${CURDIR}${/}a2a_CB008246_A_10${/}a2a.ini    name=A_10_01    wait_string=dllaBlerTargetHR::1
+
+online delete NRPDSCHHRLA
+    Start to Capture Wireshark Log    A_10_02
+    OnlineParamChange    ${online_delete_NRPDSCHHRLA}
+    Exit idle    ue_id=83    pdu=3
+    Check Wireshark Log    ${CURDIR}${/}a2a_CB008246_A_10${/}a2a_A_10_02.ini    name=A_10_02    wait_string=hrLaProfile (StaticVariableSizedArray)::1

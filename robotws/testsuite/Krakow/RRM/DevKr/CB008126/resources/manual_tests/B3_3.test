@@ -1,0 +1,66 @@
+# ; first value after semicolon means sleep after action command
+# ; parameter 'o' after semicolon means, that output of the command is required
+
+# CB008126-A-B3 5QI modification success single PDU single nonGBR with the same profiles
+# Test verifies that:
+# Old DRB is released and new DRB is setup for modification of 5QI in Qosflow, if NRDRB related with old and new 5QI is
+# the same, or NRDRB is different, but with the same parameters.
+# use lua SA_TDD_2c_1gNBSim.lua
+
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/GBR_5QI_1_2_3_4_71_72_76_128_170_212_254.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/vonr_gbr_activation.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/disable_ciphering.yaml
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/CB008126_enable.yaml
+
+!python /home/ute/MN/UTE/robotws/testsuite/Krakow/RRM/resources/Python/pdu_session_qosflow_modification.py save
+
+# attach UE1 with 5QI9
+qosflow_modify qos_flow=15 ue=all default=true
+ue_change_location id=1 enb=2 cell=1
+ue_register id=1;2
+set_pdu_param ue=1 pdu=1 trf_type=internal
+ue_pdu_session_setup pdu=1 ue=1 gw=1 nwslice=1;2
+trf_data_start ue=1 pdu=1 qfi=1 dir=dl mbps=30 trf_id=1
+trf_data_start ue=1 pdu=1 qfi=1 dir=ul mbps=10 trf_id=1;10
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;o
+pause
+
+# Configure 5QI-6 so that NRDRB_5QI-2 for 5QI-6 points to the same NRDRB object as NRDRB_5QI-5 for 5QI-9.
+% [{'MOC': 'NRDRB_5QI', 'ID': '2', 'nrDrbDN': 'MRBTS-1/NRBTS-1/NRDRB-14'}]
+pause
+
+# Modify current UE qosflow to 5QI-6. Should be successful without traffic drop.
+qosflow_modify qos_flow=15 5qi=6;1
+ue_pdu_session_modify ue=1 pdu=1 qosflows_to_modify=1 by=amf
+pause
+# Verify that traffic is not dropped
+# Verify in RRCConnectionReconfiguration, that 1 DRB is on drb-ToAddModList, 1 DRB is on DRB-ToReleaseList
+# Verify that parameters for new DRB are the same as for DRB already released
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;1;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;1;o
+pause
+
+# Configure 5QI-9 so that NRDRB_5QI-5 for 5QI-9 points to the NRDRB-11 object,
+# which has exactly the same parameters as NRDRB-14 for 5QI-6.
+% [{'MOC': 'NRDRB_5QI', 'ID': '5', 'nrDrbDN': 'MRBTS-1/NRBTS-1/NRDRB-11'}]
+pause
+
+# Modify current UE qosflow to 5QI-9. Should be successfull without traffic drop.
+qosflow_modify qos_flow=15 5qi=9;1
+ue_pdu_session_modify ue=1 pdu=1 qosflows_to_modify=1 by=amf
+pause
+# Verify that traffic is not dropped
+# Verify in RRCConnectionReconfiguration, that 1 DRB is on drb-ToAddModList, 1 DRB is on DRB-ToReleaseList
+# Verify that parameters for new DRB are the same as for DRB already released
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;1;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;1;o
+pause
+
+
+#cleanup after test
+!python /home/ute/MN/UTE/robotws/testsuite/Krakow/RRM/resources/Python/pdu_session_qosflow_modification.py restore
+% [{'MOC': 'NRDRB_5QI', 'ID': '2', 'nrDrbDN': 'MRBTS-1/NRBTS-1/NRDRB-11'}]
+% [{'MOC': 'NRDRB_5QI', 'ID': '5', 'nrDrbDN': 'MRBTS-1/NRBTS-1/NRDRB-14'}]
+ue_kill id=1;5
+exit

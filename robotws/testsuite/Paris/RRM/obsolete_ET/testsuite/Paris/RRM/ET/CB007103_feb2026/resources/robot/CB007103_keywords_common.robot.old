@@ -1,0 +1,1682 @@
+*** Settings ***
+Documentation     [PURPOSE] keywords used for CB007103 feature
+...
+...               Automation author           : francois.tourlonnias@nokia.com
+
+
+Library           ../../../../../resources/SWENG/python/CoamParameter.py      WITH NAME   sweng_coam_parameter
+Library           taf.sbts.oam.coam.admin                                     WITH NAME   taf_sbts_coam
+## Library           luashark_tools.analyzer       WITH NAME   analyzer
+Library           Collections
+Library           OperatingSystem
+library           ../python/kwmkt_csvParser.py
+library           ../python/miscellaneous.py
+
+Resource          ../../../resources/robot/KeyWordMarket.robot
+
+*** Variables ***
+${CommissionToDo}                     ${True}
+${BtsLogStarted}                      ${False}
+# ${RRCScriptspath}                     ${CURDIR}/../resources/python
+${RRCScriptsname}                     verify_reconfig.py
+${VMmonitoring}                       ${False}  #will create a MONITORING directory, collect Top info each 20s and do a preprocessing of data
+
+#FTS------------------------------------------------------------------------
+# ${matrix}
+
+${ISO}                                 False
+${BeamFormingSet}                      False
+${PowerCtrlSet}                        False
+${gnb_alias}                           gnb_under_test
+
+${TestsJsonPath}                       testsuite/Paris/RRM/ET/CB007103/resources/config/scf
+
+${MPAPLOisoLOAPLO_WITH_BF}             ${TestsJsonPath}/scf_MPAPLOisoLOAPLO_WITH_BF_Cell1_Cell2_fresh.json
+${MPAPLOisoLOAPLO_WO_BF}               ${TestsJsonPath}/scf_MPAPLOisoLOAPLO_WITHOUT_BF_Cell1_Cell2_fresh.json
+${delta_file_iso_ULCL_powerCtrl}       ${TestsJsonPath}/scf_ULCL_powerCtrl_Cell1_Cell2_fresh.json
+
+${delta_file_iso_SetBeamForming}       ${TestsJsonPath}/scf_setBF_Cell1_Cell2.json
+${delta_file_iso_UnSetBeamForming}     ${TestsJsonPath}/scf_unsetBF_Cell1_Cell2.json
+${UnSetBForming_nochannelpresent}     ${TestsJsonPath}/scf_unsetBF_Cell1_Cell2_light.json
+${delta_file_iso_UnSetBF_C1C2_cha}     ${TestsJsonPath}/scf_unsetBF_channel_Cell1_Cell2.json
+${delta_file_iso_SetUlDftsOfdm}        ${TestsJsonPath}/scf_UlDftsOfdm_activ_Cell1_Cell2.json
+
+@{ManagedObjectList}                       #check of oject is only done on cell-1 as Cell-2 is always on same state
+...    MRBTS-1/NRBTS-1/NRULCLPC_PROFILE-0
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-5
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-6
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-7
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-8
+
+${scf_type}                           Vdu
+#FTS------------------------------------------------------------------------
+
+*** Keywords ***
+#FTS------------------------------------------------------------------------
+
+# RadParam block ------------------------------------------------------------------------------------------------------
+Set_RadParameters
+    [Documentation]      Add or Modify the RAD params
+
+    Dated Log New Line   Add RAD params for CB07103
+
+    @{listraddic}=                                   Create list
+
+    FOR     ${idx}     IN                            @{radList}
+
+                Run Keyword If                       '${idx.value}' != '${EMPTY}'
+                ...                                  Run keywords      dated log    -----> ${idx.field}=${idx.value}
+                ...  AND                             Append To List    ${listraddic}    ${idx}
+    END
+
+    kwmkt_dbg_log                                    rad_param_dic= ${listraddic}
+    SetConfig.Set Fields in swconfig DU              param_list=${listraddic}
+
+# END RadParam block --------------------------------------------------------------------------------------------------
+# basic block ---------------------------------------------------------------------------------------------------------
+Set_basic_context
+    [Documentation]    Adds basic.cfg elements for CB07103.
+    ...                Adapts basic.cfg for each engaged UE.
+    ...                Sets UE on a specific cell if a target cell is defined.
+    ...                Sets UE context if UE NR capabilities are defined.
+
+    Dated Log New Line   Add basic.cfg elements for CB07103
+
+    FOR     ${idx}     IN                            @{param.ListOfUeEngaged}
+            kwmkt_dbg_log                            basic.cfg adaptation for UE=${idx.ueid}
+
+            Run Keyword If                          '${idx.Target_cell}'!='${EMPTY}'    kwmkt_SetUExonCelly    ${idx.ueid}    ${idx.Target_cell}
+            Run Keyword If                          '${idx.ue_nr_capabilities}'!='${EMPTY}'
+            ...                                      kwmkt_Set_Context_basic
+            ...                                      ue_id_used=${idx.ueid}
+            ...                                      capa=${idx.ue_nr_capabilities}
+            ...                                      release=${idx.ue_release}
+            ...                                      APPdcpPacketTrunc=${True}
+    END
+
+#RDH-ticket72: Update UE Id VRAN Case
+Set_basic_context_VRAN
+    [Documentation]    Adds basic.cfg elements for CB07103.
+    ...                Get SA ueid from basic.cfg file to update the param.ListOfUeEngaged
+    ...                Adapts basic.cfg for each engaged UE.
+    ...                Sets UE on a specific cell if a target cell is defined.
+    ...                Sets UE context if UE NR capabilities are defined.
+
+    Dated Log New Line   Add basic.cfg elements for CB07103
+
+    Create Dict of 1rst SA UE Id
+    Set To Dictionary                               ${UE_1_SA_TDD_UE_R16}               ueid=${Dict_1st_SA_UE_Id}[NRCELL-1]
+    Set To Dictionary                               ${UE_2_SA_TDD_UE_R16}                   ueid=${Dict_1st_SA_UE_Id}[NRCELL-2]
+    @{uelist}                                       create list                             ${UE_1_SA_TDD_UE_R16}    ${UE_2_SA_TDD_UE_R16}
+    ${result}=                                      set to dictionary                       ${param}        ListOfUeEngaged=${uelist}
+    kwmkt_dbg_log                                   ${result} is set to ${param}
+
+    FOR     ${idx}     IN                            @{param.ListOfUeEngaged}
+            kwmkt_dbg_log                            basic.cfg adaptation for UE=${idx.ueid}
+
+            Run Keyword If                          '${idx.Target_cell}'!='${EMPTY}'    kwmkt_SetUExonCelly    ${idx.ueid}    ${idx.Target_cell}
+            Run Keyword If                          '${idx.ue_nr_capabilities}'!='${EMPTY}'
+            ...                                      kwmkt_Set_Context_basic
+            ...                                      ue_id_used=${idx.ueid}
+            ...                                      capa=${idx.ue_nr_capabilities}
+            ...                                      release=${idx.ue_release}
+            ...                                      APPdcpPacketTrunc=${True}
+    END
+
+# END basic block -----------------------------------------------------------------------------------------------------
+# SCF NIDD block  -----------------------------------------------------------------------------------------------------
+
+Set_SCF_ConfigMarket
+    [Documentation]    Sets up the test configuration based on the SCF component.
+    ...                Determines if an upgrade is needed to reach ISO level based on the board type.
+    ...                Logs the need for ISO, BeamForming, power control, and UlDftSOfdm.
+    ...                Retrieves the SCF file and loads it.
+    ...                Checks if the managed object list is in the SCF.
+    ...                Determines the JSON files to use based on the SCF setup.
+    ...                Runs the appropriate keyword based on the need for ISO, BeamForming, power control, and UlDftSOfdm.
+    ...                Performs the commissioning step, combining JSON files if necessary.
+    ...                Waits for OAM to be available after commissioning.
+
+    [Arguments]                                    ${scfcompo}
+    Dated Log New Line                             KW:Set_SCF_ConfigMarket ${scfcompo}
+
+    ${CommissionToDo}=                             set variable            ${True}
+    Set Suite Variable                             ${CommissionToDo}
+
+    # Upgrade the SCF to reach ISo Level depending hardware (ABIO topology is already iso)
+    ${needISO}=                        Set Variable    ${False}
+    kwmkt_dbg_log                    GNB_DU.sys[0].M.boardType: ${GNB_DU.sys[0].M.boardType}
+
+	Run Keyword If                   '${GNB_DU.sys[0].M.boardType}' != 'ASOH'
+    ...                              kwmkt_dbg_log                      GNB_DU.bb[0].M.boardType: ${GNB_DU.bb[0].M.boardType}
+
+    ${needISO}=                      Set Variable If    '${GNB_DU.sys[0].M.boardType}' == 'ASOH'    ${False}    ${True}
+    ${needISO}=                      Set Variable If    '${GNB_DU.sys[0].M.boardType}' == 'ASIL'    ${False}    ${True}
+    ${needISO}=                      Set Variable If    '${GNB_DU.sys[0].M.boardType}' == 'ASIM'    ${True}     ${False}
+
+    Set Global Variable                            ${needISO}
+
+
+    Run Keyword If    ${needISO}                   Dated Log    ${needISO} => Configuration need to be udated to reach iso level
+    ...    ELSE                                    Dated Log    ${needISO} => Configuration Base already up to date with BF Set
+
+    Run Keyword If                     ${isAic}    Run Keywords
+    ...                                            Dated Log    VRAN NOT YET AVAILABLE
+    ...                                     AND    Return from keyword    FAIL
+
+    ${needBF}=                                     Get From Dictionary    ${ScfCompo}      BeamForming
+    ${needPCtrl}=                                  Get From Dictionary    ${ScfCompo}      ULCloseLoopPowerControl
+    ${needUlDftSOfdm}=                             Get From Dictionary    ${ScfCompo}      UlDftSOfdm
+    Set Global Variable                            ${needBF}
+    Set Global Variable                            ${needPCtrl}
+    Set Global Variable                            ${needUlDftSOfdm}
+
+    Dated log    >>>> needISO ${needISO} / needBF ${needBF} / needPCtrl ${needPCtrl} / needUlDftSOfdm ${needUlDftSOfdm} <<<<
+
+    # First : Get the SCF
+    ${scf_file}                                   run keyword if      "${scf_type}" == "Vdu"
+    ...                                                                                    OAM Get SCF File
+    ...                                                                                    dir=${LOG_PATH}
+    ...                                                                                    file=SCF_VDU.xml
+    ...                                                                                    oam=${GNB_DU.oam}
+    ...                                                      ELSE
+    ...                                                                                    OAM Get SCF File
+    ...                                                                                    dir=${LOG_PATH}
+    ...                                                                                    file=SCF_VCU.xml
+    ...                                                                                    oam=${GNB_CU.oam}
+
+    # Second Step: Load the SCF file
+    Dated Log                       Load the ${scf_type} SCF
+    run keyword if                  "${scf_type}" == "Vdu"
+    ...                                                 multiScf.load scf       scf_path=${scf_file}
+    ...         ELSE                                    multiScf.load scf       second_scf_path=${scf_file}
+
+    Dated Log New Line              Is the following dist_names list in the ${scf_type} SCF ?
+    Dated Log                       ${ManagedObjectList}               #check of oject is only done on cell-1 as Cell-2 is always on same state
+    ${boolean_res_list}                 multiScf.is_object_list_in_scf
+    ...                                 scope=both
+    ...                                 aicListEntity=${scf_type}
+    ...                                 dist_name_list=${ManagedObjectList}
+    Dated Log                       ==> the "is_object_list_in_scf()" response is: ${boolean_res_list}
+
+    ${V1}=                   Check_List_Booleans    ${boolean_res_list}
+    Set Global Variable      ${V1}
+    Dated log                V1 ----------------------------------------------------: ${V1}
+
+    # by default fresh json (with create instruction) are set, if Check_List_Booleans return true this higlight the scf was already set correctly
+    # so following json with update instruction are used
+
+    ${MPAPLOisoLOAPLO_WITH_BF}=             Set Variable If    '${V1}' == 'True'  #and '${GNB_DU.bb[0].M.boardType}' == 'ABIP'
+    ...                                                                    ${TestsJsonPath}/scf_MPAPLOisoLOAPLO_WITH_BF_Cell1_Cell2.json
+    ...                                                                    ${TestsJsonPath}/scf_MPAPLOisoLOAPLO_WITH_BF_Cell1_Cell2_fresh.json
+
+    ${delta_file_iso_ULCL_powerCtrl}=       Set Variable If    '${V1}' == 'True'  #and '${GNB_DU.bb[0].M.boardType}' == 'ABIP'
+    ...                                                                    ${TestsJsonPath}/scf_ULCL_powerCtrl_Cell1_Cell2.json
+    ...                                                                    ${TestsJsonPath}/scf_ULCL_powerCtrl_Cell1_Cell2_fresh.json
+
+
+    Set Suite Variable     ${MPAPLOisoLOAPLO_WITH_BF}
+    Set Suite Variable     ${delta_file_iso_ULCL_powerCtrl}
+
+    Dated log                Json file used will be ${MPAPLOisoLOAPLO_WITH_BF} & ${delta_file_iso_ULCL_powerCtrl}
+
+
+    #Combinatory
+    # headers             neediso            needBF            needPCtrl            needUlDftSOfdm    actionList
+    Run Keyword if   not ${neediso} and not ${needBF} and not ${needPCtrl} and not ${needUlDftSOfdm}                   retrait_BF
+    Run Keyword if   not ${neediso} and not ${needBF} and not ${needPCtrl} and ${needUlDftSOfdm}                       retrait_BF_Setofdm
+    Run Keyword if   not ${neediso} and not ${needBF} and ${needPCtrl} and not ${needUlDftSOfdm}                       retrait_BF_SetPctrl
+    Run Keyword if   not ${neediso} and not ${needBF} and ${needPCtrl} and ${needUlDftSOfdm}                           retrait_BF_SetPctrl_Setofdm
+    Run Keyword if   not ${neediso} and ${needBF} and not ${needPCtrl} and not ${needUlDftSOfdm}                       nothingToDo
+    Run Keyword if   not ${neediso} and ${needBF} and not ${needPCtrl} and ${needUlDftSOfdm}                           ofdm
+    Run Keyword if   not ${neediso} and ${needBF} and ${needPCtrl} and not ${needUlDftSOfdm}                           SetPctrl
+    Run Keyword if   not ${neediso} and ${needBF} and ${needPCtrl} and ${needUlDftSOfdm}                               SetPctrl_Setofdm
+    Run Keyword if       ${neediso} and not ${needBF} and not ${needPCtrl} and not ${needUlDftSOfdm}                   Iso_retrait_BF
+    Run Keyword if       ${neediso} and not ${needBF} and not ${needPCtrl} and ${needUlDftSOfdm}                       Iso_retrait_BF_Setofdm
+    Run Keyword if       ${neediso} and not ${needBF} and ${needPCtrl} and not ${needUlDftSOfdm}                       Iso_retrait_BF_SetPctrl
+    Run Keyword if       ${neediso} and not ${needBF} and ${needPCtrl} and ${needUlDftSOfdm}                           Iso_unsetBF_SetPctrl_Setofdm
+    Run Keyword if       ${neediso} and ${needBF} and not ${needPCtrl} and not ${needUlDftSOfdm}                       Iso
+    Run Keyword if       ${neediso} and ${needBF} and not ${needPCtrl} and ${needUlDftSOfdm}                           Iso_ofdm
+    Run Keyword if       ${neediso} and ${needBF} and ${needPCtrl} and not ${needUlDftSOfdm}                           Iso_SetPctrl
+    Run Keyword if       ${neediso} and ${needBF} and ${needPCtrl} and ${needUlDftSOfdm}                               Iso_SetPctrl_Setofdm
+
+    # commissioning
+    #                  on this step, list of json file to merge is ready in  @{jsonFilesList} list
+
+    # Set Cases
+    kwmkt_dbg_log                                                  jsonFilesList= ${jsonFilesList}
+    ${lngt}=                                                       Get Length    ${jsonFilesList}
+    kwmkt_dbg_log                                                  Lngt of jsonFilesList is ${lngt}
+
+    taf_sbts_coam.connect_to                                       name=${gnb_alias}
+
+    ${jsonAlone}       Run Keyword if                             '${lngt}' == '1'    Get From List    ${jsonFilesList}    0
+    Run Keyword if    '${lngt}' == '1' and ${CommissionToDo}       sweng_coam_parameter.perform_scf_delta_commission    timeout=300
+    ...                                                            delta_file=${jsonAlone}
+    ...                                                            connection=${gnb_alias}
+    ...                                                            skip_parameter_relation_errors=${True}
+
+    Run Keyword if    '${lngt}' > '1' and ${CommissionToDo}        sweng_coam_parameter.combine_json_files
+    ...                                                            jsonFilesList=${jsonFilesList}
+    ...                                                            mergedJsonFile=${LOG_PATH}/mergedJsonFile.json
+    Run Keyword if    '${lngt}' > '1' and ${CommissionToDo}        sweng_coam_parameter.perform_scf_delta_commission    timeout=300
+    ...                                                            delta_file=${LOG_PATH}/mergedJsonFile.json
+    ...                                                            connection=${gnb_alias}
+    ...                                                            skip_parameter_relation_errors=${True}
+
+    Run Keyword if    ${CommissionToDo}                            Run keywords
+    ...                                                            Dated Log New Line  "OAM wait available ..."
+    ...         AND                                                OAM wait available
+    ...         AND                                                Dated Log  "OAM wait available => OK"
+
+    Set Variable if    ${CommissionToDo}    ${True}               #For any eventual next commissioning
+    Set Global Variable                   ${CommissionToDo}
+
+Check_List_Booleans
+    [documentation]       use to check if all boolean element of an boolean list are all True or all False.
+    ...                   Discrimination is done on last index of the list
+    ...                   MP_AP_LO first run =>  FFFFF <<<<< lead to json _fresh usage (object creation)
+    ...                   MP_AP_LO next  run =>  TTTTT
+    ...                   LO_AP_LO first run =>  FTTTT <<<<< lead to json _fresh usage (object creation)
+    ...                   LO_AP_LO next  run =>  TTTTT
+
+    [Arguments]           ${list}
+    kwmkt_dbg_log         "--Check List Booleans--"
+
+    # ${idx}=      Set Variable    0
+    # ${first}=    Set Variable    ${list}[${idx}]       #we compare the fist elem of the list. if another one is different
+    # ${idx}=      evaluate    ${idx}+1
+    # FOR    ${element}    IN    @{list}
+    #     Dated log    idx = ${idx}
+    #     # Run Keyword If    ${element} != ${first}    FAIL  scf can't have just a part of MO set
+    #     ${idx}=      evaluate    ${idx}+1
+    # END
+
+    Return From Keyword    ${list}[0]                # for discrimination only first index list value is return
+
+
+nothingToDo
+    [Documentation]    Logs that there is nothing to do.
+    ...                Sets a global variable indicating that there is no commission to do.
+
+    Dated log    "--nothingToDo--"
+    ${CommissionToDo}=    set variable    ${False}
+    Set Global Variable                   ${CommissionToDo}
+
+retrait_BF
+    [Documentation]    Sets up test with conditions for BeamForming.
+    ...                Creates a list of JSON files and sets it as a global variable.
+    ...                Logs the start of the setup and the usage of the JSON files list.
+
+    Dated log    "--retrait_BF--"
+    @{jsonFilesList}=    Create List    ${delta_file_iso_UnSetBeamForming}
+    Set Global Variable                 ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+retrait_BF_Setofdm
+    [Documentation]    Sets up test with conditions for BeamForming and OFDM.
+    ...                Creates a list of JSON files and sets it as a global variable.
+    ...                Logs the start of the setup and the usage of the JSON files list.
+
+    Dated log    "--retrait_BF / ofdm--"
+    @{jsonFilesList}=    Create List    ${delta_file_iso_SetUlDftsOfdm}    ${delta_file_iso_UnSetBeamForming}
+    Set Global Variable                 ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+retrait_BF_SetPctrl
+    [Documentation]    Sets up test with conditions for BeamForming and power control.
+    ...                Depending on the need for BeamForming, different JSON files are used.
+    ...                Logs the start of the setup, the need for BeamForming, and the usage of the JSON files list.
+
+    Dated log    "--retrait_BF / pwcontrol--"
+    # @{jsonFilesList}=    Create List    ${delta_file_iso_ULCL_powerCtrl}    ${delta_file_iso_UnSetBeamForming}
+    # Set Global Variable                 ${jsonFilesList}
+    Dated log    needBF ${needBF}
+    @{jsonFilesList}=    Run Keyword If    '${needBF}' == '${True}'
+    ...                                     Create List    ${delta_file_iso_ULCL_powerCtrl}    ${delta_file_iso_UnSetBeamForming}
+    ...                  ELSE               Create List    ${delta_file_iso_ULCL_powerCtrl}    ${delta_file_iso_UnSetBeamForming}
+    ...                                                    ${delta_file_iso_UnSetBF_C1C2_cha}
+    Set Global Variable                    ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+retrait_BF_SetPctrl_Setofdm
+    [Documentation]    Sets up test with conditions for BeamForming, power control, and OFDM.
+    ...                Depending on the need for BeamForming and if it's the first run, different JSON files are used.
+    ...                Logs the start of the setup, the need for BeamForming, the run number, and the usage of the JSON files list.
+
+    Dated log    "--retrait_BF / pwcontrol / ofdm--"
+    # reminder we need following
+    # not ${neediso} and not ${needBF} and ${needPCtrl} and ${needUlDftSOfdm}
+
+    # @{jsonFilesList}=    Create List    ${delta_file_iso_ULCL_powerCtrl}    ${delta_file_iso_SetUlDftsOfdm}    ${delta_file_iso_UnSetBeamForming}
+    Dated log    needBF ${needBF}
+    Dated log    V1 ${V1}
+    @{jsonFilesList}=    Run Keyword If    '${needBF}' == '${True}' and '${V1}' == '${False}'    # need BF + First run
+    ...                                     FAIL    Case not waited needBF:${needBF} V1:${V1} "--retrait_BF / pwcontrol / ofdm--"
+    ...                  ELSE IF           '${needBF}' == '${True}' and '${V1}' == '${True}'     # need BF + not first run
+    ...                                     FAIL    Case not waited needBF:${needBF} V1:${V1} "--retrait_BF / pwcontrol / ofdm--"
+    ...                  ELSE IF           '${needBF}' == '${False}' and '${V1}' == '${False}'   # NO need BF + First run LO_AP_LO
+    ...                                     Create List    ${delta_file_iso_ULCL_powerCtrl}      ${delta_file_iso_SetUlDftsOfdm}
+    ...                                                    ${delta_file_iso_UnSetBeamForming}
+    ...                  ELSE IF           '${needBF}' == '${False}' and '${V1}' == '${True}'    # NO need BF + not first run LO_AP_LOwoBF
+    ...                                     Create List    ${delta_file_iso_ULCL_powerCtrl}      ${delta_file_iso_SetUlDftsOfdm}
+    ...                                                    ${UnSetBForming_nochannelpresent}
+    ...                  ELSE               FAIL    Case not waited needBF:${needBF} V1:${V1}
+
+    Set Global Variable                 ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+ofdm
+    [Documentation]    Sets up OFDM.
+    ...                Creates a list of JSON files and sets it as a global variable.
+    ...                Logs the start of the setup and the usage of the JSON files list.
+
+    Dated log    "--ofdm--"
+    @{jsonFilesList}=    Create List    ${delta_file_iso_SetUlDftsOfdm}
+    Set Global Variable                 ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+SetPctrl
+    [Documentation]    Sets up power control.
+    ...                Creates a list of JSON files and sets it as a global variable.
+    ...                Logs the start of the setup and the usage of the JSON files list.
+
+    Dated log    "--pwcontrol--"
+    @{jsonFilesList}=    Create List    ${delta_file_iso_ULCL_powerCtrl}
+    Set Global Variable                 ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+SetPctrl_Setofdm
+    [Documentation]    Sets up power control and OFDM.
+    ...                Creates a list of JSON files and sets it as a global variable.
+    ...                Logs the start of the setup and the usage of the JSON files list.
+
+    Dated log    "--pwcontrol / ofdm--"
+    @{jsonFilesList}=    Create List    ${delta_file_iso_ULCL_powerCtrl}    ${delta_file_iso_SetUlDftsOfdm}
+    Set Global Variable                 ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+Iso_retrait_BF
+    [Documentation]    Sets up Iso test with conditions for BeamForming.
+    ...                Creates a list of JSON files and sets it as a global variable.
+    ...                Logs the start of the setup and the usage of the JSON files list.
+
+    Dated log    "--Iso_retrait_BF--"
+    @{jsonFilesList}=    Create List    ${MPAPLOisoLOAPLO_WITH_BF}    ${delta_file_iso_UnSetBeamForming}
+    Set Global Variable                 ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+Iso_retrait_BF_Setofdm
+   [Documentation]     Sets up Iso test with conditions for BeamForming and OFDM.
+    ...                Creates a list of JSON files and sets it as a global variable.
+    ...                Logs the start of the setup and the usage of the JSON files list.
+
+    Dated log    "--Iso_retrait_BF / ofdm--"
+    @{jsonFilesList}=    Create List    ${MPAPLOisoLOAPLO_WITH_BF}     ${delta_file_iso_SetUlDftsOfdm}    ${delta_file_iso_UnSetBeamForming}
+    Set Global Variable                 ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+Iso_retrait_BF_SetPctrl
+    [Documentation]    Sets up Iso test with conditions for BeamForming and power control.
+    ...                Creates a list of JSON files and sets it as a global variable.
+    ...                Logs the start of the setup and the usage of the JSON files list.
+
+    Dated log    "--Iso_retrait_BF / pwcontrol--"
+    @{jsonFilesList}=    Create List    ${MPAPLOisoLOAPLO_WITH_BF}
+    ...                                 ${delta_file_iso_ULCL_powerCtrl}    ${delta_file_iso_UnSetBeamForming}
+    Set Global Variable                 ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+Iso_unsetBF_SetPctrl_Setofdm
+    [Documentation]    Sets up Iso test with conditions for BeamForming, power control, and OFDM.
+    ...                Depending on the need for BeamForming and if it's the first run, different JSON files are used.
+    ...                Logs the start of the setup, the need for BeamForming, the run number, and the usage of the JSON files list.
+
+    Dated log    "--Iso_retrait_BF / pwcontrol / ofdm--"
+    # @{jsonFilesList}=    Create List    ${MPAPLOisoLOAPLO_WITH_BF}    ${delta_file_iso_ULCL_powerCtrl}    ${delta_file_iso_SetUlDftsOfdm}
+    # ...                                 ${delta_file_iso_UnSetBeamForming}
+    Dated log    needBF ${needBF}
+    Dated log    V1 ${V1}
+    @{jsonFilesList}=    Run Keyword If    '${needBF}' == '${True}' and '${V1}' == '${False}'    # need BF + First run
+    ...                                     FAIL    Case not waited needBF:${needBF} V1:${V1} "--Iso_retrait_BF / pwcontrol / ofdm--"
+    ...                  ELSE IF           '${needBF}' == '${True}' and '${V1}' == '${True}'     # need BF + not first run
+    ...                                     FAIL    Case not waited needBF:${needBF} V1:${V1} "--Iso_retrait_BF / pwcontrol / ofdm--"
+    ...                  ELSE IF           '${needBF}' == '${False}' and '${V1}' == '${False}'   # NO need BF + First run MP_AP_LO
+    ...                                     Create List    ${MPAPLOisoLOAPLO_WITH_BF}         ${delta_file_iso_ULCL_powerCtrl}
+    ...                                                    ${delta_file_iso_SetUlDftsOfdm}    ${delta_file_iso_UnSetBeamForming}
+    ...                  ELSE IF           '${needBF}' == '${False}' and '${V1}' == '${True}'    # NO need BF + not first run MP_AP_LOwoBF
+    ...                                     Create List    ${MPAPLOisoLOAPLO_WO_BF}           ${delta_file_iso_ULCL_powerCtrl}
+    ...                                                    ${delta_file_iso_SetUlDftsOfdm}    ${UnSetBForming_nochannelpresent}
+    ...                  ELSE              FAIL    Case not waited needBF:${needBF} V1:${V1}
+    # # Attention Channel on fait / on defait
+    Set Global Variable                     ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+Iso
+    [Documentation]    Sets up the Iso test.
+    ...                Creates a list of JSON files and sets it as a global variable.
+    ...                Logs the start of the setup and the usage of the JSON files list.
+
+    Dated log    "--Iso--"
+    @{jsonFilesList}=    Create List    ${MPAPLOisoLOAPLO_WITH_BF}
+    Set Global Variable                 ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+Iso_ofdm
+    [Documentation]    This keyword is used to set up the Iso_ofdm test.
+    ...                It creates a list of JSON files to be used in the test and sets it as a global variable.
+
+    Dated log    "--Iso_ofdm--"
+    @{jsonFilesList}=    Create List    ${MPAPLOisoLOAPLO_WITH_BF}    ${delta_file_iso_SetUlDftsOfdm}
+    Set Global Variable                 ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+Iso_SetPctrl
+    [Documentation]    Sets up power control for Iso test. It creates a list of JSON files and sets it as a global variable.
+
+    Dated log    "--pwcontrol--"
+    @{jsonFilesList}=    Create List    ${MPAPLOisoLOAPLO_WITH_BF}    ${delta_file_iso_ULCL_powerCtrl}
+    Set Global Variable                 ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+Iso_SetPctrl_Setofdm
+    [Documentation]    Sets up power control and OFDM for Iso test.
+    ...                Creates a list of JSON files and sets it as a global variable.
+    ...                Logs the start of the setup and the usage of the JSON files list.
+
+    Dated log    "--Iso_pwcontrol / ofdm--"
+    @{jsonFilesList}=    Create List    ${MPAPLOisoLOAPLO_WITH_BF}    ${delta_file_iso_ULCL_powerCtrl}    ${delta_file_iso_SetUlDftsOfdm}
+    Set Global Variable                 ${jsonFilesList}
+    Dated log       usage of jsonFilesList >${jsonFilesList}<
+
+
+Set_SCF_ofTheTest
+    [Documentation]    Sets ChBw and eventual NIDD param on the fly.
+    ...                Retrieves the SCF file and starts a session.
+    ...                Iterates over a list of parameters to modify in the SCF.
+    ...                Modifies the SCF either by setting an element or setting an element in a list.
+    ...                Logs the modifications made to the SCF.
+    ...                Stops the SCF session and performs a full commissioning.
+    ...                Waits for OAM to be available after commissioning.
+    [Arguments]                        ${L}=None
+    kwmkt_dbg_log                      KW: Set_SCF_ofTheTest Arg: ${L}
+
+    OAM Get SCF File                   file=SCF_intermediate_7103.xml
+    ${scf_file_update_path}            set variable             ${LOG_PATH}/SCF_intermediate_7103.xml
+
+    SCF StartSession              scf_file=${scf_file_update_path}
+
+    # # ${modify_param}                 Set Parameters on SCF_COAM_TDD
+    # # ...                             dir=${param.dir}
+    # ${dist_name}=                      set variable     MRBTS-1/NRBTS-1/NRCELL-1     # 7103 => only first TDD as Cell1
+    # ${sorted} =	                       Get Dictionary Keys    ${dic}
+    kwmkt_dbg_log                      Scf Dic key list:${L}
+
+    FOR    ${Lidx}     IN               @{L}
+
+           ${dist_name}=                                               Get From Dictionary         ${Lidx}    dist_name
+           ${status}  ${response}=     Run Keyword And Ignore Error    Get From Dictionary         ${Lidx}    list_name
+        #    kwmkt_dbg_log               status / response : ${status} / ${response}
+           ${list_name}=               Set Variable IF    "${status}" != "PASS"    ${EMPTY}        ${response}
+           ${param}=                                                   Get From Dictionary         ${Lidx}    param
+           ${value}=                                                   Get From Dictionary         ${Lidx}    value
+           Run Keyword If              '${value}' != '${EMPTY}' and '${list_name}' == '${EMPTY}'
+           ...                                      SCF Set element    dist_name=${dist_name}
+           ...                                                         element_name=${param}
+           ...                                                         element_value=${value}
+           ...                                                         aicListEntity=vdu   scope=Both
+           ...    ELSE                              SCF Set element in List
+           ...                                                         dist_name=${dist_name}
+           ...                                                         list_name=${list_name}
+           ...                                                         element_name=${param}
+           ...                                                         element_value=${value}
+           ...                                                         aicListEntity=vdu   scope=Both
+
+           ${console_msg}              Evaluate     "Database Modifications for ${dist_name} ..... ${list_name} ..... ${param} ..... value=${value}"
+           Dated Log                   ${console_msg}
+    END
+
+    SCF StopSession               scf_file=${scf_file_update_path}
+
+    Dated Log    =======> Be Patient the oam is may be not yet able to perform a second commissioning
+    wait until keyword succeeds    10min    30s      OAM Perform Full Commissioning  scf_file=${scf_file_update_path}
+    Dated Log    =======> second Commissioning done
+
+
+    # Restart TL
+    Dated Log New Line  "OAM wait available ..."
+    OAM wait available
+    Dated Log  "OAM wait available => OK"
+
+# END SCF NIDD block  -------------------------------------------------------------------------------------------------
+
+Suite Setup 7103
+    [Documentation]    Sets up the test suite for CB007103.
+    ...                Performs a suite setup with automatic teardown and keeps all UE data in the cfg file.
+    ...                Backs up files before the test.
+    ...                Initializes variables for the market.
+    ...                Initializes the capture session.
+
+    Read And Print Version    # Read and print the version of this 7103 framework level
+    # Setup.Suite Setup From Scratch      automaticTeardown=${True}    keepAllUeDataInCfgFile=${True}    #diff between lines are kill egate eadeamon
+    Setup.Suite Setup      automaticTeardown=${True}    keepAllUeDataInCfgFile=${True}
+    Backup Files
+    kwmkt_Init Variables
+    kwmkt_Capt_session_init
+
+Suite Teardown 7103
+    [Documentation]    Performs teardown operations for the test suite CB007103.
+    ...                Logs the start of the teardown process.
+    ...                If KeepConfig is not set, restores files and performs the suite teardown.
+
+    kwmkt_dbg_log                      Suite Teardown 7103 is ongoing !!
+    Run Keyword if                     not ${KeepConfig}    Run Keywords
+    ...                                                     Restore Files
+    ...    AND                                              Setup.Suite Teardown
+
+# Test running
+Cell_setup
+    [Documentation]    Sets up the cell for the test.
+    ...                Starts Btslog if userneed_Btslog is set.
+    ...                Logs the alarm list at the beginning of the test.
+    ...                Starts a capture if userneed_PCAP is set.
+    ...                Sets up the call with Wtsemu in SA mode.
+    ...                Stops the capture if userneed_PCAP is set.
+
+    Run Keyword If      ${userneed_Btslog}           Start Btslog
+    kwmkt_Alarmslist     Beg                          ${logsDir}
+    Run Keyword If      ${userneed_PCAP}             kwmkt_Capture_Start    cellSetup
+
+    Critical Step                                    CallSetup.Setup Wtsemu SA
+
+    Run Keyword If      ${userneed_PCAP}             kwmkt_Capture_Stop     cellSetup
+
+#---------------------------------------------------------------------------
+
+# C H E C K  C O R N E R
+pcap2csv
+    [Documentation]    Checks a Bip Pcap file.
+    ...                Step1: Executes Tshark command with a list of filters.
+    ...                Step2: Parses the pcap using Tshark, returning a dictionary of results.
+
+    [Arguments]     ${PcapType}=none    ${PcapLocation}=${CaptureBIP.path}    ${ParamItemValue_list}=${param.dod}
+    kwmkt_dbg_log   Check_in_pcap args
+    kwmkt_dbg_log   PcapType:${PcapType}
+    kwmkt_dbg_log   PcapLocation:${PcapLocation}
+    kwmkt_dbg_log   ParamItemValue_list: ${ParamItemValue_list}
+
+    # STEP 1:   tshark filter and IE list constitution
+    Dated Log New Line              Extract messages info from PCAP file here : ${PcapLocation}
+
+    set test variable               ${pcapprocessed}           ${PcapType}_pcapprocessed.csv
+    set test variable               ${pcapprocessed_path}      ${LOG_PATH}/${pcapprocessed}
+
+    ${grep}=                        Set Variable    ${empty}
+    ${filters}=                     Set Variable    ${empty}
+
+    @{DoublonList}=                 Create List
+
+    FOR     ${dic}     IN           @{ParamItemValue_list}
+                                    ${ie}               Get From Dictionary     ${dic}     field
+                                    ${msg}              Get From Dictionary     ${dic}     msg
+
+                                    ${pres}             kwmkt_is_value_in_list    ${msg}     ${filters}
+
+                                    ${filters}          Run Keyword If         '${filters}' == '${empty}'
+                                    ...                                         Catenate    ${msg}  #cas vide
+                                    ...                 ELSE                    kwmkt_Intermed    ${filters}    ${pres}    ${msg}
+
+                                    # Dated Log           F I L T E R : ${filters}
+
+                                    # ${result}           Evaluate               '${ie}' in @{DoublonList}
+                                    ${result} =         Run Keyword And Return Status    Should Contain    ${DoublonList}    ${ie}
+                                    Run Keyword If      ${result} == ${True}    Continue For Loop
+                                    ${grep}             Catenate                ${grep} -e ${ie}
+                                    Append To List                              ${DoublonList}    ${ie}
+                                    kwmkt_dbg_log                               grep ${grep} DoublonList ${DoublonList}
+
+    END
+
+    kwmkt_dbg_log                   ensemble des grep: ${grep}
+    kwmkt_dbg_log                   ensemble des filters: ${filters}
+
+    #STEP 2
+    ${cmd_mcshark}                  Catenate    tshark -r
+    ...                             ${PcapLocation} -T fields -Y " ${filters} "
+    ...                             -e 3gpp.sfn
+    ...                             -e 3gpp.slot
+    ...                             -e 3gpp.subcellid
+    ...                             -e 3gpp.rnti
+    ...                             ${grep}
+    ...                             -E header=y -E separator=';' > ${pcapprocessed_path}
+    Dated Log                       cmd_mcshark >${cmd_mcshark}<
+    Run                             ${cmd_mcshark}
+    Run                             command=sed -i -e 's/ //g' ${pcapprocessed_path}
+
+Check_in_pcap
+    [Documentation]    Checks a Bip Pcap file.
+    ...                Compares results with expected values.
+    ...                Returns a list of dictionaries with the checkup results.
+
+    [Arguments]     ${PcapType}=none    ${PcapLocation}=${CaptureBIP.path}    ${ParamItemValue_list}=${param.dod}    ${SbcId}=0    ${elemRank}=0
+    kwmkt_dbg_log   Check_in_pcap args
+    kwmkt_dbg_log   PcapType:${PcapType}
+    kwmkt_dbg_log   PcapLocation:${PcapLocation}
+    kwmkt_dbg_log   ParamItemValue_list: ${ParamItemValue_list}
+    kwmkt_dbg_log   SbcId: ${SbcId}
+    kwmkt_dbg_log   elemRank: ${elemRank}
+    #DOD
+    #resultat obtenu MULTI CELL !!
+    # UlData_puschReceiveReqGrant_t.numOfLayers                >{'non_empty_lines_count': 980, 'occurrences': {'2': 980}}<
+    # UlData_puschReceiveReqGrant_t.mcs                        >{'non_empty_lines_count': 980, 'occurrences': {'27': 980}}<
+    # UlData_puschReceiveReqGrant_t.puschTransformPrecoderFlag >{'non_empty_lines_count': 980, 'occurrences': {'0': 980}}<
+    # UlData_pucchReceiveReqPucchResource_t.modulationType     >{'non_empty_lines_count': 121, 'occurrences': {'1': 29, '0': 90, '0,0': 2}}<
+    # UlData_puschReceiveReqGrant_t.dmrsSequenceType           >{'non_empty_lines_count': 980, 'occurrences': {'0': 980}}<
+    # UlData_puschReceiveReqGrant_t.ulDmrsAddPos               >{'non_empty_lines_count': 980, 'occurrences': {'1': 980}}<
+    # UlData_pucchReceiveReqPucchResource_t.additionalDmrs     >{'non_empty_lines_count': 121, 'occurrences': {'0': 119, '0,0': 2}}<
+    # dci.dci01.TPCforScheduledPUSCH                           >{'non_empty_lines_count': 0,   'occurrences': {}}<
+    # UlData_pucchReceiveReqPucchResource_t.pucchFormat        >{'non_empty_lines_count': 121, 'occurrences': {'1': 111, '3': 8, '1,1': 2}}<
+
+    # STEP 3
+    Dated Log New Line    ======= SbcId: ${SbcId} =====================================================================
+    @{dodreslist}=        Create List
+
+    # kwmkt_dbg_log          ParamItemValue_list =>${ParamItemValue_list}<=
+    FOR    ${dic}    IN    @{ParamItemValue_list}
+                           kwmkt_dbg_log       dic: ${dic}
+                           ${subcell_id}       Get From Dictionary      ${dic}     subcell_id
+                           ${ie}               Get From Dictionary      ${dic}     field
+                           ${val}              Get From Dictionary      ${dic}     value
+                           ${whichKWtoPlay}    Get From Dictionary      ${dic}     dodtype
+                           ${Tol}              Get From Dictionary      ${dic}     PercentTol
+
+                           Continue For Loop If      "${subcell_id}" != "${SbcId}"      #focus only on ${SbcId}
+
+                           ${dic_res}=         read_csv_and_count_occurrences
+                           ...                 ${pcapprocessed_path}    ${ie}      3gpp.subcellid    ${subcell_id}
+
+                        #    kwmkt_dbg_log       dic_res >${dic_res}<
+                           ${Datatomanage}     Get From Dictionary      ${dic_res}    non_empty_lines_count
+                        #    kwmkt_dbg_log       Datatomanage ${Datatomanage}
+                           Run Keyword If      "${Datatomanage}" == "0"    Run Keywords
+                           ...                                             Dated Log    A L A R M no data to manage for ${dic}
+                           ...                 AND                         Continue For Loop    #we jump to the nex iterration
+
+                           ${occ}              Get From Dictionary      ${dic_res}    occurrences   #	${occ} = {'2': 1977}
+
+
+                           ${res}              Run Keyword If    "${whichKWtoPlay}" == "ExactValueForall"
+                           ...                                    ${whichKWtoPlay}     ${occ}    ${val}    ${SbcId}    ${elemRank}    ${Tol}
+                           ...    ELSE                            ${whichKWtoPlay}     ${occ}    ${val}    ${SbcId}    ${elemRank}
+
+                           ${msg1}=    catenate     Check result for ${ie} Meth ${whichKWtoPlay} : ${val} => SbcId ${SbcId}
+                           ...                      range:${elemRank} => ${occ} *** res ${res}
+                           ${msg2}=    catenate     Check result for ${ie} Meth ${whichKWtoPlay} : ${val} => SbcId ${SbcId}
+                           ...                      range:${elemRank} *** res ${res}
+
+                           Run Keyword If     "${whichKWtoPlay}" != "DisplayAverage"    Dated Log    ${msg1}    ${msg2}
+
+                           kwmkt_dbg_log       dodreslist before :${dodreslist}
+                           Append To List      ${dodreslist}    ${res}
+                           kwmkt_dbg_log       dodreslist after :${dodreslist}
+
+    END
+    [Return]    ${dodreslist}
+
+Choose Most Representative
+    [Arguments]    ${dictionary}
+    kwmkt_dbg_log      Choose Most Representative ARGS: dictionary ${dictionary}
+    # here ${dictionary} look like    {'1': 29, '0': 90, '0,0': 2}}  or  {'2': 1977}
+    ${keys}=           Get Dictionary Keys    ${dictionary}          # here ${keys} contain  1,0, 0,0  or only 2
+    Sort List          ${keys}
+    kwmkt_dbg_log      keys non ordonne ${keys}
+    # ${key}=            Convert To Integer     ${keys['0']}           # key = 1
+    ${most_representative_key}=            Convert To Integer     @{keys}[0]
+    kwmkt_dbg_log      most_representative_key ${most_representative_key}
+    [Return]    ${most_representative_key}
+
+
+ExactValueForall
+    [Arguments]    ${dic_occ}    ${ReqestedValueForall}    ${SbcId}=0    ${elemRank}=0    ${Tol}=1
+    Dated Log      --------- ExactValueForall args: --------------
+    Dated Log      dic_occ ${dic_occ} ReqestedValueForall ${ReqestedValueForall} SbcId ${SbcId} elemRank ${elemRank} Tol ${Tol}
+
+    ${total}=              Set Variable    0
+    ${requested_total}=    Set Variable    0
+
+    # dic_occ exemple {'1': 2319, '2': 57}
+    ${Keys_unsorted}=    Get Dictionary Keys	${dic_occ}    sort_keys=False
+    kwmkt_dbg_log  Keys_unsorted:${Keys_unsorted}
+
+    FOR    ${dic}    IN     @{Keys_unsorted}
+                            kwmkt_dbg_log  dic >${dic}<
+                            ${value}=                    Get From Dictionary     ${dic_occ}    ${dic}
+                            ${total}=                    Evaluate                ${total} + ${value}
+                            ${requested_total}=          Run Keyword If         '${dic}' == '${ReqestedValueForall}'
+                            ...                          Evaluate                ${requested_total} + ${value}
+                            ...                          ELSE    Set Variable    ${requested_total}
+    END
+    kwmkt_dbg_log  total:${total}
+    kwmkt_dbg_log  requested_total:${requested_total}
+
+    ${percentage}=    Evaluate         (${total} - ${requested_total}) / ${total} * 100
+    kwmkt_dbg_log     percentage:${percentage}
+    ${status}=        Run Keyword If    ${percentage} > ${Tol}    Set Variable    ${False}    ELSE    Set Variable    ${True}
+    kwmkt_dbg_log     -------------------ExactValueForall status------------------------------------:${status}
+    [Return]          ${status}
+
+InfEgalValueFarll
+    [Documentation]    Checks if all dictionary elements are greater than or equal to ${minimalValueForall}.
+    ...                Returns ${status}, a boolean indicating if all elements met the condition.
+
+# MLLB_MH    If UlData_puschReceiveReqGrant_t.mcs<>0 or 1          Then KO else OK
+#            Case one occurrence > 1 then KO
+# {'1': 896, '2': 167, '0': 740}
+# {'1': 1196, '0': 1040, '2': 158}
+    [Arguments]         ${dic_occ}    ${minimalValueForall}    ${SbcId}=0    ${elemRank}=0    ${Tol}=1
+
+    # ${backup}=   Set Variable      ${DBGlogs}
+    # ${DBGlogs}=    Set Variable    ${True}
+
+    Dated Log      --------- InfEgalValueFarll args: --------------
+    Dated Log      InfEgalValueFarll args:${dic_occ} ${minimalValueForall} SbcId ${SbcId} rank ${elemRank} Tol ${Tol}
+
+    # ${total}=              Set Variable    0
+    # ${requested_total}=    Set Variable    0
+
+    # dic_occ exemple {'1': 2319, '2': 57}
+    ${Keys_unsorted}=    Get Dictionary Keys	${dic_occ}    sort_keys=False
+    kwmkt_dbg_log  Keys_unsorted:${Keys_unsorted}
+
+    ${sup}=    Evaluate           ${minimalValueForall} + 1
+
+    ${total}=              Set Variable    0
+    ${requested_total}=    Set Variable    0
+
+    # dic_occ exemple {'1': 896, '2': 167, '0': 740}
+
+    FOR    ${dic}    IN     @{Keys_unsorted}
+                            kwmkt_dbg_log  dic >${dic}<
+                            ${value}=                    Get From Dictionary     ${dic_occ}    ${dic}
+                            ${total}=                    Evaluate                ${total} + ${value}
+                            ${requested_total}=          Run Keyword If         '${dic}' <= '${sup}'
+                            ...                          Evaluate                ${requested_total} + ${value}
+                            ...                          ELSE    Set Variable    ${requested_total}
+    END
+    kwmkt_dbg_log  total:${total}
+    kwmkt_dbg_log  requested_total:${requested_total}
+
+    ${percentage}=    Evaluate         (${total} - ${requested_total}) / ${total} * 100
+    kwmkt_dbg_log     percentage:${percentage}
+    ${status}=        Run Keyword If    ${percentage} > ${Tol}    Set Variable    ${False}    ELSE    Set Variable    ${True}
+
+    # ${DBGlogs}=    Set Variable    ${backup}
+
+    [Return]            ${status}
+
+DisplayAverage
+    [Documentation]     Average of all dictionary element
+    ...                 return ${AverOfall}
+    ...
+    ...                 In this script, we go through the dictionary and for each element (key, value), we multiply the key by the value,
+    ...                 add the result to the total sum, and also increment the total number of occurrences. Finally, we divide the total
+    ...                 sum by the total number of occurrences to obtain the average.
+    ...                 note: we focus on element rank ${elemRank}=0
+
+    [Arguments]         ${dic_occ}    ${value}    ${SbcId}=0    ${elemRank}=0
+    kwmkt_dbg_log       DisplayAverage args: dic_occ toolong & ${value} ${SbcId}=0 ${elemRank}=0
+
+
+    ${sum}              Set Variable    0
+    ${total}            Set Variable    0
+
+    #'-8.2846,-255,5.26072,-255': 1, '-3.45491,-255,4.56642,-255': 1
+    #${occ} = {'-3.49266,-255,0.454872,-255': 1, '-3.8443,-255,3.09126,-255': 1, '-3.88939,-255,4.95436,-255': 1, '0.15
+
+    # special behavior dmrsSequenceType
+    # Way to mach offset in wireshark result only rank 0/2/4... hav potential information @tony
+    ${elemRankplus1}=        Evaluate    ${elemRank} + 1
+    ${RankEven}        Check If Even     ${elemRank}
+    ${elemRank}=       Set Variable if   ${RankEven}    ${elemRank}    ${elemRankplus1}
+
+        #    ${status}  ${response}=     Run Keyword And Ignore Error    Get From Dictionary         ${Lidx}    list_name
+        # #    kwmkt_dbg_log               status / response : ${status} / ${response}
+        #    ${list_name}=               Set Variable IF    "${status}" != "PASS"    ${EMPTY}        ${response}
+
+    FOR    ${dic}    IN    @{dic_occ}
+                           # kwmkt_dbg_log  dic >${dic}<
+                           ${element}=      Split String    ${dic}    ,   # Séparez la cle en utilisant la virgule comme delimiteur
+                           ${status}  ${key}=    Run Keyword And Ignore Error    Convert To Number    ${element}[${elemRank}]   # la j ai la valeur
+                           Run keyword if        "${status}" != "PASS"    Continue For Loop
+                           ${value}=        Get From Dictionary      ${dic_occ}      ${dic}    # la j ai le nombre de fois cette valeur
+
+                           # kwmkt_dbg_log  element >${element}< key >${key}< value >${value}<
+                           ${sum}=          Evaluate    ${sum} + float(${key}) * ${value}
+                           ${total}=        Evaluate    ${total} + ${value}
+                           #kwmkt_dbg_log  sum ${sum} total ${total}
+    END
+    ${average}=        Evaluate    ${sum} / ${total}
+
+    ${AverOfall}=      convert to number         ${average}     2
+
+    Dated Log          DisplayAverage return:${AverOfall}
+
+    [Return]            ${AverOfall}
+
+
+Check If Even
+    [Documentation]    Checks if the given number (${elemRank}) is even. Returns ${True} if the number is even, ${False} otherwise.
+    [Arguments]    ${elemRank}
+    ${remainder}=     Evaluate    ${elemRank} % 2
+    ${Status}=        Set Variable If    '${remainder}' == '0'    ${True}    ${False}
+    [Return]          ${Status}
+
+PercentOfEachCase
+    [Documentation]     Return a list formated as below
+    ...                 list[0] -> occurency number
+    ...                 list[1] -> % CRC OK/0
+    ...                 list[2] -> % CRC KO/1
+    ...                 return ${list}
+
+    [Arguments]         ${dic_occ}    ${value}    ${SbcId}=0    ${elemRank}=0
+    kwmkt_dbg_log       PercentOfEachCase args:dic_occ ${dic_occ} value ${value} SbcId${SbcId} elemRank ${elemRank}
+    # MLLB_MH    Count nb of  "UlData_UePuschReceiveRespHarqU_t.crc" occurrences
+#            Count nb of UlData_UePuschReceiveRespHarqU_t.crc=NOK/1
+#            Gives percentSbcId1PuschCRCKO CRC NOK
+#            Display ONLY
+
+    # occ:{'0,0': 1590, '1,0': 421, '0,1': 91, '1,1': 36, '0': 93} val:Display SbcId 0 elemRank:0
+    @{list} =	Create List
+
+    ${total_value}=           Set Variable    0
+    FOR    ${key}             IN    @{dic_occ.keys()}
+           ${value}=          Get From Dictionary    ${dic_occ}    ${key}
+           ${total_value}=    Evaluate    ${total_value} + ${value}
+    END
+
+    Append To List	          ${list}	${total_value}
+    kwmkt_dbg_log             Total Value: ${total_value}
+
+    FOR    ${key}             IN    @{dic_occ.keys()}
+           ${value}=          Get From Dictionary    ${dic_occ}    ${key}
+           ${percentage}=     Evaluate    round((${value} / ${total_value}) * 100,2)
+        kwmkt_dbg_log         Key: ${key} Value: ${value} Percent: ${percentage}%
+        Append To List	      ${list}	${percentage}
+    END
+
+    kwmkt_dbg_log       PercentOfEachCase return: for ${dic_occ} return :${list}
+    [Return]            ${list}
+
+isSup_elemListx_vs_elemListy
+    [Documentation]    extra KW helping to answer to following question based on PercentOfEachCase result
+    ...                If percentSubcellId1PuschCRCKO > percentSubcellId0PuschCRCKO  Then KO else OK
+
+    [Arguments]        ${list}    ${elemListx}    ${elemListy}
+
+    ${element1}=       Get From List    ${list}    ${elemListx}
+    ${element2}=       Get From List    ${list}    ${elemListy}
+
+    ${status}=         Set Variable If    ${element1} > ${element2}    ${True}    ${False}
+
+    [Return]           ${status}
+
+Read And Print Version
+    ${version_file_path}=    Set Variable    testsuite/Paris/RRM/ET/CB007103/resources/version.txt
+    ${first_line}=           read_first_line    ${version_file_path}
+
+    Dated Log New Line  CB007103 framework version = ${first_line}
+
+Update AP and gNB config
+
+    [Arguments]             ${testD}
+
+    #Update gNB swconfig_7103
+
+    Run Keyword If    '${testD}' == 'D4'    Run keywords
+    ...                    Dated Log    ================> custom config of test D4
+    ...         AND           Setup.Apply Custom Config    scfc=${CURDIR}/../config/custom/scf7103D4sansR16dmrs.xml
+    ...                    iphy=${CURDIR}/../config/custom/iphy7103D4.xml
+    ...                    cfg=${CURDIR}/../config/custom/basic7103D4ModUE6R16BdCombPC2New.cfg
+    ...         ELSE IF    '${testD}' == 'D4FromD2'    Run keywords
+    ...                    Dated Log    ================> custom config of test D4
+    ...         AND           Setup.Apply Custom Config    scfc=${CURDIR}/../config/custom/scf7103D4FromD2.xml
+    ...                    iphy=${CURDIR}/../config/custom/iphy7103D4FromD2.xml
+    ...                    cfg=${CURDIR}/../config/custom/basic7103D4FromD2.cfg
+    ...         ELSE IF    '${testD}' == 'D2'    Run keywords
+    ...                    Dated Log    ================> custom config of test D2
+    ...         AND           Setup.Apply Custom Config    scfc=${CURDIR}/../config/custom/scf7103D2.xml
+    ...                    iphy=${CURDIR}/../config/custom/iphy7103D2.xml
+    ...                    cfg=${CURDIR}/../config/custom/basic7103D2.cfg
+    ...         ELSE IF    '${testD}' == 'F6_F10_F11'    Run keywords
+    ...                    Dated Log    ================> custom config of test F6_F10_F11
+    ...         AND           Setup.Apply Custom Config    iphy=${CURDIR}/../config/custom/iphy7103_F6_F10_F11_PR854432.xml
+    ...         ELSE IF    '${testD}' == 'C6_ASOH'    Run keywords
+    ...                    Dated Log    ================> custom config of test C6_ASOH
+    ...         AND           Setup.Apply Custom Config    iphy=${CURDIR}/../config/custom/iphy7103_C6_ASOH_PR854432.xml
+    ...         ELSE IF    '${testD}' == 'C6_ASIM'    Run keywords
+    ...                    Dated Log    ================> custom config of test C6_ASIM
+    ...         AND           Setup.Apply Custom Config    iphy=${CURDIR}/../config/custom/iphy7103_C6_ASIM_PR854432.xml
+    Airscale Soft Reboot            ${AP_DU}
+    Restart.Wait Airphone Available
+
+    Airscale Soft Reboot            ${AP_DU}
+    Restart.Wait Airphone Available
+
+#FTS------------------------------------------------------------------------
+
+
+# Reserve Corner
+
+# PM_Counter_Tput_Check_7103
+#     [Documentation]   Check the throughput in DL 4TX with RI 3 is above a min value
+#     ...               orig= CNI-68516/resources/robot/CNI-68516_0920_Resources.robot
+#     [Arguments]       ${CellID}=1
+
+#                                                                    #M55309C01001 => DL MAC SDU volume transmitted on DTCH
+#                                                                    #M55309C00001 => Duration of the measurement period for the MAC SDU report
+
+#                                                                    #M55301C10001 => PDSCH transmissions using 4TX transmission with rank 1
+
+#     ${vol}=           Counters.Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}    M55309C01001    ${CellID}
+#     ${dur}=           Counters.Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}    M55309C00001    ${CellID}
+#     ${pdsch4TXR1}=    Counters.Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}    M55301C10001    ${CellID}
+#     Dated Log         +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#     Dated Log           vol ...... / M55309C01001 / DL MAC SDU volume transmitted on DTCH ..........................: ${vol} Bytes
+#     Dated Log           dur ...... / M55309C00001 / Duration of the measurement period for the MAC SDU report ......: ${dur} ms
+#     Dated Log           pdsch4TXR1 / M55301C10001 / PDSCH transmissions using 4TX transmission with rank 1 .........: ${pdsch4TXR1} Grants
+#     Dated Log         +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+# 	${tput}               Evaluate    8 * ${vol} / (1000 * ${dur})
+#     ${nb_pdsch4TXR1_byS}    Evaluate    8 * ${pdsch4TXR1} / (1000 * ${dur})
+
+#     Dated Log           tput .......................................................................................: ${tput} Mb/s
+#     Dated Log           nb_pdsch4TXR1_byS ..........................................................................: ${nb_pdsch4TXR1_byS} NbGrant/s
+#     Dated Log         +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+# #=======================================================================================================================
+# # KW to perform checks in pcap files
+# #=======================================================================================================================
+
+# Check FDM UL in BIP Msg
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Dated log                       Check UL FDM Activation in BIP Msg
+#     ...                             (BIPvalueDMrsCdmGroupWithoutData=1 when FDM activated else set to 2)
+#     Filter and Check field          ${pcapFile}
+#     ...                             filterExp=(uldata_puschreceivereq) && (_5g_l1_ul_l2_ps_uldata_puschreceivereqgrant_t)
+#     ...                             msg=UlData_PuschReceiveReq
+#     ...                             data=.numOfDmrsCdmGroupWithoutData
+#     ...                             value=${value}
+#     ...                             endPacket=${1}
+
+# Check PuschMappingType UL in BIP Msg
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Dated log                       Check PuschMappingType in BIP Traces
+#     Filter and Check field          ${pcapFile}
+#     ...                             filterExp=(uldata_puschreceivereq) && (_5g_l1_ul_l2_ps_uldata_puschreceivereqgrant_t)
+#     ...                             msg=UlData_PuschReceiveReq
+#     ...                             data=.ulDmrsMappingType
+#     ...                             value=${value}
+#     ...                             endPacket=${1}
+
+# Check dmrs TypeA Position in BIP Msg
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Dated log                       Check dmrs TypeA Pos in BIP Msg (BIPvaluedmrsTypeAPosition=2 for Pos2 else 3 for Pos3)
+#     Filter and Check field          ${pcapFile}
+#     ...                             filterExp=(uldata_puschreceivereq) && (_5g_l1_ul_l2_ps_uldata_puschreceivereqgrant_t)
+#     ...                             msg=UlData_PuschReceiveReq
+#     ...                             data=.ulDmrsTypeAPos
+#     ...                             value=${value}
+#     ...                             endPacket=${1}
+
+# Check Additional DMRS UL in BIP Msg
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Dated log                       Check Additional DMRS UL in BIP Msg
+#     ...                             (value=1 for 1 additional DMRS else 0 for No Additional DMRS)
+#     Filter and Check field          ${pcapFile}
+#     ...                             filterExp=(uldata_puschreceivereq) && (_5g_l1_ul_l2_ps_uldata_puschreceivereqgrant_t)
+#     ...                             msg=UlData_PuschReceiveReq
+#     ...                             data=.ulDmrsAddPos
+#     ...                             value=${value}
+#     ...                             endPacket=${1}
+
+# Check UL PTRS in BIP Msg
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Dated log                       Check UL PTRS status in BIP Traces (value=1 for UL PTRS activated else 0 for UL PTRS De-activated)
+#     Filter and Check field          ${pcapFile}
+#     ...                             filterExp=(uldata_puschreceivereq) && (_5g_l1_ul_l2_ps_uldata_puschreceivereqgrant_t)
+#     ...                             msg=UlData_PuschReceiveReq
+#     ...                             data=.ulPtrsFlag
+#     ...                             value=${value}
+#     ...                             endPacket=${1}
+
+# Check TransfPrecoder enabled in BIP Msg
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Dated log                       Check TransformPrecoder is enabled in BIP Msg
+#     Filter and Check field          ${pcapFile}
+#     ...                             filterExp=(uldata_puschreceivereq) && (_5g_l1_ul_l2_ps_uldata_puschreceivereqgrant_t)
+#     ...                             msg=UlData_PuschReceiveReq
+#     ...                             data=.puschTransformPrecoderFlag
+#     ...                             value=${value}
+#     ...                             endPacket=${1}
+
+
+# Check modulation scheme for PucchF3
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Dated log                       Check modulation scheme for PucchF3
+#     Filter and Check field          ${pcapFile}
+#     ...                             filterExp=(uldata_pucchreceivereq) && (_5g_l1_ul_l2_ps_UlData_pucchReceiveReqPucchResource_t.pucchFormat == 1)
+#     ...                             msg=uldata_pucchreceivereq
+#     ...                             data=.modulationType
+#     ...                             value=${value}
+#     ...                             endPacket=${1}
+
+
+# Check TransfPrecoder disabled in BIP Msg
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Dated log                       Check TransformPrecoder is disabled in BIP Msg
+#     Filter and Check field          ${pcapFile}
+#     ...                             filterExp=(uldata_puschreceivereq) && (_5g_l1_ul_l2_ps_uldata_puschreceivereqgrant_t)
+#     ...                             msg=UlData_PuschReceiveReq
+#     ...                             data=.puschTransformPrecoderFlag
+#     ...                             value=${value}
+#     ...                             endPacket=${1}
+
+# Check UL 256QAM in BIP
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Dated log                       Check 256QAM UL mcsTable is used in BIP Traces (value=1 when 256QAM UL mcsTable is used)
+#     Filter and Check field          ${pcapFile}
+#     ...                             filterExp=(uldata_puschreceivereq) && (_5g_l1_ul_l2_ps_uldata_puschreceivereqgrant_t)
+#     ...                             msg=UlData_PuschReceiveReq
+#     ...                             data=.mcsTable
+#     ...                             value=${value}
+#     ...                             endPacket=${1}
+
+# Check CRC OK for HarqU in BIP
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${crc}=0
+#     Dated log                       Check CRC OK for PuschReceiveRespHarqU in BIP Msg
+#     Filter and Check field          ${pcapFile}
+#     ...                             filterExp=uldata_puschreceiverespharqu
+#     ...                             msg=UlData_PuschReceiveRespHarqU
+#     ...                             data=.crc
+#     ...                             value=${crc}
+#     ...                             endPacket=${1}
+
+# Check NO DTX for HarqU in BIP
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${dtx}=0
+#     Dated log                       Check NO DTX for PuschReceiveRespHarqU in BIP Msg
+#     Filter and Check field          ${pcapFile}
+#     ...                             filterExp=uldata_puschreceiverespharqu
+#     ...                             msg=UlData_PuschReceiveRespHarqU
+#     ...                             data=.dtx
+#     ...                             value=${dtx}
+#     ...                             endPacket=${1}
+
+# Filter and Check field
+#     [Arguments]                     ${pcapfile}
+#     ...                             ${filterExp}=None               ${msg}=None
+#     ...                             ${data}=none                    ${value}=None
+#     ...                             ${startPacket}=${1}             ${endPacket}=${-1}
+#     ${filterPcap}                   analyzer.filter_pcap            ${pcapFile}
+#     ...                             filterName=${msg}               filterExp=${filterExp}
+#     ${pdmlFile}=                    analyzer.pcap_to_pdml           ${filterPcap}
+
+#     Dated log                       \tIn BIP messages ${msg} [${startPacket}..${endpacket}], check ${data}=${value}
+#     analyzer.check_list             pdmlFile=${pdmlFile}
+#     ...                             packetName=${msg}
+#     ...                             path=${data}$
+#     ...                             value=${value}
+#     ...                             startPacket=${startPacket}
+#     ...                             endPacket=${endPacket}
+
+# Check UserSetupReq
+#     [Arguments]                     ${pcapFile}                     ${field}                       ${value}
+#     ${pcapFiltered}                 analyzer.filter_pcap
+#     ...                             pcapInFile=${pcapFile}
+#     ...                             filterName=UserSetupReq
+#     ...                             filterExp=itf_l2_ps_user_usersetupreq
+#     ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+#     ${msg}=                         Set Variable                    itf_l2_ps_user_UserSetupReq
+#     Dated log                       In message ${msg}, check ${field}=${value}                     first=True
+#     analyzer.check_list             pdmlFile=${pdmlFile}
+#     ...                             packetName=${msg}
+#     ...                             path=${msg}.${field}$
+#     ...                             value=${value}
+
+# Check Additional DMRS UL
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Check RRC Reconfiguration for Additional DMRS       pcapFile=${pcapFile}            prefix=nr-rrc.pusch_Config
+#     ...                             value=${value}
+
+# Check PuschMappingTypeA
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Check RRC Reconfiguration for PuschMappingTypeA       pcapFile=${pcapFile}            prefix=nr-rrc.pusch_Config
+#     ...                             value=${value}
+
+# Check dmrs TypeA Position
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Check RRC Reconfiguration for dmrs TypeA Position       pcapFile=${pcapFile}            prefix=nr-rrc.reconfigurationWithSync_element
+#     ...                             value=${value}
+
+# Check transformPrecoder enabled
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Check RRC Reconfiguration for TransformPrecoder enabled       pcapFile=${pcapFile}            prefix=nr-rrc.pusch_Config
+#     ...                             value=${value}
+
+# Check tp_pi2BPSK enabled
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Check RRC Reconfiguration for tp_pi2BPSK enabled       pcapFile=${pcapFile}            prefix=nr-rrc.pusch_Config
+#     ...                             value=${value}
+
+# Check dmrs-UplinkTransformPrecoding-r16 enabled
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Check RRC Reconfiguration for dmrs-UplinkTransformPrecoding-r16 enabled       pcapFile=${pcapFile}            prefix=nr-rrc.pusch_Config
+#     ...                             value=${value}
+
+# Check dmrs-UplinkTransformPrecodingPUCCH-r16 enabled
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Check RRC Reconfiguration for dmrs-UplinkTransformPrecodingPUCCH-r16 enabled       pcapFile=${pcapFile}            prefix=nr-rrc.pucch_Config
+#     ...                             value=${value}
+
+# Check powerBoostPi2BPSK enabled
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Check RRC Reconfiguration for powerBoostPi2BPSK        pcapFile=${pcapFile}            prefix=nr-rrc.uplinkConfig
+#     ...                             value=${value}
+
+# Check maxCodeRate Value
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${value}
+#     Check RRC Reconfiguration for maxCodeRate        pcapFile=${pcapFile}            prefix=nr-rrc.pucch-Config
+#     ...                             value=${value}
+
+
+# Check RRC Reconfiguration for TransformPrecoder enabled
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${prefix}
+#     ...                             ${field}=nr-rrc.transformPrecoder
+#     ...                             ${value}=value
+#     ${pcapFiltered}                 analyzer.filter_pcap
+#     ...                             pcapInFile=${pcapFile}
+#     ...                             filterName=X2AP
+#     ...                             filterExp=x2ap
+#     ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+#     Dated Log                       In RRC Reconfiguration, check ${prefix}/.../${field} is st to ${value}
+#     ...                             first=True
+#     ${msg}                          Set Variable                    SgNBModificationRequired
+#     analyzer.check_list             pdmlFile=${pdmlFile}
+#     ...                             packetName=${msg}
+#     ...                             path=${prefix}/.*/${field}$
+#     ...                             value=${value}
+
+
+# Check RRC Reconfiguration fortp_pi2BPSK enabled
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${prefix}
+#     ...                             ${field}=nr-rrc.tp-pi2BPSK
+#     ...                             ${value}=value
+#     ${pcapFiltered}                 analyzer.filter_pcap
+#     ...                             pcapInFile=${pcapFile}
+#     ...                             filterName=X2AP
+#     ...                             filterExp=x2ap
+#     ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+#     Dated Log                       In RRC Reconfiguration, check ${prefix}/.../${field} is set to ${value}
+#     ...                             first=True
+#     ${msg}                          Set Variable                    SgNBModificationRequired
+#     analyzer.check_list             pdmlFile=${pdmlFile}
+#     ...                             packetName=${msg}
+#     ...                             path=${prefix}/.*/${field}$
+#     ...                             value=${value}
+
+
+# Check RRC Reconfiguration for dmrs-UplinkTransformPrecoding-r16 enabled
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${prefix}
+#     ...                             ${field}=nr-rrc.dmrs-UplinkTransformPrecoding-r16
+#     ...                             ${value}=value
+#     ${pcapFiltered}                 analyzer.filter_pcap
+#     ...                             pcapInFile=${pcapFile}
+#     ...                             filterName=X2AP
+#     ...                             filterExp=x2ap
+#     ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+#     Dated Log                       In RRC Reconfiguration, check ${prefix}/.../${field} is set to ${value}
+#     ...                             first=True
+#     ${msg}                          Set Variable                    SgNBModificationRequired
+#     analyzer.check_list             pdmlFile=${pdmlFile}
+#     ...                             packetName=${msg}
+#     ...                             path=${prefix}/.*/${field}$
+#     ...                             value=${value}
+
+# Check RRC Reconfiguration for dmrs-UplinkTransformPrecodingPUCCH-r16 enabled
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${prefix}
+#     ...                             ${field}=nr-rrc.dmrs-UplinkTransformPrecoding-r16
+#     ...                             ${value}=value
+#     ${pcapFiltered}                 analyzer.filter_pcap
+#     ...                             pcapInFile=${pcapFile}
+#     ...                             filterName=X2AP
+#     ...                             filterExp=x2ap
+#     ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+#     Dated Log                       In RRC Reconfiguration, check ${prefix}/.../${field} is set to ${value}
+#     ...                             first=True
+#     ${msg}                          Set Variable                    SgNBModificationRequired
+#     analyzer.check_list             pdmlFile=${pdmlFile}
+#     ...                             packetName=${msg}
+#     ...                             path=${prefix}/.*/${field}$
+#     ...                             value=${value}
+
+# Check RRC Reconfiguration for powerBoostPi2BPSK
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${prefix}
+#     ...                             ${field}=nr-rrc.powerBoostPi2BPSK
+#     ...                             ${value}=value
+#     ${pcapFiltered}                 analyzer.filter_pcap
+#     ...                             pcapInFile=${pcapFile}
+#     ...                             filterName=X2AP
+#     ...                             filterExp=x2ap
+#     ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+#     Dated Log                       In RRC Reconfiguration, check ${prefix}/.../${field} is set to ${value}
+#     ...                             first=True
+#     ${msg}                          Set Variable                    SgNBModificationRequired
+#     analyzer.check_list             pdmlFile=${pdmlFile}
+#     ...                             packetName=${msg}
+#     ...                             path=${prefix}/.*/${field}$
+#     ...                             value=${value}
+
+# Check RRC Reconfiguration for maxCodeRate
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${prefix}
+#     ...                             ${field}=nr-rrc.maxCodeRate
+#     ...                             ${value}=value
+#     ${pcapFiltered}                 analyzer.filter_pcap
+#     ...                             pcapInFile=${pcapFile}
+#     ...                             filterName=X2AP
+#     ...                             filterExp=x2ap
+#     ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+#     Dated Log                       In RRC Reconfiguration, check ${prefix}/.../${field} is set to ${value}
+#     ...                             first=True
+#     ${msg}                          Set Variable                    SgNBModificationRequired
+#     analyzer.check_list             pdmlFile=${pdmlFile}
+#     ...                             packetName=${msg}
+#     ...                             path=${prefix}/.*/${field}$
+#     ...                             value=${value}
+
+
+
+
+
+# Check RRC Reconfiguration for Additional DMRS
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${prefix}
+#     ...                             ${field}=nr-rrc.dmrs_AdditionalPosition
+#     ...                             ${value}=value
+#     ${pcapFiltered}                 analyzer.filter_pcap
+#     ...                             pcapInFile=${pcapFile}
+#     ...                             filterName=X2AP
+#     ...                             filterExp=x2ap
+#     ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+#     Dated Log                       In RRC Reconfiguration, check ${prefix}/.../${field} is set to ${value}
+#     ...                             first=True
+#     ${msg}                          Set Variable                    SgNBAdditionRequestAcknowledge
+#     analyzer.check_list             pdmlFile=${pdmlFile}
+#     ...                             packetName=${msg}
+#     ...                             path=${prefix}/.*/${field}$
+#     ...                             value=${value}
+
+# Check RRC Reconfiguration for PuschMappingTypeA
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${prefix}
+#     ...                             ${field}=nr-rrc.dmrs_UplinkForPUSCH_MappingTypeA
+#     ...                             ${value}=value
+#     ${pcapFiltered}                 analyzer.filter_pcap
+#     ...                             pcapInFile=${pcapFile}
+#     ...                             filterName=X2AP
+#     ...                             filterExp=x2ap
+#     ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+#     Dated Log                       In RRC Reconfiguration, check ${prefix}/.../${field} is st to ${value}
+#     ...                             first=True
+#     ${msg}                          Set Variable                    SgNBAdditionRequestAcknowledge
+#     analyzer.check_list             pdmlFile=${pdmlFile}
+#     ...                             packetName=${msg}
+#     ...                             path=${prefix}/.*/${field}$
+#     ...                             value=${value}
+
+# Check RRC Reconfiguration for dmrs TypeA Position
+#     [Arguments]                     ${pcapFile}
+#     ...                             ${prefix}
+#     ...                             ${field}=nr-rrc.dmrs_TypeA_Position
+#     ...                             ${value}=value
+#     ${pcapFiltered}                 analyzer.filter_pcap
+#     ...                             pcapInFile=${pcapFile}
+#     ...                             filterName=X2AP
+#     ...                             filterExp=x2ap
+#     ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+#     Dated Log                       In RRC Reconfiguration, check ${prefix}/.../${field} is st to ${value}
+#     ...                             first=True
+#     ${msg}                          Set Variable                    SgNBAdditionRequestAcknowledge
+#     analyzer.check_list             pdmlFile=${pdmlFile}
+#     ...                             packetName=${msg}
+#     ...                             path=${prefix}/.*/${field}$
+#     ...                             value=${value}
+
+
+# Check modulation scheme for PucchF3 in BIP Traces
+#     Check modulation scheme for PucchF3          pcapFile=${CaptureBIP_TP_enabled.path}
+#     ...                                           value=BSPK
+
+# Check transformPrecoder enabled in BIP Traces
+#     Check TransfPrecoder enabled in BIP Msg       pcapFile=${CaptureBIP_TP_enabled.path}
+#     ...                                           value=${TransformPrecoder_enabled_FLAG}
+
+# Check transformPrecoder disabled in BIP Traces
+#     Check TransfPrecoder disabled in BIP Msg       pcapFile=${CaptureBIP_TP_disabled.path}
+#     ...                                           value=${TransformPrecoder_disabled_FLAG}
+
+# Check transformPrecoder enabled in RRC Msg
+#     Check transformPrecoder enabled               pcapFile=${CaptureCORE.path}
+#     ...                                           value=${TransformPrecoder_enabled}
+
+# #=======================================================================================================================
+# # KW to set some parameters in SCF
+# #=======================================================================================================================
+
+# Restore Default Context 7103
+#     Set Freq and TDD Frame struct
+#     Set UE capa on EPCSim               ue_nr_capa_value=${ue_nr_capa_defValue}
+
+
+
+
+# Restart
+#     [Tags]                             RESTART
+#     Restart TL
+
+
+
+# Get L1L2 Logs TP disabled
+
+#     Dated Log                         ======> Get L1L2 Bip Traces with  TP disabled
+#     ${CaptureBIP_TP_disabled}           Capture L1L2 Set Upon Config     airscale=${GNB_DU}
+
+#     Capture Init                      capture=${CaptureBIP_TP_disabled}		suffix=_TP_OFF
+#     Capture start                     ${CaptureBIP_TP_disabled}
+#     Traced sleep                      5s
+#     Capture stop                      ${CaptureBIP_TP_disabled}
+
+#     Dated Log New Line                === path capture : ${CaptureBIP_TP_disabled.path} ===
+
+#     Set Global Variable               ${CaptureBIP_TP_disabled.path}
+
+
+# Get L1L2 Logs TP enabled
+
+#     Dated Log                         ======> Get L1L2 Bip Traces with  TP enabled
+#     ${CaptureBIP_TP_enabled}           Capture L1L2 Set Upon Config     airscale=${GNB_DU}
+
+#     Capture Init                      capture=${CaptureBIP_TP_enabled}   suffix=_TP_ON
+#     Capture start                     ${CaptureBIP_TP_enabled}
+#     Traced sleep                      5s
+#     Capture stop                      ${CaptureBIP_TP_enabled}
+
+#     Dated Log New Line                === path capture : ${CaptureBIP_TP_enabled.path} ===
+
+#     Set Global Variable               ${CaptureBIP_TP_enabled.path}
+
+
+# Start Capture RRC Reconfiguration Message
+#     #vbo#changing target to GNB_CU for vRAN2.0
+#     ${CaptureFirstRRCReconf}    Run Keyword If    not ${isAic}    Capture CORE Set Upon Config    airscale=${GNB_DU}
+#     ...               ELSE
+#     ...                                                 Capture CORE Set Upon Config    airscale=${GNB_CU}
+#     Capture Init                    ${CaptureFirstRRCReconf}           suffix=_First_RRC_RECONF
+#     Set Suite Variable              ${CaptureFirstRRCReconf}
+
+#     Capture Start                   capture=${CaptureFirstRRCReconf}
+#     Dated Log New Line                === Started Capture for First RRC Reconf : ${CaptureFirstRRCReconf.path} ===
+# 	Set Global Variable               ${CaptureFirstRRCReconf.path}
+
+
+# Stop Capture RRC Reconfiguration Message
+# 	Capture stop                      ${CaptureFirstRRCReconf}
+
+# Test WTS Setup
+#     WTS Setup
+
+# Test Verify Cell Setup
+#     UE Cell Setup Check
+
+# SgNB Addition PRACH
+#     SgNB Addition to ENB            ueSetting=${UE_SIMPLE}
+#     ...                             captureCallback=None
+#     ...                             capture=None
+
+# Attach_FR1
+#     UE Attach Check
+
+# UL Traffic
+#     Traffic UE UL                   throughput=2
+#     ...                             captureCallback=Callback Capture L1L2
+#     ...                             capture=${CaptureL1L2}
+#     ...                             deviation=20
+
+# DL Traffic
+#     Traffic UE DL                   throughput=2
+#     ...                             captureCallback=Callback Capture L1L2
+#     ...                             capture=${CaptureL1L2}
+#     ...                             deviation=20
+
+# UL_DL Traffic
+#     Traffic UE UL DL                throughput=2
+#     ...                             captureCallback=Callback Capture L1L2
+#     ...                             capture=${CaptureL1L2}
+#     ...                             deviation=20
+
+# UL Traffic SA
+#     Traffic UE UL           ueSetting=${BASIC_UE_SA}
+#     ...                             throughput=2
+#     ...                             captureCallback=Callback Capture L1L2
+#     ...                             capture=${CaptureL1L2}
+#     ...                             deviation=20
+
+# UL_DL Traffic SA
+#     Traffic UE UL DL         ueSetting=${BASIC_UE_SA}
+#     ...                              throughput=2
+#     ...                              captureCallback=Callback Capture L1L2
+#     ...                              capture=${CaptureL1L2}
+#     ...                              deviation=20
+
+# Build UEs list SA Multi UEs
+
+#     [Arguments]             ${dict_ues}
+#     ${totalNbOfUe}          get length          ${dict_ues}
+#     Step                    Dated Log           Configure the setting for the ${totalNbOfUe} UEs
+#     Set Global Variable     ${totalNbOfUe}
+
+#     @{listOfUes}            Create List
+#     FOR    ${current_id}    IN RANGE    0    ${totalNbOfUe}
+#         ${current_ue}=                Evaluate                      ${current_id} + 1
+#         ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+#         Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+#         Set To Dictionary             ${current_ueSetting}          pdu                 1
+#         Set To Dictionary             ${current_ueSetting}          trf_id              ${current_ue}
+#         Set To Dictionary             ${current_ueSetting}          target_gnb          2
+#         Set To Dictionary             ${current_ueSetting}          target_cells        ${dict_ues[${current_id}].originalCell}
+#         Set To Dictionary             ${current_ueSetting}          DL_throughput          ${dict_ues[${current_id}].DL_throughput}
+#         Set To Dictionary             ${current_ueSetting}          DL_throughput_GBR      ${dict_ues[${current_id}].DL_throughput_GBR}
+#         Set To Dictionary             ${current_ueSetting}          UL_throughput          ${dict_ues[${current_id}].UL_throughput}
+#         Set To Dictionary             ${current_ueSetting}          ue_nr_capa          ${dict_ues[${current_id}].ue_nr_capa}
+
+#         Append To List                ${listOfUes}                  ${current_ueSetting}
+#     END
+#     Dated Log New Line                UE_List=${listOfUes}
+
+#     [Return]                          ${listOfUes}
+
+# Perform L3 Call for single or multi UEs
+
+#     [Arguments]           ${listOfUes}
+#     FOR    ${current_elem}    IN    @{listOfUes}
+#         Dated Log New Line     === SA Register UE ${current_elem.ue} on cell ${current_elem.target_cells} ===
+#         CallSetup.UE Register                                   ue=${current_elem.ue}
+#         Dated Log New Line     === SA PDU SESSION for UE ${current_elem.ue} on cell ${current_elem.target_cells} ===
+#         CallSetup.Launch PDU Session                            ue=${current_elem.ue}
+#         ...                                                     pdu=${current_elem.pdu}
+#         ...                                                     gw=${current_elem.ue}
+#     END
+
+
+# Start UL Non GBR traffic for all the UEs
+#     [Arguments]       ${listOfUes}
+#     FOR    ${current_elem}    IN    @{listOfUes}
+#         Run Keyword If      ${current_elem.UL_throughput} > ${NO_THROUGHPUT}     Run Keywords
+#         ...    Dated Log New Line
+#         ...         === Launch ${current_elem.UL_throughput}Mbits/s NonGBR UL traffic UE ${current_elem.ue} on cell ${current_elem.target_cells} ===
+#         ...    AND       Start UL Traffic SA Not Stopped 		ueSetting=${current_elem}
+#     END
+
+
+# Start UL Traffic SA Not Stopped
+#     [Documentation]
+#     ...     Conditions:     it is based on the arguments ${param} ${ueSetting}
+#     ...     Actions:        it manages the UL traffic on the UE
+#     ...     Checks:         it checks nothing more than already done on lib.
+#     ...     Verdict:        UL traffic is passed
+#     [Arguments]             ${ueSetting}=${BASIC_UE_SA}
+
+#     Set To Dictionary       ${ueSetting}        trf_id    1
+#     Traffic UE UL           ueSetting=${ueSetting}
+#     ...                     throughput=${ueSetting.UL_throughput}
+#     ...                     captureCallback=None
+#     ...                     capture=None
+#     ...                     captureDuration=0
+#     ...                     shouldBeStop=False
+
+# Get UL throughput with Transform Precoder Enabled
+#      [Arguments]       ${listOfUes}
+#      FOR    ${current_elem}    IN    @{listOfUes}
+# 			Dated Log New Line     === Checking avg tput for ${current_elem.ue} with TransPrecoder Enabled ===
+# 			${ul_avg_enabled} = Traffic.Traffic Check Data Rate
+# 			...					${expected_data_rate}=${ueSetting.UL_throughput}
+# 			...                 ${deviation_in_percent}=5
+# 			...					${additional_info}=Transform Precoder Enabled
+# 			Should Be True    ${ul_avg_enabled}   True  #   Not care throughput but check tput>0 to avoid ue release abnormal issue
+# 			Dated Log New Line     === Checking avg tput for ${current_elem.ue} with TransPrecoder Enabled is ${ul_avg_enabled} ===
+#      END
+
+# Get UL throughput with Transform Precoder Disabled
+#      [Arguments]       ${listOfUes}
+#      FOR    ${current_elem}    IN    @{listOfUes}
+# 			Dated Log New Line     === Checking avg tput for ${current_elem.ue} with TransPrecoder Disabled ===
+# 			${ul_avg_disabled} = Traffic.Traffic Check Data Rate
+# 			...					${expected_data_rate}=${ueSetting.UL_throughput}
+# 			...                 ${deviation_in_percent}=5
+# 			...					${additional_info}=Transform Precoder Disabled
+# 			Should Be True    ${ul_avg_disabled}   True  #   Not care throughput but check tput>0 to avoid ue release abnormal issue
+# 			Dated Log New Line     === Checking avg tput for ${current_elem.ue} with TransPrecoder Disabled is ${ul_avg_disabled} ===
+#      END
+
+# #MODULE ON REFLEXION
+# # Verify Parameters in RRCReconf form Egate_console
+# # 		  [Documentation]
+# # 		  ...     Conditions:     It is based on several Arguments as shown in the arguments
+# #           ...     Actions:        It extracts the RRR_reconf_message(s) from egate console using the python scripty verify_reconfig
+# #           ...		  			  and stores each one into a seprate files depending
+# # 		  ...					  on the number of RRCReconfig messages are present in the file.The name of this file
+# # 		  ...					  is passed as argument.Possible values are written in the constants.py file.
+# #           ...     Checks:         it checks the the values passed as arguments are the values present in the file.
+# # 		  ...					  Since deferent RRC reconf message can have or not have a parameter depending on the
+# # 		  ...					  scenario, use the word IGNORE and this parameter will not be checked in the RRR Recong message
+# #           ...     Verdict:        All values are as expected
+
+# # 		  [Arguments] 				${RRC_Reconf_file_name}=Reconfig_MSG_1
+# # 		  ...						${keepRRCFiles}=false
+# # 		  ...						${transformPrecoder}=enabled
+# #           ...						${tp_pi2BPSK}=enabled
+# # 		  ...						${dmrs-UplinkTransformPrecoding-r16}=enabled
+# # 		  ...						${dmrs-UplinkTransformPrecodingPUCCH-r16}=enabled
+# # 		  ...						${powerBoostPi2BPSK}=enabled
+# # 		  ...						${maxCodeRate}=zeroDot15
+
+# # 		  CallSetup.Flush Egate Console Buffer
+# # #		  ${alias}                  SSH Connect and Exec      host=${HOST_EPCSIM}
+# # #		  ...												  command=cp ${RRCScriptspath}/${RRCScriptsname} ${LOG_PATH}/
+
+# # 		  ${alias}					SSH Upload Script		  host=${HOST_EPCSIM}
+# # 		  ...												  scriptFile=${RRCScriptsname}
+# # 		  ...												  localPath=${RRCScriptspath}
+# # 		  ...												  remotePath=${LOG_PATH}/
+# # 		  Traced Sleep					  2s
+
+# # 		  ${output}                       SSH Cmd
+# # 		   ...                            command=python ${LOG_PATH}/${RRCScriptsname}
+# #            ...                            alias=${alias}
+
+# # 		  Traced Sleep					  2s
+
+# # 		  ${output}                       SSH Cmd
+# # 		   ...                            command=${tl.core.dir_path}/egate_console.log
+# #            ...                            alias=${alias}
+
+# # 		  Traced Sleep					  2s
+# # 		  IF                  			 				$tp_pi2BPSK != ignore
+# # 				If 						  				$tp_pi2BPSK == enabled
+# # 						${output}                       SSH Cmd
+# # 						...                             command=grep 'tp-pi2BPSK enabled'  ${LOG_PATH}/${RRC_Reconf_file_name}
+# # 						...                             alias=${alias}
+# # 						should contain                  ${output}                     tp-pi2BPSK enabled
+# # 				ELSE
+# # 						${output}                       SSH Cmd
+# # 						...                             command= grep 'tp-pi2BPSK enabled'  ${LOG_PATH}/${RRC_Reconf_file_name}
+# # 						...                             alias=${alias}
+# # 						should contain                  ${output}                     tp-pi2BPSK enabled
+
+# # 		  IF											$dmrs-UplinkTransformPrecoding-r16 != ignore
+# # 				If                  					$dmrs-UplinkTransformPrecoding-r16 == enabled
+# # 						${output}                       SSH Cmd
+# # 						...                           command =grep 'dmrs-UplinkTransformPrecoding-r16 enabled'  ${LOG_PATH}/${RRC_Reconf_file_name}
+# # 						...                             alias=${alias}
+# # 						should contain                  ${output}                     dmrs-UplinkTransformPrecoding-r16 enabled
+# # 				  ELSE
+# # 						${output}                       SSH Cmd
+# # 						...                             command 'dmrs-UplinkTransformPrecoding-r16 disabled'  ${LOG_PATH}/${RRC_Reconf_file_name}
+# # 						...                             alias=${alias}
+# # 						should contain                  ${output}                     dmrs-UplinkTransformPrecoding-r16 disabled
+
+# # 		  Traced Sleep					  2s
+# # 		   IF 									$keepRRCFiles==false
+# # 				${output}                       SSH Cmd
+# # 				...                             command= rm -rf ${LOG_PATH}/Reconfig_MSG*
+# # 				...                             alias=${alias}
+
+# #	Critical Step					Check transformPrecoder enabled   pcapFile=CaptureFirstRRCReconf    value=enabled
+# #	Critical Step					Check tp_pi2BPSK enabled   pcapFile=CaptureFirstRRCReconf    value=enabled
+# #	Critical Step					Check dmrs-UplinkTransformPrecoding-r16 enabled   #To be added when feature is activated
+# #	Critical Step					Check dmrs-UplinkTransformPrecodingPUCCH-r16 enabled    #To be added when feature is activated
+# #	Critical Step					Check powerBoostPi2BPSK enabled  pcapFile=CaptureFirstRRCReconf    value=TRUE
+# #	Critical Step					Check maxCodeRate Value   pcapFile=CaptureFirstRRCReconf    value=zeroDot15
+
+
+# #==========================================
+# #Customised rename of sherpa logs
+# #==========================================
+# Rename Of Sherpa Logs
+#     ${TestName}                     getFormattedName
+#     Copy File                       ${LOG_PATH}/l2stream3/tcpdump/tcpdump.pcap        ${LOG_PATH}/l2stream3/tcpdump/${TestName}.pcap
+

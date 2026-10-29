@@ -1,0 +1,298 @@
+*** Settings ***
+Documentation
+...      == COPYRIGHT ==
+...         Nokia Networks
+...
+...      == INTRODUCTION ==
+...         5GC001756: PCMD for SA
+...         PCMD records provide per call measurements/statistics data.
+...         PCMD provides a "summary" of the UE experience in the signaling, user plane, and RF domains.
+...         Feature is mainly aimed at increasing PCMD fields to cover SA scenarios.
+...
+...      == TEST SET NAME ==
+...         5GC001756
+...
+...      == TESTING SPLIT==
+...            5GC001756-B
+...            5GC001756-B-B101 Reporting SINR related gNB-DU UP PCMD
+...            5GC001756-B-B102 Reporting Timing Advance related gNB-DU UP PCMD
+...            5GC001756-B-B201 Reporting gNB-DU UP PCMDs - UP internal changes in deployment
+...            5GC001756-D
+...            5GC001756-D-B101 Reporting Timing Advance in contention-based RA gNB-DU UP PCMD
+...            5GC001756-D-B102 Reporting gNB-DU UP PCMDs - SA user scenarios for legacy PCMDs
+...            5GC001756-D-B103 Reporting SINR related gNB-DU UP PCMD in SA mode
+...            5GC001756-EA
+...            5GC001756-EA-B101 gNB-CU PDU Session Info Record for Initial Context Setup
+...            5GC001756-EA-B102 gNB-CU PDU Session Info Record for Pdu Session Resource Setup
+...            5GC001756-EA-B103 gNB-CU PDU Session Info Record for Pdu Session Resource Modification
+...            5GC001756-EA-B104 gNB-CU PDU Session Info Record for Pdu Session Resource Release
+...            5GC001756-EA-B106 gNB-CU PDU Session Info Record for Intra-gNB mobility
+...            5GC001756-EA-B107 gNB-CU PDU Session Info Record for Inter-gNB mobility
+...            5GC001756-EA-B113 gNB-CU UeDuConnectivity Record for Intra-gNB Inter-DU Handover
+...            5GC001756-EA-B114 gNB-CU UeDuConnectivity Record for Inter-gNB Handover (Target gNB)
+...            5GC001756-EA-B116 gNB-CU UeDuConnectivity Record for RRC Re-establishment with the same gNB-DU
+...            5GC001756-EA-B118 gNB-CU UeDuConnectivity Record for Initial Context Setup
+...            5GC001756-EA-B119 gNB-CU UeDuConnectivity Record for PDU Session Resource Setup
+...            5GC001756-EA-B121 gNB-CU UE Setup Record for Initial Context Setup
+...            5GC001756-EA-B122 gNB-CU UE Setup Record for Intra-gNB mobility
+...            5GC001756-EA-B123 gNB-CU UE Setup Record for Inter-gNB mobility
+...            5GC001756-EA-B124 gNB-CU UE Setup Record for miscellaneous cases
+...            5GC001756-EA-B125 gNB-CU Bearer Record for Initial Context Setup
+...            5GC001756-EA-B126 gNB-CU Bearer Record for PDU Session Resource Setup
+...            5GC001756-EA-B127 gNB-CU Bearer Record for PDU Session Resource Modification
+...            5GC001756-EA-B128 gNB-CU Bearer Record for PDU Session Resource Release
+...            5GC001756-EA-B129 gNB-CU Bearer Record for Intra-gNB mobility
+...            5GC001756-EA-B130 gNB-CU Bearer Record for Inter-gNB mobility
+...            5GC001756-EA-B201 DU UE context setup record reporting - Initial Context Setup
+...            5GC001756-EA-B202 DU UE context setup record reporting - Intra/Inter gNB Inter DU HO target
+...            5GC001756-EA-B203 DU UE context setup record reporting - Intra gNB Intra DU HO target
+...            5GC0017656-G-B1 Uplane - Multiple Bearers reporting
+...
+...      == AUTHORS ==
+...       - Agnieszka Wlodarczyk <agnieszka.wlodarczyk@nokia.com>
+...       - Michal Szymakowski <michal.szymakowski@nokia.com>
+...       - Dawid Krawczuk <dawid.krawczuk@nokia.com>
+...
+...      == MAINTAINER ==
+...       - I_EXT_ETK4_GMS <I_EXT_ETK4@internal.nsn.com>
+...
+...      == REFERENCES ==
+...         5GC001756 CFAM
+...
+...      == HISTORY ==
+...         [30.07.2021] - Create Test Suite
+
+Resource    ./resources/5GC001756-EA_HO_keywords.robot
+Resource    ./resources/5GC001756-common_keywords.robot
+Resource    ./resources/5GC001756-verify_keywords.robot
+Resource    ./resources/5GC001756-EA-records.robot
+
+Force Tags    CONFIGURED    PY36    RAN_5G    RAN_5G_TDD    SBTS00    SBTS23R4    SKIPRUN
+    ...    CLOUD_5G_I_BO_AP_KL_SANSA_L1B_ECPRI_CMWV_TDD
+
+Suite Setup  Run Setup
+...     vonr=${True}
+...     intra_gnb_ho=${True}
+...     partial_handover=${True}
+
+*** Variables ***
+${LUA_CFG}=                 ${CURDIR}/config/SA_egate_2c_tdd_inter_gnb_partial.lua
+
+*** Test Cases ***
+
+5GC001756-EA PCMD for SA - Xn inter gNB HO success partial
+    [Documentation]
+    ...
+    ...  == DESCRIPTION ==
+    ...  == Info==
+    ...  The purpose of test is verification that target gNB-CU report correctly PCMD reports during below procedures:
+    ...  Procedure: Inter-gNB handover is successfully finished with partially admitted PDU sessions due to unsupported slice on target cell
+    ...
+    ...  == Precondition: ==
+    ...	 - NRCELL-1 simulated on AEQA radio module - NR_BAND: n78
+    ...  - UE - Airphone simulator
+    ...  - gNB2 up and running with two SA cells OnAir
+    ...  - simulated gNB3 is up and running with one cell
+    ...  - Trace Session with PCMD content is activated on gNB2 Cell-1 for CU
+    ...  - TCE is configured in MNL/TCEADM/TCE
+    ...  - NRBTS/actPCMDReport is set to True
+    ...  - NRBTS/NRCTRLTS/NRMTRACECU/actPCMDReporting is set to True
+    ...  - Max number of traced UE/Cell is not reached on gNB-CU (NRBTS/NRCTRLTS/NRMTRACECU/cellMaxActiveUEsTraced)
+    ...  - NRBTS/NRCTRLTS/NRMTRACECU/NRRESOURCECU is created for both NRCELL
+    ...  - Trace Recording Session for SA UE call is reported to TCE
+    ...  - MRBTS-1/NRBTS-1/NRADJGNB-0 is configured for adjacent gNB3
+    ...  - MRBTS-1/NRBTS-1/NRADJNRCELL-1 is configured for adjacent gNB3 Cell1
+    ...  - Neighbour gNB3 has Ng connection to the AMF that the UE1 is connected to
+    ...  - gNB2 Cell1 has NRCELL/NRREL object, which indicates relation to gNB3 neighbor cell
+    ...  - gNB2 Cell2 has NRCELL/NRREL object, which indicates relation to gNB3 neighbor cell
+    ...  - MRBTS/NRBTS/NRCELL/a3MeasEnabled is set to 'rsrpAndRsrq' for both cells
+    ...  - MRBTS/NRBTS/NRCELL/a5MeasEnabled is set to 'rsrpAndRsrq' for both cells
+    ...  - NRBTS/actIntraFreqHoSA is set to 'true'
+    ...  - MRBTS/NRBTS/NRCELL.pduHoSliceRelease is set to 'true' for all cells
+    ...  - MRBTS/NRBTS/NRCELL.arpPrioEmergencyCall is set to '1' for all cells
+    ...  - MRBTS/NRBTS/NRCELL.emergencyCallLimServ is set to 'true' for all cells
+    ...  - MRBTS/NRBTS/NRCELL.emergencyCallPlmnHoAllowed is set to 'true' for all cells
+    ...  - MRBTS/NRBTS/NRCELL.actVoNR is set to 'true' for all cells
+    ...  - MRBTS/NRBTS/NRDRB_5QI objects are configured for 5QI-1 and 5QI-5
+    ...  - MRBTS/NRBTS/NRCELL-1.trackingAreaDN support all slices PDU sessions
+    ...  - MRBTS/NRBTS/NRCELL-2.trackingAreaDN support only one slice PDU session
+    ...  - UE1 is VoNR capable in FR1
+    ...  - UE1 PDU-2 session is not admitted on target cell due to unsupported slice
+    ...
+    ...  == TESTING TOOLS ==
+    ...  - AirPhone, EPCSIM, UTE
+    ...
+    ...  == TEST ENVIRONMENT ==
+    ...  - gNB classicBTS in SA mode
+    ...  - HARDWARE ID:  gNB(ABIO + ASIB) with simulated AHLOA radio module - NR_BAND: n71
+    ...
+    ...  == REQUIREMENTS COVERAGE ==
+    ...    REQUIREMENTS IN SCOPE:  5G_RAN_USR_COM_3036
+    ...
+    ...  == REQUIRED LOGS ==
+    ...    UU, NGAP, NRRRC, PCAP
+    ...
+    ...  == CONTACTS ==
+    ...  - Michal Szymakowski <michal.szymakowski@nokia.com>
+    ...  - Agnieszka Wlodarczyk <agnieszka.wlodarczyk@nokia.com>
+    ...  - Dawid Krawczuk <dawid.krawczuk@nokia.com>
+    ...
+    ...  == REFERENCES ==
+    ...  - Related CFAM US:
+    ...     - 5GC001756-EA-B107 gNB-CU PDU Session Info Record for Inter-gNB mobility
+    ...         - User Scenario#2 Successful Inter-gNB Handover – partial admission due to unsupported slice
+    ...
+    ...  == HISTORY ==
+    ...         [23.08.2021]  - Created TC
+
+    [Setup]  Prepare test environment intraHO EA3
+    [Tags]  EA2
+
+    Attach emergency UE1 with single PDU session in ICS
+    Verify that UE1 attach with 1 PDU session was completed successfully
+
+    Verify single field in NGAP message
+    ...     amf_id=1
+    ...     procedure_name=initialUEMessage
+    ...     message=InitialUEMessage
+    ...     field=RRCEstablishmentCause
+    ...     value=emergency
+
+    Verify single field in NGAP message
+    ...     amf_id=1
+    ...     procedure_name=initialContextSetup
+    ...     message=InitialContextSetupRequest
+    ...     field=priorityLevelARP
+    ...     value=5
+
+    Verify number of elements on the list within NGAP message
+    ...     amf_id=1
+    ...     procedure_name=initialContextSetup
+    ...     message=InitialContextSetupRequest
+    ...     list_name=PDUSessionResourceSetupListCxtReq
+    ...     element_num=1
+
+    Verify number of elements on the list within NGAP message
+    ...     amf_id=1
+    ...     procedure_name=initialContextSetup
+    ...     message=InitialContextSetupResponse
+    ...     list_name=PDUSessionResourceSetupListCxtRes
+    ...     element_num=1
+
+    Verify in RRCReconfiguration that UE1 1 DRBs were added
+
+    Run keyword and Continue on Failure
+    ...     Verify First PduSessionResourceInfoTraceRecord In intra-gNB HO Test EA3 During attach
+
+    Clear PCMD Records
+
+    EXPECT FLOW: AMF1 NGAP pDUSessionResourceSetup with 1 PDU session(s)
+    EXPECT FLOW: UE_1 NR-RRC RRCReconfiguration
+
+    Add to UE1 second PDU session with one QoS flow with second slice
+
+    PASS FLOW: AMF1 NGAP pDUSessionResourceSetup with 1 PDU session(s)
+    PASS FLOW: UE_1 NR-RRC RRCReconfiguration
+    Verify in RRCReconfiguration that UE1 1 DRBs were added
+    Verify single field in NGAP message
+    ...     amf_id=1
+    ...     procedure_name=pDUSessionResourceSetup
+    ...     message=PDUSessionResourceSetupRequest
+    ...     field=priorityLevelARP
+    ...     value=5
+    Verify single field in NGAP message
+    ...     amf_id=1
+    ...     procedure_name=pDUSessionResourceSetup
+    ...     message=PDUSessionResourceSetupRequest
+    ...     field=sD
+    ...     value='D143A6'H
+
+    Run keyword and Continue on Failure
+    ...     Verify Second PduSessionResourceInfoTraceRecord In intra-gNB HO Test EA3 During second PDU session addition with slice 2
+
+    Clear PCMD Records
+
+    EXPECT FLOW: AMF1 NGAP pDUSessionResourceModify with QoS Flow addition
+    EXPECT FLOW: UE_1 NR-RRC RRCReconfiguration with DRB addition
+    EXPECT FLOW: UE_1 NR-RRC RRCReconfigurationComplete
+
+    5GC001756-common_keywords.Add to UE1 PDU1 session QoS flows with 5QI from list [1] and delete QoS flows with 5QI from list []
+
+    PASS FLOW: AMF1 NGAP pDUSessionResourceModify with QoS Flow addition
+    PASS FLOW: UE_1 NR-RRC RRCReconfiguration with DRB addition
+    PASS FLOW: UE_1 NR-RRC RRCReconfigurationComplete
+    Verify single field in NGAP message
+    ...     amf_id=1
+    ...     procedure_name=pDUSessionResourceModify
+    ...     message=PDUSessionResourceModifyRequest
+    ...     field=fiveQI
+    ...     value=1
+
+    Verify single field in NGAP message
+    ...     amf_id=1
+    ...     procedure_name=pDUSessionResourceModify
+    ...     message=PDUSessionResourceModifyRequest
+    ...     field=priorityLevelARP
+    ...     value=5
+
+    Verify single field in NGAP message
+    ...     amf_id=1
+    ...     procedure_name=pDUSessionResourceModify
+    ...     message=PDUSessionResourceModifyRequest
+    ...     field=pDUSessionID
+    ...     value=1
+
+    Run keyword and Continue on Failure
+    ...     Verify Third PduSessionResourceInfoTraceRecord In intra-gNB HO Test EA3 During PDU1 5QI1 QoSFlow addition
+
+    Clear PCMD Records
+
+    EXPECT FLOW: UE_1 NR-RRC MeasurementReport triggering inter-gNB HO
+    EXPECT FLOW: UE_1 NR-RRC RRCReconfiguration with target cell configuration
+    EXPECT FLOW: UE_1 NR-RRC RRCReconfigurationComplete
+    EXPECT FLOW: gNB3_XN XNAP handoverPreparation,uEContextRelease
+
+    Trigger UE1 to send MeasurementReport with A3 value above offset defined for cell1 simulated gNB
+
+    PASS FLOW: UE_1 NR-RRC MeasurementReport triggering inter-gNB HO
+    PASS FLOW: UE_1 NR-RRC RRCReconfiguration with target cell configuration
+    PASS FLOW: UE_1 NR-RRC RRCReconfigurationComplete
+    PASS FLOW: gNB3_XN XNAP handoverPreparation,uEContextRelease
+
+    Sleep    5
+
+    EXPECT FLOW: UE_1 NR-RRC MeasurementReport triggering inter-gNB HO
+    EXPECT FLOW: UE_1 NR-RRC RRCReconfiguration with target cell configuration
+    EXPECT FLOW: UE_1 NR-RRC RRCReconfigurationComplete
+    EXPECT FLOW: gNB3_XN XNAP handoverPreparation,uEContextRelease
+
+    UE1 triggers XNAP Inter-gNB Handover from simulated gNBsim to cell2 real gNB2
+
+    PASS FLOW: UE_1 NR-RRC MeasurementReport triggering inter-gNB HO
+    PASS FLOW: UE_1 NR-RRC RRCReconfiguration with target cell configuration
+    PASS FLOW: UE_1 NR-RRC RRCReconfigurationComplete
+    PASS FLOW: gNB3_XN XNAP handoverPreparation,uEContextRelease
+
+    Run keyword and Continue on Failure
+    ...     Verify Fourth PduSessionResourceInfoTraceRecord In inter-gNB HO partial failure Test During partial HO with session release
+
+#    Verify that gNB-CU PDU Session Info Record is sent correctly
+#    - "trigger" set to "Handover"
+#    - "result" is set to "success"
+#    - List of successfully established PDU Session(s) with respective
+#        - PDU Session Id
+#        - S-NSSAI
+#        - PDU Session Aggregated Maximum Bit Rate
+#        - List of successfully setup QOS Flows with QFI, Non-dynamic 5QI,
+#        - ARP and GBR QoS Information in case of GBR QoS Flow presence
+#    - PDU Session(s) which is not admitted by target cell as Failed to Setup PDU Session with respective
+#        - PDU Session Id
+#        - S-NSSAI
+#        - PDU Session Aggregated Maximum Bit Rate
+#        - List of failed to setup QOS Flows with QFI, Dynamic 5QI, ARP and GBR QoS Information in case
+#          of GBR QoS Flow presence
+
+    [Teardown]  Run Keywords
+    ...     Cleanup after test intraHO EA3
+    ...     AND    Restore AP by reset
+

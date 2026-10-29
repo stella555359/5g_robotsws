@@ -1,0 +1,18 @@
+# -*- coding: utf-8 -*-
+"""
+:copyright: Nokia Networks
+"""
+from testsuite.Paris.RRM.ET.CB009836.resources.python.cm.cm_bts import cm_bts
+# from .cm_bts import cm_bts
+# from .cm_iphy import cm_iphy
+
+
+class cm(cm_bts):
+    def __init__(self):
+        cm_bts.__init__(self)
+        # cm_iphy.__init__(self)
+
+
+if __name__ == "__main__":
+    cm_obj = cm()
+    help(cm_obj)

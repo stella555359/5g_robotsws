@@ -1,0 +1,1 @@
+source /home/ute/MN/UTE/robotws/testsuite/Wroclaw/UUF/resources/qol/env.sh

@@ -1,0 +1,106 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Keywords for 
+...               Prerequisite :
+...               Scope : keywords for CB009158-K
+...
+...               Test Case Scenario author   : blandine.garnier@nokia.com
+...               Test Case Scenario contact  : blandine.garnier@nokia.com
+...               Test Case automation author : blandine.garnier@nokia.com
+...               Test Case automation contact: blandine.garnier@nokia.com
+...               Creation Date               : 08-06-2022
+...               Version History   Date            Author                         Notes
+...               0.1               20-05-2022      blandine.garnier@nokia.com     Creation
+...               0.2               FB2212          ying.yw.wu@nokia.com           Add step Recommissioning 
+...               0.3               FB2321          blandine.garnier@nokia.com     Migration LO_LOOO with variant
+
+
+Library             ../../../resources/python/luashark_tools.py
+Resource          taf/rfrl/common_resources/robot/preconditions.robot
+
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../../../resources/SWENG/robot/Container.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+Resource          ./Config9158.robot
+#Resource          ../5GC001227/resources/robot/Config1227.robot
+#Resource          ../5GC001227/resources/robot/5GC001227-Common_keywords.robot
+
+Variables           ../../../../../resources/SWENG/python/Colors.py
+
+*** Variables ***
+# Variables for ue profile and traffic
+${CallType}                 SA           # NSA or SA (for all UEs)
+${Cell}                     1            # Target cell (must be index 1, 2, 3, 4, 5...)
+${DLthroughput}             50           # DL throughput in Mbps
+${ULthroughput}             10           # UL throughput in Mbps
+${TrafficDuration}          10           # Traffic Duration  (0 means no traffic)
+
+#Variables to Build UEs list and Setup WTS Lua
+${gNbID}              2            # Value of the Target_gnb  
+${CellID}             1            # Retrieved from NRCELL_ID_LIST items [1, 2, 3, 4, 5, 6, None, None, None]
+${ue_1_id}            1            # Applied only for KW SA Call of 1 UE
+${ue_3_id}            3            # ue id 3
+
+#Variables for TC 9158 Asymetric Band PRB Allocation
+${csv_file_name_9158_K}     macro__dlStat.csv
+${expected_MAX_PRB_9158_K}         98
+${operator_compare_9158_K}         >=
+${column_name_9158_K}            MAX PRB
+
+# Now, the TestLine is configured during Suite Setup
+# Custom Config File to be used during "Suite Setup"
+${custom_config_file}       ${CURDIR}/../../../../../../../custom-config/POOLING/CB009158/CB009158_K/custom_config_9158_K.yaml
+
+*** Keywords ***
+
+Suite Setup 9158-K
+    [Documentation]
+    ...     Conditions:    it needs no conditions
+    ...     Actions:       it performs the generic suite setup and backup the configurations files
+    ...     Checks:        it checks nothing more than already done on lib.
+    ...     Verdict:       suite setup is passed
+    Setup.Suite Setup From Scratch
+    ...                    keepAllUeDataInCfgFile=${True}
+    ...                    automaticTeardown=${True}
+    ...                    yamlPathname=${custom_config_file}
+    Backup Files
+    ${scf_suite_setup_backup}        OAM Get SCF File           file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable               ${scf_suite_setup_backup}
+    Dated Log                        SCF backup file = ${scf_suite_setup_backup}
+		
+TC 9158 Asymetric Band PRB Allocation
+    [Documentation]         Vérification que le nombre de PRB alloués avec CB007933 activé ne dépasse jamais 98 Prbs en DL
+        ...                 (inner guard period de 4 Prbs soit 102 Prbs
+	...                 mais remis à RBG complet + 2 PRb = 98 Prbs max)
+
+    [Arguments]            ${params}        ${Vendor_Param}
+    Set Suite Variable     ${params}
+    Init Sequence          ${params}
+    Step                   Set RAD Params Of 1227
+    Step                   Config1227.Vendor File Config With Specific Settings     argument=${Vendor_Param}
+    Step                   Recommissioning
+    Critical Step          Restart TL
+    Step                   Multi Cells Setup SA 1227                   argument=${params.nbCell}
+    Step                   Wait In Seconds
+    Step                   SA Call With UE Id   argument=${ue_1_id}
+    Step                   SA Call With UE Id   argument=${ue_3_id}
+    Step                   Activate Sherpa On All Cells
+    Step                   Wait In Seconds
+    Step                   Stop Sherpa Collection
+    Step                   Check PRB Allocation In Sherpa for CB009158-K
+
+Check PRB Allocation In Sherpa for CB009158-K
+    [Documentation]                  post-processing on macro_dlStat.csv to check that
+    ...                                 - for DL, bw 20Mhz, the maxPRB will be <=98 (inner guard period not avaialble)
+    Dated Log                        Analyse in sherpa traces : PRB allocation for DL grant
+    Verify Max PRB In Sherpa      ${csv_file_name_9158_K}   ${column_name_9158_K}    ${expected_MAX_PRB_9158_K}   ${operator_compare_9158_K}

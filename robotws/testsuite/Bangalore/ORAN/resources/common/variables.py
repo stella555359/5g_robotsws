@@ -1,0 +1,11 @@
+connection_type = 'cli'
+lktool_reservation = 'yes'
+release = "SBTS23R4"
+license_name = []
+licemse_technology = []
+build_to_be_download = "SBTS00_ENB_9999_230424_000016"
+download_path = "/home/ute/Downloads/Reg"
+default_scf_path = "/home/ute/Downloads/SCF.xml"
+bts_id = ""
+mount_path = ""
+source_log_path = ""

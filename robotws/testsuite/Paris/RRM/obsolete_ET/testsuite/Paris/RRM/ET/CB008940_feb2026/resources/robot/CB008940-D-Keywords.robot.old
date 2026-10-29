@@ -1,0 +1,865 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   Configuration related keywords for feature CB008940-D ...
+...               Prerequisite :
+...               Scope : keywords for CB008940-D
+...
+...               Test Case Scenario author   : vincent.boulet@nokia.com
+...               Creation Date               : 04-10-2022
+...               Modified Date               : 18-01-2023
+...               Last Modified by            : vincent.boulet@nokia.com
+...               Version   Date      Author                                Notes
+...               0.1       FB2220    vincent.boulet@nokia.com              Creation
+...               0.2       FB2220    vincent.boulet@nokia.com              Remove useless code
+...                                                                         Control consistency for number of cells before configuration
+...                                                                         Create all the relations for mobility intra cells 
+...               0.3       FB2221    vincent.boulet@nokia.com              Remove obsolete lines 
+...                                                                         Moving declarations and KW to robot resources 
+...                                                                         Checking counters values of Ho
+...               0.4       FB2221    vincent.boulet@nokia.com              Disabling check during counters observation phase
+...                                                                         Introducing GBR traffic to simulate VoNR
+...                                                                         Adding info into ue_measurement_send_nr to avoid cp_rt warning
+...                                                                         WA to bypass Launch PDU Session error in case multi-ue's
+...               0.5       FB2222    vincent.boulet@nokia.com              WA to avoid degradation on cells
+...                                                                         Removing actK1Opt configuration because useless
+...                                                                         WA by moving Captures Init and Start to avoid exceeded traffic
+...               0.6       FB2223    vincent.boulet@nokia.com              Factoring using common library CB008940-Common-Keywords.robot
+...                                                                         Saving Snapshot as debug data
+...               0.7       FB2224    vincent.boulet@nokia.com              Factoring using common library CB008940-Common-Keywords.robot
+...               0.8       FB2224    vincent.boulet@nokia.com              Capturing Sherpa before, during and after handovers
+...               0.9       FB2224    vincent.boulet@nokia.com              Addition of an observation for 3 counters per cell
+...               0.10      FB2224    vincent.boulet@nokia.com              Update vendor file configuration w/ specific settings
+...               0.11      FB2225    vincent.boulet@nokia.com              Correction on starting since the adding of vendor customization
+...                                                                         and in case handover is disable
+...               0.12      FB2225    vincent.boulet@nokia.com              Factorization by using keyword for the vendor configuration
+...               0.13      FB2226    vincent.boulet@nokia.com              Updating for CB008940-D_2-ET1D_Interaction_with_CB008847_enabled
+...               0.14      FB2226    vincent.boulet@nokia.com              Updating verifications for GBR traffic
+...               0.15      FB2301    vincent.boulet@nokia.com              Adding new handoverAllowedSARedCap into Nr Relation For Cell
+...                                                                         Setting RAD parameters of CB008940-B-Keywords
+...               0.16      FB2301    vincent.boulet@nokia.com              Introduction of the operator option to refine the checks
+...                                                                         Rename a keyword because of an existing keyword with the same name
+...               0.17      FB2301    vincent.boulet@nokia.com              Update of the counters management
+...               0.18      FB2302    vincent.boulet@nokia.com              Simplification trf_id usage
+...                                                                         Force enable_sherpa to true
+...                                                                         Update checks on BB Pooling information
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Libraries
+
+# Resources
+Resource          ./CB008940-Common-Keywords.robot
+Resource          ./CB008940-B-Keywords.robot
+
+*** Variables ***
+${PHYS_CELL_ID_OFFSET}                49
+
+# IF auto THEN it means that the value of the counter to check is compute automatically ELSE the value set is used
+# Counters settings for Peak numbers of SA RRC users in the CU and non-GBR versus GBR DRBs on NRBTS
+&{dict_settings_M55140C00001}         counter=M55140C00001    obj=NRBTS     objId=auto    min=auto     max=auto      iteration=2
+&{dict_settings_M55140C00002}         counter=M55140C00002    obj=NRBTS     objId=auto    min=auto     max=auto      iteration=2
+&{dict_settings_M55140C00501}         counter=M55140C00501    obj=NRBTS     objId=auto    min=auto     max=auto      iteration=2
+# Counters settings for intra DU HO SA PLMN on NRCELL's
+&{dict_settings_M55145C00301}         counter=M55145C00301    obj=NRCELL    objId=auto    min=auto     max=auto      iteration=1
+&{dict_settings_M55145C00302}         counter=M55145C00302    obj=NRCELL    objId=auto    min=auto     max=auto      iteration=1
+# Counters settings for number of scheduled UEs on PDSCH
+&{dict_settings_M55308C17001}         counter=M55308C17001    obj=NRCELL    objId=auto    min=10000    max=500000    iteration=2
+&{dict_settings_M55308C17002}         counter=M55308C17002    obj=NRCELL    objId=auto    min=1        max=4         iteration=2
+# Counters settings for number of F1AP UE context
+&{dict_settings_M55113C01002}         counter=M55113C01002    obj=NRCELL    objId=auto    min=2        max=4         iteration=1
+@{dict_all_counters_for_ho}           &{dict_settings_M55140C00001}
+...                                   &{dict_settings_M55140C00002}
+...                                   &{dict_settings_M55140C00501}
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+*** Keywords ***
+# HO - handover - mobility #
+Create One Nr Relation For Cell
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${dist_name_cell} ${relationId} ${relMcc} ${relMnc} ${lcrId}
+    ...     Actions:        it configures the parameters to initialize one NR relation for the cell
+    ...     Checks:         it needs no checks
+    ...     Verdict:        the parameters for the object are initialized
+    [Arguments]             ${dist_name_cell}
+    ...                     ${relationId}
+    ...                     ${relMcc}
+    ...                     ${relMnc}
+    ...                     ${lcrId}
+
+    ${dist_name_nrrel}            Set Variable                            ${dist_name_cell}/NRREL-${relationId}
+    Dated log                     dist_nrcell_name is ${dist_name_nrrel}
+    #manageObject=${dist_name_nrrel}
+    SCF Add object                dist_name=${dist_name_nrrel}            class_name=com.nokia.srbts.nrbts:NRREL      version=${None}
+    #cellIndividualSsbRsrpOffset / 0dB
+    SCF Set element               dist_name=${dist_name_nrrel}            element_name=cellIndividualSsbRsrpOffset    element_value=0dB
+    #cellIndividualSsbRsrqOffset / 0dB
+    SCF Set element               dist_name=${dist_name_nrrel}            element_name=cellIndividualSsbRsrqOffset    element_value=0dB
+    #gNbId / ${TMRBTS_ID[0]}
+    SCF Set element               dist_name=${dist_name_nrrel}            element_name=gNbId    element_value=${TMRBTS_ID[0]}
+    #gNbIdLength / 22
+    SCF Set element               dist_name=${dist_name_nrrel}            element_name=gNbIdLength    element_value=22
+    #handoverAllowedSA / allowed
+    SCF Set element               dist_name=${dist_name_nrrel}            element_name=handoverAllowedSA    element_value=allowed
+    #handoverAllowedSARedCap / forbidden
+    SCF Set element               dist_name=${dist_name_nrrel}            element_name=handoverAllowedSARedCap    element_value=forbidden
+    #lcrId
+    SCF Set element               dist_name=${dist_name_nrrel}            element_name=lcrId    element_value=${lcrId}
+    #nrDcAllowed / false
+    SCF Set element               dist_name=${dist_name_nrrel}            element_name=nrDcAllowed    element_value=${False}
+    #removeNotAllowed / false
+    SCF Set element               dist_name=${dist_name_nrrel}            element_name=removeNotAllowed    element_value=${False}
+    #list_name=gnbPlmn / add / mcc / ${relMcc} + mnc / ${relMnc} + mncLength / len(${relMnc})
+    ${len_mnc}                    get length                              ${relMnc}
+    ${list_gnbPlmn}               Create Dictionary    mcc=${relMcc}    mnc=${relMnc}    mncLength=${len_mnc}
+    SCF Add list                  dist_name=${dist_name_nrrel}            list_name=gnbPlmn
+    SCF Add items to list         dist_name=${dist_name_nrrel}            list_name=gnbPlmn    elements=${list_gnbPlmn}
+
+
+Create All Nr Relations For Cell
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${nbOfCell} ${dist_name_cell} ${cellId} ${param}
+    ...     Actions:        it configures the parameters to initialize all the NR relations for the cell
+    ...     Checks:         it needs no checks
+    ...     Verdict:        the parameters for the objects are initialized
+    [Arguments]             ${nbOfCell}
+    ...                     ${dist_name_cell}
+    ...                     ${cellId}
+    ...                     ${param}
+
+    ${nrRelId}              Set Variable        1
+    FOR    ${cell_id_bis}    IN RANGE    0    ${nbOfCell}
+        Dated log          Check if Create One Nr Relation For Cell is possible for cellId=${cellId} compared current=${cell_id_bis}
+        Run Keyword If     ${cellId} != ${cell_id_bis}    Create One Nr Relation For Cell    dist_name_cell=${dist_name_cell}
+        ...                                               relationId=${nrRelId}    relMcc=${param.mcc}    relMnc=${param.mnc}
+        ...                                               lcrId=${TNRCELL_ID_LIST[0]}[${cell_id_bis}]
+        ${nrRelId}=         Run Keyword If     ${cellId} != ${cell_id_bis}    Evaluate    ${nrRelId} + 1
+        ...                             ELSE                                  Evaluate    ${nrRelId} + 0
+    END    
+
+
+Perform Full Commissioning With Intra Gnb Ho Configuration
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${nbCell}
+    ...     Actions:        it performs the full commissioning to support the intra GNB HO
+    ...     Checks:         it checks the real number of cells
+    ...     Verdict:        the parameters for the objects are configured
+    [Arguments]             ${param}
+    ...                     ${nbCell}=1
+
+    Dated log               The number of requested cells to configure is ${nbCell}
+    ${nbNrCellId}           Set Variable        0
+    ${len_nrCellIdList}     get length          ${TNRCELL_ID_LIST[0]}
+    FOR    ${current_nrCellId}    IN RANGE      0    ${len_nrCellIdList}
+        ${nbNrCellId}=      Run Keyword If      ${TNRCELL_ID_LIST[0]}[${current_nrCellId}] is not None    Evaluate    ${nbNrCellId} + 1
+        ...                             ELSE                                                              Evaluate    ${nbNrCellId} + 0
+    END
+    ${nbCell_backup}        Set Variable        ${nbCell}
+    ${nbCell}=              Run Keyword If     ${nbCell} > ${nbNrCellId}
+    ...                                         Set Variable        ${nbNrCellId}
+    ...                                  ELSE
+    ...                                         Set Variable        ${nbCell_backup}
+    Dated log               The number of cells to configure is ${nbCell}
+    ${current_scf}          String.Replace string    ${scf_suite_setup_backup}    _Suite_Setup_Backup.xml    ${EMPTY}
+    ${updated_scf}          catenate            SEPARATOR=${EMPTY}    ${current_scf}_Activated_For_HO.xml
+    ${std_output}=          Run                 cp ${scf_suite_setup_backup} ${updated_scf}   
+    SCF StartSession        scf_file=${updated_scf}
+    #definition of the objects dist_name
+    ${dist_name_mrbts}                Set Variable        MRBTS-${TMRBTS_ID[0]}
+    Dated log                         dist_name_mrbts is ${dist_name_mrbts}
+    ${dist_name_nrbts}                Set Variable        ${dist_name_mrbts}/NRBTS-${TNRBTS_ID[0]}
+    Dated log                         dist_name_nrbts is ${dist_name_nrbts}
+    ${dist_name_nrmopr_sa}            Set Variable        ${dist_name_nrbts}/NRMOPR_SA-1
+    Dated log                         dist_name_nrmopr_sa is ${dist_name_nrmopr_sa}
+    ${dist_name_nrpmrnl}              Set Variable        ${dist_name_nrbts}/NRPMRNL-1
+    Dated log                         dist_name_nrpmrnl is ${dist_name_nrpmrnl}
+    ### MRBTS
+    #btsName / update / INTRA_GNB_HO
+    SCF Set element                   dist_name=${dist_name_mrbts}            element_name=btsName    element_value=INTRA_GNB_HO
+    ### NRBTS
+    #actIntraFreqHoSA / update / true
+    SCF Set element                   dist_name=${dist_name_nrbts}            element_name=actIntraFreqHoSA    element_value=${True}
+    #timerXnDataFwdGuard / add / 250
+    SCF Set element                   dist_name=${dist_name_nrbts}            element_name=timerXnDataFwdGuard    element_value=250
+    ### NRMOPR_SA
+    #a3MeasEnabled / add / rsrp
+    SCF Set element                   dist_name=${dist_name_nrmopr_sa}        element_name=a3MeasEnabled    element_value=rsrp
+    ### NRPMRNL
+    #miNrRelReportCu / update / 5min
+    SCF Set element                   dist_name=${dist_name_nrpmrnl}          element_name=miNrRelReportCu    element_value=5min
+    ### NRCELL's
+    FOR    ${cell_id}       IN RANGE    0    ${nbCell}
+        ${dist_name_nrcell}           Set Variable    ${TNRCELL_DN_LIST[0]}[${cell_id}]
+        Dated log                     dist_nrcell_name is ${dist_name_nrcell}
+        #a3MeasEnabled / update / rsrp       
+        SCF Set element               dist_name=${dist_name_nrcell}           element_name=a3MeasEnabled    element_value=rsrp
+        #absThreshSsbRsrpConsolidation / add / 10        
+        SCF Set element               dist_name=${dist_name_nrcell}           element_name=absThreshSsbRsrpConsolidation    element_value=10
+        #sMeasConfigSsbRsrp / add / 10        
+        SCF Set element               dist_name=${dist_name_nrcell}           element_name=sMeasConfigSsbRsrp    element_value=10
+        #list_name=a3MeasSsbRsrp / add / a3HysteresisSsbRsrp / 2 + a3OffsetSsbRsrp / 4 + a3TimeToTriggerSsbRsrp / ms40
+        ${list_a3MeasSsbRsrp}         Create Dictionary    a3HysteresisSsbRsrp=2    a3OffsetSsbRsrp=4    a3TimeToTriggerSsbRsrp=ms40
+        SCF Add list                  dist_name=${dist_name_nrcell}           list_name=a3MeasSsbRsrp
+        SCF Add items to list         dist_name=${dist_name_nrcell}           list_name=a3MeasSsbRsrp    elements=${list_a3MeasSsbRsrp}
+        Create All Nr Relations For Cell    nbOfCell=${nbCell}    dist_name_cell=${dist_name_nrcell}    cellId=${cell_id}    param=${param}
+    END
+    SCF StopSession         scf_file=${updated_scf}
+    OAM Perform Full Commissioning    scf_file=${updated_scf}
+    OAM wait available
+    OAM Get SCF File        file=SCF_Updated_For_HO.xml
+
+
+Perform Intra Gnb Ho To Target Cell
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${ue_id} ${meas_id} ${event_type} ${physical_target_cell_id}
+    ...     Actions:        it performs the sending of the measurement report to simulate the trigger for the intra GNB HO
+    ...     Checks:         it checks several messages on the ue log to identify that HO is executed
+    ...     Verdict:        the messages are found
+    [Arguments]             ${ue_id}=1    
+    ...                     ${meas_id}=1
+    ...                     ${event_type}=A3
+    ...                     ${physical_target_cell_id}=51  
+    
+    Dated Log               Measurement report for ue=${ue_id} meas=${meas_id} event=${event_type} cell=${physical_target_cell_id}
+    # wtsemu.ue_measurement_send_nr    id=1    meas_id=1    event=A3    srsrp_nr=20    phycell_id=${physical_target_cell_id}    nrsrp_nr=90
+    # rs_type=ssb    index=0    nrs_result=11:12:13 <= to avoid cp_rt warning when ssb-result is empty
+    wtsemu.ue_measurement_send_nr     id=${ue_id}    meas_id=${meas_id}    event=${event_type}    phycell_id=${physical_target_cell_id}
+    ...                               srsrp_nr=20    nrsrp_nr=90    rs_type=ssb    index=0    nrs_result=11:12:13
+    Dated Log New Line      ===> Wait for measurement report message
+    ${output}               wtsemu.Read Wtsemu Output Until    expected=measurementReport    timeout=10
+    Dated Log New Line      ===> Wait for RRC reconfiguration complete message
+    ${output}               wtsemu.Read Wtsemu Output Until    expected=rrcReconfigurationComplete    timeout=10
+    Should Contain          ${output}    reconfigurationWithSync with physCellId
+    Should Contain          ${output}    CTRL_ADD_UE_HO_NR_RSP_T Received
+    Should Contain          ${output}    CTRL_RACH_COMPLETE Received
+    Should Contain          ${output}    Intra-eNB handover from
+
+
+Perform Multi Ues Intra Gnb Ho To Target Cell
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${multiUesList} ${physCellIdOffset}
+    ...     Actions:        it manages the intra gNB Ho to the target cell triggered by the measurement of the A3 event
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        Ho is passed for mutli ues
+    [Arguments]             ${multiUesList}=None
+    ...                     ${physCellIdOffset}=49
+    
+    Check Multi Ues Setting In List    multiUesList=${multiUesList}
+
+    FOR    ${current_elem}    IN      @{multiUesList}
+        ${current_servingCell}=       Evaluate            ${current_elem.target_cells} + ${physCellIdOffset}
+        ${current_targetCell}=        Evaluate            ${current_elem.targetCellForHo} + ${physCellIdOffset}       
+        Run Keyword If      ${current_elem.requestForHo} and ${current_servingCell} != ${current_targetCell}    Dated Log New Line   
+        ...                 Handover request from serving=${current_servingCell} to target=${current_targetCell} for ue=${current_elem.ue}        
+        Run Keyword If      ${current_elem.requestForHo} and ${current_servingCell} != ${current_targetCell}
+        ...                 Critical Step    Perform Intra Gnb Ho To Target Cell
+        ...                 ue_id=${current_elem.ue}    meas_id=1    event_type=A3    physical_target_cell_id=${current_targetCell}        
+        # Waiting time on the new serving cell must be ue dependant => refer to the Traced Sleep duration value
+        Run Keyword If      ${current_elem.requestForHo} and ${current_servingCell} != ${current_targetCell}    Traced Sleep
+        ...                 duration=${current_elem.delayPostHo}
+        ...                 msg=ue=${current_elem.ue} on new serving=${current_targetCell} after handover        
+        # Update the target_cells and targetCellForHo for current_elem
+        ${current_elem.target_cells}=           Run Keyword If    ${current_elem.requestForHo} and ${current_servingCell} != ${current_targetCell}
+        ...                                                                   Evaluate    ${current_targetCell} - ${physCellIdOffset}
+        ...                                                 ELSE              Evaluate    ${current_elem.target_cells} + 0
+        ${current_elem.targetCellForHo}=        Run Keyword If    ${current_elem.requestForHo} and ${current_servingCell} != ${current_targetCell}
+        ...                                                                   Evaluate    ${current_servingCell} - ${physCellIdOffset}
+        ...                                                 ELSE              Evaluate    ${current_elem.targetCellForHo} + 0
+    END
+
+
+Set Min And Max Values For Counter
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${counter_elem} ${counter_value}
+    ...     Actions:        it changes the min and the max values of the counter
+    ...     Checks:         it checks the initial configured value of a counter before the changing
+    ...     Verdict:        the counters values are changed when it is requested
+    [Arguments]             ${counter_elem}
+    ...                     ${counter_value}    
+
+    ${counter_value}        Convert To String    ${counter_value}
+    Run Keyword If          '${counter_elem.min}' == 'auto'    Set To Dictionary    ${counter_elem}    min=${counter_value}
+    Run Keyword If          '${counter_elem.max}' == 'auto'    Set To Dictionary    ${counter_elem}    max=${counter_value}
+
+
+Compute Number Of Ho For Counter
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${counter_elem} ${iteration} ${current_list}
+    ...     Actions:        it computes the number of Ho related to a counter
+    ...     Checks:         it checks the values for the target_cells and targetCellForHo when the Ho is requested
+    ...     Verdict:        the counters values are changed when it is requested
+    [Arguments]             ${counter_elem}
+    ...                     ${iteration}
+    ...                     ${current_list}
+
+    ${counter_value}        Set Variable        0
+    FOR    ${current_ue}    IN      @{current_list}
+        # Counter should be incremented on original cell corresponding to Ho ping
+        ${counter_value}=     Run Keyword If    ${current_ue.requestForHo} and '${counter_elem.objId}' == '${current_ue.target_cells}'
+        ...                                               Evaluate    ${counter_value} + 1
+        ...                               ELSE            Evaluate    ${counter_value} + 0
+        # Counter should be incremented on target cell corresponding to Ho pong
+        ${counter_value}=     Run Keyword If    ${current_ue.requestForHo} and '${counter_elem.objId}' == '${current_ue.targetCellForHo}'
+        ...                                               Evaluate    ${counter_value} + 1
+        ...                               ELSE            Evaluate    ${counter_value} + 0
+    END
+    ${counter_value}=       Evaluate    ${counter_value} * ${iteration}
+    ${counter_value}        Convert To String    ${counter_value}
+    Run Keyword If          '${counter_elem.min}' == 'auto'    Set To Dictionary    ${counter_elem}    min=${counter_value}
+    Run Keyword If          '${counter_elem.max}' == 'auto'    Set To Dictionary    ${counter_elem}    max=${counter_value}
+    
+
+Compute All Counters Values For Checking    
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${dict_ues} ${dict_counters}
+    ...     Actions:        it computes all the counters values for checking depending on the configuration
+    ...     Checks:         it checks the initial configured value of a counter before the changing
+    ...     Verdict:        the counters values are changed when it is requested
+    [Arguments]             ${param}
+    ...                     ${dict_ues}    
+    ...                     ${dict_counters}
+    
+    # Adding dynamically the counters for the cells into the list
+    FOR    ${current_id}    IN RANGE    0    ${param.totalNbOfCell}
+        ${current_cell}=              Evaluate                      ${current_id} + 1
+        ${current_cell}               Convert To String             ${current_cell}
+        #M55145C00301
+        ${current_counter}=           Copy Dictionary               ${dict_settings_M55145C00301}
+        Set To Dictionary             ${current_counter}            objId               ${current_cell}
+        Run Keyword if                ${param.NbOfHo} != 0          Append To List      ${dict_counters}    ${current_counter}
+        #M55145C00302
+        ${current_counter}=           Copy Dictionary               ${dict_settings_M55145C00302}
+        Set To Dictionary             ${current_counter}            objId               ${current_cell}
+        Run Keyword if                ${param.NbOfHo} != 0          Append To List      ${dict_counters}    ${current_counter}
+        #M55308C17001
+        ${current_counter}=           Copy Dictionary               ${dict_settings_M55308C17001}
+        Set To Dictionary             ${current_counter}            objId               ${current_cell}
+        Append To List                ${dict_counters}              ${current_counter}
+        #M55308C17002
+        ${current_counter}=           Copy Dictionary               ${dict_settings_M55308C17002}
+        Set To Dictionary             ${current_counter}            objId               ${current_cell}
+        Append To List                ${dict_counters}              ${current_counter}
+        #M55113C01002
+        ${current_counter}=           Copy Dictionary               ${dict_settings_M55113C01002}
+        Set To Dictionary             ${current_counter}            objId               ${current_cell}
+        Append To List                ${dict_counters}              ${current_counter}
+    END
+    ${nbOfUe_traffic_GBR}=     Get Number Of Ue Configured With GBR Traffic    dict_ues=${dict_ues}
+    # Computing dynamically the counters value
+    FOR    ${current_counter}    IN      @{dict_counters}
+        Run Keyword If    '${current_counter.counter}' == 'M55140C00001' or '${current_counter.counter}' == 'M55140C00002'
+        ...                           Set Min And Max Values For Counter    ${current_counter}    ${param.totalNbOfUe}
+        Run Keyword If    '${current_counter.counter}' == 'M55140C00501'
+        ...                           Set Min And Max Values For Counter    ${current_counter}    ${nbOfUe_traffic_GBR}
+        Run Keyword If    '${current_counter.obj}' == 'NRBTS' and '${current_counter.objId}' == 'auto'
+        ...                           Set To Dictionary    ${current_counter}    objId=${TNRBTS_ID[0]}
+        Run Keyword If    '${current_counter.counter}' == 'M55145C00301' or '${current_counter.counter}' == 'M55145C00302'
+        ...                           Compute Number Of Ho For Counter    ${current_counter}    ${param.NbOfHo}    ${dict_ues}
+        Dated Log                     current counter for checking=${current_counter}
+    END
+
+
+Retrieve Counter List of Values From Pm Files For Object With Name
+    [Documentation]         INTERNAL USAGE
+    [Arguments]             ${pm_path}
+    ...                     ${object_name}
+    ...                     ${counter_name}
+    ...                     ${object_id}=1
+    
+    Debug Dated Log         xxx_pm_path:${pm_path}
+    Debug Dated Log         xxx_object_id:${object_id}
+    Set Suite Variable      ${curPmDir}         ${pm_path}/${pmCollectSubDir}
+    ${sumCal}=              Evaluate            0
+    Debug Dated Log         curPmDir:${curPmDir}
+    @{filesList}            List Directory      ${curPmDir}         *.xml
+    ${counter_values}       Extract Counter Different Values From PM Files in dir    ${curPmDir}    ${object_name}    ${counter_name}
+    ...                     ${object_id}
+    Debug Dated Log         counter_values= ${counter_values}
+    [Return]                ${counter_values}
+
+
+Verify Object Counter with ID List Of Values In A Range
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${vendor_param}
+    ...     Actions:        Retrieve all values of a counter defined with object id in all PM xml files and compare them with a range Min and Max
+    ...     Checks:         
+    ...     Verdict:        
+    [Arguments]             ${pm_path}
+    ...                     ${pm_obj_id}
+    ...                     &{expected_dict}
+    
+    Debug Dated Log         pm_path= ${pm_path}
+    Debug Dated Log         pm_obj_id= ${pm_obj_id}
+    ${objectName}=          Set Variable        &{expected_dict}[obj]
+    ${counterName}=         Set Variable        &{expected_dict}[counter]
+    ${iMin}=                Evaluate            &{expected_dict}[min]
+    ${iMax}=                Evaluate            &{expected_dict}[max]
+    ${pm_iteration}         Evaluate            &{expected_dict}[iteration]
+    ${valRetrieved}         Retrieve Counter List of Values From Pm Files For Object With Name    ${pm_path}      ${objectName}    ${counterName}
+    ...                     ${pm_obj_id}
+    Debug Dated Log         valRetrieved= ${valRetrieved} iMin= ${iMin} iMax= ${iMax}
+    # Compare ivalue with Min Max     ${valRetrieved}     ${iMin}   ${iMax}
+    ${nb_val_found}=        Set Variable        0
+    ${nb_val_elem}=         get length          ${valRetrieved}
+    FOR                     ${val_elem}    IN    @{valRetrieved}
+        ${result}=          Run Keyword And Return Status           Compare ivalue with Min Max    ${val_elem}    ${iMin}    ${iMax}
+        ${nb_val_found}=    Run Keyword If      ${result} == ${True}          Evaluate            ${nb_val_found} + 1
+        ...                             ELSE                                  Evaluate            ${nb_val_found} + 0
+        Debug Dated Log     result= ${result} for the comparison of val_elem= ${val_elem} with iMin= ${iMin} iMax= ${iMax}
+    END
+    # result is always considered as true when pm_iteration is 0 <=> the comparison is deactivated for this counter
+    # result is considered as true when the number of correct found values is upper or equal to the requested one
+    # result is considered as true when the pm_iteration is negative only if all the values are correct
+    # result is considered as false for the other cases
+    ${result}=              Run Keyword If      ${pm_iteration} == 0                    Set Variable    ${True}
+    ...                            ELSE IF      ${pm_iteration} > 0 and ${nb_val_found} >= ${pm_iteration}    Set Variable    ${True}
+    ...                            ELSE IF      ${pm_iteration} < 0 and ${nb_val_found} == ${nb_val_elem}    Set Variable    ${True}
+    ...                            ELSE         Set Variable    ${False}
+    [Return]                ${result}
+
+
+Check All Counters From Dict
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${path_pm} ${dict_counters}
+    ...     Actions:        it checks all the counters values from the dictionary
+    ...     Checks:         it checks for all the counters that the value is in the range
+    ...     Verdict:        the values are verified
+    [Arguments]             ${path_pm}
+    ...                     ${dict_counters}
+    
+    Dated Log New Line      Counters List=${dict_counters}
+    # Activate debug mode via ${SUITE_DEBUG_MODE}
+    Set Debug Mode
+    FOR    ${current_counter}    IN      @{dict_counters}
+        Dated Log                     current counter to check= ${current_counter}
+        ${status_counter}             Verify Object Counter with ID List Of Values In A Range    ${path_pm}    ${current_counter.objId}
+        ...                           &{current_counter}
+        Should Be True      '${status_counter}' == 'True'
+    END
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+TC 8940 Call Setup Multi Ues With Traffic And Intra Gnb Ho
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${vendor_custom} ${dict_ues} ${isCapture}
+    ...     Actions:        it performs the call setup for multi-ues on different cells with DL traffic then HO to target cell
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        call with traffic and HO's for multi-ues are passed
+    [Arguments]             ${param}
+    ...                     ${vendor_custom}
+    ...                     ${dict_ues}
+    ...                     ${isCapture}
+    
+    Init Sequence           ${param}
+    Step                    CB008940-B-Keywords.Set RAD Params Of 8940
+    ${is_needed}            Run Keyword if      ${param.NbOfHo} == 0          Set Variable        ${True}
+    ...                                 ELSE                                  Set Variable        ${False}
+    Critical Step           Deploy Vendor File Config     vendor_param=${vendor_custom}           is_perform_full_commissioning=${is_needed}
+
+    Run Keyword if          ${param.NbOfHo} != 0          Critical Step       Perform Full Commissioning With Intra Gnb Ho Configuration
+    ...                                                                                 param=${param}
+    ...                                                                                 nbCell=${param.totalNbOfCell}
+
+    # Configure new ue's dynamically
+    ${initial_NbOfUe}       get length          ${dict_ues}
+    Run Keyword If          ${initial_NbOfUe} < ${param.totalNbOfUe}    Configure New Ues         ${dict_ues}    
+    ...                                                                                           ${initial_NbOfUe}
+    ...                                                                                           ${param.totalNbOfUe}
+    ...                                                                                           ${dict_settings_ue_default}
+
+    # Configure the current setting for all the ue's
+    ${param.totalNbOfUe}    get length          ${dict_ues}
+    Step                    Dated Log           Configure the setting for the ${param.totalNbOfUe} ue's
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.totalNbOfUe}
+        ${current_ue}=                Evaluate                      ${current_id} + 1
+        ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          pdu                 1
+        Set To Dictionary             ${current_ueSetting}          trf_id              1
+        Set To Dictionary             ${current_ueSetting}          target_gnb          ${param.targetGnb}
+
+        # Dispatching each ue on the requested original cell for the call establishment
+        Set To Dictionary             ${current_ueSetting}          target_cells        ${dict_ues[${current_id}].originalCell}        
+        # Set the correct requested throughput per ue
+        Set To Dictionary             ${current_ueSetting}          throughput          ${dict_ues[${current_id}].throughput}
+        Set To Dictionary             ${current_ueSetting}          throughput_GBR      ${dict_ues[${current_id}].throughput_GBR}
+
+        # Adding new parameters for Ho management
+        Set To Dictionary             ${current_ueSetting}          requestForHo        ${dict_ues[${current_id}].requestForHo}
+        Set To Dictionary             ${current_ueSetting}          targetCellForHo     ${dict_ues[${current_id}].targetCellForHo}
+        Set To Dictionary             ${current_ueSetting}          delayPostHo         ${dict_ues[${current_id}].delayPostHo}
+        
+        Append To List                ${listOfUes}                  ${current_ueSetting}
+    END
+    Dated Log New Line                UE_List=${listOfUes}
+    Check Multi Ues Setting In List                                 multiUesList=${listOfUes}
+    # Setup wtsemu SA for all the ue's
+    Traced Sleep            duration=60s                            msg=before setup Wtsemu SA to give radio modules time to start
+    Critical Step           CallSetup.Setup Wtsemu SA               nbUe=${param.totalNbOfUe}
+    ...                                                             nbSaUe=${param.totalNbOfUe}
+    ...                                                             shouldUseLua=${True}
+    ###...                                                          nbCell=${param.totalNbOfCell}
+    ...                                                             list_of_UE_tobe_created=${listOfUes}
+    # WA to avoid degradation on cells
+    Traced Sleep            duration=15s        msg=setting the X2 link as WA to avoid degradation on cells
+    Step                    CallSetup.WTS Set X2 Link
+    
+    # WA by moving Captures Init and Start to avoid exceeded traffic
+    Step                    Captures Init
+    Step                    Captures Start      actionCORE=${isCapture.isCaptureCORE}
+    ...                                         actionCPRT=${isCapture.isCaptureCPRT}
+    ...                                         actionL1L2=${isCapture.isCaptureL1L2}
+    
+    # Register and launch PDU for all the ue's
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Critical Step       CallSetup.UE Register                   ue=${current_elem.ue}
+        ###...                                                      nwslice=1
+        ###...                                                      timeout=30
+        ...                 depends=CallSetup.Setup Wtsemu SA
+        
+        Critical Step       CallSetup.Launch PDU Session            ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         gw=${current_elem.ue}
+        ###...                                                      nwslice=1
+        ...                 depends=CallSetup.UE Register
+    END
+
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Run Keyword If      ${current_elem.throughput} > ${NO_THROUGHPUT}     
+        ...                 Critical Step    ${param.dir} Traffic SA Not Stopped
+        ...                                                         param=${param}
+        ...                                                         ueSetting=${current_elem}
+        ...                 depends=CallSetup.Launch PDU Session
+    END
+
+    # PDU session modify reserved for the ue's configured with GBR traffic
+    ${nbOfUe_traffic_GBR}=     Get Number Of Ue Configured With GBR Traffic    dict_ues=${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Run Keyword If      ${current_elem.throughput_GBR} > ${NO_THROUGHPUT}     
+        ...                 Critical Step    CallSetup.UE PDU Session Modify
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=2
+        ...                                                         by=amf
+        ...                 depends=CallSetup.Launch PDU Session
+        Run Keyword If      ${current_elem.throughput_GBR} > ${NO_THROUGHPUT}     
+        ...                 Critical Step    CallSetup.UE PDU Session Modify
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=3
+        ...                                                         by=amf
+        ...                 depends=CallSetup.Launch PDU Session
+    END
+
+    # Start the GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Run Keyword If      ${current_elem.throughput_GBR} > ${NO_THROUGHPUT}     
+        ...                 Critical Step    ${param.dir} Traffic GBR SA Not Stopped
+        ...                                                         param=${param}
+        ...                                                         nbOfUe=${param.totalNbOfUe}
+        ...                                                         ueSetting=${current_elem}
+        ...                 depends=CallSetup.Launch PDU Session
+    END
+
+    ${enable_sherpa}        Set Variable        ${True}
+
+    # Capture Sherpa #1 before handover
+    Run Keyword If    ${enable_sherpa} == ${True}    Run Keywords    Critical Step    Activate Sherpa
+    ...    AND        Step                           Traced Sleep    duration=10s     msg=before handover
+    ...    AND        Critical Step                  Deactivate Sherpa and Stop Collect
+    ...    AND        Step    Upload and decode sherpa pcap files    Sherpa_logs_local_path=${trace_dir}    duration=0
+    ...    AND        Step                           Calling Panda Extract Csv For PRB Pooling
+ 
+    # Ping and pong Ho's and capture Sherpa #2 during handovers
+    FOR    ${current_ho}    IN RANGE    0    ${param.NbOfHo}
+        Run Keyword If    ${enable_sherpa} == ${True}    Run Keywords    Critical Step    Activate Sherpa
+        ...    AND        Step                           Traced Sleep    duration=1s     msg=during handover ping and pong
+        
+        # Ping handover: from serving cell to target cell
+        Dated Log New Line            ===> Handover ping iteration=${current_ho}
+        Perform Multi Ues Intra Gnb Ho To Target Cell     multiUesList=${listOfUes}     physCellIdOffset=${PHYS_CELL_ID_OFFSET}
+        
+        # Pong handover: from serving cell to original serving cell
+        Dated Log New Line            ===> Handover pong iteration=${current_ho}
+        Perform Multi Ues Intra Gnb Ho To Target Cell     multiUesList=${listOfUes}     physCellIdOffset=${PHYS_CELL_ID_OFFSET}
+        
+        Run Keyword If    ${enable_sherpa} == ${True}    Run Keywords    Critical Step    Deactivate Sherpa and Stop Collect
+        ...    AND        Step    Upload and decode sherpa pcap files    Sherpa_logs_local_path=${trace_dir}    duration=0
+        ...    AND        Step                           Calling Panda Extract Csv For PRB Pooling
+    END
+   
+    # Capture Sherpa #3 after handover
+    Run Keyword If    ${enable_sherpa} == ${True}    Run Keywords    Critical Step    Activate Sherpa
+    ...    AND        Step                           Traced Sleep    duration=10s     msg=before handover
+    ...    AND        Critical Step                  Deactivate Sherpa and Stop Collect
+    ...    AND        Step    Upload and decode sherpa pcap files    Sherpa_logs_local_path=${trace_dir}    duration=0
+    ...    AND        Step                           Calling Panda Extract Csv For PRB Pooling
+    
+    Step          Traced Sleep        duration=10s        msg=deregistering      depends=CallSetup.UE Register    
+
+    # Deregister all the ue's
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Critical Step       CallSetup.UE Deregister       id=${current_elem.ue}
+        ###...                                            ue_deregister_type=switch_off
+        ###...                                            by=ue
+        ...                 depends=CallSetup.UE Register
+    END
+    Step                    Captures Stop       actionCORE=${isCapture.isCaptureCORE}
+    ...                                         actionCPRT=${isCapture.isCaptureCPRT}
+    ...                                         actionL1L2=${isCapture.isCaptureL1L2}
+    
+    # Saving Snapshot as debug data
+    Run Keyword If          ${AUTO_SAVE_DEBUG_DATA}                 Setup.Get Snapshot
+    
+    ${date}                 Get Current Date
+    ${date_in_dir_name}     Convert Date        ${date}    result_format=%d%m%Y_%H%M
+    ${log_path_pm}          Set Variable        ${LOG_PATH}/PM_${date_in_dir_name}
+    Step                    Compute All Counters Values For Checking    param=${param}    dict_ues=${listOfUes}    
+    ...                                                                 dict_counters=${dict_all_counters_for_ho}
+    Step                    Traced Sleep        duration=5m         msg=collecting PM files from BTS into ${log_path_pm}
+    Step                    Collect PM files from BTS               ${log_path_pm}
+    Step                    Check All Counters From Dict            path_pm=${log_path_pm}    dict_counters=${dict_all_counters_for_ho}    
+    [Teardown]              Display diagnosis   
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+TC 8940 Call Setup Multi Ues With Traffic And Interaction
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${vendor_custom} ${dict_ues} ${isCapture}
+    ...     Actions:        it performs the call setup for multi-ues on different cells with DL traffic
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        call with traffic and HO's for multi-ues are passed
+    [Arguments]             ${param}
+    ...                     ${vendor_custom}
+    ...                     ${dict_ues}
+    ...                     ${isCapture}
+    
+    Init Sequence           ${param}
+    Step                    CB008940-B-Keywords.Set RAD Params Of 8940
+    ${is_needed}            Run Keyword if      ${param.NbOfHo} == 0          Set Variable        ${True}
+    ...                                 ELSE                                  Set Variable        ${False}
+    Dated Log New Line      ${vendor_custom}
+    Critical Step           Deploy Vendor File Config     vendor_param=${vendor_custom}           is_perform_full_commissioning=${is_needed}
+
+    Run Keyword if          ${param.NbOfHo} != 0          Critical Step       Perform Full Commissioning With Intra Gnb Ho Configuration
+    ...                                                                                 param=${param}
+    ...                                                                                 nbCell=${param.totalNbOfCell}
+
+    # Configure new ue's dynamically
+    ${initial_NbOfUe}       get length          ${dict_ues}
+    Run Keyword If          ${initial_NbOfUe} < ${param.totalNbOfUe}    Configure New Ues         ${dict_ues}    
+    ...                                                                                           ${initial_NbOfUe}
+    ...                                                                                           ${param.totalNbOfUe}
+    ...                                                                                           ${dict_settings_ue_default}
+
+    # Configure the current setting for all the ue's
+    ${param.totalNbOfUe}    get length          ${dict_ues}
+    Step                    Dated Log           Configure the setting for the ${param.totalNbOfUe} ue's
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.totalNbOfUe}
+        ${current_ue}=                Evaluate                      ${current_id} + 1
+        ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          pdu                 1
+        Set To Dictionary             ${current_ueSetting}          trf_id              1
+        Set To Dictionary             ${current_ueSetting}          target_gnb          ${param.targetGnb}
+
+        # Dispatching each ue on the requested original cell for the call establishment
+        Set To Dictionary             ${current_ueSetting}          target_cells        ${dict_ues[${current_id}].originalCell}        
+        # Set the correct requested throughput per ue
+        Set To Dictionary             ${current_ueSetting}          throughput          ${dict_ues[${current_id}].throughput}
+        Set To Dictionary             ${current_ueSetting}          throughput_GBR      ${dict_ues[${current_id}].throughput_GBR}
+
+        # Adding new parameters for Ho management
+        Set To Dictionary             ${current_ueSetting}          requestForHo        ${dict_ues[${current_id}].requestForHo}
+        Set To Dictionary             ${current_ueSetting}          targetCellForHo     ${dict_ues[${current_id}].targetCellForHo}
+        Set To Dictionary             ${current_ueSetting}          delayPostHo         ${dict_ues[${current_id}].delayPostHo}
+        
+        Append To List                ${listOfUes}                  ${current_ueSetting}
+    END
+    Dated Log New Line                UE_List=${listOfUes}
+    Check Multi Ues Setting In List                                 multiUesList=${listOfUes}
+    # Setup wtsemu SA for all the ue's
+    Traced Sleep            duration=60s                            msg=before setup Wtsemu SA to give radio modules time to start
+    Critical Step           CallSetup.Setup Wtsemu SA               nbUe=${param.totalNbOfUe}
+    ...                                                             nbSaUe=${param.totalNbOfUe}
+    ...                                                             shouldUseLua=${True}
+    ###...                                                          nbCell=${param.totalNbOfCell}
+    ...                                                             list_of_UE_tobe_created=${listOfUes}
+    # WA to avoid degradation on cells
+    Traced Sleep            duration=15s        msg=setting the X2 link as WA to avoid degradation on cells
+    Step                    CallSetup.WTS Set X2 Link
+    
+    # WA by moving Captures Init and Start to avoid exceeded traffic
+    Step                    Captures Init
+    Step                    Captures Start      actionCORE=${isCapture.isCaptureCORE}
+    ...                                         actionCPRT=${isCapture.isCaptureCPRT}
+    ...                                         actionL1L2=${isCapture.isCaptureL1L2}
+    
+    # Register and launch PDU for all the ue's
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Critical Step       CallSetup.UE Register                   ue=${current_elem.ue}
+        ###...                                                      nwslice=1
+        ###...                                                      timeout=30
+        ...                 depends=CallSetup.Setup Wtsemu SA
+        
+        Critical Step       CallSetup.Launch PDU Session            ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         gw=${current_elem.ue}
+        ###...                                                      nwslice=1
+        ...                 depends=CallSetup.UE Register
+    END
+
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Run Keyword If      ${current_elem.throughput} > ${NO_THROUGHPUT}     
+        ...                 Critical Step    ${param.dir} Traffic SA Not Stopped
+        ...                                                         param=${param}
+        ...                                                         ueSetting=${current_elem}
+        ...                 depends=CallSetup.Launch PDU Session
+    END
+
+    # PDU session modify reserved for the ue's configured with GBR traffic
+    ${nbOfUe_traffic_GBR}=     Get Number Of Ue Configured With GBR Traffic    dict_ues=${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Run Keyword If      ${current_elem.throughput_GBR} > ${NO_THROUGHPUT}     
+        ...                 Critical Step    CallSetup.UE PDU Session Modify
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=2
+        ...                                                         by=amf
+        ...                 depends=CallSetup.Launch PDU Session
+        Run Keyword If      ${current_elem.throughput_GBR} > ${NO_THROUGHPUT}     
+        ...                 Critical Step    CallSetup.UE PDU Session Modify
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         qfta=3
+        ...                                                         by=amf
+        ...                 depends=CallSetup.Launch PDU Session
+    END
+
+    # Start the GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Run Keyword If      ${current_elem.throughput_GBR} > ${NO_THROUGHPUT}     
+        ...                 Critical Step    ${param.dir} Traffic GBR SA Not Stopped
+        ...                                                         param=${param}
+        ...                                                         nbOfUe=${param.totalNbOfUe}
+        ...                                                         ueSetting=${current_elem}
+        ...                 depends=CallSetup.Launch PDU Session
+    END
+
+    ${enable_sherpa}        Set Variable        ${True}
+
+    # Capture Sherpa #1 After call establishment
+    Run Keyword If    ${enable_sherpa} == ${True}    Run Keywords    Critical Step    Activate Sherpa
+    ...    AND        Step                           Traced Sleep    duration=10s     msg=after call establishment
+    ...    AND        Critical Step                  Deactivate Sherpa and Stop Collect
+    ...    AND        Step    Upload and decode sherpa pcap files    Sherpa_logs_local_path=${trace_dir}    duration=0
+    ...    AND        Step                           Calling Panda Extract Csv For PRB Pooling
+    Run Keyword If    ${enable_sherpa} == ${True}         Run Keywords
+    ...               Critical Step             Verification of Pool Id within PRB Pooling Report 
+    ...                                                             pool_id=10
+    ...                                                             subpool_id=0
+    ...    AND        CritIcal Step             Verification of Pool Id within PRB Pooling Report
+    ...                                                             pool_id=10
+    ...                                                             subpool_id=1
+    #
+    ...    AND        Critical Step             Verification of BB Pooling Mode within PRB Pooling Allocation Report
+    ...                                                             pool_id=10
+    #
+    ...    AND        Critical Step             Verification of BB Pooling cell distribution within PRB Pooling Report
+    ...                                                             nrCell_id=0x4001
+    ...                                                             subpool_id=0
+    ...    AND        Critical Step             Verification of BB Pooling cell distribution within PRB Pooling Report
+    ...                                                             nrCell_id=0x4002
+    ...                                                             subpool_id=1
+    ...    AND        Critical Step             Verification of BB Pooling cell distribution within PRB Pooling Report
+    ...                                                             nrCell_id=0x4003
+    ...                                                             subpool_id=0
+    #
+    ...    AND        Critical Step             Verification of Stream PRB Information within PRB Pooling Report
+    ...                                                             stream_prb_capa=${vendor_custom.maxNumStreamPrbL1Sp}
+    ...                                                             alloc_stream_prb=${vendor_custom.maxNumStreamPrbL1Sp}
+    ...                                                             subpool_id=0
+    ...    AND        Critical Step             Verification of Stream PRB Information within PRB Pooling Report
+    ...                                                             stream_prb_capa=${vendor_custom.maxNumStreamPrbL1Sp}
+    ...                                                             alloc_stream_prb=${NUM_MAX_STREAM_WHEN_ONLY_1_CELL}
+    ...                                                             subpool_id=1
+    # Number PRB Allocated for CELL-1 should be < number PRB allocated for CELL-3:
+    ...    AND        Critical Step             Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+    ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+    ...                                                             num_prb_alloc=60
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=0x4001
+    ...                                                             check_operator=<=
+    ...    AND        Critical Step             Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+    ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+    ...                                                             num_prb_alloc=200
+    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+    ...                                                             prereq_value=0x4003
+    ...                                                             check_operator=<=
+    ...    AND        Critical Step             Verification of Number PRB Allocated within PRB Pooling Report
+    ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+    ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+    ...                                                             num_prb_alloc=${NUM_MAX_PRB_DEFAULT}
+    ...                                                             prereq_data=${COL_NAME_SUBPOOLID}
+    ...                                                             prereq_value=1
+    #
+    ...    AND        Critical Step             Verification of BB Pooling Traffic PRB Request within PRB Pooling Report
+    ...                                                             nrCell_id=0x4001
+    ...                                                             prb_req=${COL_NAME_GBRPRBREQUEST}
+    ...                                                             prb_value=1
+    ...                                                             check_operator=<=
+    ...    AND        Critical Step             Verification of BB Pooling Traffic PRB Request within PRB Pooling Report
+    ...                                                             nrCell_id=0x4001
+    ...                                                             prb_req=${COL_NAME_NOGBRPRBREQUEST}
+    ...                                                             prb_value=15
+    ...                                                             check_operator=<=
+    ...    AND        Critical Step             Verification of BB Pooling Traffic PRB Request within PRB Pooling Report
+    ...                                                             nrCell_id=0x4002
+    ...                                                             prb_req=${COL_NAME_GBRPRBREQUEST}
+    ...                                                             prb_value=1
+    ...                                                             check_operator=<=
+    ...    AND        Critical Step             Verification of BB Pooling Traffic PRB Request within PRB Pooling Report
+    ...                                                             nrCell_id=0x4002
+    ...                                                             prb_req=${COL_NAME_NOGBRPRBREQUEST}
+    ...                                                             prb_value=15
+    ...                                                             check_operator=<=
+    ...    AND        Critical Step             Verification of BB Pooling Traffic PRB Request within PRB Pooling Report
+    ...                                                             nrCell_id=0x4003
+    ...                                                             prb_req=${COL_NAME_GBRPRBREQUEST}
+    ...                                                             prb_value=1
+    ...                                                             check_operator=<=
+    ...    AND        Critical Step             Verification of BB Pooling Traffic PRB Request within PRB Pooling Report
+    ...                                                             nrCell_id=0x4003
+    ...                                                             prb_req=${COL_NAME_NOGBRPRBREQUEST}
+    ...                                                             prb_value=45
+    ...                                                             check_operator=<=
+    #
+    ...    AND        Critical Step             Verification of Throughput on Cell within Sherpa Dl Stat Report
+    ...                                                             throughput_req=100000
+    
+    Step          Traced Sleep        duration=10s        msg=deregistering      depends=CallSetup.UE Register    
+
+    # Deregister all the ue's
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Critical Step       CallSetup.UE Deregister       id=${current_elem.ue}
+        ###...                                            ue_deregister_type=switch_off
+        ###...                                            by=ue
+        ...                 depends=CallSetup.UE Register
+    END
+    Step                    Captures Stop       actionCORE=${isCapture.isCaptureCORE}
+    ...                                         actionCPRT=${isCapture.isCaptureCPRT}
+    ...                                         actionL1L2=${isCapture.isCaptureL1L2}
+    
+    # Saving Snapshot as debug data
+    Run Keyword If          ${AUTO_SAVE_DEBUG_DATA}                 Setup.Get Snapshot
+    
+    ${date}                 Get Current Date
+    ${date_in_dir_name}     Convert Date        ${date}    result_format=%d%m%Y_%H%M
+    ${log_path_pm}          Set Variable        ${LOG_PATH}/PM_${date_in_dir_name}
+    Step                    Compute All Counters Values For Checking    param=${param}    dict_ues=${listOfUes}    
+    ...                                                                 dict_counters=${dict_all_counters_for_ho}
+    Step                    Traced Sleep        duration=5m         msg=collecting PM files from BTS into ${log_path_pm}
+    Step                    Collect PM files from BTS               ${log_path_pm}
+    Step                    Check All Counters From Dict            path_pm=${log_path_pm}    dict_counters=${dict_all_counters_for_ho}    
+    [Teardown]              Display diagnosis   
+# --------------------------------------------------------------------------------------------------------------------------------------------------

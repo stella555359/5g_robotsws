@@ -1,0 +1,101 @@
+ue_register id=1
+sleep_script 2
+set_pdu_param ue=1 pdu=1 trf_type=internal
+ue_pdu_session_setup pdu=1 gw=1 ue=1 nwslice=1
+sleep_script 2
+
+ue_register id=2
+sleep_script 2
+set_pdu_param ue=2 pdu=2 trf_type=internal
+ue_pdu_session_setup pdu=2 gw=2 ue=2 nwslice=1
+sleep_script 2
+
+ue_register id=3
+sleep_script 2
+set_pdu_param ue=3 pdu=3 trf_type=internal
+ue_pdu_session_setup pdu=3 gw=3 ue=3 nwslice=1
+sleep_script 2
+
+ue_register id=4
+sleep_script 2
+set_pdu_param ue=4 pdu=4 trf_type=internal
+ue_pdu_session_setup pdu=4 gw=4 ue=4 nwslice=1
+sleep_script 2
+
+ue_register id=31
+sleep_script 2
+set_pdu_param ue=31 pdu=1 trf_type=internal
+ue_pdu_session_setup pdu=1 gw=31 ue=31 nwslice=1
+sleep_script 2
+
+ue_register id=32
+sleep_script 2
+set_pdu_param ue=32 pdu=2 trf_type=internal
+ue_pdu_session_setup pdu=2 gw=32 ue=32 nwslice=1
+sleep_script 2
+
+ue_register id=33
+sleep_script 2
+set_pdu_param ue=33 pdu=3 trf_type=internal
+ue_pdu_session_setup pdu=3 gw=33 ue=33 nwslice=1
+sleep_script 2
+
+ue_register id=34
+sleep_script 2
+set_pdu_param ue=34 pdu=4 trf_type=internal
+ue_pdu_session_setup pdu=4 gw=34 ue=34 nwslice=1
+sleep_script 2
+
+ue_register id=35
+sleep_script 2
+set_pdu_param ue=35 pdu=5 trf_type=internal
+ue_pdu_session_setup pdu=5 gw=35 ue=35 nwslice=1
+sleep_script 2
+
+ue_register id=36
+sleep_script 2
+set_pdu_param ue=36 pdu=6 trf_type=internal
+ue_pdu_session_setup pdu=6 gw=36 ue=36 nwslice=1
+sleep_script 2
+
+ue_register id=37
+sleep_script 2
+set_pdu_param ue=37 pdu=7 trf_type=internal
+ue_pdu_session_setup pdu=7 gw=37 ue=37 nwslice=1
+sleep_script 2
+
+ue_register id=38
+sleep_script 2
+set_pdu_param ue=38 pdu=8 trf_type=internal
+ue_pdu_session_setup pdu=8 gw=38 ue=38 nwslice=1
+sleep_script 2
+
+ue_register id=39
+sleep_script 2
+set_pdu_param ue=39 pdu=9 trf_type=internal
+ue_pdu_session_setup pdu=9 gw=39 ue=39 nwslice=1
+sleep_script 2
+
+ue_register id=61
+sleep_script 2
+set_pdu_param ue=61 pdu=1 trf_type=internal
+ue_pdu_session_setup pdu=1 gw=61 ue=61 nwslice=1
+sleep_script 2
+
+ue_register id=62
+sleep_script 2
+set_pdu_param ue=62 pdu=2 trf_type=internal
+ue_pdu_session_setup pdu=2 gw=62 ue=62 nwslice=1
+sleep_script 2
+
+ue_register id=63
+sleep_script 2
+set_pdu_param ue=63 pdu=3 trf_type=internal
+ue_pdu_session_setup pdu=3 gw=63 ue=63 nwslice=1
+sleep_script 2
+
+ue_register id=64
+sleep_script 2
+set_pdu_param ue=64 pdu=4 trf_type=internal
+ue_pdu_session_setup pdu=4 gw=64 ue=64 nwslice=1
+sleep_script 2

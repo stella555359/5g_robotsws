@@ -1,0 +1,232 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+#
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   CB008375-CR-C Test suite
+...               \nPrerequisite : gNB configured with x Cells T+F & RU detected
+#                   Scope        :
+#
+...               \nTest Case Scenario author : vincent.boulet@nokia.com
+...               \nCreation Date             : 2024-09-17
+...               \nModified Date             : 2024-09-30
+#
+#                 Version    Date       Author                          Notes
+...               \n0.1      FB2419     vincent.boulet@nokia.com        Creation robot and TC for SA dedicated to Cloud RAN
+...               \n0.2      FB2419     vincent.boulet@nokia.com        Timing adjustment
+...               \n0.3      FB2420     vincent.boulet@nokia.com        Test Teardown is introduced with KW Procedure Scout Data
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+#vbo#debug CR#    > code to remove after debugging
+#vbo#stop#        > code to stop test execution by forcing an error:    Should Be True    ${True} == ${False}
+#vbo#debug#       >> temporarily commented out so as not to execute the corresponding debugging command
+
+# Libraries
+
+# Resources
+Resource                              ./resources/robot/CB008375-C-Keywords.robot
+
+# Suites
+Suite Setup                           Suite Setup Common Private    keep_all_data_in_file=${True}
+Suite Teardown                        Suite Teardown
+Test Teardown                         Test Teardown Common Private
+
+*** Variables ***
+# tests settings
+&{CB008375_CR_basic}                  capture_duration=0            # capture duration during traffic starting phase
+...                                   deviation=25                  # default deviation for throughput and double for uplink
+...                                   dir=DL+UL                     # direction for supported traffic
+...                                   duration=3                    # traffic duration during declaration phase
+...                                   pm_waiting_period=0           # number of waiting periods added for observation
+...                                   target_gnb=2                  # gnb target id
+...                                   test_name=TC_CB008375_CR_SA
+...                                   total_nb_cell=4               # total number of cell used for ue's dispatching
+...                                   total_nb_ue=4                 # total number of ue's to configure
+
+# ue's settings # configuration
+&{dict_settings_CR_ue_1}              ue_id=1                       # FIRST_SA_UE_ID TDD cell 1 or ${Dict_1st_SA_UE_Id[NRCELL-1]}
+...                                   original_cell=1               # original cell for call establishment
+...                                   throughput=5                  # dl throughput nonGBR
+...                                   throughput_ul=2               # ul throughput nonGBR
+
+&{dict_settings_CR_ue_2}              ue_id=21                      # FIRST_SA_UE_ID TDD cell 2
+...                                   original_cell=2               # original cell for call establishment
+...                                   throughput=5                  # dl throughput nonGBR
+...                                   throughput_ul=2               # ul throughput nonGBR
+
+&{dict_settings_CR_ue_3}              ue_id=51                      # FIRST_SA_UE_ID FDD cell 3
+...                                   original_cell=3               # original cell for call establishment
+...                                   throughput=5                  # dl throughput nonGBR
+...                                   throughput_ul=2               # ul throughput nonGBR
+
+&{dict_settings_CR_ue_4}              ue_id=71                      # FIRST_SA_UE_ID FDD cell 4
+...                                   original_cell=4               # original cell for call establishment
+...                                   throughput=5                  # dl throughput nonGBR
+...                                   throughput_ul=2               # ul throughput nonGBR
+
+@{dict_settings_CR_basic}             ${dict_settings_CR_ue_1}    ${dict_settings_CR_ue_2}    ${dict_settings_CR_ue_3}    ${dict_settings_CR_ue_4}
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+*** Keywords ***
+Detection Disturbance On Pod
+    [Arguments]             ${hw}
+    ...                     ${pod_key}
+    ...                     ${step}
+    ...                     ${state}
+
+    FOR    ${iteration}    IN RANGE    1    120
+        Dated Log                     ----Pod discovery attempt ${iteration}----
+        ${result}=                    Airframes.K8s Get Pod Status    k8s=${hw}    name=${pod_key}
+        Dated Log                     > ${result}
+        @{result_formatted}=          Split String    ${result}    separator=${SPACE}
+        Remove Values From List       ${result_formatted}    ${EMPTY}
+        #vbo#debug#Dated Log          >> formatted pod= ${result_formatted}
+        Exit For Loop If              "${result_formatted[2]}" == "${state}" and "${result_formatted[1]}" == "${step}"
+        Sleep                         1s
+    END
+    Should Be True                    "${result_formatted[2]}" == "${state}" and "${result_formatted[1]}" == "${step}"
+    [Return]    ${result_formatted[2]}
+
+
+Generate Disturbances On Pods For Containers
+    [Arguments]             ${hardware_entity}=${GNB_DU}
+    ...                     ${alarm_id}=7101
+    ...                     ${fault_id}=2087
+
+    ${suffix_pod}=                    Set Variable    l2rt-a-0        #code limited to pod l2rt-a-0#
+    ${suffix_container}=              Set Variable    l2rt          #code limited to container l2rt#
+
+    ${temp}   ${flag_du}              buildEntity    hw=GNB    unit=DU    index=0
+    #vbo#debug#Dated Log              >> buildEntity result= ${temp}
+
+    #vbo#original command#${kcmd}=    Set Variable    ps -ef |grep /opt/nokia/SS_RCPCCSRT/CCSEmDispatcherExe -m1 |awk '{print $2}'
+    #vbo#small command#${kcmd}=       Set Variable    ps -ef |grep -i 'ss_rcpccsrt/ccsem' -m1 |awk '{print $2}'
+    ${kcmd}=                          Set Variable    ps x |grep -i 'ss_rcpccsrt/ccsemdispatcherexe' -m1 |awk '{print $1}'
+    ${pod}=                           Airframes.K8s Get Pod    k8s=${hardware_entity}    name=${suffix_pod}
+    Dated Log New Line                > ${pod}
+    #vbo#debug#Dated Log              >> pod_name= ${pod.name} and pod_name_name= ${pod.name.name}
+    ${container}=                     Airframes.K8s Get Container    k8s=${hardware_entity}    name=${suffix_container}    podName=${pod.name.name}
+    Dated Log                         > ${container}
+    #vbo#debug#Dated Log              >> container_name= ${container.name} and container_name_name= ${container.name.name}
+    ${current_pid}=                   Airframes.K8s Cmd    k8s=${hardware_entity}    podName=${pod.name.name}
+    ...                                                             containerName=${container.name.name}    cmd=${kcmd}    debug=${True}
+    Dated Log                         >> pid to kill= ${current_pid}
+    Dated Log                         ----Generate disturbance on pod ${pod.name.name} for container ${container.name.name}----
+    ${kcmd_kill_sigabrt}=             Set Variable    kill -SIGABRT ${current_pid}
+    ${result_kill}=                   Airframes.K8s Cmd    k8s=${hardware_entity}    podName=${pod.name.name}
+    ...                                                             containerName=${container.name.name}
+    ...                                                             cmd=${kcmd_kill_sigabrt}    debug=${True}
+    Dated Log                         > kill -SIGABRT is started on pod_name_name= ${pod.name.name} for containerName=${container.name.name}
+    Traced Sleep                      duration=2s    msg=crash detection before state TERMINATING
+    # The successive stages of the pod must be Running -> Terminating -> ContainerCreating -> Running
+    ${result_detection}=    Detection Disturbance On Pod    hw=${hardware_entity}    pod_key=${suffix_pod}    step=1/2    state=Terminating
+    ${result_detection}=    Detection Disturbance On Pod    hw=${hardware_entity}    pod_key=${suffix_pod}    step=0/2    state=ContainerCreating
+    Traced Sleep                      duration=3s    msg=crash detection before state RUNNING
+    ${result_detection}=    Detection Disturbance On Pod    hw=${hardware_entity}    pod_key=${suffix_pod}    step=2/2    state=Running
+    Dated Log                         ----OAM get active alarm and check crash detection----
+    Is Alarm Present                  alarm_id=${alarm_id}    fault_id=${fault_id}
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+*** Test Cases ***
+[1] CB008375-CR-C_11_CU_Fault_Visibilty_due_to_Critical_Failure
+
+    Dated Log                         ----Test initialization-------------------------------------------------------
+    GenericTest.Init Sequence         param=${CB008375_CR_basic}
+    Dated Log New Line                > Test name is ${param.test_name}
+
+    Critical Step          Restart.Restart TL
+
+    # Configure the current setting for all the ue's
+    ${param.total_nb_ue}=    Run Keyword If    ${CALL_ENABLED}    Get Length    ${dict_settings_CR_basic}
+    ...                                  ELSE    Set Variable    0
+    Dated Log                         ----Configure the settings of all the ue's------------------------------------
+    @{list_ue}=                       Create List
+    @{cell_id_for_streaming}=         Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.total_nb_ue}
+        ${current_ue_setting}=        Copy Dictionary     ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ue_setting}    ue    ${dict_settings_CR_basic[${current_id}].ue_id}
+        Set To Dictionary             ${current_ue_setting}    trf_id    1
+        Set To Dictionary             ${current_ue_setting}    pdu    1
+        Set To Dictionary             ${current_ue_setting}    target_gnb    ${param.target_gnb}
+        # Dispatching the ue on the requested original cell for the call establishment
+        Set To Dictionary             ${current_ue_setting}    target_cells    ${dict_settings_CR_basic[${current_id}].original_cell}
+        Append To List                ${cell_id_for_streaming}    ${current_ue_setting.target_cells}
+        # Set the correct requested throughput per ue
+        Set To Dictionary             ${current_ue_setting}    throughput    ${dict_settings_CR_basic[${current_id}].throughput}
+        Set To Dictionary             ${current_ue_setting}    throughput_ul    ${dict_settings_CR_basic[${current_id}].throughput_ul}
+        Append To List                ${list_ue}    ${current_ue_setting}
+    END
+    Dated Log                         > UE's list is ${list_ue}
+    Dated Log                         > Cells list for TTI streaming is ${cell_id_for_streaming}
+    #vbo#disable capture TTI#
+    ###${length_list_for_streaming}=     Get Length    ${cell_id_for_streaming}
+    ${length_list_for_streaming}=     Set Variable    0
+    #vbo#disable capture TTI#
+
+    # Setup wtsemu SA for all the ue's
+    Critical Step                     CallSetup.Setup Wtsemu SA     nbUe=${param.total_nb_ue}
+    ...                                                             nbSaUe=${param.total_nb_ue}
+    ...                                                             shouldUseLua=${False}
+    ...                                                             nbCell=${param.total_nb_cell}
+    ...                                                             list_of_UE_tobe_created=${list_ue}
+
+    # WA to avoid alarm on cells
+    Traced Sleep                      duration=15s    msg=setting the X2 link as WA to avoid degradation on cells
+    Step                              CallSetup.WTS Set X2 Link
+
+    Traced Sleep                      duration=10s    msg=for getting the number of initial alarms before starting the disturbances
+    ${initial_number_of_alarm}=       Get Number Of Alarm
+
+    #
+    Dated Log                         ----Generate Disturbances On Pods For Containers and check alarm Id-----------
+    Generate Disturbances On Pods For Containers
+    #
+
+    Traced Sleep                      duration=60s    msg=getting the number of final alarms after disturbances
+    ${final_number_of_alarm}=         Get Number Of Alarm
+    Dated Log                         >> Should Be True ${initial_number_of_alarm} >= ${final_number_of_alarm}
+
+    Traced Sleep                      duration=30s    msg=all cells to be reactivated before starting calls
+
+    @{cell_id_list}=                  Set Variable    ${cell_id_for_streaming}
+    @{cellsNr}=                       Create List
+    FOR    ${current_cell}    IN    @{cellsNr}
+        ${cell_status_}=              Set variable  ${current_cell['status']}
+        ${operationalState}=          Set Variable   ${cell_status_['operationalState']}
+        ${globalCellId}=              Set Variable   ${current_cell['globalCellId']}
+        ${is_global_cell_id}=    Is Global Cell Id Retained For Streaming    global_cell_id=${globalCellId}    cell_list=${cell_id_for_streaming}
+        Run Keyword If    ${is_global_cell_id}    Append to List    ${cell_id_list}    ${current_cell['id']['internal']}
+    END
+    Dated Log                         > Distname list of the cells retained for TTI streaming ${cell_id_list}
+
+    # Capture TTI traces during call setup
+    Run Keyword If    ${length_list_for_streaming} > 0    Start TTI Logs Common    cell_id_list=${cell_id_list}
+
+    # Register and launch PDU for all the ue's
+    FOR    ${current_elem}    IN    @{list_ue}
+        Step                          CallSetup.UE Register    ue=${current_elem.ue}    depends=CallSetup.Setup Wtsemu SA
+        Step                          CallSetup.Launch PDU Session    ue=${current_elem.ue}    pdu=${current_elem.pdu}    gw=${current_elem.ue}
+        ...                           depends=CallSetup.UE Register
+    END
+
+    Run Keyword If    ${length_list_for_streaming} > 0    Step    Stop and Get TTI Logs Common    trace_name=TTI_${param.test_name}_call_setup
+    ${capture_tti_output}=            Set Variable    ${LOG_PATH}/TTITraces/TTI_${param.test_name}_call_setup.json
+
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    ${current_elem.throughput} > ${NO_THROUGHPUT}
+        ...    Step                   ${param.dir} Traffic Not Stopped Common    param=${param}    current_ue_setting=${current_elem}
+        ...                           depends=CallSetup.Launch PDU Session
+    END
+
+    # Capture TTI traces during traffic
+    Run Keyword If    ${length_list_for_streaming} > 0    Run Keywords    Start TTI Logs Common    cell_id_list=${cell_id_list}
+    ...    AND                        Traced Sleep    duration=8s    msg=call with traffic for TTI trace
+    ...    AND                        Step    Stop and Get TTI Logs Common    trace_name=TTI_${param.test_name}_traffic
+    ${capture_tti_output}=            Set Variable    ${LOG_PATH}/TTITraces/TTI_${param.test_name}_traffic.json
+
+    # Deregister all the ue's
+    FOR    ${current_elem}    IN    @{list_ue}
+        Step                          CallSetup.UE Deregister    id=${current_elem.ue}    ue_deregister_type=switch_off    by=ue
+        ...                           depends=CallSetup.UE Register
+    END
+
+    #[Teardown]    # Reserved to internal testing usage
+# --------------------------------------------------------------------------------------------------------------------------------------------------

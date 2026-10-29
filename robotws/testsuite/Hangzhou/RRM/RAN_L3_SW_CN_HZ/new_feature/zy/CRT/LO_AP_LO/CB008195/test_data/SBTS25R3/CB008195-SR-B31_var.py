@@ -1,0 +1,293 @@
+from robot.libraries.BuiltIn import BuiltIn
+tl = BuiltIn().get_variable_value("${tl}")
+gNbId = tl.gnbs[0].instance_id
+PARAMS_FOR_CB008195 = [
+  "NRBTS:actSliceAwareAdmissionCtrl=true",
+  "NRBTS:rgMinQuotaReservationLevel=cell_and_multicell_level",
+  "NRCELL:sliceAwareAdmissionCtrlEnabled=true",
+  "MRBTS-1/NRBTS-1/NRRESOURCEGROUP_PROFILE-0:bypassRgLimits=4",
+  "MRBTS-1/NRBTS-1/NRRESOURCEGROUP_PROFILE-1:bypassRgLimits=4",
+  "MRBTS-1/NRBTS-1/NRRESOURCEGROUP_PROFILE-2:bypassRgLimits=4",
+  "MRBTS-1/NRBTS-1/NRRESOURCEGROUP_PROFILE-3:bypassRgLimits=4",
+  "NRCELL-1:nrResourceGroupProfileRacDN=NRRESOURCEGROUP_PROFILE-1",
+  "NRCELL-2:nrResourceGroupProfileRacDN=NRRESOURCEGROUP_PROFILE-2",
+  "NRCELL-3:nrResourceGroupProfileRacDN=NRRESOURCEGROUP_PROFILE-2",
+  "NRBTS:actAdditionalSliceSupport=true",
+  "NRBTS/NRPMRNL-1:miNrCellUtilPerNrg=5min",
+]
+
+PARAMS_FOR_NRRESOURCEGROUP_PROFILE = [
+  "NRBTS/NRRESOURCEGROUP_PROFILE-0:defaultRgNsaList:nrPlmnDN=MRBTS-1/NRBTS-1/NRPLMN-1",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-0:defaultRgNsaList:nrResourceGroupId=1",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-0:defaultRgSaList:nrPlmnDN=MRBTS-1/NRBTS-1/NRPLMN-1",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-0:defaultRgSaList:nrResourceGroupId=1",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-0/NRRESOURCEGROUP-1:nrResourceList:resourceDN=SNSSAI-3",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-0/NRRESOURCEGROUP-1:racParams:maxQuota=60",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-0/NRRESOURCEGROUP-1:racParams:minQuota=10",
+
+  "NRBTS/NRRESOURCEGROUP_PROFILE-1:defaultRgNsaList:nrPlmnDN=MRBTS-1/NRBTS-1/NRPLMN-1",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-1:defaultRgNsaList:nrResourceGroupId=32",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-1:defaultRgSaList:nrPlmnDN=MRBTS-1/NRBTS-1/NRPLMN-1",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-1:defaultRgSaList:nrResourceGroupId=32",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-1:nrResourceList:resourceDN=SNSSAI-1|resourceDN=SNSSAI-1",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-1:nrResourceList:resourceDN=SNSSAI-2|resourceDN=SNSSAI-2",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-1:racParams:maxQuota=50",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-1:racParams:minQuota=20",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-2:nrResourceList:resourceDN=SNSSAI-3|resourceDN=SNSSAI-3",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-2:racParams:maxQuota=60",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-2:racParams:minQuota=10",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-32:nrResourceList:resourceDN=SNSSAI-2000|resourceDN=SNSSAI-2000",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-32:racParams:maxQuota=20",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-1/NRRESOURCEGROUP-32:racParams:minQuota=20",
+
+  "NRBTS/NRRESOURCEGROUP_PROFILE-2:defaultRgNsaList:nrPlmnDN=MRBTS-1/NRBTS-1/NRPLMN-1",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-2:defaultRgNsaList:nrResourceGroupId=32",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-2:defaultRgSaList:nrPlmnDN=MRBTS-1/NRBTS-1/NRPLMN-1",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-2:defaultRgSaList:nrResourceGroupId=32",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-1:nrResourceList:resourceDN=SNSSAI-1|resourceDN=SNSSAI-1",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-1:nrResourceList:resourceDN=SNSSAI-2|resourceDN=SNSSAI-2",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-1:racParams:maxQuota=50",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-1:racParams:minQuota=20",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-2:nrResourceList:resourceDN=SNSSAI-3|resourceDN=SNSSAI-3",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-2:racParams:maxQuota=60",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-2:racParams:minQuota=10",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-32:nrResourceList:resourceDN=SNSSAI-2000|resourceDN=SNSSAI-2000",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-32:racParams:maxQuota=40",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-2/NRRESOURCEGROUP-32:racParams:minQuota=20",
+
+  "NRBTS/NRRESOURCEGROUP_PROFILE-3:defaultRgNsaList:nrPlmnDN=MRBTS-1/NRBTS-1/NRPLMN-1",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-3:defaultRgNsaList:nrResourceGroupId=1",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-3:defaultRgSaList:nrPlmnDN=MRBTS-1/NRBTS-1/NRPLMN-1",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-3:defaultRgSaList:nrResourceGroupId=1",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-3/NRRESOURCEGROUP-1:nrResourceList:resourceDN=SNSSAI-3",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-3/NRRESOURCEGROUP-1:racParams:maxQuota=70",
+  "NRBTS/NRRESOURCEGROUP_PROFILE-3/NRRESOURCEGROUP-1:racParams:minQuota=30",
+]
+
+PARAMS_FOR_SNSSAI = [
+  "NRBTS/SNSSAI-1:nrPlmnDNList=MRBTS-1/NRBTS-1/NRPLMN-1",
+  "NRBTS/SNSSAI-1:drbInactivityTimerSA=10",
+  "NRBTS/SNSSAI-1:sd=13714341",
+
+  "NRBTS/SNSSAI-2:nrPlmnDNList=MRBTS-1/NRBTS-1/NRPLMN-1",
+  "NRBTS/SNSSAI-2:drbInactivityTimerSA=10",
+  "NRBTS/SNSSAI-2:sd=13714342",
+
+  "NRBTS/SNSSAI-3:nrPlmnDNList=MRBTS-1/NRBTS-1/NRPLMN-1",
+  "NRBTS/SNSSAI-3:drbInactivityTimerSA=10",
+  "NRBTS/SNSSAI-3:sd=13714343",
+
+  "NRBTS/SNSSAI-2000:nrPlmnDNList=MRBTS-1/NRBTS-1/NRPLMN-1",
+  "NRBTS/SNSSAI-2000:drbInactivityTimerSA=10",
+  "NRBTS/SNSSAI-2000:sd=13714344",
+
+  "NRBTS/SNSSAI-4:nrPlmnDNList=MRBTS-1/NRBTS-1/NRPLMN-1",
+  "NRBTS/SNSSAI-4:drbInactivityTimerSA=10",
+  "NRBTS/SNSSAI-4:sd=13714345",
+]
+
+PARAMS_FOR_TAC = [
+  "NRBTS/TRACKINGAREA-200:fiveGsTac=200",
+  "NRBTS/TRACKINGAREA-200:snssaiList:snssaiDN=MRBTS-1/NRBTS-1/SNSSAI-1|snssaiDN=MRBTS-1/NRBTS-1/SNSSAI-1",
+  "NRBTS/TRACKINGAREA-200:snssaiList:snssaiDN=MRBTS-1/NRBTS-1/SNSSAI-2|snssaiDN=MRBTS-1/NRBTS-1/SNSSAI-2",
+  "NRBTS/TRACKINGAREA-200:snssaiList:snssaiDN=MRBTS-1/NRBTS-1/SNSSAI-3|snssaiDN=MRBTS-1/NRBTS-1/SNSSAI-3",
+  "NRBTS/TRACKINGAREA-200:snssaiList:snssaiDN=MRBTS-1/NRBTS-1/SNSSAI-4|snssaiDN=MRBTS-1/NRBTS-1/SNSSAI-4",
+  "NRBTS/TRACKINGAREA-200:snssaiList:snssaiDN=MRBTS-1/NRBTS-1/SNSSAI-2000|snssaiDN=MRBTS-1/NRBTS-1/SNSSAI-2000",
+]
+
+PARAMS_FOR_onlySA = [
+  "NRCELL:cellDepType=SA",
+  "delete:NRBTS/NRCELL:configuredEpsTac",
+]
+
+PARAMS_FOR_8225_parameters = [
+  "NRBTS:actRrcInactState=intra-gNB",
+  "NRBTS:drbRrcInactInactivityTimerSA=20",
+  "NRBTS:srbInactivityTimerSA=20",
+  "NRBTS:rrcInactIMMSteeringEnabled=false",
+  "NRBTS:rrcInactLocationReportEnabled=false",
+  "NRBTS:drbInactivityTimerSA=60",
+  "NRBTS:maxUeRrcInactTime=4",
+  "NRBTS:outOfConnectedPreference=idle",
+  "NRBTS:t380=10min",
+  "NRBTS:act3gppBL23R1=true",
+  "NRCELL:ranAC=0",
+  "NRBTS:actRrcReleasePreference=true",
+  "NRBTS:rrcInactPreferredStateEnabled=true",
+  "NRBTS:tRanPagingGuard=4",
+  "NRBTS:timerReleasePreferenceProhibit=s5",
+]
+
+PARAMS_FOR_other_resource_reserve = [
+  "NRCELL-1:actPriorityAccess=false",
+  "NRCELL:actEmergencyCall=false",
+  "NRBTS:actDrbPreemption=false",
+  "NRBTS:actUserPreemption=false",
+  "NRCELL:numOfRadioResReservForTempUse=0",
+  "NRCELL:numOfRadioResReservForEmergency=4",
+  "NRCELL:numOfRadioResReservForPa=4",
+]
+
+PARAMS_FOR_limit_maxNumOfRrcSA = [
+  "NRCELL:maxNumOfRrcSA=30",
+  "NRCELLGRP-0:nrCellList=2",
+  "NRCELLGRP-1:nrCellList=1",
+  "NRBTS/NRCELLGRP-1:maxNumOfRrcCGRPSA=30",
+  "NRBTS/NRCELLGRP-0:maxNumOfRrcCGRPSA=30",
+  "NRBTS/NRDU-1:maxNumOfRrcConUEsPerDU=2448",
+]
+
+PARAMS_FOR_limit_maxNumOfUsersPerNRCell = [
+  "NRCELL:maxNumOfUsersPerNRCell=30",
+  "NRCELL:maxNumOfUsersPerCell=30",
+  "NRCELL:maxNumOfCaUsersNRCell=30",
+  "NRCELL:maxNumOfNrDcSnUsers=30",
+  "NRCELL:maxNumOfSCellAlloc=30",
+]
+
+PARAMS_FOR_DuMaxRRCConnection = [
+  "NRBTS-1:actConnRrcPooling=true",
+  "NRBTS-1:actScheUePooling=true",
+]
+
+PARAMS_FOR_limit_Bearer = [
+  "NRCELL:maxNumOfNonGBRBearersSA=30",
+  "NRCELL:maxNumOfGBRBearersSA=10",
+  "NRCELL:addNumOfGBRBearers=4",
+  "NRCELLGRP-0:maxNumOfNonGBRBearersCGRPSA=30",
+  "NRBTS/NRCELLGRP-0:addNumOfNonGBRBearersCGRPSAHo=0",
+]
+
+PARAMS_FOR_DRB_for_5qi4 = [
+  "NRDRB_RLC_UM-1:dlTReassemblyUm=ms15",
+  "NRDRB_RLC_UM-1:ulTReassemblyUm=ms15",
+  "NRDRB_MAC-5:lcgid=5",
+  "NRBTS/NRDRB-16:actDddsReduction=true",
+  "NRBTS/NRDRB-16:actDlTxResumeOnPdcpStatRep=false",
+  "NRBTS/NRDRB-16:actLostPduFastRetx=false",
+  "NRBTS/NRDRB-16:actOptDataFlowRateEst=false",
+  "NRBTS/NRDRB-16:allowedPdcchPowerBoostALDueCce=none",
+  "NRBTS/NRDRB-16:allowedPdcchPowerBoostALDueCfg=None",
+  "NRBTS/NRDRB-16:caPduReSendingDelayMargin=2",
+  "NRBTS/NRDRB-16:discardTimer=100ms",
+  "NRBTS/NRDRB-16:dlAllowMinDelayLinkXxCalib=false",
+  "NRBTS/NRDRB-16:dlFlowControlAlgo=3gppFlowControl",
+  "NRBTS/NRDRB-16:dscp=46",
+  "NRBTS/NRDRB-16:durationThresDiscardDl=40",
+  "NRBTS/NRDRB-16:durationThresDiscardDlMacSdu=40",
+  "NRBTS/NRDRB-16:durationThresDiscardDlPdcpPdu5GLeg=40",
+  "NRBTS/NRDRB-16:durationThresDiscardDlPdcpPduLteLeg=40",
+  "NRBTS/NRDRB-16:durationThresDiscardUl=20",
+  "NRBTS/NRDRB-16:endMarkerTimer=2000",
+  "NRBTS/NRDRB-16:l2OHFactorDl=16",
+  "NRBTS/NRDRB-16:l2OHFactorUl=35",
+  "NRBTS/NRDRB-16:maxDataRateGbrDl=30000",
+  "NRBTS/NRDRB-16:maxDataRateGbrUl=30000",
+  "NRBTS/NRDRB-16:maxDddsPeriodCpuOvld=40",
+  "NRBTS/NRDRB-16:maxRlcQueueingDelayGbr=20",
+  "NRBTS/NRDRB-16:maxTransferDelayGbr=20",
+  "NRBTS/NRDRB-16:nrDrbMacDN=MRBTS-1/NRBTS-1/NRDRB_MAC-5",
+  "NRBTS/NRDRB-16:nrDrbPdcpDN=MRBTS-1/NRBTS-1/NRDRB_PDCP-2",
+  "NRBTS/NRDRB-16:nrDrbRlcAmDN=MRBTS-1/NRBTS-1/NRDRB_RLC_AM-1",
+  "NRBTS/NRDRB-16:nrDrbRlcUmDN=MRBTS-1/NRBTS-1/NRDRB_RLC_UM-1",
+  "NRBTS/NRDRB-16:nrDrxDN=MRBTS-1/NRBTS-1/NRDRX-1",
+  "NRBTS/NRDRB-16:numSduDiscard=1",
+  "NRBTS/NRDRB-16:queuingDelayDiscardStart=5",
+  "NRBTS/NRDRB-16:queuingDelayDiscarding=Disabled",
+  "NRBTS/NRDRB-16:queuingDelaySduDiscardThreshold=750",
+  "NRBTS/NRDRB-16:resType=GBR",
+  "NRBTS/NRDRB-16:rlcMode=RLC_AM",
+  "NRBTS/NRDRB-16:rlcPduDelayThCa=30",
+  "NRBTS/NRDRB-16:schedulWeight=1",
+  "NRBTS/NRDRB-16:sduDiscardIntervalTmr=500",
+  "NRBTS/NRDRB-16:volThresDiscardDl=8000",
+  "NRBTS/NRDRB-16:volThresDiscardDlMacSdu=8000",
+  "NRBTS/NRDRB-16:volThresDiscardDlPdcpPdu5GLeg=8000",
+  "NRBTS/NRDRB-16:volThresDiscardDlPdcpPduLteLeg=8000",
+  "NRBTS/NRDRB-16:volThresDiscardUl=800",
+  "NRBTS/NRDRB-16:cellAggrLevel=Not FR1 CA eligible",
+  "delete:NRBTS/NRDRB-16:nsaDrbParam",
+  "NRBTS/NRDRB_5QI-7:dataForwarding=IRATDataFwd",
+  "NRBTS/NRDRB_5QI-7:nrDrbDN=MRBTS-1/NRBTS-1/NRDRB-16",
+  "NRBTS/NRDRB_5QI-7:fiveqiValueList=4",
+  "NRBTS/NRDRB_MAC-5:delayTarget=50",
+  "NRBTS/NRDRB_MAC-5:lcgid=5",
+  "NRBTS/NRDRB_MAC-5:prioritisedBitRate=16kBps",
+  "NRBTS/NRDRB_MAC-5:schedulBSD=50ms",
+  "NRBTS/NRDRB_MAC-5:schedulPrio=4",
+]
+
+PARAMS_FOR_GBR_RAC = [
+  "NRCELL:actNonVoNRGbrService=true",
+  "NRCELL:actGbrRacTdEnhResourcePriority=false",
+  "NRCELL:actGBRAdmissionControl=GBRService",
+  "NRCELL:maxGBRTrafficLimit=90",
+]
+PARAMS_FOR_BBPooling = [
+  "NRBTS:actConnRrcPooling=true",
+  "NRBTS:actScheUePooling=true",
+  "NRBTS:actBbPoolTddFr1=true",
+  "NRBTS:actBbPoolExtensionTddFr1=true",
+  "NRBTS:actBbPoolTddFr1AlgEnh=true",
+  "NRBTS:actBbPoolTddFr1Enh=true",
+  "NRCELL:msg1FrequencyStart=4",
+  "NRCELL:pagingOffset=1",
+  "NRCELL:fPdcchMonOccsnPo=2",
+  "NRBTS/NRSYSINFO_PROFILE-1:systemInformationTargetRate=157",
+]
+
+PARAMS_IN_SCF = PARAMS_FOR_GBR_RAC + PARAMS_FOR_DRB_for_5qi4 + PARAMS_FOR_limit_Bearer \
+                + PARAMS_FOR_DuMaxRRCConnection + PARAMS_FOR_limit_maxNumOfUsersPerNRCell \
+                + PARAMS_FOR_limit_maxNumOfRrcSA + PARAMS_FOR_other_resource_reserve \
+                + PARAMS_FOR_8225_parameters + PARAMS_FOR_onlySA + PARAMS_FOR_TAC \
+                + PARAMS_FOR_SNSSAI + PARAMS_FOR_NRRESOURCEGROUP_PROFILE \
+                + PARAMS_FOR_CB008195 + PARAMS_FOR_BBPooling
+
+OnlineParamChange_CB008195_GBRCheckOn = [
+  "MRBTS-1/NRBTS-1/NRRESOURCEGROUP_PROFILE-0:bypassRgLimits=4",
+  "MRBTS-1/NRBTS-1/NRRESOURCEGROUP_PROFILE-1:bypassRgLimits=4",
+  "MRBTS-1/NRBTS-1/NRRESOURCEGROUP_PROFILE-2:bypassRgLimits=4",
+  "MRBTS-1/NRBTS-1/NRRESOURCEGROUP_PROFILE-3:bypassRgLimits=4",
+]
+
+OnlineParamChange_CB008195_GBRCheckOff = [
+  "MRBTS-1/NRBTS-1/NRRESOURCEGROUP_PROFILE-0:bypassRgLimits=2",
+  "MRBTS-1/NRBTS-1/NRRESOURCEGROUP_PROFILE-1:bypassRgLimits=2",
+  "MRBTS-1/NRBTS-1/NRRESOURCEGROUP_PROFILE-2:bypassRgLimits=2",
+  "MRBTS-1/NRBTS-1/NRRESOURCEGROUP_PROFILE-3:bypassRgLimits=2",
+]
+
+AVG_NUM_UE_NOM_NRG = "M55910C00005"
+DNOM_SAMPLES_NRG = "M55910C00006"
+AVE_NUM_NGBR_NOM_NRG = "M55910C00007"
+AVE_NUM_GBR_NOM_NRG = "M55910C00008"
+PEAK_NUM_UE_NRG = "M55910C00010"
+PEAK_NUM_NGBR_NRG = "M55910C00011"
+PEAK_NUM_GBR_NRG = "M55910C00012"
+AVE_UNALLOC_5QI1_RES_NOM_NRG = "M55910C00014"
+RAC_REJ_DUE_DRB_MAX_QUOTA_NRG = "M55910C00015"
+RAC_REJ_DUE_UE_MAX_QUOTA_NRG = "M55910C00016"
+NUM_ADM_REQ_NGBR_NRG = "M55910C00017"
+NUM_ADM_SUC_NGBR_NRG = "M55910C00018"
+NUM_ADM_REQ_GBR_NRG = "M55910C00021"
+NUM_ADM_SUC_GBR_NRG = "M55910C00022"
+NUM_ADM_REQ_UE_NRG = "M55910C00023"
+NUM_ADM_SUC_UE_NRG = "M55910C00024"
+
+CELL_COUNTER = [
+  f"NRCELL-1/NRRESOURCEGROUP-32:{AVG_NUM_UE_NOM_NRG}>200",
+  f"NRCELL-1/NRRESOURCEGROUP-32:{DNOM_SAMPLES_NRG}>200",
+  f"NRCELL-1/NRRESOURCEGROUP-32:{AVE_NUM_NGBR_NOM_NRG}>0",
+  f"NRCELL-1/NRRESOURCEGROUP-32:{AVE_NUM_GBR_NOM_NRG}>0",
+  f"NRCELL-1/NRRESOURCEGROUP-32:{PEAK_NUM_UE_NRG}=3",
+  f"NRCELL-1/NRRESOURCEGROUP-32:{PEAK_NUM_NGBR_NRG}=3",
+  f"NRCELL-1/NRRESOURCEGROUP-32:{PEAK_NUM_GBR_NRG}=2",
+  f"NRCELL-1/NRRESOURCEGROUP-32:{RAC_REJ_DUE_DRB_MAX_QUOTA_NRG}=3",
+  f"NRCELL-1/NRRESOURCEGROUP-32:{RAC_REJ_DUE_UE_MAX_QUOTA_NRG}=0",
+  f"NRCELL-1/NRRESOURCEGROUP-32:{NUM_ADM_REQ_NGBR_NRG}=6",
+  f"NRCELL-1/NRRESOURCEGROUP-32:{NUM_ADM_SUC_NGBR_NRG}=5",
+  f"NRCELL-1/NRRESOURCEGROUP-32:{NUM_ADM_REQ_GBR_NRG}=5",
+  f"NRCELL-1/NRRESOURCEGROUP-32:{NUM_ADM_SUC_GBR_NRG}=3",
+  f"NRCELL-1/NRRESOURCEGROUP-32:{NUM_ADM_REQ_UE_NRG}=6",
+  f"NRCELL-1/NRRESOURCEGROUP-32:{NUM_ADM_SUC_UE_NRG}=5",
+]

@@ -1,0 +1,131 @@
+local CONTAINER_IP="localhost"
+local SERVER_IP="10.0.2.1"
+
+local GNB_NG_ADDR="10.0.1.2"
+local GNB_SIM_NG_ADDR="10.0.1.30"
+local GNB_SIM_NG_ADDR2="10.0.1.40"
+local GNB_SIM_XN_ADDR="10.0.1.31"
+local GNB_SIM_XN_ADDR2="10.0.1.41"
+local PROXY_SERVER_IP="10.0.2.80"
+local PROXY2_SERVER_IP="10.0.2.90"
+local PROXY3_SERVER_IP="10.0.2.100"
+local AMF_NG_ADDR="10.0.1.1"
+local UEC_ADDR="72.22.0.1"
+local UPF_ADDR="1.2.4.1"
+
+local EDAEMON_PORT="10000"
+
+require('os')
+os.execute('sudo ifconfig eth3:gNB3_NG add '..GNB_SIM_NG_ADDR)
+os.execute('sudo ifconfig eth3:gNB1_NG add '..GNB_SIM_NG_ADDR2)
+os.execute('sudo ifconfig eth3:gNB3_XN add '..GNB_SIM_XN_ADDR)
+os.execute('sudo ifconfig eth3:gNB1_XN add '..GNB_SIM_XN_ADDR2)
+os.execute('sudo ifconfig eth4:gNB3_PR add '..PROXY2_SERVER_IP)
+os.execute('sudo ifconfig eth4:gNB1_PR add '..PROXY3_SERVER_IP)
+---------------------------------------------------------------------------------------------------
+---5GCN CONFIGURATION
+---------------------------------------------------------------------------------------------------
+exec('set_amf_region id=1 tac_list=222,788,200,0 plmn=311:489')
+exec('set_amf id=1 daemon='..SERVER_IP..':'..EDAEMON_PORT..' ng='..AMF_NG_ADDR..':38412 region=1 set_id=2 pointer=2')
+exec('amf_param id=1 full_nas_auth=on nia=null+aes+snow3g+zuc nea=null+aes+snow3g+zuc ims_voice_3gpp=on')
+exec('set_upf id=1 daemon='..SERVER_IP..':'..EDAEMON_PORT..' type=simulated addr='..UPF_ADDR..' ngu='..AMF_NG_ADDR..'')
+
+---------------------------------------------------------------------------------------------------
+--GNB CONFIGURATION NR-ARFCN values UL:DL
+-----------------------------------------------------------------------------------------------------
+exec('set_gnb id=2 type=external plmn=311:489 ng='..GNB_NG_ADDR..' gnb_id=0x01 daemon='..SERVER_IP..':'..EDAEMON_PORT..' xn='..GNB_NG_ADDR..' x2_peers=none amf=1')
+exec('set_cell id=1 gnb=2 pci=16:2 tac=200 nrci=0x01 tdd_cell=off proxy='..PROXY_SERVER_IP..':9999|'..PROXY_SERVER_IP..':8888 nr_arfcn=347380:425040 gscn=5313 mandatory_for_activation=off')
+exec('set_cell id=2 gnb=2 pci=17:0 tac=200 nrci=0x02 tdd_cell=off proxy='..PROXY_SERVER_IP..':9999|'..PROXY_SERVER_IP..':8888 nr_arfcn=347380:425040 gscn=5313 mandatory_for_activation=off')
+exec('set_cell id=3 gnb=2 pci=17:1 tac=200 nrci=0x03 tdd_cell=on proxy='..PROXY_SERVER_IP..':9999|'..PROXY_SERVER_IP..':8888 nr_arfcn=2254471:2254471 gscn=23081 mandatory_for_activation=off')
+exec('set_cell id=4 gnb=2 pci=17:2 tac=200 nrci=0x04 tdd_cell=off proxy='..PROXY_SERVER_IP..':9999|'..PROXY_SERVER_IP..':8888 nr_arfcn=167300:176300 gscn=2203 mandatory_for_activation=off')
+exec('set_cell id=5 gnb=2 pci=18:0 tac=200 nrci=0x05 tdd_cell=off proxy='..PROXY_SERVER_IP..':9999|'..PROXY_SERVER_IP..':8888 nr_arfcn=349000:431000 gscn=5389 mandatory_for_activation=off')
+-- exec('set_cell id=6 gnb=2 pci=18:1 tac=200 nrci=0x06 tdd_cell=off proxy='..PROXY_SERVER_IP..':9999|'..PROXY_SERVER_IP..':8888 nr_arfcn=347380:425040 gscn=5313 mandatory_for_activation=off')
+exec('set_cell id=6 gnb=2 pci=18:1 tac=200 nrci=0x06 tdd_cell=on proxy='..PROXY_SERVER_IP..':9999|'..PROXY_SERVER_IP..':8888 nr_arfcn=2077917:2077917 gscn=22469 mandatory_for_activation=off')
+
+---------------------------------------------------------------------------------------------------
+--GNB3 sim configuration
+---------------------------------------------------------------------------------------------------
+exec('set_gnb id=3 type=simulated plmn=311:489 ng='..GNB_SIM_NG_ADDR..' gnb_id=0x76D daemon='..SERVER_IP..':'..EDAEMON_PORT..' x2_peers=none xn='..GNB_SIM_XN_ADDR..' nssai=0x1:0xD143A5,1:0xD143A6 amf=1')
+exec('set_cell id=1 gnb=3 pci=15:1 tac=0 nrci=0x01 tdd_cell=off proxy='..PROXY2_SERVER_IP..':'..EDAEMON_PORT..' gscn=5313 nr_arfcn=347380:425040 nr_scs=15kHz bs_channel_bandwidth=10MHz')
+exec('gnb_param id=3 xn_listening_socket=on send_xn_setup=off sib1_period=10s')
+
+---------------------------------------------------------------------------------------------------
+--GNB1 sim configuration with fake enb cell
+---------------------------------------------------------------------------------------------------
+exec('set_gnb id=1 type=simulated plmn=311:489 ng='..GNB_SIM_NG_ADDR2..' daemon='..SERVER_IP..':'..EDAEMON_PORT..' gnb_id=0x76E x2_peers=none xn='..GNB_SIM_XN_ADDR2..' nssai=0x1:0xD143A5 amf=1')
+exec('set_cell id=1 gnb=1 pci=3:2 tac=222 nrci=0x01 tdd_cell=on proxy='..PROXY3_SERVER_IP..':'..EDAEMON_PORT..' earfcn=2000:20000 bw=20MHz technology=lte mandatory_for_activation=off')
+exec('gnb_param id=1 xn_listening_socket=on send_xn_setup=off')
+
+---------------------------------------------------------------------------------------------------
+----UEC CONFIGURATION
+----------------------------------------------------------------------------------------------------
+exec('set_uec id=1 daemon='..SERVER_IP..':'..EDAEMON_PORT..' peer='..SERVER_IP..':2152 retries=unlimited gtpu=off pdn=1 devtype=tun devname=tunUEC addr=72.22.0.1/26')
+---------------------------------------------------------------------------------------------------
+---UE CONFIGURATION
+----------------------------------------------------------------------------------------------------
+--- UED_B1c n5_n66_n261A/A + n5_n66_n260G/G + n41_n66_n260G/G + double featureSetIndex
+for i=1,3 do
+	exec('set_ue simulated id='..i..' uec=1 release=15 idle_edrx_cycle_len=2 ptw=2.56 opc_key=0ED47545168EAFE2C39C075829A7B61F nia=null+zuc nea=null+zuc sec_key=0102030405060708090A0B0C0D0EFF00 suci=0:311:489:0000:0:0:02164540'..i..' mode=nr enb=2 cell=1')
+	exec('ue_param id='..i..' ue_nr_capabilities=E7A05000574F7E03560803C4A0002C10010180910600098385C00C4834000A040260300C45018053380B546C28D608C21A08107483C00A2D954542439F40CFB027C639F30C7942C0E070F017001DF001C0077C001820006CA0000A00000283E026B04610D04083C41E00496CAA2A0A1CFA067C639F30C7942C0E070F027F0000001FC000000A83E20EB04610D04083C41E00496CAA2A0A1CFA067C639F30C7942C0E070F027F6000001FD800000181000182A81681EF1C610E00151E7E2878011FB660AA40078F0021C4106115028FDFC81B8FC7188000180E81682606F1C610E00151E7E2878011FB660AA40078F0021C4106115028FDFC81B8FC7188000180A816806F1C610E00151E7E2878011FB660AA40078F0021C4106115028FDFC81B8DC61880001800318B808001C41000E820000000442E020007104003A0630C004100B850001C41000E818C30020090012020C02882070410650005E03891274FC0C93E2C49D3A7E0649F1624E9D3F0324F8A01A068040801403D06E003E00280030101401C0C0250070006020211001042C04200100032780800800000925000009600000401004000000048000040300E00D8195BA464EC6F940304000025949410000196525000100401000000802503AAAED422740210080100202004008080200420100200404008010100600C4060100240200403002006004008180300700A00C4A01C000C6C10950408010B90080328')
+
+end
+
+--- UED_B1c n5_n66_n261A/A + n5_n66_n260G/G + n41_n66_n260G/G + double featureSetIndex + splitDRB-withUL-Both-MCG-SCG is absent
+for i=4,5 do
+    exec('set_ue simulated id='..i..' uec=1 release=15 idle_edrx_cycle_len=2 ptw=2.56 opc_key=0ED47545168EAFE2C39C075829A7B61F nia=null+zuc nea=null+zuc sec_key=0102030405060708090A0B0C0D0EFF00 suci=0:311:489:0000:0:0:02164540'..i..' mode=nr enb=2 cell=1')
+    exec('ue_param id='..i..' ue_nr_capabilities=E7A05000574F7E03560803C320016080080C048830004C1C2600C4834000A04026010188A0300A67016A8D851AC1184341020E90580516CAA2A121CFA067D813E31CF9863CA1607038780B800EF800E003BE000A1000D940001400000507C04D608C21A08107882C024B65515050E7D033E31CF9863CA16070387813F8000000FE000000541F107582308682041E20B0092D954541439F40CF8C73E618F28581C0E1E04FEC000003FB000000282000C1540B40F78E3087000A8F3F142C023F6CC154800F1E00438820C22A051FBF90371F8E290000C0740B4130378E3087000A8F3F142C023F6CC154800F1E00438820C22A051FBF90371F8E290000C0540B40378E3087000A8F3F142C023F6CC154800F1E00438820C22A051FBF90371B8C290000C0018C5C04000E2080074100000002217010003882001D031860020805C28000E20800740C61801004800901060144103820822802F01C4893A7E0649F1624E9D3F0324F8B1274E9F81927C500D034020400A01E827007C0050006020280381804A00E000C040422002085808400200064F0100100000124A000012C00000802008000000090000080601C01B032B748C9D8DF28060800004B29282000032CA4A000200802000001004A07555DA844E80420100200404008010100400840200400808010020200C01880C020048040080600400C008010300600E014018142E40000CA00')
+end
+--- UEB1a n66_n258 -> so missing bands - UECapEnquiry expected
+for i=6,7 do
+    exec('set_ue simulated id='..i..' uec=1 release=15 idle_edrx_cycle_len=2 ptw=2.56 opc_key=0ED47545168EAFE2C39C075829A7B61F nia=null+zuc nea=null+zuc sec_key=0102030405060708090A0B0C0D0EFF00 suci=0:311:489:0000:0:0:02164540'..i..' mode=nr enb=2 cell=1')
+    exec('ue_param id='..i..' ue_nr_capabilities=E7A05000574F7E03560803C320016080080C048830004C1C2600C4834000A04026010188A0300A67016A8D89BAC1184341020E90580516CAA2A121CFA067D813E31CF9863CA1607038780B800EF800E003BE000A1000D940001400000507C46D608C21A08107882C024B65515050E7D033E31CF9863CA16070387813F8000000FE000000541F107582308682041E20B0092D954541439F40CF8C73E618F28581C0E1E04FEC000003FB000000282000C1540B40F78E3087000A8F3F142C023F6CC154800F1E00438820C22A051FBF90371B8C290000C0740B4070378E3087000A8F3F142C023F6CC154800F1E00438820C22A051FBF90371F8E290000C0540B40378E3087000A8F3F142C023F6CC154800F1E00438820C22A051FBF90371B8C290000C0010C3C41000E808000000461E2080074046180002006020C10111400D80A1449DB1CF870A24ED8E7C30058120102008F413803E00280030101401C0C0250070006020211001042C04200100032780400800000925000009724A00402008B0098195BA56EB402040000259494100001965250401008029652500940EAABB555DCA0104040080101004008202004008080200410100200404018030285C8040194')
+end
+--- insufficient UECap - wrong appliedFreqBandListFilter  with support for INTER_RAT_HO
+for i=8,9 do
+    exec('set_ue simulated id='..i..' uec=1 release=15 idle_edrx_cycle_len=2 ptw=2.56 opc_key=0ED47545168EAFE2C39C075829A7B61F nia=null+zuc nea=null+zuc sec_key=0102030405060708090A0B0C0D0EFF00 suci=0:311:489:0000:0:0:02164540'..i..' mode=nr enb=2 cell=1')
+    exec('ue_param id='..i..' ue_nr_capabilities=E7A05000574F7E03560803C4A0002C10010180910600098385C00C4834000A040260300C45018053380B546C28D608C21A08107483C00A2D954542439F40CFB027C639F30C7942C0E070F017001DF001C0077C001820006CA0000A00000283E026B04610D04083C41E00496CAA2A0A1CFA067C639F30C7942C0E070F027F0000001FC000000A83E20EB04610D04083C41E00496CAA2A0A1CFA067C639F30C7942C0E070F027F6000001FD800000181000182A81681EF1C610E00151E7E2878011FB660AA40078F0021C4106115028FDFC81B8FC7188000180E81682606F1C610E00151E7E2878011FB660AA40078F0021C4106115028FDFC81B8FC7188000180A816806F1C610E00151E7E2878011FB660AA40078F0021C4106115028FDFC81B8DC61880001800318B808001C41000E820000000442E020007104003A0630C004100B850001C41000E818C30020070012020C0288206320002F01C4893A7E0649F1624E9D3F0324F8B1274E9F81927C51FBFFEAA0DC007C0070006038280381804A00E000C040422002085808400200064F0100100000124A000012C00000802008000000090000080601C01B032B748C9D8DF28060800004B29282000032CA4A000200802000001004A07555DA844E80420100200404008010100400840200400808010020200C01880C020048040080600400C008010300600E014018958380010190928E0A942102A0198')
+--   exec('ue_param id='..i..' ue_eutra_capabilities=DD9FF43081A808081705C177E0DF99ACA100220401052A000050665F3FC1BB134BC32022F7E0DD89AB230421841086104218210C1082080304218018018200C100608430030022104002D1F5518502038410041460821610401051820A30410B082008284105182083841004142082061040105902E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82E0B82EFC5000019B210F0F0F1708FE2E43C3C3C3C3C3C3C3C3C3C3887878787000045F830000081010440668003E71E00020406080C0E162636383A83F7FC4B5A60190BFCDEA000600DB24000080000412E780C000048080C2609A143C037FC00000A00000061000880004')
+end
+
+for i=1,10 do
+    exec('set_pdu_gateway id='..i..' ue_nat_ip=72.23.'..i..'.1 dl_nat_gw='..SERVER_IP..' ul_nat_gw='..SERVER_IP..'')
+end
+
+---------------------------------------------------------------------------------------------------
+---COMMON CONFIGURATION
+----------------------------------------------------------------------------------------------------
+
+exec('set_qosflow id=1 5qi=170 default=on')
+exec('set_qosflow id=2 5qi=2')
+exec('set_qosflow id=3 5qi=9')
+exec('set_qosflow id=4 5qi=5')
+exec('set_qosflow id=5 5qi=4')
+exec('set_qosflow id=6 5qi=8 priority=1 pci=may_trigger_pre_emption pvi=not_pre_emptable')
+
+
+--- For default nonGBR QoS flow
+exec('qosrule_set id=1 proto=tcp qos_flow=1')
+--- For GBR QoS flow
+exec('qosrule_set id=2 proto=udp qos_flow=2')
+--- For nonGBR QoS flow
+exec('qosrule_set id=3 proto=udp qos_flow=3')
+--- For default nonGBR_Signaling QoS flow
+exec('qosrule_set id=4 proto=udp qos_flow=4')
+--- For GBR QoS flow
+exec('qosrule_set id=5 proto=udp qos_flow=5')
+--- For pre-emption capable QoS flow
+exec('qosrule_set id=6 proto=udp qos_flow=6')
+
+
+exec('set_nwslice id=1 snssai=0x01:0xD143A5 default=on ue=all amf=1')
+
+exec('debug_log level=6')
+exec('sim_debug_log level=1 uec=1')
+exec('link_ctrl_param use_hb=off')
+exec('trace uec=1 protocol=rrc on')
+exec('trace uec=1 protocol=nr_rrc on')
+exec('sim_trace off')
+exec('cfg_end')
+
+exec('set_log log_to_file=on')
+--exec('sim_start version_check=off')

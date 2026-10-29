@@ -1,0 +1,111 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for CB008072 feature tests cases
+...
+...               Automation author           : bernard.hoche@nokia.com
+...               Automation contact          : bernard.hoche@nokia.com
+...               Creation Date               : 05-June-2019
+...               Modified Date               : 05-June-2019
+...               Last Modified by            : bernard.hoche@nokia.com
+...               Last Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: adapt to CB006062
+...               Last Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: adapt to CB007782
+...               Last Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: adapt to CB008072
+...               Last Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: PTRS act 8792-B-22R3
+...               Modified Date               : 11-February-2022
+...               Modified Date               : 17-October-2022 Adapt script to ORAN - MLLB
+
+
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+
+Library           taf.config.scf                WITH NAME      scf
+Library           Collections
+
+*** Variables ***
+${nbCells+1}            3
+
+*** Keywords ***
+
+#=======================================================================================================================
+# KW to set some parameters in SCF
+#=======================================================================================================================
+
+Set Parameters on SCF_COAM_FDD
+   [Documentation]                 Set ChBw and eventual PuschType and XDMRSAdditionalPosition upon dir parameter
+    ...                             dir should be one of 'UL', 'DL', 'UL_DL' or 'None'
+    [Arguments]                     ${dir}=None
+    ...                             ${puschMappingType_value}=${param.puschMappingType}
+    ...                             ${dmrsTypeAPosition_value}=${param.dmrsTypeAPosition}
+    ...                             ${actUlDataDmrsFdm_value}=${param.actUlDataDmrsFdm}
+    ...                             ${ulDataDmrsFdmThres64QamMcs_value}=${param.ulDataDmrsFdmThres64QamMcs}
+    ...                             ${ulDMRSAdditionalPosition_value}=${param.ulDMRSAdditionalPosition}
+	...                             ${actUlPtrs_value}=${param.actUlPtrs}
+    ...                             ${ulPtrsFreqDensityThresNrb0_value}=${param.ulPtrsFreqDensityThresNrb0}
+    ...                             ${ulPtrsFreqDensityThresNrb1_value}=${param.ulPtrsFreqDensityThresNrb1}
+
+    SCF Set element                 dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}      element_name=actInactDetNSAUe
+    ...                             element_value=false
+    ${nbCells+1}       run Keyword if          ${isORAN}         set variable    2
+    ... 						   ELSE 						 set variable    3
+    FOR    ${i}     IN RANGE    1   ${nbCells+1}
+           ${dn}             set variable           MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${i}
+
+           SCF Set element                 dist_name=${dn}      element_name=puschMappingType
+           ...                             element_value=${puschMappingType_value}
+
+           SCF Set element                 dist_name=${dn}      element_name=dmrsTypeAPosition
+           ...                             element_value=${dmrsTypeAPosition_value}
+
+           SCF Set element                 dist_name=${dn}      element_name=actUlDataDmrsFdm
+           ...                             element_value=${actUlDataDmrsFdm_value}
+
+           SCF Set element                 dist_name=${dn}      element_name=ulDataDmrsFdmThres64QamMcs
+           ...                             element_value=${ulDataDmrsFdmThres64QamMcs_value}
+
+           SCF Set element                 dist_name=${dn}      element_name=ulDMRSAdditionalPosition
+           ...                             element_value=${ulDMRSAdditionalPosition_value}
+
+		   SCF Set element                 dist_name=${NRCELL_DIST_NAME}      element_name=actUlPtrs
+           ...                             element_value=${actUlPtrs_value}
+
+           SCF Set element                 dist_name=${dn}      element_name=ulPtrsFreqDensityThresNrb0
+           ...                             element_value=${ulPtrsFreqDensityThresNrb0_value}
+
+           SCF Set element                 dist_name=${dn}      element_name=ulPtrsFreqDensityThresNrb1
+           ...                             element_value=${ulPtrsFreqDensityThresNrb1_value}
+
+           ${console_msg}                  Evaluate     "Database Modifications completed for NRCELL-${i}"
+           Dated Log                       ${console_msg}
+    END
+
+
+Set Context FDD
+    [Tags]                          SETUP
+    Copy File                       ${SCF_SETUP_PATH}     ${SCF_SETUP_PATH}.ori
+    ${scf_file_name}                Fetch from right      ${SCF_SETUP_PATH}      /
+    ${file_name_without_extention}    String.Replace string    ${scf_file_name}    .xml    ${EMPTY}
+    ${scf_name_for_update}            catenate    SEPARATOR=${EMPTY}    ${file_name_without_extention}
+    ...                               _8072_FDD.xml
+    ${scf_file_update_path}          set variable    ${LOG_PATH}/${scf_name_for_update}
+    SCF StartSession                scf_file=${SCF_SETUP_PATH}
+    ${modify_param}                 Set Parameters on SCF_COAM_FDD
+    ...                             dir=${param.dir}
+    SCF StopSession                 scf_file=${scf_file_update_path}
+
+    ${TestName}                     getFormattedName
+    Copy File                       ${LOG_PATH}/${scf_name_for_update}     ${LOG_PATH}/${TestName}.xml
+
+    OAM Perform Full Commissioning  scf_file=${scf_file_update_path}
+    Airscale Wait for Ready         ${GNB_DU}
+
+    Set UE_Capa Context_WTS CFG
+
+Set UE_Capa Context_WTS CFG
+    WtsCfgConfig.startSession
+    ${ue_id}             Set Variable       11
+    ${oldValue}          getParam           prefix=ue_param id=${ue_id}          param=ue_nr_capabilities
+    replaceValue         prefix=ue_param
+    ...                  param=ue_nr_capabilities
+    ...                  oldValue=${oldValue}
+    ...                  newValue=${param.ue_nr_capa}
+    WtsCfgConfig.stopSession         rename=modified

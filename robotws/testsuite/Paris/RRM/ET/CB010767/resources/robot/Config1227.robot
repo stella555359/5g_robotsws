@@ -1,0 +1,293 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Common keyword of 5GC001227 feature
+...               Prerequisite :
+...               Scope : keywords for 5GC001227
+...
+...               Test Case Scenario author   : philippe.daroux@nokia.com;ying.yw.wu@nokia.com
+...               Test Case Scenario contact  : philippe.daroux@nokia.com;ying.yw.wu@nokia.com
+...               Test Case automation author : philippe.daroux@nokia.com;ying.yw.wu@nokia.com
+...               Test Case automation contact: philippe.daroux@nokia.com;ying.yw.wu@nokia.com
+...               Creation Date               : 15-11-2021
+...               Modified Date               : 04-01-2022
+...               Last Modified by            : ying.yw.wu@nokia.com
+...               Version History   Date            Author                           Notes
+...               0.1               15-11-2021      ying.yw.wu@nokia.com             Creation (1227 activation flag)
+...               0.2               30-12-2021      philippe.daroux@nokia.com        Modification (UPD17 2538/2534 flags)
+...               0.3               04-01-2022      ying.yw.wu@nokia.com             Modification (FDM multiue + UPD006 coreset4 config)
+...               0.4               05-01-2022      ying.yw.wu@nokia.com             Add KW round robin bbpoolmode setting
+...               0.5               18-01-2022      ying.yw.wu@nokia.com             Modification (7114 & 2624 activation flags)
+...               0.6               03-02-2022      ying.yw.wu@nokia.com             VoNR activation flag
+...               0.7               07-02-2022      ying.yw.wu@nokia.com             Add KW to modify UE capa with VoNR support
+...               0.8               02-03-2022      ying.yw.wu@nokia.com             Add NIDD param fddNrCellConfigTradeoff
+...               0.9               06-04-2022      yann.merlin@nokia.com            Keyword "Modify WTS Cfg" added
+...               0.10              27-09-2023      blandine.garnier@nokia.com       Migration from BO_KLLL to LO_LOOO with variant
+
+
+Library           OperatingSystem
+Library           ../../../../../resources/SWENG/python/ScfVendorOperations.py
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+
+
+
+*** Keywords ***
+Set Dist Name Variables
+    ${mrbts_dist_name}              Set Variable    MRBTS-${MRBTS_ID}
+    ${nrbts_dist_name}              Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ${nrcell_1_dist_name}           Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ${nrcell_2_dist_name}           Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-2
+    ${nrcell_3_dist_name}           Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-3
+    ${pdcch_dedicated_dist_name}    Set Variable    MRBTS-1/NRBTS-1/BWP_PROFILE-33/PDCCH-1/PDCCH_CONFIG_DEDICATED-1
+    ${BBMOD_1_dist_name}            Set Variable    MRBTS-1/EQM-1/APEQM-1/CABINET-1/BBMOD-1
+    Set Suite Variable              ${mrbts_dist_name}
+    Set Suite Variable              ${nrbts_dist_name}
+    Set Suite Variable              ${nrcell_1_dist_name}
+    Set Suite Variable              ${nrcell_2_dist_name}
+    Set Suite Variable              ${nrcell_3_dist_name}
+    Set Suite Variable              ${pdcch_dedicated_dist_name}
+    Set Suite Variable              ${BBMOD_1_dist_name}
+
+Set UE CAPA VoNR Hexastring
+    &{UE_Capa_String}                Create Dictionary
+    ...                              part_1=E1201000034F5E0302C00201404820D9C4C3E140C1360107FE618F28581C130080C450080A63000A0F88DAC31B47498A823
+    ...                              part_2=F96524CA01105B260901831E31FF9863CA160703878089C02700040000000000841808DC9A1F00E41000000A41000002A41
+    ...                              part_3=000004A494000069807C0DBCA9BC0CADD200A0800004B29202000032CA480800014B29202000072CA4A0800024B29212000
+    ...                              part_4=0AA5949005D038BA551740E269544D2A88AEC40107801A01008000000A41A80
+    Dated Log                        UE capa is: ${UE_Capa_String.part_1}${UE_Capa_String.part_2}${UE_Capa_String.part_3}${UE_Capa_String.part_4}
+    [return]                         ${UE_Capa_String.part_1}${UE_Capa_String.part_2}${UE_Capa_String.part_3}${UE_Capa_String.part_4}
+
+Modify UE Capa in WTS Config
+    [Documentation]                This KW is used to update the value of the 1st occurence of ue_nr_capabilities in the wts cfg file
+    [Arguments]                    ${ue_capa_new_string}
+    WtsCfgConfig.startSession
+    ${ue_capa_default_value}       WtsCfgConfig.getParam
+    ...                            prefix=ue_param
+    ...                            param=ue_nr_capabilities
+    ...                            occurrence=1
+    WtsCfgConfig.replaceValue      prefix=ue_param
+    ...                            param=ue_nr_capabilities
+    ...                            newValue=${ue_capa_new_string}
+    ...                            oldValue=${ue_capa_default_value}
+    ...                            occurrence=1
+    WtsCfgConfig.stopSession       rename=modified
+
+
+Update 1227 Params in OAM SCF
+    [Arguments]                ${nb_of_cell}=3
+    ${SCF_ORI}                 Set Variable          ${SCF_SETUP_PATH}.origin
+    ${SCF_MODIFIED}            Set Variable          ${SCF_SETUP_PATH}.modif
+    # Backup the original SCF & save as ${SCF_SETUP_PATH}.origin
+    Copy File                  ${SCF_SETUP_PATH}     ${SCF_ORI}
+    Copy File                  ${SCF_SETUP_PATH}     ${SCF_MODIFIED}
+    # update the SCF and store the modified file as ${SCF_SETUP_PATH}.modif
+    Dated Log    ----> in Update 1227 Params in OAM SCF : nb_of_cell : ${nb_of_cell}
+    Config Update 1227 Activation               scf_file=${SCF_MODIFIED}   nbCell=${nb_of_cell}
+    Oam.OAM Perform Full Commissioning          scf_file=${SCF_MODIFIED}
+    WA Airscale Wait For Ready                  ${GNB_DU}
+
+Config Update 1227 Activation
+    [Documentation]        This KW is used to update the NIDD Param:
+    ...                    1) To Acitvate 1227 & related feature :
+    ...                      MRBTS-x/NRBTS-x.actSlowPrbPooling to be "true", to activate 1227 feature (Baseband pooling)
+    ...                      MRBTS-x/NRBTS-x.actConnRrcPooling to be "true"
+    ...                      MRBTS-x/NRBTS-x.actScheUePooling to be "true"
+    ...                    2) To activate UPD017 interacting with 2538/2534 feature (PDSCH Extension in SSB and TRS slots) :
+    ...                      MRBTS_x/NRBTS-x/NRCELL-(1 and 2)/actPdschRmCsirsForTracking to be "true"
+    ...                      MRBTS_x/NRBTS-x/NRCELL-(1 and 2)/actPdschAtSsbSlots to be "true" to activate 2534 feature (PDSCH at SSB slots)
+    ...                    3) To activate VoNR :
+    ...                      MRBTS_x/NRBTS-x/NRCELL-(1 and 2)/actVoNR to be "true"
+    ...                    4) Set MRBTS-1/EQM-1/APEQM-1/CABINET-1/BBMOD-1 param fddNrCellConfigTradeoff to be "max cells"
+    ...                    Then save the scf file with the modified value
+    [Arguments]            ${scf_file}      ${nbCell}=3
+    Set Dist Name Variables
+    SCF StartSession       scf_file=${scf_file}
+    Dated Log   ----> Here to update the GNB SCF with 1227 params  .....
+    SCF Set element        dist_name=${nrbts_dist_name}
+    ...                    element_name=actSlowPrbPooling
+    ...                    element_value=true
+    SCF Set element        dist_name=${nrbts_dist_name}
+    ...                    element_name=actConnRrcPooling
+    ...                    element_value=true
+    SCF Set element        dist_name=${nrbts_dist_name}
+    ...                    element_name=actScheUePooling
+    ...                    element_value=true
+    SCF Set element        dist_name=${BBMOD_1_dist_name}
+    ...                    element_name=fddNrCellConfigTradeoff
+    ...                    element_value=max cells
+    Dated Log   ---> nbCell : ${nbCell}
+    FOR    ${cell_idx}    IN RANGE    1    ${nbCell}+1
+        Dated Log   ---> variable cell_idx : ${cell_idx}
+        ${nrcell_dist_name}           Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${cell_idx}
+        SCF Set element        dist_name=${nrcell_dist_name}
+        ...                    element_name=actPdschRmCsirsForTracking
+        ...                    element_value=true
+        SCF Set element        dist_name=${nrcell_dist_name}
+        ...                    element_name=actVoNR
+        ...                    element_value=true
+        SCF Set element        dist_name=${nrcell_dist_name}
+        ...                    element_name=actPdschAtSsbSlots
+        ...                    element_value=true
+    END
+    Dated Log   ----> to call "SCF Set Element ... etc. for update ..."
+
+    SCF StopSession        scf_file=${scf_file}
+    Dated Log    ----> Modifications completed.\n
+
+
+Config Update Round Robin
+    Dated Log    ----> start : set BBPoolMode to Round Robin in Vendor File
+    SetConfig.Change NIDD Hidden param
+    Dated Log    ----> end : Round Robin config completed
+
+Vendor File Config With Specific Settings
+    [Documentation]                 Download vendor file, Modify bbPooling params, save the modified vendor file
+    ...                             validate the modified vendor file via OAM web UI
+    [Arguments]                     ${Vendor_Params}
+    ${original_vendorfile}          ${modified_vendorfile}              SetConfig.Download Vendor File
+    Dated Log       -----> Original Vendor File Name :
+    Dated Log       ${original_vendorfile}
+    Dated Log       -----> Modified Vendor File Name will be :
+    Dated Log       ${modified_vendorfile}
+
+    @{RR_PoolMode}=   Create List       bbPoolMode      round-robin
+    @{Param_To_Replace}=    Create List     ${RR_PoolMode}
+
+    ScfVendorOperations.setup reader         ${original_vendorfile}
+    ${mo_dict}          ScfVendorOperations.get moelements byclass
+    ...                 NRBTS
+    ${modified_mo}=     Run Keyword If     '${Vendor_Params.bbPoolMode}'=='round-robin'     ScfVendorOperations.replace params inMo
+    ...                 ${Param_To_Replace}
+    ...                 ${mo_dict}
+
+    &{old_val1}         Create Dictionary
+    ...                 bbHwVariant=ABIO
+    ...                 bbL1SpPrbCapacityId=1
+    ...                 confDuplexMode=FDD
+    ...                 csSize=48
+    ...                 maxNumLayerPrbDlL1Sp=1272
+    ...                 maxNumLayerPrbUlL1Sp=636
+    ...                 maxNumStreamPrbDlL1Sp=1272
+    ...                 maxNumStreamPrbUlL1Sp=1272
+
+    &{new_val1}         Create Dictionary
+    ...                 bbHwVariant=ABIO
+    ...                 bbL1SpPrbCapacityId=1
+    ...                 confDuplexMode=FDD
+    ...                 csSize=48
+    ...                 maxNumLayerPrbDlL1Sp=${Vendor_Params.maxNumLayerPrbDlL1Sp}
+    ...                 maxNumLayerPrbUlL1Sp=${Vendor_Params.maxNumLayerPrbUlL1Sp}
+    ...                 maxNumStreamPrbDlL1Sp=${Vendor_Params.maxNumStreamPrbDlL1Sp}
+    ...                 maxNumStreamPrbUlL1Sp=${Vendor_Params.maxNumStreamPrbUlL1Sp}
+
+    @{old_items_list}=      Create List       ${old_val1}
+    @{new_items_list}=      Create List       ${new_val1}
+
+    ${list_name}        Set Variable                                    bbL1SpPrbCapacity
+    ${modified_mo}      ScfVendorOperations.replace items inList        ${old_items_list}
+    ...                 ${new_items_list}                               ${list_name}
+    ...                 ${mo_dict}
+
+    ScfVendorOperations.save back toxml     ${modified_vendorfile}
+    ${Tmp_file_ls}                    OperatingSystem.run               ls -altr ${modified_vendorfile}
+    Dated log                         Obtained file ${Tmp_file_ls}
+
+    &{args}    Create Dictionary    vendor_file="${modified_vendorfile}"
+    OAM Run Command    cmd=set_vendor_file    cmd_args=${args}
+
+Vendor File Config With ABIP
+    [Documentation]                 Download vendor file, Modify bbPooling params, save the modified vendor file
+    ...                             validate the modified vendor file via OAM web UI
+    [Arguments]                     ${Vendor_Params}
+    ${original_vendorfile}          ${modified_vendorfile}              SetConfig.Download Vendor File
+    Dated Log       -----> Original Vendor File Name :
+    Dated Log       ${original_vendorfile}
+    Dated Log       -----> Modified Vendor File Name will be :
+    Dated Log       ${modified_vendorfile}
+
+    @{RR_PoolMode}=   Create List       bbPoolMode      round-robin
+    @{Param_To_Replace}=    Create List     ${RR_PoolMode}
+
+    ScfVendorOperations.setup reader         ${original_vendorfile}
+    ${mo_dict}          ScfVendorOperations.get moelements byclass
+    ...                 NRBTS
+    ${modified_mo}=     Run Keyword If     '${Vendor_Params.bbPoolMode}'=='round-robin'     ScfVendorOperations.replace params inMo
+    ...                 ${Param_To_Replace}
+    ...                 ${mo_dict}
+
+    &{old_val1}         Create Dictionary
+    ...                 bbHwVariant=ABIP
+    ...                 bbL1SpPrbCapacityId=28
+    ...                 confDuplexMode=FDD
+    ...                 csSize=48
+    ...                 maxNumLayerPrbDlL1Sp=1272
+    ...                 maxNumLayerPrbUlL1Sp=636
+    ...                 maxNumStreamPrbDlL1Sp=1272
+    ...                 maxNumStreamPrbUlL1Sp=1272
+
+    &{new_val1}         Create Dictionary
+    ...                 bbHwVariant=ABIP
+    ...                 bbL1SpPrbCapacityId=28
+    ...                 confDuplexMode=FDD
+    ...                 csSize=48
+    ...                 maxNumLayerPrbDlL1Sp=${Vendor_Params.maxNumLayerPrbDlL1Sp}
+    ...                 maxNumLayerPrbUlL1Sp=${Vendor_Params.maxNumLayerPrbUlL1Sp}
+    ...                 maxNumStreamPrbDlL1Sp=${Vendor_Params.maxNumStreamPrbDlL1Sp}
+    ...                 maxNumStreamPrbUlL1Sp=${Vendor_Params.maxNumStreamPrbUlL1Sp}
+
+    @{old_items_list}=      Create List       ${old_val1}
+    @{new_items_list}=      Create List       ${new_val1}
+
+    ${list_name}        Set Variable                                    bbL1SpPrbCapacity
+    ${modified_mo}      ScfVendorOperations.replace items inList        ${old_items_list}
+    ...                 ${new_items_list}                               ${list_name}
+    ...                 ${mo_dict}
+
+    ScfVendorOperations.save back toxml     ${modified_vendorfile}
+    ${Tmp_file_ls}                    OperatingSystem.run               ls -altr ${modified_vendorfile}
+    Dated log                         Obtained file ${Tmp_file_ls}
+
+    &{args}    Create Dictionary    vendor_file="${modified_vendorfile}"
+    OAM Run Command    cmd=set_vendor_file    cmd_args=${args}
+
+
+Modify WTS Cfg
+    ${ue_VoNR_capabilities} =     Set UE CAPA VoNR Hexastring
+    Dated Log New Line     UE CAPA String : ${ue_VoNR_capabilities}
+    Modify UE Capa in WTS Config    ${ue_VoNR_capabilities}
+
+#   Set Bearer in WTS
+#   Set Qos in WTS
+
+Set Bearer in WTS
+    [Documentation]                This KW is used to update bearer in wts cfg file
+    [Arguments]
+    WtsCfgConfig.startSession
+    ${cfg_bearer_nat}    catenate    ul_nat_gw=10.0.2.1 dl_nat_gw=10.0.2.1 trf_type=internal
+    ${cfg_bearer_ue}          WtsCfgConfig.getParam    prefix=set_bearer    param=ue    occurrence=1
+    ${cfg_bearer_id_1_line}     WtsCfgConfig.getIndexUsingParam    prefix=set_bearer    param=pdn    occurrence=1
+    Dated Log New Line    UE ID : ${cfg_bearer_ue}
+    Dated Log New Line    ${cfg_bearer_id_1_line}
+    FOR    ${ue_id}    IN RANGE    1    10
+        ${cfg_bearer}    catenate    set_bearer id=2 ue=${ue_id} qci=9 pdn=1 ip=4.7.254.2${ue_id} default=on ${cfg_bearer_nat}
+        WtsCfgConfig.appendConfig     configuration=${cfg_bearer}    line=${cfg_bearer_id_1_line}
+    END
+    WtsCfgConfig.stopSession       rename=modified
+
+
+Set Qos in WTS
+    [Documentation]               Keyword to update Qos Flow identifier in wts cfg file
+    ${wts_cfg_Qos}    catenate    nwslice_set id=1 qos_flows=1,2,3 qos_rules=1,2 snssai=0x01:0xD143A5 default=on ue=all amf=1
+    WtsCfgConfig.appendConfig    set_qosflow id=2 5qi=5    # support for VoNR
+    WtsCfgConfig.appendConfig    set_qosflow id=3 5qi=1
+    WtsCfgConfig.appendConfig    qosrule_set id=1 proto=tcp qos_flow=2
+    WtsCfgConfig.appendConfig    qosrule_set id=2 proto=udp qos_flow=3
+    WtsCfgConfig.appendConfig    ${wts_cfg_Qos}
+    FOR    ${ue_id}    IN RANGE    1    16
+         WtsCfgConfig.appendConfig    set_pdu_gateway id=${ue_id} ue_nat_ip=72.23.0.${ue_id} dl_nat_gw=10.0.2.1 ul_nat_gw=10.0.2.1
+         WtsCfgConfig.appendConfig
+    END
+    WtsCfgConfig.stopSession       rename=modified

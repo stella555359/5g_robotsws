@@ -1,0 +1,147 @@
+"""
+This file contains list of SFP devices used in automation scripts for CB007271.
+
+When new SFP is used please do these steps:
+    1. Create new SFP type class in file 'sfp.py' with default data (if not exists already)
+    2. Create new instance of SFP class in this file under section 'SFP devices used in tests'
+    3. Add created SFP object to 'sfp_dict' under section 'Dict with SFP devices for automation script'
+    4. Now you can use specific SFP object in test by its NAME (by key in 'sfp_dict')
+
+:copyright: Nokia Networks
+:author: Marek Bodziony
+:contact: marek.bodziony@nokia.com
+:maintainer: Marek Bodziony
+:contact: marek.bodziony@nokia.com
+"""
+
+from testsuite.Krakow.resources.RAN_VRF_KRK3.SFP.sfp import (
+    AOME,
+    AOMC,
+    AOMC_A,
+    AOMC_B,
+    AOSC,
+    AOSD,
+    AOSD_Finisar,
+)
+
+# SFP devices used in tests
+AOMC_FR213612647 = AOMC()
+AOMC_FR213612647.date_code = "210909"
+AOMC_FR213612647.serial_number = "FR213612647"
+
+AOMC_FR213612015 = AOMC()
+AOMC_FR213612015.date_code = "210909"
+AOMC_FR213612015.serial_number = "FR213612015"
+
+AOME_AD2141C0KBT = AOME()
+AOME_AD2141C0KBT.date_code = "211011"
+AOME_AD2141C0KBT.serial_number = "AD2141C0KBT"
+
+AOME_AD2141C0PKA = AOME()
+AOME_AD2141C0PKA.date_code = "211010"
+AOME_AD2141C0PKA.serial_number = "AD2141C0PKA"
+
+AOME_AD2141C0KBE = AOME()
+AOME_AD2141C0KBE.date_code = "211011"
+AOME_AD2141C0KBE.serial_number = "AD2141C0KBE"
+
+AOME_AD2141C0N70 = AOME()
+AOME_AD2141C0N70.date_code = "211011"
+AOME_AD2141C0N70.serial_number = "AD2141C0N70"
+
+AOMC_A_VF21500011H = AOMC_A()
+AOMC_A_VF21500011H.serial_number = "VF21500011H"
+AOMC_A_VF21500011H.date_code = "211207"
+
+AOMC_A_VF2149000JH = AOMC_A()
+AOMC_A_VF2149000JH.serial_number = "VF2149000JH"
+AOMC_A_VF2149000JH.date_code = "211203"
+
+AOMC_FR213614577 = AOMC()
+AOMC_FR213614577.date_code = "210917"
+AOMC_FR213614577.serial_number = "FR213614577"
+
+AOMC_FR213614779 = AOMC()
+AOMC_FR213614779.date_code = "210918"
+AOMC_FR213614779.serial_number = "FR213614779"
+
+AOSC_FR204762981 = AOSC()
+AOSC_FR204762981.date_code = "201126"
+AOSC_FR204762981.serial_number = "FR204762981"
+
+AOSC_FR211710160 = AOSC()
+AOSC_FR211710160.date_code = "210428"
+AOSC_FR211710160.serial_number = "FR211710160"
+
+AOSD_FR203332638 = AOSD()
+AOSD_FR203332638.date_code = "200829"
+AOSD_FR203332638.serial_number = "FR203332638"
+AOSD_FR203332638.physical_port = 4
+
+AOSD_FR203332377 = AOSD()
+AOSD_FR203332377.date_code = "200829"
+AOSD_FR203332377.serial_number = "FR203332377"
+
+AOSD_Finisar_VF2011001N6 = AOSD_Finisar()
+AOSD_Finisar_VF2011001N6.date_code = "200310"
+AOSD_Finisar_VF2011001N6.serial_number = "VF2011001N6"
+AOSD_Finisar_VF2011001N6.physical_port = 3
+
+AOSD_FR203332660 = AOSD()
+AOSD_FR203332660.date_code = "200829"
+AOSD_FR203332660.serial_number = "FR203332660"
+AOSD_FR203332660.physical_port = 2
+
+AOMC_VF2140001MA = AOMC()
+AOMC_VF2140001MA.date_code = "200828"
+AOMC_VF2140001MA.serial_number = "VF2140001MA"
+
+AOMC_A_VF2140001LI = AOMC_A()
+AOMC_A_VF2140001LI.date_code = "210928"
+AOMC_A_VF2140001LI.serial_number = "VF2140001LI"
+AOMC_A_VF2140001LI.transmission_rate = "25781.25"
+AOMC_A_VF2140001LI.physical_port = 1
+
+AOMC_B_VF2008000KR = AOMC_B()
+AOMC_B_VF2008000KR.date_code = "200217"
+AOMC_B_VF2008000KR.serial_number = "VF2008000KR"
+AOMC_B_VF2008000KR.transmission_rate = "25781.25"
+AOMC_B_VF2008000KR.physical_port = 2
+
+AOMC_VF2150001L7 = AOMC()
+AOMC_VF2150001L7.date_code = "200828"
+AOMC_VF2150001L7.serial_number = "VF2150001L7"
+AOMC_VF2150001L7.transmission_rate = "25781.25"
+
+AOMC_FR221401953 = AOMC()
+AOMC_FR221401953.date_code = "220402"
+AOMC_FR221401953.serial_number = "FR221401953"
+AOMC_FR221401953.transmission_rate = "25781.25"
+AOMC_FR221401953.vendor_part_number = "RTXM330-541-C39A"
+AOMC_FR221401953.physical_port = 2
+
+# Dict with SFP devices for automation script
+
+sfp_dict = {
+    "AOMC_FR213612647": AOMC_FR213612647,
+    "AOMC_FR213612015": AOMC_FR213612015,
+    "AOME_AD2141C0KBT": AOME_AD2141C0KBT,
+    "AOME_AD2141C0PKA": AOME_AD2141C0PKA,
+    "AOME_AD2141C0KBE": AOME_AD2141C0KBE,
+    "AOME_AD2141C0N70": AOME_AD2141C0N70,
+    "AOMC_A_VF21500011H": AOMC_A_VF21500011H,
+    "AOMC_A_VF2149000JH": AOMC_A_VF2149000JH,
+    "AOMC_FR213614577": AOMC_FR213614577,
+    "AOMC_FR213614779": AOMC_FR213614779,
+    "AOSC_FR204762981": AOSC_FR204762981,
+    "AOSC_FR211710160": AOSC_FR211710160,
+    "AOSD_FR203332638": AOSD_FR203332638,
+    "AOSD_FR203332377": AOSD_FR203332377,
+    "AOSD_Finisar_VF2011001N6": AOSD_Finisar_VF2011001N6,
+    "AOSD_FR203332660": AOSD_FR203332660,
+    "AOMC_VF2140001MA": AOMC_VF2140001MA,
+    "AOMC_A_VF2140001LI": AOMC_A_VF2140001LI,
+    "AOMC_B_VF2008000KR": AOMC_B_VF2008000KR,
+    "AOMC_VF2150001L7": AOMC_VF2150001L7,
+    "AOMC_FR221401953": AOMC_FR221401953,
+}

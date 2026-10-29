@@ -1,0 +1,500 @@
+*** Settings ***
+
+Documentation     [PURPOSE] Set of keywords used for  CNI68516_5GC000524 feature test G
+...               Last Modified by            : 2024/09/25 | richard.duthu@nokia.com | Produce Scout Data
+
+Library         BuiltIn
+Library         DateTime
+
+Library         taf.sbts.oam.coam.admin         WITH NAME     coam
+Library         taf.config.scf                  WITH NAME     cscf
+Library         taf.gnb.oam.commissioning       WITH NAME     commissioning
+Library         taf.collectors.pmcounters       WITH NAME     tafpmcounters
+Library         taf.epcsim
+Library         DateTime
+Library         OperatingSystem
+Library         taf.wts.runner                  WITH NAME    wtsemu
+
+
+Library         taf.rfrl.common_resources.python.SWConfig
+Library         ../../../resources/python/luashark_tools.py
+Library         ../../../../../resources/SWENG/python/OsTool.py
+Library         taf.analyzer.pmcounter       WITH NAME    check_pm
+
+Resource        ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource        ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource        ../../../../../resources/SWENG/robot/Traffic.robot
+Resource        ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource        ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource        ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource        ../../../../../resources/SWENG/robot/Scf.robot
+Resource        ../../../../../resources/SWENG/robot/Setup.robot
+Resource        ../../../../../resources/SWENG/robot/CfgFilesTools.robot
+Resource        taf/rfrl/common_resources/robot/coam.robot
+Resource         ../../../../../resources/SWENG/robot/Sherpa.robot
+
+Variables       ../../../../../resources/SWENG/python/ReadConfig.py
+
+Resource        ./5GC000524_Config_Keywords.robot
+Resource        ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource        ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource        ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+
+
+*** Variables ***
+#@{filter_protocol}            ARP    UDP   ICMP   TCP
+#${TRF_ongoing}                ${False}
+#${enable_sherpa}              ${False}
+
+#help to see deeper DSS egate logs
+#${debugDSS}          ${False}
+#${debugArg}          ${False}
+
+*** Keywords ***
+TC 5GC000524_G_01 NSA
+    [Documentation]     Generic test for NSA Cellsetup
+
+    Init Sequence          ${TLConfig.topo}
+    Critical Step          5GC000524 SCF config
+    Critical Step          5GC000524 Full Commissioning
+    Critical Step          WTS Setup                       shouldUseLua=False
+    Step                   5GC000524 Update UE id
+    Step                   UE_register_Local               depends=5GC000524 Update UE id
+    Step                   PDU_Session                     depends=UE_register_Local
+    Step                   Attach UE_NSA                   depends=5GC000524 Update UE id
+    Step                   Traffic_SA                      depends=PDU_Session
+    Step                   Traffic_NSA                     depends=Attach UE_NSA
+
+
+5GC000524 SCF config
+    OAM Get SCF Files
+    ${TC_file_name}             getFormattedTestName
+    ${DU_SCF}                   Set Variable    ${LOG_PATH}/SCF_DU_${TC_file_name}.xml
+    Run                         cp ${SCF_SETUP_PATH} ${DU_SCF}
+
+    SCF StartSession            scf_file=${DU_SCF}
+
+    ${TDDcellID}                Set Variable    ${TDD_Cell_list[0].nrCellId}
+    ${NRbtsDistName}            Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ${cellDistName}             Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${TDDcellID}
+
+    SCF Set element             dist_name=${cellDistName}
+    ...                         element_name=actBeamforming
+    ...                         element_value=true
+
+    SCF Set element in List     dist_name=${cellDistName}    list_name=beamSet
+    ...                         element_name=basicBeamSet
+    ...                         element_value=beamSet_2
+
+    SCF Set element in List     dist_name=${cellDistName}    list_name=beamSet
+    ...                         element_name=leftEdgeAngle
+    ...                         element_value=60
+
+    SCF Set element in List     dist_name=${cellDistName}    list_name=beamSet
+    ...                         element_name=lowerEdgeAngle
+    ...                         element_value=120
+
+    SCF Set element in List     dist_name=${cellDistName}    list_name=beamSet
+    ...                         element_name=nrBtsBeamRefinementP2
+    ...                         element_value=true
+
+    SCF Set element in List     dist_name=${cellDistName}    list_name=beamSet
+    ...                         element_name=rightEdgeAngle
+    ...                         element_value=60
+
+    SCF Set element in List     dist_name=${cellDistName}    list_name=beamSet
+    ...                         element_name=tiltOffset
+    ...                         element_value=0
+
+    SCF Set element in List     dist_name=${cellDistName}    list_name=beamSet
+    ...                         element_name=upperEdgeAngle
+    ...                         element_value=60
+
+    ${cell_1_Grp_DistName}      OAM Get NR Cell GROUP    NRCellId=${TDDcellID}
+    SCF Set element             dist_name=${cell_1_Grp_DistName}
+    ...                         element_name=numberOfTransmittedSsBlocks
+    ...                         element_value=2 beams
+
+    SCF Set element             dist_name=${cell_1_Grp_DistName}
+    ...                         element_name=ssBurstSetPeriod
+    ...                         element_value=20
+
+    SCF Set element in List     dist_name=${cellDistName}    list_name=csirsBeamMgmt
+    ...                         element_name=csirsBmMgmtDensity
+    ...                         element_value=density3
+
+    SCF Set element in List     dist_name=${cellDistName}    list_name=csirsBeamMgmt
+    ...                         element_name=csirsBmMgmtReIndex
+    ...                         element_value=0
+
+    SCF Set element in List     dist_name=${cellDistName}    list_name=csirsBeamMgmt
+    ...                         element_name=csirsBmMgmtSubband
+    ...                         element_value=aboveSSPBCHBlock
+
+    SCF Set element             dist_name=${NRbtsDistName}
+    ...                         element_name=actFdmScheduling
+    ...                         element_value=true
+
+    SCF Set element             dist_name=${NRbtsDistName}
+    ...                         element_name=actFdmEnhancedScheduling
+    ...                         element_value=true
+
+    SCF Set element             dist_name=${cellDistName}
+    ...                         element_name=eirpControlTimeAveragingWindow
+    ...                         element_value=6
+
+    SCF Set element             dist_name=${cellDistName}
+    ...                         element_name=mcsIndexForArtificialLoad
+    ...                         element_value=0
+
+    SCF Set element             dist_name=${cellDistName}
+    ...                         element_name=pMax
+    ...                         element_value=260
+
+    SCF Set element             dist_name=${cellDistName}
+    ...                         element_name=ssPbchBlockPower
+    ...                         element_value=6
+
+    SCF Set element             dist_name=${cellDistName}
+    ...                         element_name=targetTotalLoad
+    ...                         element_value=0
+
+    SCF Set element             dist_name=${cellDistName}
+    ...                         element_name=type0SearchSpaceConfigurationIndex
+    ...                         element_value=4
+
+    SCF Set element             dist_name=${cellDistName}
+    ...                         element_name=type0CoresetConfigurationIndex
+    ...                         element_value=10
+
+    SCF Set element in List     dist_name=${cellDistName}    list_name=csirsForTracking
+    ...                         element_name=csirsTrackingPeriod
+    ...                         element_value=80ms
+
+    SCF Set element in List     dist_name=${cellDistName}    list_name=csirsForTracking
+    ...                         element_name=firstRE
+    ...                         element_value=0
+
+    SCF Set element in List     dist_name=${cellDistName}    list_name=csirsForTracking
+    ...                         element_name=rbAllocation
+    ...                         element_value=BWP
+
+    SCF Set element in List     dist_name=${cellDistName}    list_name=csirsForTracking
+    ...                         element_name=startRB
+    ...     element_value=0
+
+    SCF Set element             dist_name=${cellDistName}
+    ...                         element_name=dlMimoMode
+    ...                         element_value=4x4 or 4x2 Closed Loop Spatial Multiplexing
+
+    SCF Set element             dist_name=${cellDistName}
+    ...                         element_name=dlMuMaxNumPairedUEs
+    ...                         element_value=8
+
+    SCF Set element             dist_name=${cellDistName}
+    ...                         element_name=dlMuPairingThreshold
+    ...                         element_value=5
+
+    SCF Set element             dist_name=${cellDistName}
+    ...                         element_name=dlMuLowSinrThreshold
+    ...                         element_value=-6
+
+    SCF Set element             dist_name=${NRbtsDistName}
+    ...                         element_name=actCarrierAggregation
+    ...                         element_value=false
+
+    SCF Set element             dist_name=${cellDistName}
+    ...                         element_name=actEirpControl
+    ...                         element_value=false
+
+    SCF StopSession             scf_file=${DU_SCF}
+    Set Suite Variable          ${DU_SCF}
+
+
+5GC000524 Full Commissioning
+    OAM Perform Full Commissioning    scf_file=${DU_SCF}
+    OAM wait available
+
+
+5GC000524 Update UE id
+    [Documentation]   Update UE id according to the UE definition in CFG file
+    ${BASIC_UE_SA_1.ue}            Get First SA UE Id    cell=NRCELL-${TDD_Cell_list[0].nrCellId}
+    ${BASIC_UE_SA_2.ue}            Evaluate        ${BASIC_UE_SA_1.ue}+1
+    ${UE_SIMPLE_TEST_NSA_11.ue}    Set Variable    ${FIRST_NSA_UE_ID}
+    ${UE_SIMPLE_TEST_NSA_12.ue}    Evaluate        ${FIRST_NSA_UE_ID}+1
+
+
+#########################################################
+###  Old version used with previous TDD_TEMP variant  ###
+###  which defines only 2 TDD cells 2DL2UL            ###
+#########################################################
+Test Teardown 5GC000524
+    [Documentation]    Stop eventual Sherpa traces
+    ...                Stop Traffic (even if already done for Failed cases not leading to normal traffic stop
+    ...                collect Sos Report if a TC is failed or if the user need traces ForceDebugDataCollection
+    ...
+
+#    Dated log                       Test teardown 5GC000524: start
+#    Dated log                       traffic ongoing? : ${TRF_ongoing}
+#    Run Keyword If                  ${TRF_ongoing}         Traffics Stop    ${param.UEList}
+#    Dated log                       enable_sherpa : ${enable_sherpa}
+#    Run Keyword If                  ${enable_sherpa}     Run Keywords
+#    ...                             Dated log            SHERPA STOP AND COLLECTION ongoing
+#    ...                             AND
+#    ...                                                  Deactivate Sherpa and Stop Collect
+
+    # commented as this part is done on automaticTeardown=FirstFail
+    # Run Keyword If                                       ${ForceDebugDataCollection}   Get Sos Report
+    # Run Keyword If                                       ${ForceDebugDataCollection}   Get Snapshot
+    # wtsemu.Reset Wtsemu Cfg
+    Produce Scout Data
+    GenericTest.Display diagnosis
+    Dated log                                             Test teardown 5GC000524: end
+
+TC 5GC000524_G_01 NSA OLD
+    [Documentation]     Generic test for NSA Cellsetup
+
+
+    ${enable_sherpa}             set variable           ${False}
+    Dated log                    enable_sherpa : ${enable_sherpa}
+    Init Sequence                ${TLConfig.topo}
+
+    Critical Step                Set Context_AP IPHY
+    Critical Step                Set UE_Capa Context_WTS CFG
+    Critical Step                Config Update
+    Critical Step                Restart TL
+    Critical Step                Wait F1
+#   Critical Step                Start Mirroring And Traces AP
+#   Critical Step                Start Mirroring And Traces gNB
+    Critical Step                WTS_Cell_Setup
+#   Critical Step                Stop Mirroring And Traces gNB
+#   Critical Step                Stop Mirroring And Traces AP
+    Critical Step                Check 5gnb still Cell on Air
+    Critical Step                MuMIMO_Testmode_524
+    Step                         UE_register_Local
+    Step                         PDU_Session                          depends=UE_register_Local
+    Step                         Attach UE_NSA
+    Step                         Traffic_SA                           depends=PDU_Session
+    Step                         Traffic_NSA                          depends=Attach UE_NSA
+
+
+#   Critical Step                tart TTI trace
+
+
+
+Set Context_AP IPHY
+    WtsXmlConfig.startSession           file=iphy
+    WtsXmlConfig.setListEltText         //GSCN                          7880
+    WtsXmlConfig.stopSession            file=iphy
+
+
+Config Update
+    ${SCF_MODIFIED}                 Set Variable          ${SCF_SETUP_PATH}.modif
+    Copy File                       ${SCF_SETUP_PATH}     ${SCF_MODIFIED}
+
+    Scf.SCF StartSession    scf_file=${SCF_MODIFIED}
+    ${dist_name}         Set Variable    MRBTS-1/NRBTS-1/NRCELL-1
+
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=nrarfcn   element_value=636666
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=prachConfigurationIndex   element_value=93
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=actBeamforming   element_value=true
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=cellDepType    element_value=SA+NSA
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=actEirpControl   element_value=false
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=eirpControlTimeAveragingWindow   element_value=6
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=mcsIndexForArtificialLoad   element_value=0
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=pMax   element_value=260
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=ssPbchBlockPower   element_value=6
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=targetTotalLoad   element_value=0
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=type0SearchSpaceConfigurationIndex   element_value=4
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=type0CoresetConfigurationIndex       element_value=10
+    Scf.SCF Set element in List    dist_name=${dist_name}    list_name=beamSet     element_name=basicBeamSet
+    ...                                                    element_value=beamSet_2
+
+    Scf.SCF Set element in List    dist_name=${dist_name}    list_name=beamSet     element_name=leftEdgeAngle
+    ...     element_value=60
+    Scf.SCF Set element in List    dist_name=${dist_name}    list_name=beamSet     element_name=lowerEdgeAngle
+    ...    element_value=120
+    Scf.SCF Set element in List    dist_name=${dist_name}    list_name=beamSet     element_name=nrBtsBeamRefinementP2
+    ...    element_value=true
+    Scf.SCF Set element in List    dist_name=${dist_name}    list_name=beamSet     element_name=rightEdgeAngle
+    ...   element_value=60
+    Scf.SCF Set element in List    dist_name=${dist_name}    list_name=beamSet     element_name=tiltOffset
+     ...    element_value=0
+    Scf.SCF Set element in List    dist_name=${dist_name}    list_name=beamSet     element_name=upperEdgeAngle
+    ...    element_value=60
+    Scf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsBeamMgmt     element_name=csirsBmMgmtDensity
+    ...    element_value=density3
+    Scf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsBeamMgmt     element_name=csirsBmMgmtReIndex
+    ...    element_value=0
+    Scf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsBeamMgmt     element_name=csirsBmMgmtSubband
+    ...    element_value=aboveSSPBCHBlock
+    Scf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsForTracking
+    ...    element_name=csirsTrackingPeriod   element_value=80ms
+    Scf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsForTracking     element_name=firstRE
+    ...    element_value=0
+    Scf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsForTracking     element_name=rbAllocation
+    ...     element_value=BWP
+    Scf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsForTracking     element_name=startRB
+    ...     element_value=0
+    #Scf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl
+    ...    element_name=minGuaranteedBudgetRatio   element_value=50
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=actCarrierAggregation
+    ...     element_value=false
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=dlMimoMode
+    ...     element_value=4x4 or 4x2 Closed Loop Spatial Multiplexing
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=actFdmScheduling   element_value=true
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=actFdmEnhancedScheduling    element_value=true
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=dlMuMaxNumPairedUEs    element_value=8
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=dlMuPairingThreshold    element_value=5
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=dlMuLowSinrThreshold    element_value=-6
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=gscnOrSsPbchArfcn    element_value=7880
+
+    ${dist_name}       Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/${NRCELL_GRP}
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=numberOfTransmittedSsBlocks   element_value=2 beams
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=ssBurstSetPeriod   element_value=20
+
+    ${dist_name}       Set Variable    MRBTS-1/MNL-1/MNLENT-1/PMCADM-1
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=reportingIntervalPm   element_value=5min
+
+    ${dist_name}       Set Variable    MRBTS-1/NRBTS-1/NRPMRNL-1
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=miNrCellAvailability   element_value=5min
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=miNrCellUtilization    element_value=5min
+
+                                            #############################################
+    ${dist_name}         Set Variable    MRBTS-1/NRBTS-1/NRCELL-1
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=nrCellType   				element_value=4DL2UL
+    Scf.SCF Set element    dist_name=${dist_name}    element_name=numberOfRxBeamforming		element_value=2Rx
+    ${version}      Run    grep -m1 '"com.nokia.srbts.mnl:CHANNEL"' ${SCF_SETUP_PATH}|awk '{print $4}'|awk -F'"' '{print $2}'
+    Scf.SCF Add object     dist_name=MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-5    class_name=com.nokia.srbts.mnl:CHANNEL
+    ...                     version=${version}
+    Scf.SCF Add object     dist_name=MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-6    class_name=com.nokia.srbts.mnl:CHANNEL
+    ...                     version=${version}
+    Scf.SCF Add element    dist_name=MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-5    element_name=direction
+    ...                    element_value=TX
+    Scf.SCF Add element    dist_name=MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-5    element_name=resourceDN
+    ...                    element_value=MRBTS-1/EQM-1/APEQM-1/RMOD-1/PHYANT-1
+    Scf.SCF Add element    dist_name=MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-6    element_name=direction
+    ...                    element_value=TX
+    Scf.SCF Add element    dist_name=MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-6    element_name=resourceDN
+    ...                    element_value=MRBTS-1/EQM-1/APEQM-1/RMOD-1/PHYANT-1
+                                            #############################################
+
+    Scf.SCF StopSession      scf_file=${SCF_MODIFIED}
+    Dated Log    ----> Modifications completed.\n
+
+    OAM Perform Full Commissioning  scf_file=${SCF_MODIFIED}    oam=${GNB_DU.oam}
+    OAM wait available    oam=${GNB_DU.oam}
+
+Wait F1
+    F1 Wait Link Classical
+
+WTS_Cell_Setup
+    [Documentation]   Kill olds egte/edeamon job and start new one Checking SIB for 1 cell
+
+    CallSetup.WTS Setup    shouldUseLua=${False}
+
+Check 5gnb still Cell on Air
+    [Documentation]   Used to verivy 5gnb is still onAir
+
+    coam.connect to   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+    &{bts_info}    coam.Get Bts Statuses    connection=coam_admin
+    Should Be Equal    ${bts_info['proceduralState']}    onAir    ignore_case=true
+
+
+Set UE_Capa Context_WTS CFG
+    WtsCfgConfig.startSession
+    ${ue_capa_NSA}        set variable     01000000010800040004D80000000206801C00F000000000000022A00000000000002A
+    ${ue_capa_SA_1}       set variable     E1A00000074E5A031E000380A03C1260C8000878180C4034026010180E01951B0A3582028680965944C043D6C10101070EF1C39061
+    ${ue_capa_SA_2}       set variable     C00103278FAB80027800E0009E00151B133582028680965944C043D6C10101070EF1C39061C00103278FAB80027800E0009E00151B
+    ${ue_capa_SA_3}       set variable     137582028680965944C043D6C38101070EF1C39061C00103278FAB80027800E0009E00151B13B582028680965944C043D6C1010107
+    ${ue_capa_SA_4}       set variable     0EF1C39061C00103278FAA8000028000000841C4D00000000202682807008089EC1601800140E0601C0C01601C001A0F8000000000
+    ${ue_capa_SA_5}       set variable     000395340004000025965400D2AAA0207000B000000040080118B130001020304050607080B101112131921252627284A0
+
+    ${ue_capa_SA}         set variable     ${ue_capa_SA_1}${ue_capa_SA_2}${ue_capa_SA_3}${ue_capa_SA_4}${ue_capa_SA_5}
+    ${oldValue}          getParam           prefix=ue_param id=1         param=ue_nr_capabilities
+    replaceValue         prefix=ue_param
+    ...                  param=ue_nr_capabilities
+    ...                  oldValue=${oldValue}
+    ...                  newValue=${ue_capa_SA}
+    replaceValue         prefix=ue_param id=2
+    ...                  param=ue_nr_capabilities
+    ...                  oldValue=${oldValue}
+    ...                  newValue=${ue_capa_SA}
+    ${oldValue}          getParam           prefix=ue_param id=11         param=ue_nr_capabilities
+    replaceValue         prefix=ue_param
+    ...                  param=ue_nr_capabilities
+    ...                  oldValue=${oldValue}
+    ...                  newValue=${ue_capa_NSA}
+    replaceValue         prefix=ue_param id=12
+    ...                  param=ue_nr_capabilities
+    ...                  oldValue=${oldValue}
+    ...                  newValue=${ue_capa_NSA}
+    ...                  occurrence=-1
+
+
+    WtsCfgConfig.stopSession    rename=modified
+    Run                   sed -i '/^set_ue simulated id=2/s/cell=2$/cell=1/' ${tl.core.dir_path}/${tl.core.cfg_filename}
+
+MuMIMO_Testmode_524
+    Beam_command    beam_control_testmode_nr    profile_id=1    ueBeamIndexInitial=0,1    csirs_bestbeam=1    csirs_rsrp_best=-44
+    ...    csirs_rsrp_avg=-50
+
+    Beam_command    beam_control_testmode_nr    profile_id=2    ueBeamIndexInitial=1,0    csirs_bestbeam=6    csirs_rsrp_best=-45
+    ...    csirs_rsrp_avg=-120
+    Beam_command    beam_control_testmode_nr    profile_id=3    ueBeamIndexInitial=0,1    csirs_bestbeam=1    csirs_rsrp_best=-45
+    ...   csirs_rsrp_avg=-120
+    Beam_command    beam_control_testmode_nr    profile_id=4    ueBeamIndexInitial=1,0    csirs_bestbeam=6    csirs_rsrp_best=-45
+    ...    csirs_rsrp_avg=-120
+    Beam_command    beam_control_testmode_nr    profile_id=11    ueBeamIndexInitial=1,0    csirs_bestbeam=6    csirs_rsrp_best=-44
+    ...    csirs_rsrp_avg=-120
+    Beam_command    beam_control_testmode_nr    profile_id=12    ueBeamIndexInitial=0,1    csirs_bestbeam=1    csirs_rsrp_best=-45
+    ...    csirs_rsrp_avg=-120
+    Beam_command    beam_control_testmode_nr    profile_id=13    ueBeamIndexInitial=1,0    csirs_bestbeam=6    csirs_rsrp_best=-44
+    ...    csirs_rsrp_avg=-120
+    Beam_command    beam_control_testmode_nr    profile_id=14    ueBeamIndexInitial=0,1    csirs_bestbeam=1    csirs_rsrp_best=-45
+    ...    csirs_rsrp_avg=-120
+    sleep    2s
+    Beam_command    ue_testmode_set_nr    id=1    testmode=beam_control    action=activate    profile_id=1    beamaction=attach
+    Beam_command    ue_testmode_set_nr    id=2    testmode=beam_control    action=activate    profile_id=2    beamaction=attach
+    Beam_command    ue_testmode_set_nr    id=11    testmode=beam_control    action=activate    profile_id=11    beamaction=attach
+    Beam_command    ue_testmode_set_nr    id=12    testmode=beam_control    action=activate    profile_id=12    beamaction=attach
+
+
+Beam_command
+    [Arguments]          @{varargs}    &{kwargs}      #les non named vont dans la suite @{varargs} les named argument vont dans le dico &{kwargs}
+    Dated Log    ----> wtsemu.${varargs[0]} &{kwargs}
+    Run Keyword    wtsemu.${varargs[0]}    &{kwargs}
+
+
+
+
+UE_register_Local
+
+            CallSetup.UE Register                                 ue=${BASIC_UE_SA_1.ue}
+            CallSetup.UE Register                                 ue=${BASIC_UE_SA_2.ue}
+
+
+PDU_Session
+
+            CallSetup.Launch PDU Session                        ue=${BASIC_UE_SA_1.ue}  pdu=${BASIC_UE_SA_1.pdu}  gw=${1}
+            CallSetup.Launch PDU Session                        ue=${BASIC_UE_SA_2.ue}  pdu=${BASIC_UE_SA_2.pdu}  gw=${2}
+
+
+Attach UE_NSA
+    SgNB Addition to ENB           ueSetting=${UE_SIMPLE_TEST_NSA_11}
+    SgNB Addition to ENB           ueSetting=${UE_SIMPLE_TEST_NSA_12}
+
+
+Traffic_SA
+
+                Traffic UEs DL    ueSettingList=${UEs_SA_Liste}     throughput=250    deviation=10
+
+Traffic_NSA
+                Traffic UEs DL    ueSettingList=${UEs_NSA_Liste}    throughput=120    deviation=10

@@ -1,0 +1,409 @@
+*** Settings ***
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   Common configuration related robustness keywords for feature CB008940 ...
+...               Prerequisite :
+...               Scope : Common keywords for CB008940
+...
+...               Test Case Scenario author   : fabrice.delecroix@nokia.com
+...               Creation Date               : xx-11-2022
+...               Modified Date               : 18-07-2023
+...               Last Modified by            : vincent.boulet@nokia.com
+...               Version    Date      Author                                Notes
+...               0.1        FB2224    fabrice.delecroix@nokia.com           Creation
+...               0.2        FB2225    vincent.boulet@nokia.com              Modifications for using SWENG Hardening robot KW's
+...                                                                          Introducing vendor file configuration
+...               0.3        FB2226    vincent.boulet@nokia.com              Disabling cell block unblock for debugging robustness
+...               0.4        FB2301    vincent.boulet@nokia.com              Removing Step management into TC-Cell-Stability-Over-Time
+...                                                                          Setting RAD parameters of CB008940-B-Keywords
+...               1.0        FB2314    vincent.boulet@nokia.com              Add PRB pooling verifications to TC-Cell-Setup-Endurance
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Libraries
+Library           taf.config.scf               WITH NAME    scf
+Library           taf.sbts.oam.coam.admin      WITH NAME    sbts_coam
+Library           ../../../../../resources/SWENG/python/CoamParameter.py      WITH NAME     coam_parameter
+
+# Resources
+Resource          ./CB008940-Common-Keywords.robot
+Resource          ./CB008940-B-Keywords.robot
+Resource          ./CB008940-D-Keywords.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Hardening.robot
+Resource          ../../../../../resources/SWENG/robot/KPIs.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Syslogs.robot
+
+*** Keywords ***
+
+TC-Cell-Stability-Over-Time
+    [Arguments]            ${test_params}    ${vendor_params}    ${number_of_pm_periods}
+    ${test_name}           set variable    TC-Cell-Stability-Over-Time
+    TC 8940 Cell Setup    ${test_params}    ${vendor_params}
+    check_cell_states
+    ${syslog}              SYSLOG Start    host=${GNB_DU.sys[0].M}    name=${test_name}
+    sleep_until_pm_availability  # Wait end of first PM period containing cell setup
+    ${initial_resource_usage}    Hardening.Get Resources
+    FOR                    ${iteration}    IN RANGE    ${number_of_pm_periods}
+        sleep_until_pm_availability
+        ${pm_path}         Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+        check_counter_and_kpi_constraints    ${pm_path}    ${test_name}
+        check_cell_states
+        check_resource_usage    ${initial_resource_usage}
+    END
+    SYSLOG Stop            syslog=${syslog}
+    check_syslog    ${test_name}    CellStability    ${syslog}
+
+TC-UE-Setup-Endurance
+    [Arguments]             ${param}    ${dict_ues}    ${isCapture}    ${number_of_pm_periods}
+    ...                     ${vendor_custom}
+    ${test_name}            set variable    TC-UE-Setup-Endurance
+    Init Sequence           ${param}
+    Step                    CB008940-B-Keywords.Set RAD Params Of 8940
+    Critical Step           Deploy Vendor File Config    vendor_param=${vendor_custom}    is_perform_full_commissioning=${True}
+    ${ue_list}              get_ue_list    ${param}    ${dict_ues}
+    #vbo# Disabling cell block unblock for debugging robustness     Step                    cell_block_unblock
+    Critical Step           wts_setup_sa    ${param}    ${ue_list}
+    Critical Step           check_cell_states
+    ${syslog}               SYSLOG Start    host=${GNB_DU.sys[0].M}    name=${test_name}
+    FOR                     ${iteration}    IN RANGE    ${number_of_pm_periods}
+        Step                repeat_ue_setup_during_pm_period    ${param}    ${ue_list}
+        ${pm_path}          Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+        Step                check_counter_and_kpi_constraints    ${pm_path}    ${test_name}
+        Step                check_cell_states
+        ${initial_resource_usage}    Run Keyword If    ${iteration} == 0    Hardening.Get Resources
+        ...                 ELSE    Set Variable    ${initial_resource_usage}
+        Step                check_resource_usage    ${initial_resource_usage}
+    END
+    SYSLOG Stop             syslog=${syslog}
+    Step                    check_syslog    ${test_name}    UeSetupRelease    ${syslog}    max_syslog_rate=2000
+    [Teardown]              Display diagnosis
+
+TC-Handover-Endurance
+    [Arguments]             ${param}    ${dict_ues}    ${isCapture}    ${number_of_pm_periods}
+    ...                     ${vendor_custom}
+    ${test_name}            set variable    TC-Handover-Endurance
+    Init Sequence           ${param}
+    Step                    CB008940-B-Keywords.Set RAD Params Of 8940
+    Critical Step           Deploy Vendor File Config    vendor_param=${vendor_custom}    is_perform_full_commissioning=${False}
+    Critical Step           Perform Full Commissioning With Intra Gnb Ho Configuration    param=${param}
+    ...                     nbCell=${param.totalNbOfCell}
+    ${ue_list}              get_ue_list    ${param}    ${dict_ues}
+    #vbo# Disabling cell block unblock for debugging robustness     Step                    cell_block_unblock
+    Critical Step           wts_setup_sa    ${param}    ${ue_list}
+    Critical Step           check_cell_states
+    ${syslog}               SYSLOG Start    host=${GNB_DU.sys[0].M}    name=${test_name}
+    FOR                     ${iteration}    IN RANGE    ${number_of_pm_periods}
+        Critical Step       ue_setup    ${param}    ${ue_list}
+        Critical Step       ue_traffic_start    ${param}    ${ue_list}
+        Critical Step       repeat_handover_during_pm_period    ${param}    ${ue_list}
+        ${pm_path}          Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+        Step                ue_traffic_stop    ${param}    ${ue_list}
+        Step                ue_release    ${param}    ${ue_list}
+        Step                check_counter_and_kpi_constraints    ${pm_path}    ${test_name}
+        Step                check_cell_states
+        ${initial_resource_usage}    Run Keyword If    ${iteration} == 0    Hardening.Get Resources
+        ...                 ELSE    Set Variable    ${initial_resource_usage}
+        Step                check_resource_usage    ${initial_resource_usage}
+    END
+    SYSLOG Stop             syslog=${syslog}
+    Step                    check_syslog    ${test_name}    Handover    ${syslog}    max_syslog_rate=2300
+    [Teardown]              Display diagnosis
+
+TC-Cell-Setup-Endurance
+    [Arguments]             ${param}    ${dict_ues}    ${isCapture}    ${number_of_iterations}
+    ...                     ${vendor_custom}
+    ${test_name}            set variable    TC-Cell-Setup-Endurance
+    Init Sequence           ${param}
+    Step                    CB008940-B-Keywords.Set RAD Params Of 8940
+    Critical Step           Deploy Vendor File Config    vendor_param=${vendor_custom}    is_perform_full_commissioning=${True}
+    ${ue_list}              get_ue_list    ${param}    ${dict_ues}
+    #vbo# Disabling cell block unblock for debugging robustness     Step                    cell_block_unblock
+    Critical Step           wts_setup_sa    ${param}    ${ue_list}
+    Critical Step           check_cell_states
+    ${original_scf_file}    OAM Get SCF File    file=${test_name}-original.xml
+    ${delta_create_file}    Replace String    ${original_scf_file}    original    create
+    ${delta_delete_file}    Replace String    ${original_scf_file}    original    delete
+    prepare_delta_files     ${original_scf_file}    ${delta_create_file}    ${delta_delete_file}
+    ${gnb_alias}            Set Variable    gNodeB
+    sbts_coam.connect_to    name=${gnb_alias}
+    FOR                     ${iteration}    IN RANGE    ${number_of_iterations}
+        Step                delete_cell    ${delta_delete_file}    ${gnb_alias}
+        Step                create_cell    ${delta_create_file}    ${gnb_alias}
+        Step                check_cell_states
+        ${syslog}           SYSLOG Start    host=${GNB_DU.sys[0].M}    name=${test_name}_${iteration}
+        Critical Step       ue_setup            ${param}    ${ue_list}
+        Critical Step       ue_traffic_start    ${param}    ${ue_list}
+        # Capture Sherpa after cell addition and PRB Pooling verification
+        Run Keyword If    ${enable_sherpa} == ${True}    Run Keywords    Critical Step      Activate Sherpa
+        ...    AND        Step                      Traced Sleep    duration=10s     msg=after cell addition
+        ...    AND        Critical Step             Deactivate Sherpa and Stop Collect
+        ...    AND        Step                      Upload and decode sherpa pcap files    Sherpa_logs_local_path=${trace_dir}    duration=0
+        ...    AND        Step                      Calling Panda Extract Csv For PRB Pooling
+        Run Keyword If    ${enable_sherpa} == ${True}         Run Keywords
+        ...               Critical Step             Verification of Pool Id within PRB Pooling Report 
+        ...                                                             pool_id=10
+        ...                                                             subpool_id=0
+        ...    AND        CritIcal Step             Verification of Pool Id within PRB Pooling Report
+        ...                                                             pool_id=10
+        ...                                                             subpool_id=1
+        #
+        ...    AND        Critical Step             Verification of BB Pooling Mode within PRB Pooling Allocation Report
+        ...                                                             pool_id=10
+        #
+        ...    AND        Critical Step             Verification of BB Pooling cell distribution within PRB Pooling Report
+        ...                                                             nrCell_id=0x4001
+        ...                                                             subpool_id=0
+        ...    AND        Critical Step             Verification of BB Pooling cell distribution within PRB Pooling Report
+        ...                                                             nrCell_id=0x4002
+        ...                                                             subpool_id=1
+        ...    AND       Critical Step             Verification of BB Pooling cell distribution within PRB Pooling Report
+        ...                                                             nrCell_id=0x4003
+        ...                                                             subpool_id=0
+        #
+        ...    AND        Critical Step             Verification of Stream PRB Information within PRB Pooling Report
+        ...                                                             stream_prb_capa=${vendor_custom.maxNumStreamPrbL1Sp}
+        ...                                                             alloc_stream_prb=${vendor_custom.maxNumStreamPrbL1Sp}
+        ...                                                             subpool_id=0
+        ...    AND        Critical Step             Verification of Stream PRB Information within PRB Pooling Report
+        ...                                                             stream_prb_capa=${vendor_custom.maxNumStreamPrbL1Sp}
+        ...                                                             alloc_stream_prb=${NUM_MAX_STREAM_WHEN_ONLY_1_CELL}
+        ...                                                             subpool_id=1
+        #
+        ...    AND        Critical Step             Verification of Number PRB Allocated within PRB Pooling Report
+        ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+        ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+        ...                                                             num_prb_alloc=240
+        ...                                                             prereq_data=${COL_NAME_NRCELLID}
+        ...                                                             prereq_value=0x4001
+        ...                                                             check_operator=<=
+        ...    AND        Critical Step             Verification of Number PRB Allocated within PRB Pooling Report
+        ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+        ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+        ...                                                             num_prb_alloc=65
+        ...                                                             prereq_data=${COL_NAME_NRCELLID}
+        ...                                                             prereq_value=0x4003
+        ...                                                             check_operator=>=
+        ...    AND        Critical Step             Verification of Number PRB Allocated within PRB Pooling Report
+        ...                                                             num_min_prb=${NUM_MIN_PRB_DEFAULT}
+        ...                                                             num_max_prb=${NUM_MAX_PRB_DEFAULT}
+        ...                                                             num_prb_alloc=${NUM_MAX_PRB_DEFAULT}
+        ...                                                             prereq_data=${COL_NAME_SUBPOOLID}
+        ...                                                             prereq_value=1
+        #
+        Step                ue_traffic_stop     ${param}    ${ue_list}
+        Step                ue_release          ${param}    ${ue_list}
+        sleep_until_pm_availability
+        ${pm_path}          Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+        Step                check_counter_and_kpi_constraints    ${pm_path}    ${test_name}
+        ${initial_resource_usage}    Run Keyword If    ${iteration} == 0    Hardening.Get Resources
+        ...                 ELSE    Set Variable    ${initial_resource_usage}
+        Step                check_resource_usage    ${initial_resource_usage}
+        SYSLOG Stop         syslog=${syslog}
+        Step                check_syslog    ${test_name}    UeSetupRelease    ${syslog}    max_syslog_rate=500
+    END
+    sbts_coam.teardown      connection=${gnb_alias}
+    [Teardown]              Display diagnosis
+
+prepare_delta_files
+    [Arguments]             ${original_scf_file}    ${delta_create_file}    ${delta_delete_file}
+    ${tmp_scf_file}         Replace String    ${original_scf_file}    original    tmp
+    ${new_scf_file}         Replace String    ${original_scf_file}    original    new
+    scf.load_scf	        ${original_scf_file}
+    scf.remove_mo_with_descendant_mos    dist_name=MRBTS-1/NRBTS-1/NRCELL-1
+    scf.remove_mo_with_descendant_mos    dist_name=MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1
+    scf.remove_mo_with_descendant_mos    dist_name=MRBTS-1/NRBTS-1/NRCELLGRP-0
+    # @{scf_modifications}    Create List    modify:MRBTS-1/NRBTS-1/NRCELLGRP-0:nrCellList=TO_BE_REMOVED,TO_BE_REMOVED
+    @{scf_modifications}    Create List    modify:MRBTS-1/NRBTS-1/NRDU-1:refNrCellGroup=1,2
+    scf.perform_scf_modification    ${scf_modifications}
+    scf.save_scf            ${tmp_scf_file}
+    Run                     grep -v TO_BE_REMOVED ${tmp_scf_file} > ${new_scf_file}
+    scf.calculate_delta_scf    ${new_scf_file}    ${original_scf_file}    ${delta_delete_file}
+    scf.calculate_delta_scf    ${original_scf_file}    ${new_scf_file}    ${delta_create_file}
+
+delete_cell
+    [Arguments]            ${delta_delete_file}    ${gnb_alias}
+    Dated Log              Delete Cell
+    coam_parameter.perform_scf_delta_commission    delta_file=${delta_delete_file}    connection=${gnb_alias}
+    Dated Log              wait OAM available
+    OAM wait available
+
+create_cell
+    [Arguments]            ${delta_create_file}    ${gnb_alias}
+    Dated Log              Create Cell
+    coam_parameter.perform_scf_delta_commission    delta_file=${delta_create_file}    connection=${gnb_alias}
+    Dated Log              wait OAM available
+    OAM wait available
+
+repeat_ue_setup_during_pm_period
+    [Arguments]            ${param}    ${ue_list}
+    ${zoi}                 ZOI Start    40    300    60
+    ZOI Repeat Until End   ${zoi}    ue_setup_release    ${param}    ${ue_list}
+
+repeat_handover_during_pm_period
+    [Arguments]            ${param}    ${ue_list}
+    ${zoi}                 ZOI Start    40    300    60
+    ZOI Repeat Until End   ${zoi}    ue_handover_pingpong    ${param}    ${ue_list}
+
+ue_setup_release
+    [Arguments]            ${param}    ${listOfUes}
+    ue_setup               ${param}    ${listOfUes}
+    ue_release             ${param}    ${listOfUes}
+
+ue_setup
+    [Arguments]            ${param}    ${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        delay_if_pm_period_boundary
+        CallSetup.UE Register                                       ue=${current_elem.ue}
+        CallSetup.Launch PDU Session                                ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         gw=${current_elem.ue}
+    END
+
+ue_traffic_start
+    [Arguments]            ${param}    ${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        DL Traffic SA Not Stopped     param=${param}    ueSetting=${current_elem}
+    END
+
+ue_traffic_stop
+    [Arguments]            ${param}    ${listOfUes}
+    FOR    ${current_elem}     IN      @{listOfUes}
+            Traffic Stop            ueSetting=${current_elem}    dir=dl
+    END
+    Sleep                  1s
+
+ue_handover_pingpong
+    [Arguments]            ${param}    ${listOfUes}
+    ue_handover             multiUesList=${listOfUes}     physCellIdOffset=${PHYS_CELL_ID_OFFSET}
+    ue_handover             multiUesList=${listOfUes}     physCellIdOffset=${PHYS_CELL_ID_OFFSET}
+
+ue_handover
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${multiUesList} ${physCellIdOffset}
+    ...     Actions:        it manages the intra gNB Ho to the target cell triggered by the measurement of the A3 event
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        Ho is passed for mutli ues
+    [Arguments]             ${multiUesList}=None
+    ...                     ${physCellIdOffset}=49
+    FOR    ${current_elem}    IN      @{multiUesList}
+        delay_if_pm_period_boundary
+        ${current_servingCell}=       Evaluate            ${current_elem.target_cells} + ${physCellIdOffset}
+        ${current_targetCell}=        Evaluate            ${current_elem.targetCellForHo} + ${physCellIdOffset}
+        Run Keyword If      ${current_elem.requestForHo} and ${current_servingCell} != ${current_targetCell}
+        ...                 Perform Intra Gnb Ho To Target Cell
+        ...                 ue_id=${current_elem.ue}    meas_id=1    event_type=A3    physical_target_cell_id=${current_targetCell}
+        ${current_elem.target_cells}=           Run Keyword If    ${current_elem.requestForHo} and ${current_servingCell} != ${current_targetCell}
+        ...                                                                   Evaluate    ${current_targetCell} - ${physCellIdOffset}
+        ...                                                 ELSE              Evaluate    ${current_elem.target_cells} + 0
+        ${current_elem.targetCellForHo}=        Run Keyword If    ${current_elem.requestForHo} and ${current_servingCell} != ${current_targetCell}
+        ...                                                                   Evaluate    ${current_servingCell} - ${physCellIdOffset}
+        ...                                                 ELSE              Evaluate    ${current_elem.targetCellForHo} + 0
+    END
+
+ue_release
+    [Arguments]            ${param}    ${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        delay_if_pm_period_boundary
+        CallSetup.UE Deregister                                     id=${current_elem.ue}
+    END
+
+get_ue_list
+    [Arguments]             ${param}    ${dict_ues}
+    ${param.totalNbOfUe}    get length          ${dict_ues}
+    Dated Log               Configure the setting for the ${param.totalNbOfUe} ue's
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.totalNbOfUe}
+        ${current_ue}=                Evaluate                      ${current_id} + 1
+        ${current_ueSetting}          Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          pdu                 1
+        Set To Dictionary             ${current_ueSetting}          target_gnb          ${param.targetGnb}
+        Set To Dictionary             ${current_ueSetting}          target_cells        ${dict_ues[${current_id}].originalCell}
+        Set To Dictionary             ${current_ueSetting}          throughput          ${dict_ues[${current_id}].throughput}
+        Set To Dictionary             ${current_ueSetting}          requestForHo        ${dict_ues[${current_id}].requestForHo}
+        Set To Dictionary             ${current_ueSetting}          targetCellForHo     ${dict_ues[${current_id}].targetCellForHo}
+        Set To Dictionary             ${current_ueSetting}          delayPostHo         ${dict_ues[${current_id}].delayPostHo}
+        Append To List                ${listOfUes}                  ${current_ueSetting}
+    END
+    Dated Log New Line      UE_List=${listOfUes}
+    Check Multi Ues Setting In List    multiUesList=${listOfUes}
+    [Return]                ${listOfUes}
+
+cell_block_unblock
+    ${gnb_alias}           Set Variable    gNodeB
+    ${connection}          sbts_coam.connect_to    name=${gnb_alias}
+    sbts_coam.block_cell   dist_name=MRBTS-1/NRBTS-1/NRCELL-1    connection=${gnb_alias}
+    sbts_coam.block_cell   dist_name=MRBTS-1/NRBTS-1/NRCELL-2    connection=${gnb_alias}
+    sbts_coam.block_cell   dist_name=MRBTS-1/NRBTS-1/NRCELL-3    connection=${gnb_alias}
+    Run                    sudo pkill edaemon; sudo pkill egate; sudo pkill -9 sim_enb
+    sbts_coam.unblock_cell      dist_name=MRBTS-1/NRBTS-1/NRCELL-1    connection=${gnb_alias}
+    sbts_coam.unblock_cell      dist_name=MRBTS-1/NRBTS-1/NRCELL-2    connection=${gnb_alias}
+    sbts_coam.unblock_cell      dist_name=MRBTS-1/NRBTS-1/NRCELL-3    connection=${gnb_alias}
+    sbts_coam.teardown_admin    connection=${connection}
+
+wts_setup_sa
+    [Arguments]            ${param}    ${listOfUes}
+    Traced Sleep            duration=60s                            msg=before setup Wtsemu SA to give radio modules time to start
+    CallSetup.Setup Wtsemu SA                                       nbUe=${param.totalNbOfUe}
+    ...                                                             nbSaUe=${param.totalNbOfUe}
+    ...                                                             shouldUseLua=${True}
+    ...                                                             list_of_UE_tobe_created=${listOfUes}
+    WTS Set X2 Link
+    Sleep                  20s
+
+delay_if_pm_period_boundary
+    ${time_in_pm_period}    Evaluate    (int(time.time()) % 300)    time
+    run keyword if          ${time_in_pm_period} > 295    Sleep    6s
+
+sleep_until_pm_availability
+    [Arguments]            ${pm_granularity_period}=300   ${pm_availability_delay}=60
+    Dated Log              sleep_until_pm_availability started
+    ${time_of_start}       Evaluate    int(time.time())    time
+    ${time_of_next_pm_period}    Evaluate   (int(${time_of_start} / ${pm_granularity_period}) + 1) * ${pm_granularity_period}
+    ${time_of_pm_availability}   Evaluate   ${time_of_next_pm_period} + ${pm_availability_delay}
+    ${duration_until_pm_availability}    Evaluate    ${time_of_pm_availability} - ${time_of_start}
+    ${timeout_string}      Catenate      ${duration_until_pm_availability}  sec
+    ${date_of_pm_availability}   Convert date    ${time_of_pm_availability}
+    Dated Log              PM should be available in ${timeout_string}, at ${date_of_pm_availability}
+    Sleep                  ${timeout_string}
+    Dated Log              sleep_until_pm_availability ended
+
+check_resource_usage
+    [Arguments]            ${initial_resource_usage}
+    Dated Log              check_resource_usage started
+    ${resource_usage}      Hardening.Get Resources
+    ${resource_diff}       Hardening.Compare Resources With Tolerance    ${initial_resource_usage}    ${resource_usage}
+    ...                    ${CURDIR}/../../config/resource_usage/tolerance.csv
+    should be empty        ${resource_diff}
+    Dated Log              check_resource_usage ended
+
+check_cell_states
+    Dated Log              check_cell_states started
+    @{cellsNr}             OAM Get Cells Nr    oam=${GNB_DU.oam}
+    FOR    ${cellNr}    IN    @{cellsNr}
+        should be equal    ${cellNr['status']['operationalState']}      enabled
+        should be equal    ${cellNr['status']['barringStatus']}         unbarred
+        # availabilityStatus will not be present if cell is online (as defined in CNI-61110)
+        Dictionary Should Not Contain Key    ${cellNr['status']}        availabilityStatus
+        ...                msg=Cell availabilityStatus is not online (${cellNr['status']})
+    END
+    Dated Log              check_cell_states ended
+
+check_counter_and_kpi_constraints
+    [Arguments]            ${pm_path}    ${test_name}
+    Dated Log              check_counter_and_kpi_constraints started
+    KPI Evaluate           pmFile=${pm_path}
+    ...                    constraintsFile=${CURDIR}/../../config/counter/constraint/${test_name}.csv
+    ...                    failOnError=${True}
+    Dated Log              check_counter_and_kpi_constraints ended
+
+check_syslog
+    [Arguments]            ${test_name}       ${test_type}    ${syslog}    ${max_syslog_rate}=400
+    Dated Log              check_syslog started
+    @{errors}              SYSLOG Evaluate    syslog=${syslog}
+    ...                                       exclusion=CB008940.${test_type}.csv
+    ...                                       maxRate=${max_syslog_rate}
+    should be empty        ${errors}
+    Dated Log              check_syslog ended

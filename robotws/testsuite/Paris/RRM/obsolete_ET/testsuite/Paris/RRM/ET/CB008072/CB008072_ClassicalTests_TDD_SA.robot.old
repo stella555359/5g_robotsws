@@ -1,0 +1,97 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  verification of All UL tests from CB008072 feature Classical
+###...            Test Case Scenario author   : yann.ah.herve@nokia.com for 5GC001347
+###...            Test Case Scenario contact  : yann.ah.herve@nokia.com
+###...            Test Case automation author : bernard.hoche@nokia.com
+...             \nTest Case automation contact: martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com
+...             \nCreation Date               : 23-May-2019
+...             \nModified Date               : 25-Sep-2024
+###...            Then Modified by            : bernard.hoche@nokia.com
+###...            Last Modified by            : Wael
+###...            Then Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: adapt to CB006062
+###...            Modified Date               : 15-April-2021
+###...            Then Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: adapt to CB007782
+###...            Modified Date               : 25-June-2021
+###...            Then Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: adapt to CB008072
+###...            Modified Date               : 21-January-2022
+###...            Then Modified by            : vincent.boulet@nokia.com
+###...            Last Modification           : update for supporting vRAN2.0 Cloud topology
+###...            Modified Date               : 28-April-2022
+###...            Modified Date               : 26-May-2022 change BIPvalueDMrsCdmGroupWithoutData format - pdml changes - MLLB
+###...            Then Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: adapt to MCShark
+###...            Last Modified by            : vincent.boulet@nokia.com: factorization of the commissioning
+###...            Last Modified by            : vincent.boulet@nokia.com: Parity testing to introduce dRNIC RINLINE2 CLOUD_5GC_dRNIC_1vDU_P_AP_LO_DC
+...             \nLast Modified by            : richard.duthu@nokia.com: Produce Scout Data
+
+Variables         ./resources/python/Constants.py
+Resource          ../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../resources/SWENG/robot/Traffic.robot
+Variables         ../../../resources/SWENG/python/ReadConfig.py
+Resource          ./resources/robot/CB008072_Keywords_common.robot
+Resource          ./resources/robot/CB008072_Keywords_TDD_SA.robot
+Library           ../resources/python/robot_extension.py   WITH NAME       robot_extension
+
+Force Tags                  CA_5G_SW_FR-Villarceaux     RRM
+...                         PY36
+...                         CONFIGURED        5G_RAN_TDD    5G_RAN    RAN_5G_TDD    RAN_5G
+
+Suite Setup                 CB008072_Keywords_common.Suite Setup 8072
+Suite Teardown              robot_extension.Run Keyword And Warn On Failure         CB008072_Keywords_common.Suite Teardown 8072
+
+*** Variables ***
+# Mapping of tests and set of data to be used in generic test case
+&{A_1}                              dir=UL_DL
+...                                 puschMappingType=TypeA
+...                                 dmrsTypeAPosition=pos2
+...                                 BIPvaluedmrsTypeAPosition=2
+...                                 actUlDataDmrsFdm=true
+...                                 BIPvalueDMrsCdmGroupWithoutData=1
+...                                 ulDataDmrsFdmThres64QamMcs=20
+...                                 ulDMRSAdditionalPosition=One additional DMRS
+...                                 BIPvalueUlDMRSAdditionalPosition=1
+...                                 pucchModeSelect=longPucch
+...                                 actUl256Qam=false
+
+${TestSharkTool}                    MC_SHARK
+
+*** Test Cases ***
+[1][1.0] CB008072-AA_TC40_SA_PUSCH_mapping_TypeA_and_UL_DMRS_FDM_TDD_FR1_TrafficUlDl_DMRS_Pos2_1AdditionalDMRS
+    [Tags]                          CLOUD_5G_I_LO_AP_LO_SANSA_FS_ECPRI_CMWV_TDD    SBTS00    SBTS23R1    SBTS22R4    CRT    master_classicalbts_all
+    TC 8072 TDD SA                  ${A_1}
+    [Teardown]                      Setup.Test Teardown
+
+[1][1.0] CB008072-AA_TC40_SA_PUSCH_mapping_TypeA_and_UL_DMRS_FDM_TDD_FR1_TrafficUlDl_DMRS_Pos2_1AdditionalDMRS_VR
+    [Tags]                          CLOUD_5GC_dRNIC_1vDU_P_AP_LO_DC    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD    vDUCNF00    CRT
+    TC 8072 TDD SA                  ${A_1}
+    [Teardown]                      Setup.Test Teardown
+
+*** Keywords ***
+TC 8072 TDD SA
+    [Documentation]                 Generic test for CB008072_A_xxx (UL or UL_DL) tests
+    [Arguments]                     ${param}
+    Init Sequence                   ${param}
+    Critical Step                   Set Context TDD SA
+    Critical Step                   Restart
+    Step                            Captures Init
+    Critical Step                   CallSetup.Setup Wtsemu SA
+    Critical Step                   UE Cell Setup Check
+    Step                            Captures Start
+    Critical Step                   CallSetup.UE Register                                    depends=UE Cell Setup Check
+    Critical Step                   CallSetup.UE Attach Check                                depends=CallSetup.UE Register
+    Critical Step                   CallSetup.Launch PDU Session                             depends=CallSetup.UE Attach Check
+    Step                            Captures Stop                                            depends=Captures Start
+    Run Keyword If                  ${isAic}                                                 Reduce_Pusch_RX_Power_AND_SINR
+    Step                            ${param.dir} Traffic SA                                  depends=CallSetup.Launch PDU Session
+    Critical Step                   Check PuschMappingTypeA UL in BIP Traces
+    Critical Step                   Check dmrs TypeA Position in BIP Traces
+    Critical Step                   Check Additional DMRS UL in BIP Traces
+    Critical Step                   Check FDM UL in BIP Traces
+    Critical Step                   Check CRC OK for HarqU in UL BIP Traces
+    Critical Step                   Check NO DTX for HarqU in UL BIP Traces
+    [Teardown]                      Display diagnosis
+

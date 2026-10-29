@@ -1,0 +1,184 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of 5GC000532
+...               Test Case Scenario author   : jing.tian@nokia.com
+...               Test Case Scenario contact  : jing.tian@nokia.com
+...               Creation Date               : 31-Oct-2023
+
+
+
+Resource          ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/CfgFilesTools.robot
+Resource          ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/KPIs.robot
+
+
+Library            ../../../../../resources/SWENG/python/CoamParameter.py      WITH NAME     coam_parameter
+Library            taf.sbts.oam.coam.admin           WITH NAME   sbts_coam
+Library            ute_wtssim           WITH NAME    wts
+Library            taf.wts.runner              WITH NAME       wtsemu
+Library            OperatingSystem
+Library            String
+Library            BuiltIn
+
+
+*** Variables ***
+
+${gnb_alias}                      gnb_under_test
+
+${5GC000532__constraints}       testsuite/Paris/RRM/ET/5GC000532/config/5GC000532_constraints.csv
+
+# UE-NR capabilities including support for 1 layer capability
+${nr_capas_1_layer}                     SEPARATOR=
+...                                      "E1A01000014F5E0302C0020A400024106CE261F0A16009B0083FF30C7942C0E0980C03114
+...                                      06014C600141F11B586368E9315047F2CA4994220020B64C1203063C63FF30C7942C0E070F
+...                                      0133B0EC33B0EC01000C000000001C4600000000420C046E4D0F8072080000052080000152
+...                                      0800002524A000034C02E06DE46D6E900504000025949010000196525040000A5949410000
+...                                      39652504000125949490000552CA4A02681C5D23ABA15534AAA2BB503C003C00D008040000
+...                                      000000100200420"
+
+&{dict_settings_ue_51}                                               ue=51
+...                                                                  pdu=1
+...                                                                  throughput=120
+...                                                                  originalCell=3
+
+
+@{dict_settings_all_ues}                                            ${dict_settings_ue_51}
+
+
+*** Keywords ***
+
+5GC000532_Configuration
+    [Documentation]               Dedicated KW to configure SA UE capa with 1 layer 
+    [Arguments]                   ${gnb_alias}    
+
+    # Open connection towards cOAM
+    sbts_coam.connect_to          name=${gnb_alias}
+
+    OAM wait available
+
+    sbts_coam.teardown            connection=${gnb_alias}
+
+    ##modify cfg file
+     
+    WtsCfgConfig.startSession
+
+    WtsCfgConfig.stopSession         rename=modified
+
+    Modify Field in WtsEmu Cfg File     field=SA_UE_CAPABILITIES_FDD    value=${nr_capas_1_layer}
+
+
+Cell Setup 
+    Setup Wtsemu SA               shouldUseLua=False    nbCell=4
+    # Cellsetup is now done, Sherpa can be enabled if needed
+    Run Keyword If                      ${enable_sherpa} == ${True}           Activate Sherpa
+
+Build UEs list SA
+  
+    ${totalNbOfUe}          get length          ${dict_settings_all_ues}  
+    Dated Log           Configure the setting for the ${totalNbOfUe} ue's
+    Set Global Variable     ${totalNbOfUe}
+    Dated Log New Line      ${dict_settings_all_ues}
+
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${totalNbOfUe}
+        ${current_ue}=                Evaluate                      ${dict_settings_all_ues[${current_id}].ue}
+        ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          pdu                 ${dict_settings_all_ues[${current_id}].pdu}
+        Set To Dictionary             ${current_ueSetting}          trf_id              ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          target_gnb          2
+        Set To Dictionary             ${current_ueSetting}          target_cells        ${dict_settings_all_ues[${current_id}].originalCell}
+        Set To Dictionary             ${current_ueSetting}          throughput          ${dict_settings_all_ues[${current_id}].throughput}
+
+        
+        Append To List                ${listOfUes}                  ${current_ueSetting}
+    END
+    Dated Log New Line                UE_List=${listOfUes}
+    
+    [Return]                          ${listOfUes}    
+
+SA Attach and Start Traffic  
+    [Arguments]                   ${param}  ${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes} 
+        Dated Log New Line     === SA Register UE ${current_elem.ue} on cell ${current_elem.target_cells} ===
+        CallSetup.UE Register                                   ue=${current_elem.ue}
+        
+        CallSetup.Launch PDU Session                            ue=${current_elem.ue}
+        ...                                                     pdu=${current_elem.pdu}
+        ...                                                     gw=${current_elem.ue}  
+    END
+
+# Start the Non GBR traffic for all the ue's when requested    
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Dated Log New Line   === Start Traffic UL on UE ${current_elem.ue} ===
+        Traffic SA UL NOT Stopped         
+        ...                                                     param=${param}
+        ...                                                     ueSetting=${current_elem}
+    END 
+
+
+Traffic SA UL NOT Stopped
+    [Documentation]
+    ...     Actions:        it manages the UL traffic on the UEs
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        UL traffic is passed
+    [Arguments]                   ${param}      ${ueSetting} 
+#UL
+
+    Set To Dictionary       ${ueSetting}        trf_id    1
+    Traffic UE UL           ueSetting=${ueSetting}
+    ...                               throughput=${ueSetting.throughput}
+    ...                               captureCallback=None
+    ...                               capture=None
+    ...                               captureDuration=0
+    ...                               duration=3 
+    ...                               shouldBeStop=False
+    ...                               shouldBeCheck=False
+
+
+Collect and Check Counter/ KPI     
+    [Documentation]                 Retrieve and Check PM counter and KPI values are as expected
+    ...                             M55308C36002 M55308C18001 M55303C22027 M55303C23027 M55309C02001 Counters
+    ...                             Check also UL initial BLER and UL residual BLER
+    Dated Log                       Waiting 10 minutes before collecting counters
+    sleep                           600s
+    ${date}                         Get Current Date
+    ${date_in_dir_name}             Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                  Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}  
+    Dated Log                       The PM counters file collected from gnb will be stored under : ${log_path_pm}
+    ${pm_latest}                    Counters.Collect PM files from BTS      ${log_path_pm}
+    set Suite Variable              ${LATEST_PM_FILE}       ${pm_latest}
+    set Suite Variable              ${log_path_pm}
+    Dated Log                       Latest pm counters file : ${LATEST_PM_FILE}
+
+    Dated Log                        ===> check counter and KPI constraints is started
+
+    KPI Evaluate                     pmFile=${LATEST_PM_FILE}
+    ...                              constraintsFile=${5GC000532__constraints}
+    ...                              failOnError=${True}
+
+    Dated Log                        ===> check counter and KPI constraints is ended
+
+
+SA UE Detach
+    [Arguments]                   ${param}  ${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes} 
+        Dated Log New Line     === Detaching SA UE ${current_elem.ue} on cell ${current_elem.target_cells} ===
+        UE Deregister           id=${current_elem.ue}
+    END
+
+
+5GC000532 Test Teardown
+    [Documentation]             Perform needed actions at the end of a test case
+    Restore Files               listFileDesc=${FD_ALL}
+    # "Test Teardown" KW from Setup.robot
+    Test Teardown

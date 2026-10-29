@@ -1,0 +1,647 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Verification of tests for 5GC002511-AB feature (FDD part)
+...               Test Case Scenario author   : imen.mestiri@nokia.com
+...               Test Case Scenario contact  : imen.mestiri@nokia.com
+...               Test Case automation author : yann.ah.herve@nokia.com
+...               Test Case automation contact: bernard.hoche@nokia.com
+...               Creation Date               : 4-June-2020
+...               Modified Date               : 14-April-2021
+...               Last Modified by            : emmanuel.kerfant@nokia.com
+
+Resource          resources/robot/5GC002511_Keywords.robot
+
+Force Tags                          CA_5G_SW_FR-Villarceaux    RRM
+...   PY36
+...                                 CONFIGURED    5G_RAN    RAN_5G    CRT
+...                                 CLOUD_5G_I_BL_AP_KL_SANSA_FS_CPRI_CMWV_FDD
+...                                 master_classicalbts_all    SBTS00    SBTS23R1    SBTS22R4
+
+Suite Setup                         Test Suite Setup for 2511
+Suite Teardown                      Setup.Suite Teardown
+
+*** Test Cases ***
+
+#
+# For TCs AB_8 and AB_9, number of UE used for threshold are based on the number of UE that can be attached.
+# Number of UEs are retrieved from :
+# https://nokia.sharepoint.com/sites/5GSystemEngineering/RRM_Telecom_TD/CP_Domain/_layouts/15/# Doc.aspx?sourcedoc=
+# %7BA4DF2825-1CCF-4E68-920E-5B2EED28355E%7D&file=5G_classic_gNB_DU_Capacity_Requirements.xlsx&action=default&mobileredirect=true
+#
+# Number of UE need to be consistent with the configuration used:
+#
+# With FDD configuration:
+#  - Max Nb UE slots20 = 17 => with 25 % threshold, 4 UEs with slots20, others with slots160
+#  - Max Nb UE slots20 = 17 => with 50 %, 9 with slots20, others with slots160
+#  - Max Nb UE slots20 = 17 => with 75 %, 13 with slots20, others with slots160
+#
+
+[1][1.0] 5GC002511_AB_8_FR1_FDD_actLoadCsiPeriodicity OFF
+
+   [Documentation]                 Automation for 2511-AB TC_8
+
+   # Expected CSI list in the order of UE attachments (from 1 to 6)
+   # In this case: 1st UE: 20 slots period
+   @{expected_csi_period}          Create List           slots20    slots20    slots20    slots20    slots20    slots20
+
+   Generic KW for CSI Periodicity         feature_activation=false
+   ...                                    csi_period=slots20
+   ...                                    nb_ue=6
+   ...                                    default_mcs=16
+   ...                                    prach_ci=12
+   ...                                    techno=fdd
+   ...                                    expected_csi_configuration=${expected_csi_period}
+
+   # Sleep 15 mn in case of GP overlap
+   Traced Sleep                           ${pm_reporting_period}
+
+   # Retrieve counters and compare with a reference
+   ${status}             Run Keyword If        '${check_counters}' == 'True'       Verify PM Values With Margin     5GC002511_AB_8
+
+   [Teardown]            Test Teardown for 2511
+
+
+[1][1.0] 5GC002511_AB_9_FR1_FDD_CSI Report Functionnality_periodicity_20_threshold_25
+
+   [Documentation]                 Automation for 2511-AB TC_9
+
+   # Expected CSI list in the order of UE attachments (from 1 to 6)
+   # In this case: First 4 UEs : 20 slots period, other UEs: 320 slots period
+   @{expected_csi_period}          Create List           slots20    slots20    slots20    slots20    slots160    slots160
+
+   Generic KW for CSI Periodicity         feature_activation=true
+   ...                                    csi_period=slots20
+   ...                                    threshold=25Percent
+   ...                                    nb_ue=6
+   ...                                    default_mcs=16
+   ...                                    prach_ci=12
+   ...                                    techno=fdd
+   ...                                    expected_csi_configuration=${expected_csi_period}
+
+
+   # Sleep 15 mn in case of GP overlap
+   Traced Sleep  ${pm_reporting_period}
+
+   # Retrieve counters and compare with a reference
+   ${status}             Run Keyword If        '${check_counters}' == 'True'       Verify PM Values With Margin     5GC002511_AB_9
+
+   [Teardown]            Test Teardown for 2511
+
+
+[1][1.0] 5GC002511_AB_10_FR1_FDD_ CSI Reporting for multiple UEs following a UE release_pool1
+
+   [Documentation]                 Automation for 2511-AB TC_10
+   ...                             csiPeriod = slots40, threshold = 25 %
+   ...                             UE1..4 are supposed to be configured for slots20 CSI report period
+   ...                             UE5 is supposed to be configured for slots160 CSI report period (above threshold)
+   ...                             UE1 is released and UE6 is attached => should be configure for slots20 CSI report period
+   ...                             U7 is is attached => should be configure for slots160 CSI report period
+
+   # Expected CSI list in the order of UE attachments (from 1 to 5)
+   # UE1          UE2         UE3      UE4         UE5            UE6      UE7
+   @{expected_csi_period}          Create List           slots20    slots20    slots20    slots20    slots160     slots20     slots160
+
+   Set CSI Configuration           feature_activated=true
+   ...                             csi_report_period=slots20
+   ...                             threshold=25Percent
+   ...                             default_mcs=16
+   ...                             prach_ci=12
+   ...                             techno=fdd
+
+   # Previous SCF configuration lead to a gNB restart, but only gNB side.
+   # So, wait until gNB is ready and restart TL again for AP part.
+   WA Airscale Wait For Ready      ${GNB_DU}
+   Restart TL
+
+   # Configure WTS wih 10 UEs ( > max number of UEs used for 2511) and perform cellsetup.
+   WTS Setup                      nbUe=10
+   # Start Sherpa capture if requested
+   Run Keyword If                ${enable_sherpa}==${True}               Sherpa.Activate Sherpa
+
+   &{MY_UE}=                     Copy Dictionary          ${UE_SIMPLE}
+
+   ${CaptureX2}                  Capture CORE Set Upon Config            airscale=${GNB_DU}
+   ${CaptureX2.filter}           Get Filter For SCTP
+   Capture Init                  ${CaptureX2}            withTN=True
+   # Start capture on core side to get all RRC Reconfiguration messages
+   Capture Start                 ${CaptureX2}
+
+   ${nb_ue}                      Set Variable              6
+   FOR        ${ue_id}      IN RANGE        1        ${nb_ue}
+        Set To Dictionary               ${MY_UE}      ue       ${ue_id}
+        Log To Console                  ${MY_UE}
+        SgNB Addition to ENB            ueSetting=${MY_UE}
+   END
+   &{UE_to_delete}=              Copy Dictionary          ${UE_SIMPLE}
+   Set To Dictionary             ${UE_to_delete}      ue       1
+   Log To Console                Releasing 1st UE
+   UE Detach for 2511            ${UE_to_delete}
+
+   &{UE_to_add}=                 Copy Dictionary          ${UE_SIMPLE}
+   Set To Dictionary             ${UE_to_add}         ue       6
+   Log To Console                Adding 5th UE
+   SgNB Addition to ENB          ueSetting=${UE_to_add}
+
+   Set To Dictionary             ${UE_to_add}         ue       7
+   Log To Console                Adding 6th UE
+   SgNB Addition to ENB          ueSetting=${UE_to_add}
+
+   # Stop capture on core side
+   Capture Stop                   ${CaptureX2}
+
+   # Check CSI load periodicity inside RRC reconfiguration messages
+   ${pdmlFile}=                    analyzer.pcap_to_pdml          ${CaptureX2.path}
+
+   @{msg_field}                    Create List        nr-rrc.reportSlotConfig
+
+   # Extract CSI report period from pdml
+   @{listPacketMatch}              PacketSearch.Get Packet Match List
+   ...                             pdmlFile=${pdmlFile}
+   ...                             packetName=SgNBAdditionRequestAcknowledge
+   ...                             pathList=@{msg_field}
+
+   # Loop on each selected packet and check CSI period is the same as the one expected
+   # Packet list is supposed to be ordered in the same way as in @{expected_csi_period}
+   ${i}                            Set Variable          0
+   FOR    ${packet}               IN      @{listPacketMatch}
+           ${csi_period}           Get Value In Packet Match   ${packet}       field=reportSlotConfig
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          CSI period read value: ${csi_period}
+           ${expected_value}       Get From List   ${expected_csi_period}     ${i}
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          Expected value: ${expected_value}
+           ${raw_value}            Get From Dictionary     ${csi_report_period_converter}     ${expected_value}
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          Expected raw value: ${raw_value}
+           Log To Console          CSI report value inside RRC: ${csi_period}, expected value: ${raw_value}
+           Should Be True          '${csi_period}' == '${raw_value}'
+           ${i}                    Evaluate     ${i} + 1
+   END
+
+   # Perform 1 Mbps traffic for each UE
+   ${ue_list}                     Create List
+   # For UE2..7 as UE1 has been released
+   FOR        ${ue_id}      IN RANGE        2        8
+           &{current_UE}=                  Copy Dictionary          ${UE_SIMPLE}
+           Set To Dictionary               ${current_UE}      ue       ${ue_id}
+           Append To List                  ${ue_list}    ${current_UE}
+   END
+   Log To Console          Starting UL and DL traffic for: ${ue_list}
+   # 2 mn 1 Mbps DL trafic
+   Traffic UEs DL          ueSettingList=${ue_list}     throughput=1      duration=2 minutes      deviation=10
+   # 2 mn 1 Mbps UL trafic
+   Traffic UEs UL          ueSettingList=${ue_list}     throughput=1      duration=2 minutes      deviation=10
+
+   # Stop Sherpa capture if it was requested
+   Run Keyword If                ${enable_sherpa}==${True}               Sherpa.Deactivate Sherpa and Stop Collect
+
+   # Sleep 15 mn in case of GP overlap
+   Traced Sleep  ${pm_reporting_period}
+
+   # Retrieve counters and compare with a reference
+   ${status}             Run Keyword If        '${check_counters}' == 'True'       Verify PM Values With Margin     5GC002511_AB_10
+
+   [Teardown]            Test Teardown for 2511
+
+
+[1][1.0] 5GC002511_AB_11_FR1_FDD_ CSI Reporting for multiple UEs following a UE release_pool2
+
+   [Documentation]                 Automation for 2511-AB TC_11
+   ...                             csiPeriod = slots20, threshold = 25 %
+   ...                             UE1..4 are supposed to be configured for slots20 CSI report period
+   ...                             UE5 is supposed to be configured for slots160 CSI report period (above threshold)
+   ...                             UE5 is released and UE6 is attached => should be configure for slots160 CSI report period
+
+   # Expected CSI list in the order of UE attachments (from 1 to 5)
+   # UE1          UE2         UE3      UE4         UE5
+   @{expected_csi_period}          Create List           slots20    slots20    slots20    slots20    slots160    slots160
+
+   Set CSI Configuration           feature_activated=true
+   ...                             csi_report_period=slots20
+   ...                             threshold=25Percent
+   ...                             default_mcs=16
+   ...                             prach_ci=12
+   ...                             techno=fdd
+
+   # Previous SCF configuration lead to a gNB restart, but only gNB side.
+   # So, wait until gNB is ready and restart TL again for AP part.
+   WA Airscale Wait For Ready      ${GNB_DU}
+   Restart TL
+
+   # Configure WTS wih 10 UEs ( > max number of UEs used for 2511) and perform cellsetup.
+   WTS Setup                      nbUe=10
+   # Start Sherpa capture if requested
+   Run Keyword If                ${enable_sherpa}==${True}               Sherpa.Activate Sherpa
+
+   &{MY_UE}=                     Copy Dictionary          ${UE_SIMPLE}
+
+   ${CaptureX2}                  Capture CORE Set Upon Config            airscale=${GNB_DU}
+   ${CaptureX2.filter}           Get Filter For SCTP
+   Capture Init                  ${CaptureX2}            withTN=True
+   # Start capture on core side to get all RRC Reconfiguration messages
+   Capture Start                 ${CaptureX2}
+
+   ${nb_ue}                      Set Variable              6
+   FOR        ${ue_id}      IN RANGE        1        ${nb_ue}
+        Set To Dictionary               ${MY_UE}      ue       ${ue_id}
+        Log To Console                  ${MY_UE}
+        SgNB Addition to ENB            ueSetting=${MY_UE}
+   END
+
+   # Delete last UE with CSI period slots160
+   &{UE_to_delete}=              Copy Dictionary          ${UE_SIMPLE}
+   Set To Dictionary             ${UE_to_delete}      ue       5
+   Log To Console                Releasing 5th UE
+   UE Detach for 2511            ${UE_to_delete}
+
+   # Attach another UE with CSI period slots160
+   &{UE_to_add}=                 Copy Dictionary          ${UE_SIMPLE}
+   Set To Dictionary             ${UE_to_add}         ue       5
+   Log To Console                Adding 6th UE
+   SgNB Addition to ENB          ueSetting=${UE_to_add}
+
+   # Stop capture on core side
+   Capture Stop                   ${CaptureX2}
+
+   # Check CSI load periodicity inside RRC reconfiguration messages
+   ${pdmlFile}=                    analyzer.pcap_to_pdml          ${CaptureX2.path}
+
+   @{msg_field}                    Create List        nr-rrc.reportSlotConfig
+
+   # Extract CSI report period from pdml
+   @{listPacketMatch}              PacketSearch.Get Packet Match List
+   ...                             pdmlFile=${pdmlFile}
+   ...                             packetName=SgNBAdditionRequestAcknowledge
+   ...                             pathList=@{msg_field}
+
+   # Loop on each selected packet and check CSI period is the same as the one expected
+   # Packet list is supposed to be ordered in the same way as in @{expected_csi_period}
+   ${i}                            Set Variable          0
+   FOR    ${packet}               IN      @{listPacketMatch}
+           ${csi_period}           Get Value In Packet Match   ${packet}       field=reportSlotConfig
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          CSI period read value: ${csi_period}
+           ${expected_value}       Get From List   ${expected_csi_period}     ${i}
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          Expected value: ${expected_value}
+           ${raw_value}            Get From Dictionary     ${csi_report_period_converter}     ${expected_value}
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          Expected raw value: ${raw_value}
+           Log To Console          CSI report value inside RRC: ${csi_period}, expected value: ${raw_value}
+           Should Be True          '${csi_period}' == '${raw_value}'
+           ${i}                    Evaluate     ${i} + 1
+   END
+
+   # Perform 1 Mbps traffic for each UE
+   ${ue_list}                     Create List
+   # For UE1..5
+   FOR        ${ue_id}      IN RANGE        1        6
+           &{current_UE}=                  Copy Dictionary          ${UE_SIMPLE}
+           Set To Dictionary               ${current_UE}      ue       ${ue_id}
+           Append To List                  ${ue_list}    ${current_UE}
+   END
+   Log To Console          Starting UL and DL traffic for: ${ue_list}
+   # 2 mn 1 Mbps DL trafic
+   Traffic UEs DL          ueSettingList=${ue_list}     throughput=1      duration=2 minutes      deviation=10
+   # 2 mn 1 Mbps UL trafic
+   Traffic UEs UL          ueSettingList=${ue_list}     throughput=1      duration=2 minutes      deviation=10
+
+   # Stop Sherpa capture if it was requested
+   Run Keyword If                ${enable_sherpa}==${True}               Sherpa.Deactivate Sherpa and Stop Collect
+
+   # Sleep 15 mn in case of GP overlap
+   Traced Sleep  ${pm_reporting_period}
+
+   # Retrieve counters and compare with a reference
+   ${status}             Run Keyword If        '${check_counters}' == 'True'       Verify PM Values With Margin     5GC002511_AB_11
+
+   [Teardown]            Test Teardown for 2511
+
+
+[1][1.0] 5GC002511_AB_12_FR1_FDD_Endurance test
+
+   [Documentation]                Automation for 2511-AB TC_12
+   ...                            csiPeriod = slots20, threshold = 25 %
+   ...                            Endurance test:
+   ...                            Attach UE1..5 (slots20, slots20, slots20, slots20, slots160)
+   ...                            Wait for 15 mn => M55115C00501 = 1
+   ...                            Repeat 10 times:
+   ...                                 Detach UE2
+   ...                                 Attach UE2
+   ...                                 Detach UE1
+   ...                                 Attach UE1
+   ...                                 Detach UE5
+   ...                                 Attach UE5 => M55115C00501 = M55115C00501 + 1
+   ...                            Wait for 15 mn => M55115C00501 = 10 + 1 (over all GPs)
+   ...                            Send UL/DL traffic for UE1..5
+   ...                            Detach UE1..5
+   ...                            Wait for 15 mn => M55115C00501 = 10 + 1 (over all GPs)
+
+
+   # Expected CSI list in the order of UE attachments
+   @{expected_csi_period_step1}          Create List           slots20    slots20    slots20    slots20    slots160
+
+   @{expected_csi_period_step2}          Create List           slots20    slots20    slots160
+   ...                                                         slots20    slots20    slots160
+   ...                                                         slots20    slots20    slots160
+   ...                                                         slots20    slots20    slots160
+   ...                                                         slots20    slots20    slots160
+   ...                                                         slots20    slots20    slots160
+   ...                                                         slots20    slots20    slots160
+   ...                                                         slots20    slots20    slots160
+   ...                                                         slots20    slots20    slots160
+   ...                                                         slots20    slots20    slots160
+
+   Set CSI Configuration           feature_activated=true
+   ...                             csi_report_period=slots20
+   ...                             threshold=25Percent
+   ...                             default_mcs=16
+   ...                             prach_ci=12
+   ...                             techno=fdd
+
+   # Previous SCF configuration lead to a gNB restart, but only gNB side.
+   # So, wait until gNB is ready and restart TL again for AP part.
+   WA Airscale Wait For Ready      ${GNB_DU}
+   Restart TL
+
+   # Configure WTS wih 10 UEs ( > max number of UEs used for 2511) and perform cellsetup.
+   WTS Setup                      nbUe=10
+   # Start Sherpa capture if requested
+   Run Keyword If                ${enable_sherpa}==${True}               Sherpa.Activate Sherpa
+
+   &{MY_UE}=                     Copy Dictionary          ${UE_SIMPLE}
+
+   ${CaptureX2}                  Capture CORE Set Upon Config            airscale=${GNB_DU}
+   ${CaptureX2.filter}           Get Filter For SCTP
+   Capture Init                  ${CaptureX2}            withTN=True
+   # Start capture on core side to get all RRC Reconfiguration messages
+   Capture Start                 ${CaptureX2}
+
+   #######################
+   # Step 1
+   #######################
+   FOR        ${ue_id}      IN RANGE        1        6
+        Set To Dictionary               ${MY_UE}      ue       ${ue_id}
+        Log To Console                  ${MY_UE}
+        SgNB Addition to ENB            ueSetting=${MY_UE}
+   END
+
+   # Stop capture on core side
+   Capture Stop                   ${CaptureX2}
+
+   # Check CSI load periodicity inside RRC reconfiguration messages
+   ${pdmlFile}=                    analyzer.pcap_to_pdml          ${CaptureX2.path}
+
+   @{msg_field}                    Create List        nr-rrc.reportSlotConfig
+
+   # Extract CSI report period from pdml
+   @{listPacketMatch}              PacketSearch.Get Packet Match List
+   ...                             pdmlFile=${pdmlFile}
+   ...                             packetName=SgNBAdditionRequestAcknowledge
+   ...                             pathList=@{msg_field}
+
+   # Loop on each selected packet and check CSI period is the same as the one expected
+   # Packet list is supposed to be ordered in the same way as in @{expected_csi_period}
+   ${i}                            Set Variable          0
+   FOR    ${packet}               IN      @{listPacketMatch}
+           ${csi_period}           Get Value In Packet Match   ${packet}       field=reportSlotConfig
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          CSI period read value: ${csi_period}
+           ${expected_value}       Get From List   ${expected_csi_period_step1}     ${i}
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          Expected value: ${expected_value}
+           ${raw_value}            Get From Dictionary     ${csi_report_period_converter}     ${expected_value}
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          Expected raw value: ${raw_value}
+           Log To Console          CSI report value inside RRC: ${csi_period}, expected value: ${raw_value}
+           Should Be True          '${csi_period}' == '${raw_value}'
+           ${i}                    Evaluate     ${i} + 1
+   END
+
+   # Stop Sherpa capture if it was requested
+   Run Keyword If                ${enable_sherpa}==${True}               Sherpa.Deactivate Sherpa and Stop Collect
+
+   Traced Sleep                    ${pm_reporting_period}
+
+   # Retrieve counters and compare with a reference
+   ${status}             Run Keyword If        '${check_counters}' == 'True'       Verify PM Values With Margin     5GC002511_AB_12_STEP1
+
+   #######################
+   # Step 2
+   #######################
+   # Start capture on core side to get all RRC Reconfiguration messages
+   Capture Start                 ${CaptureX2}
+
+   # Start Sherpa capture if requested
+   Run Keyword If                ${enable_sherpa}==${True}               Sherpa.Activate Sherpa
+
+   &{Current_UE}=                     Copy Dictionary          ${UE_SIMPLE}
+   FOR        ${n}      IN RANGE        1        11
+        Log To Console                Performing loop ${n}
+        Log To Console                Release UE2 -->
+        Set To Dictionary             ${Current_UE}      ue       2
+        UE Detach for 2511            ${Current_UE}
+        Sleep            10s
+        Log To Console                --> Attach UE2
+        Set To Dictionary             ${Current_UE}      ue       2
+        SgNB Addition to ENB          ueSetting=${Current_UE}
+    
+        Log To Console                Release UE1 -->
+        Set To Dictionary             ${Current_UE}      ue       1
+        UE Detach for 2511            ${Current_UE}
+        Sleep            10s
+        Log To Console                --> Attach UE1
+        Set To Dictionary             ${Current_UE}      ue       1
+        SgNB Addition to ENB          ueSetting=${Current_UE}
+    
+        Log To Console                Release UE4 -->
+        Set To Dictionary             ${Current_UE}      ue       5
+        UE Detach for 2511            ${Current_UE}
+        Sleep            10s
+        Log To Console                --> Attach UE4
+        Set To Dictionary             ${Current_UE}      ue       5
+        SgNB Addition to ENB          ueSetting=${Current_UE}
+   END
+
+   # Stop capture on core side
+   Capture Stop                   ${CaptureX2}
+
+   # Stop Sherpa capture if it was requested
+   Run Keyword If                ${enable_sherpa}==${True}               Sherpa.Deactivate Sherpa and Stop Collect
+
+   # Check CSI load periodicity inside RRC reconfiguration messages
+   ${pdmlFile}=                    analyzer.pcap_to_pdml          ${CaptureX2.path}
+
+   @{msg_field}                    Create List        nr-rrc.reportSlotConfig
+
+   # Extract CSI report period from pdml
+   @{listPacketMatch}              PacketSearch.Get Packet Match List
+   ...                             pdmlFile=${pdmlFile}
+   ...                             packetName=SgNBAdditionRequestAcknowledge
+   ...                             pathList=@{msg_field}
+
+   # Loop on each selected packet and check CSI period is the same as the one expected
+   # Packet list is supposed to be ordered in the same way as in @{expected_csi_period}
+   ${i}                            Set Variable          0
+   FOR    ${packet}               IN      @{listPacketMatch}
+           ${csi_period}           Get Value In Packet Match   ${packet}       field=reportSlotConfig
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          CSI period read value: ${csi_period}
+           ${expected_value}       Get From List   ${expected_csi_period_step2}     ${i}
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          Expected value: ${expected_value}
+           ${raw_value}            Get From Dictionary     ${csi_report_period_converter}     ${expected_value}
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          Expected raw value: ${raw_value}
+           Log To Console          CSI report value inside RRC: ${csi_period}, expected value: ${raw_value}
+           Should Be True          '${csi_period}' == '${raw_value}'
+           ${i}                    Evaluate     ${i} + 1
+   END
+   Traced Sleep                    ${pm_reporting_period}
+
+   # Retrieve counters and compare with a reference
+   ${status}             Run Keyword If        '${check_counters}' == 'True'       Verify PM Values With Margin     5GC002511_AB_12_STEP2
+
+   #######################
+   # Step 3
+   #######################
+
+   # Start Sherpa capture if requested
+   Run Keyword If                ${enable_sherpa}==${True}               Sherpa.Activate Sherpa
+
+   # Perform 1 Mbps traffic for each UE
+   ${ue_list}                     Create List
+   # For UE1..3
+   FOR        ${ue_id}      IN RANGE        1        6
+           &{current_UE}=                  Copy Dictionary          ${UE_SIMPLE}
+           Set To Dictionary               ${current_UE}      ue       ${ue_id}
+           Append To List                  ${ue_list}    ${current_UE}
+   END
+   Log To Console          Starting UL and DL traffic for: ${ue_list}
+   # 2 mn 1 Mbps DL trafic
+   Traffic UEs DL          ueSettingList=${ue_list}     throughput=1      duration=2 minutes      deviation=10
+   # 2 mn 1 Mbps UL trafic
+   Traffic UEs UL          ueSettingList=${ue_list}     throughput=1      duration=2 minutes      deviation=10
+
+   # Now detach UEs
+   &{Ue_to_be_deleted}=                  Copy Dictionary          ${UE_SIMPLE}
+   Set To Dictionary                     ${current_UE}      ue     1
+   UE Detach for 2511            ${Current_UE}
+   Sleep                         5s
+   Set To Dictionary                     ${current_UE}      ue     2
+   UE Detach for 2511            ${Current_UE}
+   Sleep                         5s
+   Set To Dictionary                     ${current_UE}      ue     3
+   UE Detach for 2511            ${Current_UE}
+   Sleep                         5s
+   Set To Dictionary                     ${current_UE}      ue     4
+   UE Detach for 2511            ${Current_UE}
+   Sleep                         5s
+   Set To Dictionary                     ${current_UE}      ue     5
+   UE Detach for 2511            ${Current_UE}
+
+   # Stop Sherpa capture if it was requested
+   Run Keyword If                ${enable_sherpa}==${True}               Sherpa.Deactivate Sherpa and Stop Collect
+
+   # Sleep 15 mn in case of GP overlap
+   Traced Sleep  ${pm_reporting_period}
+
+   # Retrieve counters and compare with a reference
+   ${status}             Run Keyword If        '${check_counters}' == 'True'       Verify PM Values With Margin     5GC002511_AB_12_STEP3
+
+   [Teardown]            Test Teardown for 2511
+
+
+[1][1.0] 5GC002511_AB_13_FR1_FDD_One UE performing multiple attachs detachs
+
+   [Documentation]                 Automation for 2511-AB TC_13
+   ...                             csiPeriod = slots20
+   ...                             UE1 is supposed to be configured for slots20 CSI report period
+   ...                             UE1 is attached and released Call_Num_Test_13 times
+   ...                             PM counter M55115C00501 is supposed to remain set to 0
+   ...                             M55115C00501 = Number of Users configured with the maximum supported csi periodicity
+
+   # Number of calls to be performed with the UE in test
+   Set Test Variable         ${Call_Num_Test_13}         10
+
+   # Expected CSI list in the order of UE attachments (from 1 to 10)
+   # Build expected_csi_period
+   @{expected_csi_period}    Create List
+   FOR        ${ue_id}      IN RANGE        1        ${Call_Num_Test_13} + 1
+       Append To List    ${expected_csi_period}    slots20
+   END
+
+   Set CSI Configuration           feature_activated=true
+   ...                             csi_report_period=slots20
+   ...                             threshold=25Percent
+   ...                             default_mcs=16
+   ...                             prach_ci=12
+   ...                             techno=fdd
+
+   # Previous SCF configuration lead to a gNB restart, but only gNB side.
+   # So, wait until gNB is ready and restart TL again for AP part.
+   WA Airscale Wait For Ready      ${GNB_DU}
+   Restart TL
+
+   # Configure WTS wih 1 UE and perform cellsetup
+   WTS Setup                      nbUe=1
+   # Start Sherpa capture if requested
+   Run Keyword If                ${enable_sherpa}==${True}               Sherpa.Activate Sherpa
+
+   ${CaptureX2}                  Capture CORE Set Upon Config            airscale=${GNB_DU}
+   ${CaptureX2.filter}           Get Filter For SCTP
+   Capture Init                  ${CaptureX2}            withTN=True
+   # Start capture on core side to get all RRC Reconfiguration messages
+   Capture Start                 ${CaptureX2}
+
+   &{MY_UE}=                     Copy Dictionary          ${UE_SIMPLE}
+
+   FOR        ${call_attempt_num}      IN RANGE        1        ${Call_Num_Test_13}
+        Log To Console                  Performing SgNB addition : ${call_attempt_num}
+        SgNB Addition to ENB            ueSetting=${MY_UE}
+        Traced Sleep                    2s   
+        Log To Console                  Releasing call : ${call_attempt_num}
+        UE Detach for 2511              ${MY_UE}
+   END
+   # Perform last SgNB Addition
+   Log To Console                  Performing last SgNB addition
+   SgNB Addition to ENB            ueSetting=${MY_UE}
+
+   # Stop capture on core side
+   Capture Stop                   ${CaptureX2}
+
+   # Check CSI load periodicity inside RRC reconfiguration messages
+   ${pdmlFile}=                    analyzer.pcap_to_pdml          ${CaptureX2.path}
+
+   @{msg_field}                    Create List        nr-rrc.reportSlotConfig
+
+   # Extract CSI report period from pdml
+   @{listPacketMatch}              PacketSearch.Get Packet Match List
+   ...                             pdmlFile=${pdmlFile}
+   ...                             packetName=SgNBAdditionRequestAcknowledge
+   ...                             pathList=@{msg_field}
+
+   # Loop on each selected packet and check CSI period is the same as the one expected
+   # Packet list is supposed to be ordered in the same way as in @{expected_csi_period}
+   ${i}                            Set Variable          0
+   FOR    ${packet}               IN      @{listPacketMatch}
+           ${csi_period}           Get Value In Packet Match   ${packet}       field=reportSlotConfig
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          CSI period read value: ${csi_period}
+           ${expected_value}       Get From List   ${expected_csi_period}     ${i}
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          Expected value: ${expected_value}
+           ${raw_value}            Get From Dictionary     ${csi_report_period_converter}     ${expected_value}
+           Run Keyword If          '${debug_2511}'=='True'     Log To Console          Expected raw value: ${raw_value}
+           Log To Console          CSI report value inside RRC: ${csi_period}, expected value: ${raw_value}
+           Should Be True          '${csi_period}' == '${raw_value}'
+           ${i}                    Evaluate     ${i} + 1
+   END
+
+   # Perform 1 Mbps traffic
+   @{ue_list}              Create List
+   &{current_UE}=          Copy Dictionary          ${UE_SIMPLE}
+   Append To List          ${ue_list}               ${current_UE}
+   Log To Console          Starting UL and DL traffic for: ${UE_SIMPLE}
+   # 2 mn 1 Mbps DL trafic
+   Traffic UEs DL          ueSettingList=${ue_list}     throughput=1      duration=2 minutes      deviation=10
+   # 2 mn 1 Mbps UL trafic
+   Traffic UEs UL          ueSettingList=${ue_list}     throughput=1      duration=2 minutes      deviation=10
+
+   # Stop Sherpa capture if it was requested
+   Run Keyword If                ${enable_sherpa}==${True}               Sherpa.Deactivate Sherpa and Stop Collect
+
+   # Sleep 15 mn in case of GP overlap
+   Traced Sleep  ${pm_reporting_period}
+
+   # Retrieve counters and compare with a reference
+   ${status}             Run Keyword If        '${check_counters}' == 'True'       Verify PM Values With Margin     5GC002511_AB_13
+
+   [Teardown]            Test Teardown for 2511
+
+

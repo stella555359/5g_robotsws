@@ -1,0 +1,61 @@
+*** Settings ***
+Documentation
+...  Author: slawomir.jastrzebski@nokia.com
+...  Maintainer: slawomir.jastrzebski@nokia.com
+
+Library    BuiltIn
+
+Resource    ../../resources/Robot/setup_teardown.robot
+Resource    ../../TestCases/SM/Cloud_SM_Cell_Block_Unblock.robot
+Resource    ../../TestCases/SM/Cloud_SM_Radio_Modules_Lock_Unlock.robot
+Resource    ../../TestCases/SM/Cloud_SM_RF_Reset_From_GUI.robot
+Resource    ../../TestCases/SM/Cloud_SM_Radio_Modules_Reset.robot
+Resource    ../../TestCases/REC/Cloud_REC_Radio_Modules_Hot_Remove_Hot_Insert.robot
+Resource    ../../TestCases/STARTUP/Cloud_STARTUP_Radio_Modules_Power_Reset.robot
+Resource    ../../TestCases/STARTUP/Cloud_STARTUP_Rannic_Reset.robot
+Resource    ../../TestCases/STARTUP/Cloud_STARTUP_vDU_Reset.robot
+Resource    ../../TestCases/STARTUP/Cloud_STARTUP_vCU_Reset.robot
+Resource    ../../TestCases/CM/Cloud_CM_vDU_Commissioning.robot
+Resource    ../../TestCases/CM/Cloud_CM_vDU_Delta_Recommissioning.robot
+Resource    ../../TestCases/CALL/Cloud_CALL_NR_Data_Transfer.robot
+Resource     ../../TestCases/PM/Cloud_PM_Activation_Deactivation_Of_Energy_Consumption_Measurement.robot
+Resource     ../../TestCases/PM/Cloud_PM_Cell_Availability_Monitoring_With_Energy_Efficiency_Enhancement.robot
+Resource    ../../TestCases/PM/Cloud_PM_MicroDTX_Activation_Verification.robot
+Resource    ../../TestCases/PM/Cloud_PM_PIM_Alarms_Triggering.robot
+Resource    ../../TestCases/PM/Cloud_PM_PIMC_Counters.robot
+Resource    ../../TestCases/PM/Cloud_PM_Radio_Module_Fan_Speed_Counters_Monitoring.robot
+Resource    ../../TestCases/PM/Cloud_PM_Radio_Module_Thermal_Counters_Monitoring.robot
+Resource    ../../TestCases/PM/Cloud_PM_Radio_Module_Thermal_Counters_Monitoring_And_Alarm_Triggering.robot
+Resource    ../../TestCases/PM/Cloud_PM_Enable_Disable_Energy_Optimized_Mode.robot
+Resource    ../../TestCases/REC/Cloud_REC_RU_Entering_Deep_Sleep_Mode_And_Power_Reset_Recovery_Action.robot
+Resource    ../../TestCases/REC/Cloud_REC_RU_Entering_Deep_Sleep_Mode_And_Returning_By_One_Cell_Unblock.robot
+Resource    ../../TestCases/REC/Cloud_REC_Sync_Source_Switch_Over_From_Primary_To_Secondary.robot
+Resource    ../../TestCases/TEST/Cloud_TEST_Online_RF_Scanning.robot
+Resource    ../../TestCases/TEST/Cloud_TEST_TDS_RF_Scanning.robot
+Resource    ../../TestCases/TEST/Cloud_TEST_Start_Stop_NR_TestModels.robot
+
+Suite Setup       AiC Suite Setup
+Suite Teardown    AiC Suite Teardown  get_logs=${False}
+
+*** Variables ***
+${VDU_SCF_PATH}=             ${CURDIR}/SCF/SCFC_vDU.xml
+${VCU_SCF_PATH}=             ${CURDIR}/SCF/SCFC_vCU.xml
+${DELTA_FILE_PATH}=          ${CURDIR}/SCF/SCFC_vDU_delta.json
+
+#${RMOD_SN}=        LR231902254
+#@{RMOD_SN_LIST}=  SELECT  LR231902254  1M190413180
+@{RMOD_SN_LIST}=  SELECT  LR231902254
+
+
+*** Test Cases ***
+#[1][1.0] Automated_AIC_vDU_commissioning
+#    [Setup]  AiC Test Setup
+#    TC__Cloud_CM_vDU_Commissioning
+#    ...  scfc_file_path=${VDU_SCF_PATH}
+#    [Teardown]  AiC Test Teardown
+
+[1][1.0] Automated_AIC_vDU_Reset
+    [Setup]  AiC Test Setup
+    TC__Cloud_STARTUP_vDU_Reset
+    ...  vdu_scfc_file_path=${VDU_SCF_PATH}
+#    [Teardown]  AiC Test Teardown

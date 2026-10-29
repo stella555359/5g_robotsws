@@ -1,0 +1,195 @@
+*** Settings ***
+Documentation    :copyright: Nokia
+...              :authors: Alexandru Tancau, Denisa Gogu
+...              :contact: alexandru.tancau@nokia.com, denisa.gogu@nokia.com
+
+Library     taf.sw.scout                               WITH NAME    scout
+Library     taf.sw.reporting_portal                    WITH NAME    reporting_portal
+
+Resource    ../../../resources/SWENG/robot/Setup.robot
+
+Resource    ../resources_TIMI/scripts/libraries_instances.robot
+
+*** Variables ***
+${custom-scf}
+...    ${CURDIR}/../resources_TIMI/custom-config/2_CELLS_SANSA_FDD_DSS/gNB_scf_ASIL_ABIO_FDD_CPRI_cmwv_SANSA_FS_2CC_DSSph2_10MHz.xml
+${custom-iphy}
+...    ${CURDIR}/../resources_TIMI/custom-config/2_CELLS_SANSA_FDD_DSS/AP_iphy_AHLOA_ASIL_ABIO_FDD_CPRI_cmwv_SANSA_FS_2CC_DSSph2_10MHz.xml
+${WTS_DIR}               /opt/iphy/latest
+${FIX_SUBFRAMES}         1000010001-1000010001-1000010001-1000010001-1000010001-1000010001-1000010001-1000010001
+${ALLOC_SUBFRAME_10M}    0010000010-0111001110-0011001110-0111000110-0011001010-0111001000-0010000000-0110000110
+*** Keywords ***
+
+Reach Onair DSS Configuration
+    Start UTE WTS FOR DSS
+    Load Cfg File   ${CURDIR}/config/egate_2c_fdd_sansa_dss_10M.cfg
+    Setup X2 Link   initiator_device=2  complementary_device=1
+    Setup XP LINK
+    Setup DSS   1  ${ALLOC_SUBFRAME_10M}    1,50    30    70    30    70
+    Perform Parameter Commissioning    parameter=lteNrDssMode    value=DL_CRS_TDM_UL_FDM    dist_name=MRBTS-1/NRBTS-1/NRCELL-2
+    Setup DSS   2  ${ALLOC_SUBFRAME_10M}    1,50    30    70    30    70
+
+Load Cfg File
+    [Arguments]    ${cfg_file}
+    Log To Console    ${cfg_file}
+    Execute Egate Command    cfg file\=${cfg_file}    pass_regexp=NG link is Up    timeout=360
+
+Setup DSS
+    [Arguments]    ${cellid}   ${nor_subframe}    ${prb_list}    ${min_dss_ratio}    ${max_dss_ratio}    ${min_prb_ratio}=30    ${max_prb_ratio}=70
+    Set LTE NR DSS Mode   ${cellid}
+    Setup DSS Link  ${cellid}
+    Set DL RESOURCE Cell Reservation    ${min_dss_ratio}    ${max_dss_ratio}    ${cellid}
+    Cell Resource Coordination   ${cellid}
+    UL Resource Cell Reservation    ${min_prb_ratio}    ${max_prb_ratio}    ${cellid}
+    Cell Allocation    ${nor_subframe}    ${prb_list}    ${cellid}
+
+Start UTE WTS FOR DSS
+    [Documentation]    This keyword is to start edaemon, egate and clean log files.
+    Log To Console    Starting WTS...
+    Setup Edaemon    edaemon_port=22222    tool_dir=${WTS_DIR}    alias=edaemon
+    Start Edaemon Process    alias=edaemon
+    Setup Egate    egate_port=20000    tool_dir=${WTS_DIR}
+    Start Egate Process
+    OperatingSystem.Run    sudo rm -rf ${WTS_DIR}/*.log*
+
+Setup XP LINK
+    [Documentation]    This keyword is for setting XP Link.
+    Log To Console   \nSetup XP Link...\n
+    ${pattern}    Set Variable    ENB-2: XpAP Link with GNB-1 .* is up
+    Execute Egate Command    sim_trace enb\=2 protocol\=xp on
+    Sleep    1s    reason=make sure the cmd take affect
+    Execute Egate Command    enb_xp_param id\=2 xp_peers\=none
+    Sleep    1s    reason=make sure the cmd take affect
+    Execute Egate Command    enb_xp_param id\=2 xp_peers\=1
+    ${output}    Execute Egate Command And Wait For Data    enb_xp_link_up enb\=2 target\=1
+    ...    pass_regexp=${pattern}    timeout=5min
+    ${output}    String.Get Lines Matching Regexp    ${output}    ${pattern}    partial_match=True
+    Log To Console    \n${output}
+
+Set LTE NR DSS Mode
+    [Arguments]     ${cellid}
+    [Documentation]    This keyword is for setting LTE NR DSS MODE.
+    Log To Console   \nSet LTE NR DSS Mode...\n
+    Execute Egate Command    enb_cell_param id\=${cellid} enb\=2 lte_nr_dss_mode\=DL_CRS_TDM_UL_FDM antenna_ports_num\=2
+
+Setup DSS Link
+    [Arguments]     ${cellid}
+    [Documentation]    This keyword is for setupping DSS Link.
+    Log To Console   \nSetup DSS Link...\n
+    ${pattern}    Set Variable    EN DSS UL Cell Subcarrier Resource Coordination success on remote NE
+    Execute Egate Command    dss_enb_param id\=2 feature_flag\=on message_sets\=V1,DMS2
+    Sleep    1s    reason=make sure the cmd take affect
+    Execute Egate Command    enb_configure_dss_partnership enb\=2 cell\=${cellid} dss_peer\=1:${cellid}
+    Sleep    1s    reason=make sure the cmd take affect
+    ${output}    Execute Egate Command And Wait For Data    establish_enb_dss_partnership enb\=2 cell\=${cellid} tgt_enb\=1 tgt_cell\=${cellid}
+    ...    pass_regexp=${pattern}    timeout=5min
+    ${output}    String.Get Lines Matching Regexp    ${output}    ${pattern}    partial_match=True
+    Log To Console    \n${output}
+
+Set DL RESOURCE Cell Reservation
+    [Arguments]    ${min_dss_ratio}    ${max_dss_ratio}    ${cellid}
+    [Documentation]    This keyword is used to set DL resource cell reservation.
+    ...    | Input Parameters | Man. | Description |
+    ...    | min_dss_ratio | Yes | The minimum value of DSS share ratio |
+    ...    | max_dss_ratio | Yes | The maximum value of DSS share ratio |
+    ...    Example:
+    ...    | Set DL RESOURCE Cell Reservation | 15 | 70 |
+    Reset DL Reservation    ${cellid}
+    Sleep    2s    reason=make sure the cmd take affect
+    Reset UL Reservation    ${cellid}
+    Sleep    2s    reason=make sure the cmd take affect
+    DL Resource cell Reservation    ${FIX_SUBFRAMES}  ${min_dss_ratio}  ${max_dss_ratio}   ${cellid}
+
+Reset DL Reservation
+    [Arguments]     ${cellid}
+    [Documentation]    This keyword is used to reset DL reservation.
+    Log To Console    start set dl resource cell reservation...
+    ${command}    Set Variable    enb_dss_cell_resource_reservation_dl enb=2 cell=${cellid} reset
+    Execute Egate Command    ${command}
+
+Reset UL Reservation
+    [Arguments]     ${cellid}
+    [Documentation]    This keyword is used to reset UL reservation.
+    Log To Console    start set ul resource cell reservation...
+    ${command}    Set Variable    enb_dss_cell_resource_reservation_ul enb=2 cell=${cellid} reset
+    Execute Egate Command    ${command}
+
+DL Resource cell Reservation
+    [Arguments]  ${subframes}   ${min_dss_ratio}    ${max_dss_ratio}    ${cellid}
+    [Documentation]    This keyword is for dl resource cell Reservation.
+    ...    | Input Parameters | Man. | Description |
+    ...    | subframes | Yes | Fixed normal subframes |
+    ...    | min_dss_ratio | Yes | The minimum value of DSS share ratio |
+    ...    | max_dss_ratio | Yes | The maximum value of DSS share ratio |
+    ...    Example:
+    ...    | DL Resource cell Reservation | 1000010001-1000010001-1000010001-1000010001-1000010001-1000010001-1000010001-1000010001 | 15 | 70|
+    Execute Egate Command
+    ...    cmd=enb_dss_dl_resource_cell_reservation cell=${cellid} enb=2 reserved_fixed_normal_subframes=${subframes}
+    Sleep    5s    reason=make sure the cmd take affect
+    Execute Egate Command
+    ...    cmd=enb_dss_dl_resource_cell_reservation cell=${cellid} enb=2 min_lte_nr_dss_ratio=${min_dss_ratio} max_lte_nr_dss_ratio=${max_dss_ratio}
+    Sleep    5s    reason=make sure the cmd take affect
+
+UL Resource cell Reservation
+    [Arguments]    ${min_prb_ratio}    ${max_prb_ratio}     ${cellid}
+    [Documentation]    This keyword is for ul resource cell Reservation.
+    ...    | Input Parameters | Man. | Description |
+    ...    | min_prb_ratio | Yes | The minimum value of PRB share ratio |
+    ...    | max_prb_ratio | Yes | The maximum value of PRB share ratio |
+    ...    Example:
+    ...    | enb_dss_ul_cell_resource_reservation  | 2 | 1 | 30 | 70 |
+    ${pattern}    Set Variable    EN DSS UL Cell Subcarrier Resource Coordination: both NEs synchronized
+    ${command}    Set Variable    enb_dss_cell_resource_coordination enb=2 cell=${cellid} tgt_enb=1 tgt_cell=${cellid} dir=UL
+    Execute Egate Command
+    ...    cmd=enb_dss_ul_cell_resource_reservation enb=2 cell=${cellid} minimum_prb_share=${min_prb_ratio} maximum_prb_share=${max_prb_ratio}
+    Sleep    5s    reason=make sure the cmd take affect
+    ${output}    Execute Egate Command And Wait For Data
+    ...    cmd=${command}    pass_regexp=${pattern}   timeout=3minutes
+    Sleep    5s    reason=make sure the cmd take affect
+    Execute Egate Command    cmd=enb_crm_status enb=2 cell=${cellid}
+
+Cell Resource Coordination
+    [Arguments]     ${cellid}
+    [Documentation]    This keyword is for cell resource coordination.
+    ${pattern}    Set Variable    EN DSS DL Cell Subframe Resource Coordination: both NEs synchronized
+    ${command}    Set Variable  enb_dss_cell_resource_coordination enb=2 cell=${cellid} tgt_enb=1 tgt_cell=${cellid} dir=DL
+    ${output}    Execute Egate Command And Wait For Data
+    ...    cmd=${command}    pass_regexp=${pattern}   timeout=3minutes
+    Log To Console    \n${output}
+
+Cell Allocation
+    [Arguments]    ${nor_subframe}  ${prb_list}     ${cellid}
+    [Documentation]    This keyword is used to allocate cell resource.
+    ...    | Input Parameters | Man. | Description |
+    ...    | nor_subframe | Yes | The dl allocated normal subframes |
+    ...    | prb_list | Yes | It shows the info of startprb and amount of prbs. e.g. 1,30 1:startprb  30:amount of prbs.|
+    ...    Example:
+    ...    | Cell Allocation | 0010000000-0000001000-0000000000-0000000000-0000000000-0000001000-0000000000-0000000000 | 1,30 |
+    ${command}    Catenate    enb_dss_resource_allocation enb=2 cell=${cellid} tgt_enb=1 tgt_cell=${cellid} dir=DL
+    ...    allocation_start_time=immediate dl_allocated_normal_subframes=${nor_subframe}
+    Execute Egate Command    ${command}
+    sleep    5s    reason=make sure the cmd take affect
+    ${command}    Catenate    enb_dss_resource_allocation enb=2 cell=${cellid} tgt_enb=1 tgt_cell=${cellid}
+    ...    dir=UL allocation_start_time=immediate ul_allocated_prb_list=${prb_list}
+    ${output}    Execute Egate Command And Wait For Data
+    ...    cmd=${command}    pass_regexp=SystemInformationBlockType4-NR updated   timeout=2minutes
+    ${output}    String.Get Lines Matching Regexp    ${output}    SystemInformationBlockType4-NR updated   partial_match=${true}
+    Log To Console    \n${output}
+
+Attach Ue To Enb And Start Gnb Addition
+    [Arguments]    ${ue_id}  ${target_cell}  ${target_gnb}
+    Attach Ue To Enb    ue_id=${ue_id}  optional_parameters=profile=1
+    Start Gnb Addition Procedure
+    ...    ue=${ue_id}
+    ...    target_cells=${target_cell}
+    ...    target_gnb=${target_gnb}
+    ...    bearer=2
+    ...    dc_type=split_scg
+    Start Data Traffic    ues=${ue_id}    bearer_id=2    direction=both    throughput=3mbps     traffic_period=60
+
+Attach noneDSS NSA UE
+    [Arguments]    ${ue_id}  ${target_cell}  ${target_gnb}
+    Attach Ue To Enb    ue_id=${ue_id}  optional_parameters=profile=1
+    ${command}  Catenate  ue_dc_enb_start ue=${ue_id} target_gnb=${target_gnb} target_cells=${target_cell} bearer=2 type=split_scg
+    ${output}   Execute Egate Command  ${command}
+    Should Not Contain   ${output}   Successfully reconfigured dual connectivity

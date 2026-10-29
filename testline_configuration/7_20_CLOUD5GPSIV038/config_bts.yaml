@@ -1,0 +1,1291 @@
+heat_template_version: 2016-10-14
+description: 'v77: RCP2.0 reference deployment "basic" or "redundant"'
+parameters:
+  image:
+    type: string
+    description: image name or UUID
+    constraints:
+    - custom_constraint: glance.image
+  ssh_public_key:
+    type: string
+    description: key pair publich ssh key
+  availability_zone:
+    type: string
+    description: availability zone to use
+    default: nova
+  vnf_name:
+    type: string
+    description: 5GBTS VNF name
+    default: 5gbts
+    constraints:
+      - allowed_pattern: "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+        description: "Invalid vnf_name format"
+      - length: {min: 4, max: 35}
+        description: "Invalid vnf_name length (should be [3,35])"
+  cluster_id:
+    description: Cluster identification.
+    type: number
+    constraints:
+      - range: {min: 1, max: 4095}
+  config_drive:
+    type: json
+    description: use config drive instead of metadata server
+    default:
+      basic: false
+      redundant: false
+  dns_forwarders:
+    type: comma_delimited_list
+    description: list of servers to forward queries to
+    default: []
+    constraints:
+    - length:
+        min: 0
+        max: 3
+  vnf_layout:
+    type: string
+    description: basic or redundant.
+    default: redundant
+    constraints:
+      - allowed_values: [basic, redundant]
+  flavors:
+    type: json
+    description: flavor to use
+    default:
+      db: 5gbts_db
+      sn: 5gbts_sn
+      uvm: 5gbts_uvm
+      oam: 5gbts_oam
+      cpue: 5gbts_cpue
+      upue: 5gbts_upue
+      cpif: 5gbts_cpif
+      cpnb: 5gbts_cpnb
+      cpcl: 5gbts_cpcl
+  ha_cluster:
+    type: json
+    description: HA nodes acting as etcd member instances and quorate voter
+    default:
+      basic:
+        disable: [oam-0]
+        enable: [oam-0]
+      redundant:
+        disable: [oam-0]
+        enable: [oam-0, oam-1, db-0]
+  ntp_servers:
+    type: comma_delimited_list
+    description: list of servers to sync time from
+    constraints:
+    - length:
+        min: 1
+        max: 3
+  number_of_upue_nodes:
+    type: number
+    description: number of application nodes to instantiate
+    default: 1
+    constraints:
+    - range:
+        min: 1
+        max: 36
+  number_of_cpue_nodes:
+    type: number
+    description: number of application nodes to instantiate
+    default: 1
+    constraints:
+    - range:
+        min: 1
+        max: 12
+  number_of_uvm_nodes:
+    type: number
+    description: number of upgrade nodes to instantiate
+    default: 0
+    constraints:
+    - range:
+        min: 0
+        max: 1
+  password:
+    type: json
+    description: password hash to use for RCP account
+  timezone:
+    type: string
+    description: symbolic time-zone region name
+    constraints:
+    - custom_constraint: timezone
+  uvm_image:
+    type: string
+    description: image name or UUID for upgrade node
+    constraints:
+    - custom_constraint: glance.image
+  vif_model:
+    type: string
+    description: interface driver to use for each interface type
+    default: auto
+    constraints:
+    - allowed_values:
+      - virtio
+      - avp
+      - auto
+  best_effort:
+    type: boolean
+    description: The best effort value of sever group
+    default: true
+  internal_provider_networks:
+    description: provider net name for internal networks
+    type: string
+  internal_subnets:
+    description: Internal network to attach to a interface node
+    type: json
+  internal_segment_ids:
+    description: Internal network segment ids
+    type: json
+    default:
+      internal: 0
+      internal_srv: 0
+  external_networks:
+    description: External network to attach to a interface node
+    type: json
+  user_info:
+    type: json
+    description: add user to client host
+    default: {}
+  extra_cloud_config_data:
+    type: json
+    default: {}
+  run_command:
+    type: comma_delimited_list
+    description: command only runs during first boot
+    default:
+      - echo run command
+  boot_command:
+    type: comma_delimited_list
+    description: command runs on every boot
+    default:
+      - cloud-init-per always echo echo boot command
+  oam_redundant:
+    type: string
+    default: disable
+    constraints:
+    - allowed_values:
+      - disable
+      - enable
+  config_external_ip:
+    type: string
+    description: configure external ip and roles if set enabled
+    default: disabled
+    constraints:
+      - allowed_values: [enabled, disabled]
+  ncir_version:
+    type: string
+    default: ncir17a
+    description: the ncir version string
+    constraints:
+    - allowed_values:
+      - ncir17a
+      - ncir18
+  vif_model_for_ncir:
+    type: json
+    hidden: true
+    default:
+      ncir17a:
+        avp
+      ncir18:
+        virtio
+
+conditions:
+  deploy_basic_condition: {equals : [{get_param: vnf_layout}, "basic"]}
+  # deploy_redundant_condition: {equals : [{get_param: vnf_layout}, "redundant"]}
+  deploy_redundant_condition:
+    and:
+    - {equals : [{get_param: vnf_layout}, "redundant"]}
+    - {equals: [{get_param: oam_redundant}, "enable"]}
+  deploy_redundant_without_oam_condition:
+    and:
+    - {equals : [{get_param: vnf_layout}, "redundant"]}
+    - {equals: [{get_param: oam_redundant}, "disable"]}
+  ncir17a: {equals : [{get_param: ncir_version}, "ncir17a"]}
+  ncir18: {equals : [{get_param: ncir_version}, "ncir18"]}
+
+resources:
+  keypair:
+    type: OS::Nova::KeyPair
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-generated
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      public_key: {get_param: ssh_public_key}
+
+  networks_parameters_check:
+    type: 5GBTS::Check::Networks
+    properties:
+      oam_ext_count:
+        yaql:
+          expression: $.data.distinct([$['uuid'], $['fixed_ips']]).len()
+          data:
+          - {get_param: [external_networks, oam]}
+          - {get_param: [external_networks, f1m]}
+
+  ext_networks:
+    type: 5GBTS::Networks::Transformation
+    depends_on: networks_parameters_check
+    properties:
+      networks: {get_param: external_networks}
+
+  network_setup_template:
+    type: OS::Heat::None
+    condition: false
+    properties:
+      common_properties: &network_properties
+        internal_subnets: {get_param: internal_subnets}
+        internal_segment_ids:  {get_param: internal_segment_ids}
+        external_networks: {get_attr: [ext_networks, networks]}
+        vif_model:
+          if:
+          - equals: [{get_param: vif_model}, auto]
+          - get_param: [vif_model_for_ncir, {get_param: ncir_version}]
+          - get_param: vif_model
+        name_prefix:
+          str_replace:
+            template: $vnf-$cid
+            params:
+              $vnf: {get_param: vnf_name}
+              $cid: {get_param: cluster_id}
+        provider_name: {get_param: internal_provider_networks}
+
+  network_setup_redundant:
+    type: RCP::Networks::Redundant
+    condition: deploy_redundant_condition
+    properties:
+      <<: *network_properties
+
+  network_setup_redundant_without_oam:
+    type: RCP::Networks::RedundantWithoutOam
+    condition: deploy_redundant_without_oam_condition
+    properties:
+      <<: *network_properties
+
+  network_setup_basic:
+    type: RCP::Networks::Basic
+    condition: deploy_basic_condition
+    properties:
+      <<: *network_properties
+
+  common_params:
+    type: RCP::Common::Parameters
+    properties:
+      vnf_name: {get_param: vnf_name}
+      cluster_id: {get_param: cluster_id}
+      time-zone: {get_param: timezone}
+      ha_cluster: {get_param: [ha_cluster, {get_param: vnf_layout}, {get_param: oam_redundant}]}
+      password: {get_param: password}
+      user_info: {get_param: user_info}
+      extra_cloud_config_data: {get_param: extra_cloud_config_data}
+      run_command: {get_param: run_command}
+      boot_command: {get_param: boot_command}
+      config_external_ip: {get_param: config_external_ip}
+
+  common_params_template:
+    type: OS::Heat::None
+    condition: false
+    properties:
+      common_params: &common_params
+        config_drive: {get_param: [config_drive, {get_param: vnf_layout}]}
+        common_userdata:
+          get_attr: [common_params, userdata]
+        common_metadata:
+          get_attr: [common_params, metadata]
+      number_of_nodes_redundant: &number_of_nodes_redundant
+        deployment:
+          number_of_cpcl: 2
+          number_of_cpue: {get_param: number_of_cpue_nodes}
+          number_of_upue: {get_param: number_of_upue_nodes}
+          min_number_of_cpcl: 2
+          min_number_of_cpue: 1
+          min_number_of_upue: 1
+          max_number_of_cpcl: 2
+          max_number_of_cpue: 12
+          max_number_of_upue: 36
+      number_of_nodes_basic: &number_of_nodes_basic
+        deployment:
+          number_of_cpcl: 1
+          number_of_cpue: {get_param: number_of_cpue_nodes}
+          number_of_upue: {get_param: number_of_upue_nodes}
+          min_number_of_cpcl: 1
+          min_number_of_cpue: 1
+          min_number_of_upue: 1
+          max_number_of_cpcl: 1
+          max_number_of_cpue: 12
+          max_number_of_upue: 36
+
+  oam_db_server_group_ncir17a:
+    type: OS::Nova::ServerGroup
+    condition: ncir17a
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-oam-db-server-group
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      policies: [anti-affinity]
+      best_effort: {get_param: best_effort}
+
+  oam_db_server_group_ncir18:
+    type: OS::Nova::ServerGroup
+    condition: ncir18
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-oam-db-server-group
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      policies:
+        if:
+        - {get_param: best_effort}
+        - [soft-anti-affinity]
+        - [anti-affinity]
+
+  basic_server_group_ncir17a:
+    type: OS::Nova::ServerGroup
+    condition: ncir17a
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-basic-server-group
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      policies: [anti-affinity]
+      best_effort: {get_param: best_effort}
+
+  basic_server_group_ncir18:
+    type: OS::Nova::ServerGroup
+    condition: ncir18
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-basic-server-group
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      policies:
+        if:
+        - {get_param: best_effort}
+        - [soft-anti-affinity]
+        - [anti-affinity]
+
+  cpue_server_group_ncir17a:
+    type: OS::Nova::ServerGroup
+    condition: ncir17a
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-cpue-server-group
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      policies: [anti-affinity]
+      best_effort: {get_param: best_effort}
+
+  cpue_server_group_ncir18:
+    type: OS::Nova::ServerGroup
+    condition: ncir18
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-cpue-server-group
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      policies:
+        if:
+        - {get_param: best_effort}
+        - [soft-anti-affinity]
+        - [anti-affinity]
+
+  upue_server_group_ncir17a:
+    type: OS::Nova::ServerGroup
+    condition: ncir17a
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-upue-server-group
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      policies: [anti-affinity]
+      best_effort: {get_param: best_effort}
+
+  upue_server_group_ncir18:
+    type: OS::Nova::ServerGroup
+    condition: ncir18
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-upue-server-group
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      policies:
+        if:
+        - {get_param: best_effort}
+        - [soft-anti-affinity]
+        - [anti-affinity]
+
+  storage_nodes:
+    type: RCP::Node::Storage
+    condition: deploy_redundant_condition
+    depends_on: network_setup_redundant
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: sn
+      ncir_version: {get_param: ncir_version}
+      instance_params:
+        server_0:
+          imageId: {get_param: image}
+          flavorId:
+            get_param: [flavors, sn]
+        server_1:
+          imageId: {get_param: image}
+          flavorId:
+            get_param: [flavors, sn]
+        server_2:
+          imageId: {get_param: image}
+          azId: {get_param: availability_zone}
+          flavorId:
+            get_param: [flavors, sn]
+      best_effort: {get_param: best_effort}
+      networks:
+        get_attr: [network_setup_redundant, networks, sn]
+      local_volumes:
+        name_prefix:
+          str_replace:
+            template: $vnf-$cid
+            params:
+              $vnf: {get_param: vnf_name}
+              $cid: {get_param: cluster_id}
+        count: 1
+        vol_list:
+        - {size: 1, name: storageconf, mount: /var/lib/glusterd}
+      gfs_volumes:
+        count: 4
+        vol_list:
+        - {size: 1, name: mstate, mount: /mnt/mstate}
+        - {size: 5, name: export, mount: /mnt/export}
+        - {size: 1, name: log, mount: /mnt/log}
+        - {size: 2, name: services, mount: /mnt/services}
+      <<: *common_params
+
+  oam_nodes_template:
+    type: OS::Heat::None
+    condition: false
+    properties:
+      instance_params: &oam_instance_params
+        imageId: {get_param: image}
+        azId: {get_param: availability_zone}
+        flavorId: {get_param: [flavors, oam]}
+      common_properties: &oam_properties
+        key_name: {get_resource: keypair}
+        ntp_servers: {get_param: ntp_servers}
+        dns_forwarders: {get_param: dns_forwarders}
+        local_volumes:
+          name_prefix:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          count: 2
+          vol_list:
+          - {size: 1, name: db, mount: /mnt/db}
+          - {size: 10, name: dbcm, mount: /mnt/dbcm}
+        config_drive: {get_param: [config_drive, {get_param: vnf_layout}]}
+        common_userdata:
+          get_attr: [common_params, userdata]
+
+  oam_nodes_redundant:
+    type: RCP::Node::OAM::Redundant
+    condition: deploy_redundant_condition
+    depends_on: storage_nodes
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: oam
+      instance_params:
+        server_0:
+          server_group_id:
+            if:
+              - ncir17a
+              - {get_resource: oam_db_server_group_ncir17a}
+              - {get_resource: oam_db_server_group_ncir18}
+          <<: *oam_instance_params
+        server_1:
+          server_group_id:
+            if:
+              - ncir17a
+              - {get_resource: oam_db_server_group_ncir17a}
+              - {get_resource: oam_db_server_group_ncir18}
+          <<: *oam_instance_params
+      networks:
+        get_attr: [network_setup_redundant, networks, oam]
+      storage_meta:
+        get_attr: [storage_nodes, volume_map]
+      storage_nodes:
+        get_attr: [storage_nodes, nodes]
+      service_ip_meta:
+        get_attr: [network_setup_redundant, service_ip_map]
+      common_metadata:
+        map_merge:
+        - get_attr: [common_params, metadata]
+        - <<: *number_of_nodes_redundant
+      <<: *oam_properties
+
+  oam_nodes_basic:
+    type: RCP::Node::OAM::Basic
+    condition: deploy_basic_condition
+    depends_on: network_setup_basic
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: oam-0
+      instance_params:
+        server:
+          server_group_id:
+            if:
+              - ncir17a
+              - {get_resource: basic_server_group_ncir17a}
+              - {get_resource: basic_server_group_ncir18}
+          <<: *oam_instance_params
+      networks:
+        get_attr: [network_setup_basic, networks, oam]
+      service_ip_meta:
+        get_attr: [network_setup_basic, service_ip_map]
+      nfs_volumes:
+        name_prefix:
+          str_replace:
+            template: $vnf-$cid
+            params:
+              $vnf: {get_param: vnf_name}
+              $cid: {get_param: cluster_id}
+        count: 4
+        vol_list:
+        - {size: 1, name: mstate, mount: /mnt/mstate}
+        - {size: 5, name: export, mount: /mnt/export}
+        - {size: 1, name: log, mount: /mnt/log}
+        - {size: 2, name: services, mount: /mnt/services}
+      common_metadata:
+        map_merge:
+        - get_attr: [common_params, metadata]
+        - <<: *number_of_nodes_basic
+      <<: *oam_properties
+
+  oam_nodes_basic_in_redundant:
+    type: RCP::Node::OAM::Basic
+    condition: deploy_redundant_without_oam_condition
+    depends_on: network_setup_redundant_without_oam
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: oam-0
+      instance_params:
+        server:
+          server_group_id:
+            if:
+              - ncir17a
+              - {get_resource: basic_server_group_ncir17a}
+              - {get_resource: basic_server_group_ncir18}
+          <<: *oam_instance_params
+      networks:
+        get_attr: [network_setup_redundant_without_oam, networks, oam]
+      service_ip_meta:
+        get_attr: [network_setup_redundant_without_oam, service_ip_map]
+      nfs_volumes:
+        name_prefix:
+          str_replace:
+            template: $vnf-$cid
+            params:
+              $vnf: {get_param: vnf_name}
+              $cid: {get_param: cluster_id}
+        count: 4
+        vol_list:
+        - {size: 1, name: mstate, mount: /mnt/mstate}
+        - {size: 5, name: export, mount: /mnt/export}
+        - {size: 1, name: log, mount: /mnt/log}
+        - {size: 2, name: services, mount: /mnt/services}
+      common_metadata:
+        map_merge:
+        - get_attr: [common_params, metadata]
+        - <<: *number_of_nodes_basic
+      <<: *oam_properties
+
+  cpif_nodes_template:
+    type: OS::Heat::None
+    condition: false
+    properties:
+        instance_params: &cpif_instance_params
+          imageId: {get_param: image}
+          azId: {get_param: availability_zone}
+          flavorId: {get_param: [flavors, cpif]}
+        res_def_properties: &cpif_res_def_properties
+          dpdk_type:
+            get_attr: [ext_networks, dpdk_type, cpif]
+          <<: *common_params
+
+  cpif_nodes_redundant:
+    type: RCP::Node::Common::Redundant
+    condition: deploy_redundant_condition
+    depends_on: storage_nodes
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: cpif
+      ncir_version: {get_param: ncir_version}
+      roles: [application, 5gbts_cpif_2n]
+      instance_params:
+        server_0:
+          <<: *cpif_instance_params
+        server_1:
+          <<: *cpif_instance_params
+      best_effort: {get_param: best_effort}
+      networks:
+        get_attr: [network_setup_redundant, networks, cpif]
+      service_ip_meta:
+        get_attr: [network_setup_redundant, service_ip_map]
+      storage_meta:
+        get_attr: [storage_nodes, volume_map]
+      <<: *cpif_res_def_properties
+
+  cpif_nodes_redundant_without_oam:
+    type: RCP::Node::Common::Redundant
+    condition: deploy_redundant_without_oam_condition
+    depends_on: oam_nodes_basic_in_redundant
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: cpif
+      ncir_version: {get_param: ncir_version}
+      roles: [application, 5gbts_cpif_2n]
+      instance_params:
+        server_0:
+          <<: *cpif_instance_params
+        server_1:
+          <<: *cpif_instance_params
+      best_effort: {get_param: best_effort}
+      networks:
+        get_attr: [network_setup_redundant_without_oam, networks, cpif]
+      service_ip_meta:
+        get_attr: [network_setup_redundant_without_oam, service_ip_map]
+      storage_meta:
+        get_attr: [oam_nodes_basic_in_redundant, volume_map]
+      <<: *cpif_res_def_properties
+
+  cpif_nodes_basic:
+    type: RCP::Node::Common::Basic
+    condition: deploy_basic_condition
+    depends_on: oam_nodes_basic
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: cpif-0
+      roles: [application, 5gbts_cpif]
+      instance_params:
+        server:
+          server_group_id:
+            if:
+              - ncir17a
+              - {get_resource: basic_server_group_ncir17a}
+              - {get_resource: basic_server_group_ncir18}
+          <<: *cpif_instance_params
+      networks:
+        get_attr: [network_setup_basic, networks, cpif]
+      storage_meta:
+        get_attr: [oam_nodes_basic, volume_map]
+      <<: *cpif_res_def_properties
+
+  upue_nodes_template:
+    type: OS::Heat::None
+    condition: false
+    properties:
+      count: &upue_count
+        get_param: number_of_upue_nodes
+      res_def_properties: &upue_res_def_properties
+        name:
+          str_replace:
+            template: $vnf-$cid-$vm
+            params:
+              $vnf: {get_param: vnf_name}
+              $cid: {get_param: cluster_id}
+              $vm: upue-%index%
+        index: '%index%'
+        instance_params:
+          server:
+            imageId: {get_param: image}
+            azId: {get_param: availability_zone}
+            flavorId: {get_param: [flavors, upue]}
+            server_group_id:
+              if:
+                - ncir17a
+                - {get_resource: upue_server_group_ncir17a}
+                - {get_resource: upue_server_group_ncir18}
+        roles: [application, 5gbts_upue]
+        dpdk_type:
+          get_attr: [ext_networks, dpdk_type, upue]
+        <<: *common_params
+
+  upue_nodes_redundant:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_redundant_condition
+    depends_on: cpif_nodes_redundant
+    properties:
+      count: *upue_count
+      resource_def:
+        type: RCP::Node::Common::Basic
+        properties:
+          networks:
+            get_attr: [network_setup_redundant, networks, upue]
+          storage_meta:
+            get_attr: [storage_nodes, volume_map]
+          <<: *upue_res_def_properties
+
+  upue_nodes_redundant_without_oam:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_redundant_without_oam_condition
+    depends_on: cpif_nodes_redundant_without_oam
+    properties:
+      count: *upue_count
+      resource_def:
+        type: RCP::Node::Common::Basic
+        properties:
+          networks:
+            get_attr: [network_setup_redundant_without_oam, networks, upue]
+          storage_meta:
+            get_attr: [oam_nodes_basic_in_redundant, volume_map]
+          <<: *upue_res_def_properties
+
+  upue_nodes_basic:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_basic_condition
+    depends_on: cpif_nodes_basic
+    properties:
+      count: *upue_count
+      resource_def:
+        type: RCP::Node::Common::Basic
+        properties:
+          networks:
+            get_attr: [network_setup_basic, networks, upue]
+          storage_meta:
+            get_attr: [oam_nodes_basic, volume_map]
+          <<: *upue_res_def_properties
+
+  cpnb_nodes_template:
+    type: OS::Heat::None
+    condition: false
+    properties:
+      instance_params: &cpnb_instance_params
+        imageId: {get_param: image}
+        azId: {get_param: availability_zone}
+        flavorId: {get_param: [flavors, cpnb]}
+      res_def_properties: &cpnb_res_def_properties
+        config_drive: {get_param: [config_drive, {get_param: vnf_layout}]}
+        common_userdata:
+          get_attr: [common_params, userdata]
+
+  cpnb_nodes_redundant:
+    type: RCP::Node::Common::Redundant
+    condition: deploy_redundant_condition
+    depends_on: upue_nodes_redundant
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: cpnb
+      ncir_version: {get_param: ncir_version}
+      roles: [application, 5gbts_cpnb_2n]
+      instance_params:
+        server_0:
+          <<: *cpnb_instance_params
+        server_1:
+          <<: *cpnb_instance_params
+      best_effort: {get_param: best_effort}
+      networks:
+        get_attr: [network_setup_redundant, networks, as]
+      service_ip_meta:
+        get_attr: [network_setup_redundant, service_ip_map]
+      storage_meta:
+        get_attr: [storage_nodes, volume_map]
+      common_metadata:
+        map_merge:
+        - get_attr: [common_params, metadata]
+        - <<: *number_of_nodes_redundant
+      <<: *cpnb_res_def_properties
+
+  cpnb_nodes_redundant_without_oam:
+    type: RCP::Node::Common::Redundant
+    condition: deploy_redundant_without_oam_condition
+    depends_on: upue_nodes_redundant_without_oam
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: cpnb
+      ncir_version: {get_param: ncir_version}
+      roles: [application, 5gbts_cpnb_2n]
+      instance_params:
+        server_0:
+          <<: *cpnb_instance_params
+        server_1:
+          <<: *cpnb_instance_params
+      best_effort: {get_param: best_effort}
+      networks:
+        get_attr: [network_setup_redundant_without_oam, networks, as]
+      service_ip_meta:
+        get_attr: [network_setup_redundant_without_oam, service_ip_map]
+      storage_meta:
+        get_attr: [oam_nodes_basic_in_redundant, volume_map]
+      common_metadata:
+        map_merge:
+        - get_attr: [common_params, metadata]
+        - <<: *number_of_nodes_redundant
+      <<: *cpnb_res_def_properties
+
+  cpnb_nodes_basic:
+    type: RCP::Node::Common::Basic
+    condition: deploy_basic_condition
+    depends_on: upue_nodes_basic
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: cpnb-0
+      roles: [application, 5gbts_cpnb]
+      instance_params:
+        server:
+          server_group_id:
+            if:
+              - ncir17a
+              - {get_resource: basic_server_group_ncir17a}
+              - {get_resource: basic_server_group_ncir18}
+          <<: *cpnb_instance_params
+      networks:
+        get_attr: [network_setup_basic, networks, as]
+      storage_meta:
+        get_attr: [oam_nodes_basic, volume_map]
+      common_metadata:
+        map_merge:
+        - get_attr: [common_params, metadata]
+        - <<: *number_of_nodes_basic
+      <<: *cpnb_res_def_properties
+
+  cpcl_nodes_template:
+    type: OS::Heat::None
+    condition: false
+    properties:
+      instance_params: &cpcl_instance_params
+        imageId: {get_param: image}
+        azId: {get_param: availability_zone}
+        flavorId: {get_param: [flavors, cpcl]}
+      res_def_properties: &cpcl_res_def_properties
+        <<: *common_params
+
+  cpcl_nodes_redundant:
+    type: RCP::Node::Common::Redundant
+    condition: deploy_redundant_condition
+    depends_on: upue_nodes_redundant
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: cpcl
+      ncir_version: {get_param: ncir_version}
+      roles: [application, 5gbts_cpcl_2n]
+      instance_params:
+        server_0:
+          <<: *cpcl_instance_params
+        server_1:
+          <<: *cpcl_instance_params
+      best_effort: {get_param: best_effort}
+      networks:
+        get_attr: [network_setup_redundant, networks, as]
+      service_ip_meta:
+        get_attr: [network_setup_redundant, service_ip_map]
+      storage_meta:
+        get_attr: [storage_nodes, volume_map]
+      <<: *cpcl_res_def_properties
+
+  cpcl_nodes_redundant_without_oam:
+    type: RCP::Node::Common::Redundant
+    condition: deploy_redundant_without_oam_condition
+    depends_on: upue_nodes_redundant_without_oam
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: cpcl
+      ncir_version: {get_param: ncir_version}
+      roles: [application, 5gbts_cpcl_2n]
+      instance_params:
+        server_0:
+          <<: *cpcl_instance_params
+        server_1:
+          <<: *cpcl_instance_params
+      best_effort: {get_param: best_effort}
+      networks:
+        get_attr: [network_setup_redundant_without_oam, networks, as]
+      service_ip_meta:
+        get_attr: [network_setup_redundant_without_oam, service_ip_map]
+      storage_meta:
+        get_attr: [oam_nodes_basic_in_redundant, volume_map]
+      <<: *cpcl_res_def_properties
+
+  cpcl_nodes_basic:
+    type: RCP::Node::Common::Basic
+    condition: deploy_basic_condition
+    depends_on: upue_nodes_basic
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: cpcl-0
+      roles: [application, 5gbts_cpcl]
+      instance_params:
+        server:
+          server_group_id:
+            if:
+              - ncir17a
+              - {get_resource: basic_server_group_ncir17a}
+              - {get_resource: basic_server_group_ncir18}
+          <<: *cpcl_instance_params
+      networks:
+        get_attr: [network_setup_basic, networks, as]
+      storage_meta:
+        get_attr: [oam_nodes_basic, volume_map]
+      <<: *cpcl_res_def_properties
+
+  cpue_nodes_template:
+    type: OS::Heat::None
+    condition: false
+    properties:
+      count: &cpue_count
+        get_param: number_of_cpue_nodes
+      res_def_properties: &cpue_res_def_properties
+        name:
+          str_replace:
+            template: $vnf-$cid-$vm
+            params:
+              $vnf: {get_param: vnf_name}
+              $cid: {get_param: cluster_id}
+              $vm: cpue-%index%
+        instance_params:
+          server:
+            imageId: {get_param: image}
+            azId: {get_param: availability_zone}
+            flavorId: {get_param: [flavors, cpue]}
+            server_group_id:
+              if:
+                - ncir17a
+                - {get_resource: cpue_server_group_ncir17a}
+                - {get_resource: cpue_server_group_ncir18}
+        roles: [application, 5gbts_cpue]
+        <<: *common_params
+
+  cpue_nodes_redundant:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_redundant_condition
+    depends_on: upue_nodes_redundant
+    properties:
+      count: *cpue_count
+      resource_def:
+        type: RCP::Node::Common::Basic
+        properties:
+          networks:
+            get_attr: [network_setup_redundant, networks, as]
+          storage_meta:
+            get_attr: [storage_nodes, volume_map]
+          <<: *cpue_res_def_properties
+
+  cpue_nodes_redundant_without_oam:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_redundant_without_oam_condition
+    depends_on: upue_nodes_redundant_without_oam
+    properties:
+      count: *cpue_count
+      resource_def:
+        type: RCP::Node::Common::Basic
+        properties:
+          networks:
+            get_attr: [network_setup_redundant_without_oam, networks, as]
+          storage_meta:
+            get_attr: [oam_nodes_basic_in_redundant, volume_map]
+          <<: *cpue_res_def_properties
+
+  cpue_nodes_basic:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_basic_condition
+    depends_on: upue_nodes_basic
+    properties:
+      count: *cpue_count
+      resource_def:
+        type: RCP::Node::Common::Basic
+        properties:
+          networks:
+            get_attr: [network_setup_basic, networks, as]
+          storage_meta:
+            get_attr: [oam_nodes_basic, volume_map]
+          <<: *cpue_res_def_properties
+
+  db_nodes_template:
+    type: OS::Heat::None
+    condition: false
+    properties:
+      count: &db_count
+        1
+      instance_params: &db_instance_params
+        imageId: {get_param: image}
+        azId: {get_param: availability_zone}
+        flavorId: {get_param: [flavors, db]}
+      res_def_properties: &db_res_def_properties
+        local_volumes:
+          name_prefix:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          count: 2
+          vol_list:
+          - {size: 1, name: db_pg_session, mount: /mnt/db_pg_sesssion}
+          - {size: 2, name: db_redis_session, mount: /mnt/db_redis_session}
+        <<: *common_params
+
+  db_nodes_redundant:
+    type: RCP::Node::DB::Redundant
+    condition: deploy_redundant_condition
+    depends_on: upue_nodes_redundant
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: db
+      instance_params:
+        server_0:
+          server_group_id:
+            if:
+              - ncir17a
+              - {get_resource: oam_db_server_group_ncir17a}
+              - {get_resource: oam_db_server_group_ncir18}
+          <<: *db_instance_params
+        server_1:
+          server_group_id:
+            if:
+              - ncir17a
+              - {get_resource: oam_db_server_group_ncir17a}
+              - {get_resource: oam_db_server_group_ncir18}
+          <<: *db_instance_params
+      networks:
+        get_attr: [network_setup_redundant, networks, db]
+      storage_meta:
+        get_attr: [storage_nodes, volume_map]
+      <<: *db_res_def_properties
+
+  db_nodes_redundant_without_oam:
+    type: RCP::Node::DB::Redundant
+    condition: deploy_redundant_without_oam_condition
+    depends_on: upue_nodes_redundant_without_oam
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: db
+      instance_params:
+        server_0:
+          server_group_id:
+            if:
+              - ncir17a
+              - {get_resource: oam_db_server_group_ncir17a}
+              - {get_resource: oam_db_server_group_ncir18}
+          <<: *db_instance_params
+        server_1:
+          server_group_id:
+            if:
+              - ncir17a
+              - {get_resource: oam_db_server_group_ncir17a}
+              - {get_resource: oam_db_server_group_ncir18}
+          <<: *db_instance_params
+      networks:
+        get_attr: [network_setup_redundant_without_oam, networks, db]
+      storage_meta:
+        get_attr: [oam_nodes_basic_in_redundant, volume_map]
+      <<: *db_res_def_properties
+
+  db_nodes_basic:
+    type: RCP::Node::DB::Basic
+    condition: deploy_basic_condition
+    depends_on: upue_nodes_basic
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: db-0
+      instance_params:
+        server:
+          server_group_id:
+            if:
+              - ncir17a
+              - {get_resource: basic_server_group_ncir17a}
+              - {get_resource: basic_server_group_ncir18}
+          <<: *db_instance_params
+      networks:
+        get_attr: [network_setup_basic, networks, db]
+      storage_meta:
+        get_attr: [oam_nodes_basic, volume_map]
+      <<: *db_res_def_properties
+
+  upgrade_nodes_template:
+    type: OS::Heat::None
+    condition: false
+    properties:
+      count: &upgrade_count
+        get_param: number_of_uvm_nodes
+      instance_params: &upgrade_instance_params
+        imageId: {get_param: uvm_image}
+        azId: {get_param: availability_zone}
+        flavorId: {get_param: [flavors, uvm]}
+      res_def_properties: &upgrade_res_def_properties
+        name:
+          str_replace:
+            template: $vnf-$cid-$vm
+            params:
+              $vnf: {get_param: vnf_name}
+              $cid: {get_param: cluster_id}
+              $vm: uvm-%index%
+        roles: [upgrade]
+        upgrade-node: true
+        <<: *common_params
+
+  upgrade_nodes_redundant:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_redundant_condition
+    depends_on: oam_nodes_redundant
+    properties:
+      count: *upgrade_count
+      resource_def:
+        type: RCP::Node::Common::Basic
+        properties:
+          networks:
+            get_attr: [network_setup_redundant, networks, uvm]
+          storage_meta:
+            get_attr: [storage_nodes, volume_map]
+          instance_params:
+            server:
+              server_group_id:
+                if:
+                  - ncir17a
+                  - {get_resource: basic_server_group_ncir17a}
+                  - {get_resource: basic_server_group_ncir18}
+              <<: *upgrade_instance_params
+          <<: *upgrade_res_def_properties
+
+  upgrade_nodes_redundant_without_oam:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_redundant_without_oam_condition
+    depends_on: oam_nodes_basic_in_redundant
+    properties:
+      count: *upgrade_count
+      resource_def:
+        type: RCP::Node::Common::Basic
+        properties:
+          networks:
+            get_attr: [network_setup_redundant_without_oam, networks, uvm]
+          storage_meta:
+            get_attr: [oam_nodes_basic_in_redundant, volume_map]
+          instance_params:
+            server:
+              server_group_id:
+                if:
+                  - ncir17a
+                  - {get_resource: basic_server_group_ncir17a}
+                  - {get_resource: basic_server_group_ncir18}
+              <<: *upgrade_instance_params
+          <<: *upgrade_res_def_properties
+
+  upgrade_nodes_basic:
+    type: OS::Heat::ResourceGroup
+    condition: deploy_basic_condition
+    depends_on: upue_nodes_basic
+    properties:
+      count: *upgrade_count
+      resource_def:
+        type: RCP::Node::Common::Basic
+        properties:
+          networks:
+            get_attr: [network_setup_basic, networks, uvm]
+          storage_meta:
+            get_attr: [oam_nodes_basic, volume_map]
+          instance_params:
+            server:
+              server_group_id:
+                if:
+                  - ncir17a
+                  - {get_resource: basic_server_group_ncir17a}
+                  - {get_resource: basic_server_group_ncir18}
+              <<: *upgrade_instance_params
+          <<: *upgrade_res_def_properties
+
+outputs:

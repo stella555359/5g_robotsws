@@ -1,0 +1,41 @@
+OAM_KPI_TARGETS = {
+    'kpi1a': 283,
+    'kpi1b': 399,
+    'kpi1c': 700,
+    'kpi2a': 260,
+    'kpi2b': 410,
+    'kpi2c': 260,
+    'kpi2d': 410,
+    'kpi2i': 700,
+    'kpi2j': 700,
+    'kpi2k': 700,
+    'kpi2o': 5000,
+    'kpi2p': 5000,
+    'kpi7': 70,
+    'kpi7a': 70,
+    'kpi7b': 70,
+    'kpi7c': 100,
+    'kpi57b': 440,
+    'kpi57c': 290
+}
+
+AVG_OAM_KPI_TARGETS = {
+    'kpi1a': 223,
+    'kpi1b': 369,
+    'kpi1c': 700,
+    'kpi2a': 230,
+    'kpi2b': 380,
+    'kpi2c': 230,
+    'kpi2d': 380,
+    'kpi2i': 700,
+    'kpi2j': 700,
+    'kpi2k': 700,
+    'kpi2o': 5000,
+    'kpi2p': 5000,
+    'kpi7': 70,
+    'kpi7a': 70,
+    'kpi7b': 70,
+    'kpi7c': 100,
+    'kpi57b': 410,
+    'kpi57c': 260
+}

@@ -1,0 +1,150 @@
+*** Settings ***
+Documentation      [SUITE PURPOSE]  Template of Test cases CB012535 feature
+...                Test Case Scenario author   : francois.tourlonnias@nokia.com
+...
+...                This Template need your attention on following part of this common database
+...                Please modify as you need data value between # Modification block / # END Modification block
+
+Resource           ./resources/robot/CB012535_keywords_common.robot
+Variables          ./resources/python/Constants.py
+
+Suite Setup        CB012535_keywords_common.Suite Setup 12535
+Suite Teardown     CB012535_keywords_common.Suite Teardown 12535
+Test Teardown      kwmkt_Test Teardown
+
+
+*** Variables ***
+${recursion_limit}   1000   # 1000 is the default value
+${NL}                Nested_List
+
+&{A1}
+...     Scfdetails=${ScfComposition}
+...     Feat12535niddSpecific=${FeatureParameterSheet}
+...     ListOfUeEngaged=${uelist}
+...     PMdod=testsuite/Paris/RRM/ET/CB012535/resources/config/PM/CB012535_Constraints_template.csv
+...     GetTtiTraceTime=1s
+...     Wait_RI_Alarm=720s
+
+# Modification block ==================================================================================================
+# Cells important for the test check SIB arrival only on following cell
+@{CellList}          1
+
+# SCF delivery  ====== This part help to dertemine how iso level need to be done ======================================
+&{ScfComposition}
+# ...     jsonFile=${TestsJsonPath}/CB012535-SR-A1_005_Trigger_of_CB012535_A_1_UE_PLthr100_64_QAM_ET_FEATURE_NOT_ACTIVATED.json
+...     jsonFile=${TestsJsonPath}/CB012535-SR-A1_005_Trigger_of_CB012535_A_1_UE_PLthr100_64_QAM_ET.json
+
+@{FeatureParameterSheet}
+...         ${nrRiThresDropHeight}
+
+&{nrRiThresDropHeight}    dist_name=MRBTS-1/NRBTS-1/NRCELL-1/NRRIM_PROFILE-1
+...                       param=nrRiMonitorWindow           value=60
+
+#UE corner
+&{UE_1_SA_TDD_UE_R15}
+...     ueid=1
+...     ue_nr_capabilities=${SA_TDD_UE_R15}
+...     ue_release=${EMPTY}    #${EMPTY} => basic already tuned correctly
+...     Target_cell=1          #${EMPTY} => basic already tuned correctly
+
+@{uelist}    ${UE_1_SA_TDD_UE_R15}
+
+#DOD Corner
+@{DODlist}      # list empty for now will contain all DOD corner
+
+# END Modification block ==============================================================================================
+
+*** Test Cases ***
+
+[1]CB012535-SR-A1_005_Trigger_of_CB012535_A_1_UE_Middle_Cell_64_QAM_ET
+    # [Tags]                      CLOUD_5G_I_LO_AP_LO, SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AEQE
+
+    #Special Need for this test
+    Set Suite Variable    ${userneed_PCAP}       ${True}
+    Set Suite Variable    ${userneed_Btslog}     ${True}
+    Set Suite Variable    ${userneed_PM}         ${True}    #/!\ PM is not yet available
+    Set Suite Variable    ${DodIsSet}            ${True}
+
+    CB012535_mainKW       ${A1}
+
+*** Keywords ***
+
+CB012535_mainKW
+    [Documentation]                 CB012535-Base-
+    [Arguments]                     ${param}
+    kwmkt_dbg_log                   Global variable list DBGlogs: ${DBGlogs}          ##
+    kwmkt_dbg_log                   info we are on KeepConfig: ${KeepConfig}           # these informative line to bypass Robot 5 new sanity :-)
+    kwmkt_dbg_log                   info we are on NoSnap: ${NoSnap}                   #
+    kwmkt_dbg_log                   info we are on egatelogoutput: ${egatelogoutput}   #
+    kwmkt_dbg_log                   info we are on EnSher: ${EnSher}                   #
+    kwmkt_dbg_log                   info we are on tti: ${tti}                         #
+    kwmkt_dbg_log                   info we are on DodIsSet: ${DodIsSet}               #
+    kwmkt_dbg_log                   recursion_limit: ${recursion_limit}               ##
+
+    Init Sequence                   ${param}
+    Step                            kwmkt_Create_Test_Suite_Folder
+
+    Critical Step                   Set_basic_context
+    Critical Step                   Set_SCF_ConfigMarket     ${param.Scfdetails}
+    Critical Step                   Restart TL
+
+    BuiltIn.sleep                   20    #to avoid capture issue at cell_setup time
+    Critical Step                   kwmkt_Cell_setup         ${CellList}
+    Run Keyword If                  not ${tti} and ${EnSher}                Activate Sherpa
+
+
+    BuiltIn.sleep                   20
+    Critical Step                   kwmkt_run_script_once    ${CURDIR}/resources/egCmd/egCmd_reteInterferenceOnVictime_ultraSoft.sce
+
+
+
+    Wait Until Keyword Succeeds    ${param.Wait_RI_Alarm}    30s    Check_Alarm_List    7525
+    Dated Log                      Check_Alarm_List done ok for alarm 7525
+
+
+
+    # #ici changer la valeur nrRiMonitorWindow online à 60
+    # Critical Step                  Set_SCF_ofTheTest       ${param.Feat12535niddSpecific}
+    # ${alarm}=                      kwmkt_Alarmslist         nrRiMonitorWindow_60
+    # Dated log                      DOD_12535: Alarm present at nrRiMonitorWindow_60 time:${alarm}
+
+
+    #L3call as sometime is failing, a retry is eventually done again
+    Run Keyword If                 ${userneed_PCAP}         kwmkt_Capture_Start    Attach
+    ${status}=                     Run Keyword And Return Status
+    ...                            kwmkt_run_script_once    ${CURDIR}/resources/egCmd/egCmd_L3call_1ue_DL2_UL140.sce
+    ${status}=                     Run Keyword If          '${status}'=='False'
+    ...                            kwmkt_run_script_once    ${CURDIR}/resources/egCmd/egCmd_L3call_1ue_DL2_UL140.sce
+    Run Keyword If                '${status}'=='False'      Run Keywords
+    ...                                                     kwmkt_Capture_Stop     Attach
+    ...  AND                                                FAIL                   L3call failed 2 attempts
+    ...  ELSE                                               Dated Log              L3call done ok
+
+    Run Keyword If                ${userneed_PCAP}          kwmkt_Capture_Stop     Attach
+
+    #ici retester si tj ue_disp id=1 retourne active
+
+    Critical Step                   kwmkt_run_script_once    ${CURDIR}/resources/egCmd/egCmd_Pathloss2setAttachedUEinMiddleOfCell.sce
+    Critical Step                   kwmkt_run_script_once    ${CURDIR}/resources/egCmd/egCmd_10PcentULBlerOnFirstTrans_and_FirsRetrans.sce
+
+    ${alarm}=                       kwmkt_Alarmslist         beforeTTi
+    Dated log                       DOD_12535: Alarm present at test execution time:${alarm}
+
+    #TTI
+    Run Keyword If                  ${tti} and not ${EnSher}         kwmkt_TTI_capt    ${param.GetTtiTraceTime}
+
+    ${alarm}=                       kwmkt_Alarmslist         afterTTi
+    Dated log                       DOD_12535: Alarm present at test execution time:${alarm}
+
+    #PM counters
+    ${PMdod} =	                    Run Keyword If      ${userneed_PM}    Run Keyword And Return Status    kwmkt_PM_general
+    Dated Log                       ${PMdod}
+    Append to List                  ${DODlist}    ${PMdod}
+
+    #Check if 7525 is still present
+    ${res}                          Check_Alarm_List                 7525
+    ${result}                       Set Variable if                 '${res}'!='Found'     False   True
+    Append to List                  ${DODlist}    ${result}
+
+    #Stat on DOD list if requested
+    Run Keyword If                  ${DodIsSet}         kwmkt_Check_For_False_In_${NL}    ${DODlist}

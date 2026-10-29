@@ -1,0 +1,223 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Verification of 5GC001347-A - One additional DMRS
+...               Scope : Test additional DMRS with different MCS moduflcation schemes
+...               (from QPSK to 64QAM)
+...               Common script used for cmW, mmW.
+...                       20-08-2021              |           1347 refactoring
+...                       22-Sept-2021            |           Only check QPSK in UL because of L1BP restrictions
+...                       18-Jan-2022             |           Remove AP Config XML dependencies (no more used)
+...                       03-Feb-2022             |           Remove use of RAD params and replace it with egate commands
+...                       21-Feb-2023             |           Update SINR TM use and add cell noise TM to browse MCS
+...                                               |           (done by Gopalakrishnan N and Smith Dholke)
+
+Library                             taf.wts.runner              WITH NAME       wtsemu
+
+Resource                            resources/robot/5GC001347_Keywords.robot
+Resource                            ../../../../Paris/resources/SWENG/robot/CallSetup.robot
+Resource                            ../../../../Paris/resources/SWENG/robot/Oam.robot
+Resource                            ../../../../Paris/resources/SWENG/robot/Tools.robot
+Resource                            ../../../../Paris/resources/SWENG/robot/Setup.robot
+
+*** Variables ***
+
+# MCS used to check the different MCS groups
+${qpsk_mcs}                             5
+${16qam_mcs}                            14
+${64qam_mcs}                            25
+${auto_1347_default_cell_bound}         8
+
+${auto_1347_gp_period}                  5 minutes
+
+@{ul_pusch_noise_level_list}            -800        -750        -700        -650        -600
+
+*** Keywords ***
+
+TC_1347_DL_ADDITIONAL_DMRS_WITH_SEVERAL_MCS
+    [Documentation]                 Generic test for additional DMRS introduced by 1347 (FR1, FR2, FDD, TDD)
+    ...                             This script parses several DL modulation schemes from QPSK to 64QAM
+    ...                             by using AP L.A. feature
+    [Arguments]                     ${test_config}
+
+    ${band}                         Get From Dictionary     ${test_config}     band_domain
+    ${dl_data_rate}                 Get From Dictionary     ${test_config}     dl_tput
+    ${expected_dl_volume}           Get From Dictionary     ${test_config}     expected_dl_volume
+    ${tl_topology}                  Get From Dictionary     ${test_config}     tl_topology
+
+    ${my_ue_setting}=               Set Variable            ${UE_SIMPLE}
+    
+    # Add PTRS capabilities on WTS side.
+    Set UE capa on UeSim            band=${band}             ptrs_capa_on_or_off=off
+
+    # Set inside SCF: framestructure depending on band (cmW / mmW), DMRS mode,
+    # 256 QAM activation if needed.
+    # In this test gNB is configured to use one additional DMRS.
+    Set Frame Structure and Additional DMRS Config
+    ...                             band=${band}            dmrs_mode=forced        enable256qam=False 
+    ...                             tl_type=${tl_topology}
+	
+	#In case of mmW set the ueid to 1, for NSA call
+	Run Keyword If           "${band}"=="mmW"	Run Keywords
+	...		                 Run    sed -i 's/set_ue simulated id=11 /set_ue simulated id=1 /g' ${tl.core.dir_path}/${tl.core.cfg_filename}
+	...	                	 AND 
+	...		                 Run    sed -i 's/ue_param id=11 /ue_param id=1 /g' ${tl.core.dir_path}/${tl.core.cfg_filename}
+
+    # Initialize WTS
+    WTS Setup
+
+    # Cellsetup is now done, Sherpa can be enabled if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}           Activate Sherpa
+
+    # UE attach to 4G+5G (NSA)
+    SgNB Addition to ENB             ueSetting=${my_ue_setting}
+
+    # DL traffic must be kept during L.A. loop
+    Traffic UE DL                   ueSetting=${my_ue_setting}
+    ...                             throughput=${dl_data_rate}
+    ...                             deviation=10
+    ...                             shouldBeStop=False
+
+    # Activate BLER generation
+    #
+    # Here several things are supposed to be true:
+    # 1. The test mode parameters related to BLER and RI have been removed from AirphoneConfig.xml file (see above)
+    # 2. scell ID is set to 8 (auto_1347_default_cell_bound). True so far
+
+    # Define BLER configuration to reach 64QAM, then 16QAM, then QPSK
+    wtsemu.bler_testmode_nr                      profile_id=3
+    ...                                          target_mcs=${64qam_mcs}
+    ...                                          num_dl_pkts=2000
+
+    wtsemu.bler_testmode_nr                 profile_id=4
+    ...                                     target_mcs=${16qam_mcs}
+    ...                                     num_dl_pkts=2000
+
+    wtsemu.bler_testmode_nr                 profile_id=5
+    ...                                     target_mcs=${qpsk_mcs}
+    ...                                     num_dl_pkts=2000
+
+    @{target_mcs_profiles}         Create List      3       4       5
+
+    # Perform traffic with 64QAM, 16QAM, QPSK
+    FOR    ${profile}    IN    @{target_mcs_profiles}
+        wtsemu.ue_testmode_set_nr                      id=${my_ue_setting.ue}
+        ...                                            testmode=bler
+        ...                                            profile_id=${profile}
+        ...                                            scell=${auto_1347_default_cell_bound}
+        ...                                            action=activate
+        Traced Sleep        2 minutes                  msg=DL traffic with target profile : ${profile}
+        wtsemu.ue_testmode_set_nr                      id=${my_ue_setting.ue}
+        ...                                            testmode=bler
+        ...                                            profile_id=${profile}
+        ...                                            scell=${auto_1347_default_cell_bound}
+        ...                                            action=deactivate
+    END
+
+    # Stop traffic
+    Traffic Stop                    ueSetting=${my_ue_setting}      dir=dl
+
+    # Detach UE
+    UE Detach Enb                   ueSetting=${my_ue_setting}
+
+    # Retrieve counters and compare with a reference
+    # Verify Object Counter cumulative values
+    5GC001347_Keywords.Verify Counter Cumulative Values With Margin          dl_or_ul=DL
+    ...                                                                      data_volume=${expected_dl_volume}
+    ...									     							     check_bler=False
+    
+    # Close WTS session
+    WTS Clear
+
+TC_1347_UL_ADDITIONAL_DMRS_WITH_SEVERAL_MCS
+    [Documentation]                 Generic test for additional DMRS introduced by 1347 (FR1, FR2, FDD, TDD)
+    ...                             This script parse several UL modulation schemes from QPSK to 64QAM
+    ...                             by using UL link adaptation (SINR + noise).
+    [Arguments]                     ${test_config}
+
+    ${band}                         Get From Dictionary     ${test_config}     band_domain
+    ${ul_data_rate}                 Get From Dictionary     ${test_config}     ul_tput
+    ${expected_ul_volume}           Get From Dictionary     ${test_config}     expected_ul_volume
+    ${tl_topology}                  Get From Dictionary     ${test_config}     tl_topology
+
+    ${my_ue_setting}=               Set Variable            ${UE_SIMPLE}
+
+    # Set inside SCF: framestructure depending on band (cmW / mmW), DMRS mode,
+    # 256 QAM activation if needed.
+    # In this test gNB is configured to use one additional DMRS.
+    # As full commissioning is performed, it will also reset the TL. Moereover, as Cloud BTS vRAN 1.0
+    # is cancelled, it will reset everything.
+    Set Frame Structure and Additional DMRS Config
+    ...                             band=${band}             dmrs_mode=forced        enable256qam=False
+    ...                             tl_type=${tl_topology}
+
+    # Add PTRS capabilities on WTS side.
+    Set UE capa on UeSim            band=${band}             ptrs_capa_on_or_off=off
+
+	#In case of mmW set the ueid to 1, for NSA call
+	Run Keyword If                  "${band}"=="mmW"	Run Keywords
+	...		                 Run    sed -i 's/set_ue simulated id=11 /set_ue simulated id=1 /g' ${tl.core.dir_path}/${tl.core.cfg_filename}
+	...	                	 AND 
+	...		                 Run    sed -i 's/ue_param id=11 /ue_param id=1 /g' ${tl.core.dir_path}/${tl.core.cfg_filename}
+
+    WTS Setup
+
+    # Cellsetup is now done, Sherpa can be enabled if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}           Activate Sherpa
+
+    # UE attach to 4G+5G (NSA)
+    SgNB Addition to ENB            ueSetting=${my_ue_setting}
+
+    Traffic UE UL                   ueSetting=${my_ue_setting}
+    ...                             throughput=${ul_data_rate}
+    ...                             shouldBeStop=False
+    ...                             duration=20s
+
+    #
+    # Define UL SINR profile
+    #
+    wtsemu.ul_sinr_testmode_nr          profile_id=1
+    ...                                 sinr_target_pusch=-250
+    wtsemu.ul_cell_noise_testmode_nr    profile_id=1    noise_pusch=-900
+    wtsemu.cell_testmode_set_nr         gnb=2    cell_id=1    testmode=ul_cell_noise    profile_id=1    action=activate
+
+    # SINR profile activation
+    wtsemu.ue_testmode_set_nr       id=${my_ue_setting.ue}
+    ...                             testmode=ul_sinr
+    ...                             profile_id=1
+    ...                             action=activate
+
+    # Change MCS by varying UL radio conditions by steps with ul_sinr egate command
+    FOR    ${noise_level}    IN    @{ul_pusch_noise_level_list}
+
+        wtsemu.ul_sinr_testmode_nr              profile_id=1
+        ...                                     sinr_target_pusch=-250
+        wtsemu.ul_cell_noise_testmode_nr        profile_id=1    noise_pusch=${noise_level}
+
+        Traced Sleep                            1 minutes
+        ...                                     msg=UL traffic is running with noise level ${noise_level}
+
+    END
+
+    # SINR profile deactivation
+    wtsemu.ue_testmode_set_nr           id=${my_ue_setting.ue}
+    ...                                 testmode=ul_sinr
+    ...                                 profile_id=1
+    ...                                 action=deactivate
+    wtsemu.cell_testmode_set_nr         gnb=2    cell_id=1    testmode=ul_cell_noise    profile_id=1    action=deactivate
+
+    # Delete profile
+    wtsemu.ul_sinr_testmode_nr          profile_id=1    delete=on
+    wtsemu.ul_cell_noise_testmode_nr    profile_id=1    delete=on
+
+    # Stop traffic
+    Traffic Stop                    ueSetting=${my_ue_setting}   
+
+    # Detach UE
+    UE Detach Enb                   ueSetting=${my_ue_setting}
+
+    # Retrieve counters and compare with a reference
+    # Verify Object Counter cumulative values
+    # Retrieve counters and compare with a reference
+    # Verify Object Counter cumulative values
+    5GC001347_Keywords.Verify Counter Cumulative Values With Margin          dl_or_ul=UL
+    ...                                                                      data_volume=${expected_ul_volume}
+    ...									     							     check_bler=True

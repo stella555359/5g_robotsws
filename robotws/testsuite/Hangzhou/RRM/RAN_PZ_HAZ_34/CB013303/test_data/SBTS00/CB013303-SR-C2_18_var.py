@@ -1,0 +1,66 @@
+PARAMS_IN_SCF = [
+    # CB013303
+    "NRCELL-2:actDrbBlerTargetForBR=false",
+    "NRCELL-10:actDrbBlerTargetForBR=true",
+    "NRBTS/NRPDSCHBRLA-1:dlDrbBlerTarget=5",
+    "NRBTS/NRPDSCHBRLA-1:dlDrbDeltaCqiStepdown=500",
+    "NRBTS/NRPUSCHBRLA-1:ulDrbBlerTarget=5",
+    "NRBTS/NRPUSCHBRLA-1:ulDrbDeltaSinrStepdown=800",
+    # 5qi6 linked to NRPDSCHBRLA-1 NRPUSCHBRLA-1
+    "NRBTS/NRDRB_5QI-6:fiveqiValueList=6",
+    "NRBTS/NRDRB_5QI-6:nrDrbDN=MRBTS/NRBTS/NRDRB-6",
+    "NRBTS/NRDRB-6:priorityLevel=60",
+    # 5qi7 not linked
+    "NRBTS/NRDRB_5QI-7:fiveqiValueList=7",
+    "NRBTS/NRDRB_5QI-7:nrDrbDN=MRBTS/NRBTS/NRDRB-7",
+    "NRBTS/NRDRB-7:priorityLevel=70",
+    # 5qi8 linked to NRPDSCHBRLA-1 NRPUSCHBRLA-1
+    "NRBTS/NRDRB_5QI-8:fiveqiValueList=8",
+    "NRBTS/NRDRB_5QI-8:nrDrbDN=MRBTS/NRBTS/NRDRB-8",
+    "NRBTS/NRDRB-8:priorityLevel=80",
+    "NRBTS/NRDRB-8:nrPdschBRLaDN=MRBTS/NRBTS/NRPDSCHBRLA-1",
+    "NRBTS/NRDRB-8:nrPuschBRLaDN=MRBTS/NRBTS/NRPUSCHBRLA-1",
+    # other features disabled
+    "NRCELL:actAdaptiveReTxResMcs=false",
+    "NRCELL:actDlLaDynBlerTarget=false",
+    # cell other configure
+    "NRCELL-1:actDl256Qam=true",
+    "NRCELL-1:actUl256Qam=true",
+    "NRCELL-2:actDl256Qam=true",
+    "NRCELL-2:actUl256Qam=true",
+    "NRCELL:increasePUSCHPrepTimeULCA=false",
+    "NRCELL-2:increasePUSCHPrepTimeULCA=true",
+    "NRCELL-2:nrarfcn=505200",
+    "NRCELL-10:measGapSelectionSA=favourUeThroughput",
+    "NRCELL-10/NRREL-2:lcrId=2",
+    "delete:NRCELL-1/NRREL-1",
+    "delete:NRCELL-10/NRREL-1",
+    "NRCELL-2:actDl256Qam=true",
+    "NRCELL-2:actUl256Qam=true",
+    "NRCELL:dllaBlerTarget=10",
+    "NRCELL:ullaBlerTarget=10",
+    "NRCELL:dllaDeltaCqiStepdown=250",
+    "NRCELL:ullaDeltaSinrStepdown=250",
+    "NRCELL-10/NRHOIF-1:a3MeasEnabled=rsrp",
+    "NRCELL-10/NRHOIF-1:deriveSsbIndexFromCell=true",
+    "NRCELL-10/NRHOIF-1:freqBandIndicatorNR=41",
+    "NRCELL-10/NRHOIF-1:ifhoSsbScs=30 KHz",
+    "NRCELL-10/NRHOIF-1:ifhoSsbSmtcDuration=sf3",
+    "NRCELL-10/NRHOIF-1:ssbFrequency=512910",
+    "NRCELL-10/NRHOIF-1:a3MeasSsbRsrp:a3HysteresisSsbRsrp=0",
+    "NRCELL-10/NRHOIF-1:a3MeasSsbRsrp:a3OffsetSsbRsrp=-20",
+    "NRCELL-10/NRHOIF-1:a3MeasSsbRsrp:a3TimeToTriggerSsbRsrp=ms128",
+    "NRCELL-10/NRHOIF-1:a4MeasNrDcSsbRsrp:a4HysteresisNrDcSsbRsrp=0",
+    "NRCELL-10/NRHOIF-1:a4MeasNrDcSsbRsrq:a4HysteresisNrDcSsbRsrq=0",
+    "NRCELL-10/NRHOIF-1:a4MeasSCellAddSsbRsrp:a4HysteresisSCellAddSsbRsrp=0",
+    "NRCELL-10/NRHOIF-1:a4MeasSCellAddSsbRsrq:a4HysteresisSCellAddSsbRsrq=0",
+    "NRCELL-10/NRHOIF-1:a4MeasSsbRsrp:a4HysteresisSsbRsrp=0",
+    "NRCELL-10/NRHOIF-1:a4MeasSsbRsrq:a4HysteresisSsbRsrq=0"
+]
+
+DELTA_C2_18_1 = [
+    "NRCELL-2:actDrbBlerTargetForBR=true",
+    "NRCELL-10:actDrbBlerTargetForBR=false",
+    "NRBTS/NRDRB-6:nrPdschBRLaDN=MRBTS-2403/NRBTS-2403/NRPDSCHBRLA-1",
+    "NRBTS/NRDRB-6:nrPuschBRLaDN=MRBTS-2403/NRBTS-2403/NRPUSCHBRLA-1",
+]

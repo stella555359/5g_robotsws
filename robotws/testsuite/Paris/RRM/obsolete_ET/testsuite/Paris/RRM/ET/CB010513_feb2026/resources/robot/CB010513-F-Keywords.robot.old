@@ -1,0 +1,367 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Keywords of CB010513-F
+...               Prerequisite :
+...               Scope :
+...               Test Case Scenario author   : ying.yw.wu@nokia.com
+...               Creation Date               : 16-06-2023
+...               Modified Date               : 16-06-2023
+...               Last Modified by            : ying.yw.wu@nokia.com
+...               Version   Date      Author                             Notes
+...               0.1       FB2313    ying.yw.wu@nokia.com              Creation
+...               0.2       FB2313    ying.yw.wu@nokia.com              First Delievery
+...               0.3       FB2313    ying.yw.wu@nokia.com              Adding UL traffic
+...               0.4       FB2323    ying.yw.wu@nokia.com              Adaptation for TMO pooling Algo
+...               0.5       FB2323    ying.yw.wu@nokia.com              Adding F TC10
+...               0.6       FB2323    ying.yw.wu@nokia.com              Adding TTI traces collection Without postprocessing
+...               0.7       FB2403    ying.yw.wu@nokia.com              adapt PM counters value due to PR03497201 implementation
+...               0.8       FB2405    ying.yw.wu@nokia.com              Remove Rad param, Replaced by NIDD actCaWimax...for tdlte 3ms canada
+...               0.9       FB2419    richard.duthu@nokia.com           Scout data + some fixes for RF50
+
+Library           OperatingSystem
+Library           String
+Library           BuiltIn
+
+
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/KPIs.robot
+Resource          ../../../resources/common/TtiTrace/ttitrace.robot
+Resource          ../../../CB008940/resources/robot/CB008940-I-J-Keywords.robot
+Resource          ../../../CB008940/resources/robot/CB008940-Config.robot
+
+
+*** Variables ***
+
+${TDD_FR1_chBw_100MHz_NUM_MAX_PRB}                 273
+&{Profile_UE_1}                                    ue_id=1
+...                                                pdu=1
+...                                                gw=1
+...                                                dl_tput=1200
+...                                                ul_tput=50
+...                                                deviation=35
+
+&{Profile_UE_2}                                    ue_id=2
+...                                                pdu=2
+...                                                gw=2
+...                                                dl_tput=10
+...                                                ul_tput=50
+...                                                deviation=35
+
+&{Profile_UE_3}                                    ue_id=3
+...                                                pdu=3
+...                                                gw=3
+...                                                dl_tput=175
+...                                                ul_tput=50
+...                                                deviation=35
+
+#Counter KPI constraint file variable
+${F_TC7_constraints}                ${CURDIR}/../../config/counter/constraint/TC_CB010513_F_TC7.csv
+${F_TC10_constraints}               ${CURDIR}/../../config/counter/constraint/TC_CB010513_F_TC10.csv
+
+${NRCELLID_1}                       0x4001
+${NRCELLID_2}                       0x4002
+${NRCELLID_3}                       0x4003
+
+${NRCELLID_1_idx}                   1
+${NRCELLID_2_idx}                   2
+${NRCELLID_3_idx}                   3
+
+${ZAB_Privileged_Value}             1
+${ZAB_No_Privileged_Value}          0
+
+${l1l2_csv_file_name}                 micro__l1l2Trace.csv
+${DL_Pooling_Sherpa_Msg}              Dl PrbPoolingAllocationReport
+${UL_Pooling_Sherpa_Msg}              Ul PrbPoolingAllocationReport
+${DL_Pooling_Csv_Extracted}           Dl_PrbPoolingAllocationReport_45_.csv
+${UL_Pooling_Csv_Extracted}           Ul_PrbPoolingAllocationReport_45_.csv
+
+@{UL_Pooling_Report}      Ul PrbPoolingAllocationReport(45)
+@{DL_Pooling_Report}      Dl PrbPoolingAllocationReport(45)
+
+#CB010513-F PM counters for TC7
+## The counter M55308C1005 (PRB available for PDSCH with L1 Basebnad pooling activated) value
+## Cell 1 : zab cell, BBRM allocats 273 PRB due to inter subpool pooling
+##  - 12 SSB slots :   273-32=241 PRB (32 PRB for SSB, others for PDSCH)
+##  - 12 SIB 1 Slots :  273 pdsch PRB per slot
+##  - 16 Specific slots :  0 pdsch PRB
+##  - 32 RA+UL slots : 0 pdsch PRB
+##  - 32 muted slots : 0 pdsch (slot 3 & 13 due to 2516(16 slots), slot 6 & 16 due to canada frame struct(16slots))
+##  - 56 Full DL slots : 273 PRB
+##               in every 160slots : 12*241+12*273+56*273=21456
+##               in 5 mins :  21456*(600000/160)=80460000
+##   update in FB2402 - PR03497201 a fix for Apple UE using PwrSaving BWP, slot 6 & 16 are no more muted
+##         72 full DL slots of 273 PRB
+##               in every 160slots : 12*241+12*273+72*273=25824
+##               in 5 mins : 25824*(600000/160)=96840000
+##
+## Cell 2 : non zab cell, BBRM allocates 54 PRB due to inter subpool pooling
+##  - 12 SSB slots :   54-20=34 PRB (20 PRB for SSB, others for PDSCH)
+##  - 12 SIB 1 Slots :  54 pdsch PRB per slot
+##  - 16 Specific slots :  0 pdsch PRB
+##  - 32 RA+UL slots : 0 pdsch PRB
+##  - 44 muted slots : 0 pdsch (slot 3 & 13 due to 2516(16 slots) slot 6 & 16 due to canada frame struct(16slots),
+##     slot 0,1,2 of odd SFN (12slots) due to pooling, CRS TRS/ACQ slots of other pooling groups are not allowed
+##     to transmit pdsch if not zab cell   )
+##  - 44 Full DL slots : 54 PRB
+##               in every 160slots :  12*(54-20)+12*54+44*54=3432
+##               in 5mins ;   3432*(600000/160)=12780000
+##   update in FB2402 - PR03497201 a fix for Apple UE using PwrSaving BWP, slot 6 & 16 are no more muted
+##          60 full DL slots of 54 PRB
+##               in every 160slots : 12*(54-20)+12*54+60*54=4296
+##               in 5mins ; 4296*(600000/160)=16110000
+##
+## Cell 3 : non zab cell, BBRM allocates 273 PRB due to inter sub
+##  - 12 SSB slots :   273-32=241 PRB (32 PRB for SSB, others for PDSCH)
+##  - 12 SIB 1 Slots :  273 pdsch PRB per slot
+##  - 16 Specific slots :  0 pdsch PRB
+##  - 32 RA+UL slots : 0 pdsch PRB
+##  - 44 muted slots : 0 pdsch (slot 3 & 13 due to 2516(16 slots) slot 6 & 16 due to canada frame struct(16slots),
+##     slot 0,1,2 of odd SFN (12slots) due to pooling, CRS TRS/ACQ slots of other pooling groups are not allowed
+##     to transmit pdsch if not zab cell   )
+##  - 44 Full DL slots : 273 PRB
+##               in every 160slots :  12*241+12*273+44*273=18180
+##               in 5mins :   18180*(600000/160)=68175000
+##   update in FB2402 - PR03497201 a fix for Apple UE using PwrSaving BWP, slot 6 & 16 are no more muted
+##        60 full DL slots of 273 PRB
+##               in every 160slots :  12*241+12*273+60*273=22548
+##               in 5mins : 22548*(600000/160)=84555000
+##
+##
+## The counter M55308C1006 (PRB available for PUSCH with L1 Basebnad pooling activated) value
+## With 2516 BiAgreement, no muted UL slots, all UL slots #8, #18, #9, #19 are all allowed for UL pusch;
+##  -  32 UL+RACH Slots in total (26 UL, 6 RACH slots ) (6SSB config)
+##     in UL slots without Rach, there will be 2*21=42 PRB for pucch; 273-42=231 for pusch
+##     in RACH slots, threre will be 4 PRBs for guard, 12 PRB for RACH, so 231-4-12=215 PRB for pusch
+##
+##     in every 160slots :   26*231+215*6=7296 PRBs pusch
+##     in every 5 mins :     7296*(600000/160)=27360000
+##
+##
+##
+##
+
+&{CB010513_F_BB_POOL_DL_Counter_Expected}      PM_ID=M55308C10005
+...                                     CELL_1_Expected=80460000
+...                                     CELL_2_Expected=12870000
+...                                     CELL_3_Expected=68175000
+
+&{CB010513_F_BB_POOL_UL_Counter_Expected}      PM_ID=M55308C10006
+...                                     CELL_1_Expected=27360000
+...                                     CELL_2_Expected=27360000
+...                                     CELL_3_Expected=27360000
+
+
+*** Keywords ***
+
+TC CB010513-F-TC-7
+    [Documentation]
+    ...     Conditions:     8940-I & G activated
+    ...     Actions:        Cell setup & call setup with 3 UEs (UE 1 1200mbps, UE 2 10mbps, UE 3 175mbps)
+    ...     Checks:         Zab privilege check : Cell 1 zab privileged=1, Cell 2 & 3 zab privileged=0;
+    ...                     PM counters check : value as expected
+    ...     Verdict:        Zab privilege check & PM counters value check as expected
+    [Arguments]             ${param}
+    ...                     ${vendor_custom}
+    Init Sequence           ${param}
+    # Step                    Set RAD Params Of CB010513 F
+    Step                    Deploy Vendor File Config               vendor_param=${vendor_custom}        is_perform_full_commissioning=${false}
+    Dated Log New Line      ${vendor_custom}
+    Critical Step           Perform Recommissionning CB010513 F
+    Critical Step           Restart TL
+    Step                    Multi Cells Setup CB010513 F                argument=${param.nbCell}
+    Step                    SA Call DL UL Traffic With UE Profile      argument=${Profile_UE_1}
+    Step                    sleep    2s
+    Step                    SA Call DL UL Traffic With UE Profile      argument=${Profile_UE_2}
+    Step                    sleep    2s
+    Step                    SA Call DL UL Traffic With UE Profile      argument=${Profile_UE_3}
+    Step                    sleep    2s
+    # Step                    Activate Sherpa On All Cells
+    # Step                    sleep    10s
+    # Step                    Stop Sherpa Collection
+    Step                    Collect TTI Traces
+    Step                    Post processing TTI Traces
+    # Step                    Verify ZAB Privilege cells
+    Step                    sleep    720s
+    Step                    Collect Lastest PM Counters File
+    Step                    Check CB010513 F PM Counters With Constraints   argument=${F_TC7_constraints}
+
+TC CB010513-F-TC-10
+    [Documentation]
+    ...     Conditions:     8940-I & G activated
+    ...     Actions:        Cell setup & call setup with 3 UEs (UE 1 1200mbps, UE 2 10mbps, UE 3 175mbps)
+    ...     Checks:         Zab privilege check : Cell 1 zab privileged=1, Cell 2 & 3 zab privileged=0;
+    ...                     PM counters check : value as expected
+    ...     Verdict:        Zab privilege check & PM counters value check as expected
+    [Arguments]             ${param}
+    ...                     ${vendor_custom}
+    Init Sequence           ${param}
+    # Step                    Set RAD Params Of CB010513 F
+    Step                    Deploy Vendor File Config               vendor_param=${vendor_custom}        is_perform_full_commissioning=${false}
+    Dated Log New Line      ${vendor_custom}
+    Critical Step           Perform Recommissionning CB010513 F
+    Critical Step           Restart TL
+    Step                    Multi Cells Setup CB010513 F                argument=${param.nbCell}
+    Step                    SA Call DL UL Traffic With UE Profile      argument=${Profile_UE_1}
+    Step                    sleep    2s
+    Step                    SA Call DL UL Traffic With UE Profile      argument=${Profile_UE_2}
+    Step                    sleep    2s
+    Step                    SA Call DL UL Traffic With UE Profile      argument=${Profile_UE_3}
+    Step                    sleep    2s
+    # Step                    Activate Sherpa On All Cells
+    # Step                    sleep    10s
+    # Step                    Stop Sherpa Collection
+    Step                    Collect TTI Traces
+    Step                    Post processing TTI Traces
+    # Step                    Verify ZAB Privilege cells
+    Step                    sleep    720s
+    Step                    Collect Lastest PM Counters File
+    Step                    Check CB010513 F PM Counters With Constraints   argument=${F_TC10_constraints}
+
+Suite Setup CB010513 F
+    [Documentation]
+    ...     Conditions:     it needs no conditions
+    ...     Actions:        it performs the generic suite setup and backup the configurations files
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        suite setup is passed
+    [Arguments]             ${yaml_file_path}
+    Setup.Suite Setup From Scratch    keepAllUeDataInCfgFile=${True}
+    ...     automaticTeardown=${True}
+    ...     yamlPathname=${yaml_file_path}
+    # ...     yamlPathname=${CURDIR}/../../../../../../../custom-config/POOLING/CB010513/CB010513_F/custom_config_10513_F.yaml
+    Backup Files
+    ${scf_suite_setup_backup}         OAM Get SCF File    file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable      ${scf_suite_setup_backup}
+    Dated Log               SCF backup file = ${scf_suite_setup_backup}
+
+Perform Recommissionning CB010513 F
+    Oam.OAM Perform Full Commissioning  scf_file=${SCF_SETUP_PATH}
+    WA Airscale Wait for Ready    ${GNB_DU}
+    # Restart.F1 Wait Link Classical
+
+Set RAD Params Of CB010513 F
+    [Documentation]     Add or Modify the RAD params of 8940 To Activate the feature
+    ...                 will be replaced later by NIDD params
+    ...                 0x580117=1 : #CSI-RS Event Sherpa
+    ...                 0x58012B=1 : Canada Frame Struct
+    ...                 0x58070a=1 : 10513-E rdCellCsiRsPeriodicityBbPoolExtensionTddFr1, for L2PS
+    ...                 0x5901dd=1 : 10513-F rdCprt for L3
+    Dated Log New Line   Add RAD params of 8940-F InterL1SubPool and ZeroAllocationByPass are Disabled ......
+    ${rad_param_1}=      create dictionary       field=0x580117    value=1
+    ${rad_param_2}=      create dictionary       field=0x58012B    value=1
+    # ${rad_param_3}=      create dictionary       field=0x58070a    value=1
+    # ${rad_param_4}=      create dictionary       field=0x5901dd    value=1
+    ${rad_param_list}=       Create List         ${rad_param_1}
+    ...                                          ${rad_param_2}
+    # ...                                          ${rad_param_3}
+    # ...                                          ${rad_param_4}
+    Dated Log New Line    RAD params :  ${rad_param_list}
+    SetConfig.Set Fields in swconfig DU       param_list=${rad_param_list}
+    Dated Log New Line   RAD params of 10513-F update completed
+
+Multi Cells Setup CB010513 F
+    [Arguments]       ${nbCell}
+    ${msgStr}=    Catenate  Test ${nbCell} Cells Setup
+    Dated Log   ${msgStr}
+    Setup Wtsemu SA
+    sleep    60s
+    WTS Set X2 Link
+    sleep    5s
+    #wtsemu.ue_testmode_decode_muxphychan    decode_mux_phy_chan=decode_PDSCH
+    #sleep    2s
+
+SA Call DL UL Traffic With UE Profile
+    [Arguments]                      ${ue_profile}
+    [Documentation]                  1  UE SA call  based on UE profile (ue_id, pdu, gw, dl_tput, ul_tput, deviation)
+    ...                              This keyword can be used to perform a UE call based on the UE profile
+    ...                              how to use :
+    ...                              - create a dictionary of ue profile with the following structure:
+    ...                                 &{Profile_UE}
+    ...                                     ue_id=1
+    ...                                     pdu=1
+    ...                                     gw=1
+    ...                                     dl_tput=175   #(tput in mbps)
+    ...                                     ul_tput=50
+    ...                                     deviation=40  #(percentage of expected deviation of tput)
+    ...                              - call the keyword with the UE profile
+    ...                                     SA Call DL Traffic With UE Profile     ${Profile_UE}
+    CallSetup.UE Register            ue=${ue_profile.ue_id}
+    sleep                            1s
+    CallSetup.Launch PDU Session     ue=${ue_profile.ue_id}     pdu=${ue_profile.pdu}       gw=${ue_profile.gw}
+    sleep                            1s
+    ${ueSetting}                     set variable            ${BASIC_UE_SA}
+    ${ueSetting.pdu}                 set variable            ${ue_profile.ue_id}
+    ${ueSetting.ue}                  set variable            ${ue_profile.ue_id}
+    Traffic UE DL                    ueSetting=${BASIC_UE_SA}    throughput=${ue_profile.dl_tput}
+    ...                              shouldBeStop=False          deviation=${ue_profile.deviation}
+    ...                              shouldBeCheck=False
+    sleep                            1s
+    Traffic UE UL                    ueSetting=${BASIC_UE_SA}    throughput=50
+    ...                              shouldBeStop=False          deviation=${ue_profile.deviation}
+    ...                              shouldBeCheck=False
+
+Check CB010513 F PM Counters
+    Check CB010513 F PM Counters Expected values      ${CB010513_F_BB_POOL_DL_Counter_Expected}
+    Check CB010513 F PM Counters Expected values      ${CB010513_F_BB_POOL_UL_Counter_Expected}
+
+Check CB010513 F PM Counters Expected values
+    [Documentation]                 To Check CB010513 F PM counter values are as exepected
+    [Arguments]                     ${PM_Counters_Expected}
+    Dated Log                       =======================================================================
+    Dated Log                       PM counter : ${PM_Counters_Expected.PM_ID}
+    Dated Log                       --------------------------------------------------------------------------------
+    ${Value_PM_Counter_Cell_1}=            Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${PM_Counters_Expected.PM_ID}       ${NRCELLID_1_idx}
+    Dated Log                         Value of PM counter : ${PM_Counters_Expected.PM_ID} : cell : ${NRCELLID_1_idx} : ${Value_PM_Counter_Cell_1}
+    ${Value_PM_Counter_Cell_2}=            Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${PM_Counters_Expected.PM_ID}       ${NRCELLID_2_idx}
+    Dated Log                         Value of PM counter : ${PM_Counters_Expected.PM_ID} : cell : ${NRCELLID_2_idx} : ${Value_PM_Counter_Cell_2}
+    ${Value_PM_Counter_Cell_3}=            Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${PM_Counters_Expected.PM_ID}       ${NRCELLID_3_idx}
+    Dated Log                         Value of PM counter : ${PM_Counters_Expected.PM_ID} : cell : ${NRCELLID_3_idx} : ${Value_PM_Counter_Cell_3}
+    should be true      ${Value_PM_Counter_Cell_1} == ${PM_Counters_Expected.CELL_1_Expected}
+    should be true      ${Value_PM_Counter_Cell_2} == ${PM_Counters_Expected.CELL_2_Expected}
+    should be true      ${Value_PM_Counter_Cell_3} == ${PM_Counters_Expected.CELL_3_Expected}
+
+Check CB010513 F PM Counters With Constraints
+    [Documentation]                 To Check CB010513 F PM counter values are as exepected
+    [Arguments]                     ${KPI_Constrains_File_Name}
+    Dated Log                        ====> check counter and KPI constraints is started
+    Dated Log                        ====> Latest PM counter file is : ${LATEST_PM_FILE}
+    KPI Evaluate                    pmFile=${LATEST_PM_FILE}
+    ...                             constraintsFile=${KPI_Constrains_File_Name}
+    ...                             failOnError=${True}
+    Dated Log                        ====> check counter and KPI constraints ended
+
+Collect TTI Traces
+    [Documentation]                 To collect TTI traces for test
+    ${TestName}                     getFormattedName
+    ${TTIdir}                       Get TTI Trace Path                 dir_suffix=${TestName}_TTI
+    Dated Log                       ====== start TTI capture : ======
+    Start TTI Traces in Streaming mode      src_ip=10.0.1.2
+    Traced Sleep                    duration=5      msg=TTI capture during DL UL traffic
+    ${TTIpcap}                      Stop TTI Traces in Streaming mode
+    ...                             tti_trace_path=${TTIdir}
+    ...                             tti_trace_filename=TTI_Trace_DL_UL
+    Traced Sleep                    duration=5      msg=TTI capture end
+    Dated Log                       ====== Convert TTItrace : ${TTIpcap} to json and csv ======
+    ${TTIjson}                      Convert TTItrace from pcap to others
+    ...                             input_file_path=${TTIpcap}
+    ${TTIcsv}                       decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson}    num_of_events=10000
+    Dated Log                       ====== json file : ${TTIjson} csv file : ${TTIcsv}
+
+Post processing TTI Traces
+    Dated Log                       ====== post processing TTI traces start ... ======
+    Dated Log                       ====== ...  to be completed ... ======
+    Dated Log                       ====== post processing TTI traces end ... ======
+
+End Of TC
+   [Documentation]        At the end of each TC :
+   ...                      - show the Diagnosis of the TC steps
+   ...                      - collect the gnb Snapshot
+   ...                      - if TC failed, collect also AP sosReport
+   Dated Log              End Of TC : start
+   Produce Scout Data
+   Oam.OAM Get Snapshot
+   Run Keyword If Test Failed     Setup.Get Sos Report
+   GenericTest.Display Diagnosis
+   Dated Log              End of TC : end

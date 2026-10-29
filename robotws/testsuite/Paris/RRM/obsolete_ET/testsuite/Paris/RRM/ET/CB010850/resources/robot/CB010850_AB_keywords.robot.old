@@ -1,0 +1,259 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB010850_AB
+...               Test Case Scenario author   : ilakcoumi.pareemanen@nokia.com
+...               Test Case Scenario contact  : ilakcoumi.pareemanen@nokia.com
+...               Creation Date               : 08-Aug-2023
+...               Modified Date               : 24-Aug-2023
+...               1.0 FB2420    Blandine.garnier@nokia.com  suppression buildversion ds iphy
+
+
+Resource          ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/CfgFilesTools.robot
+Resource          ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+
+
+Library            ../../../../../resources/SWENG/python/CoamParameter.py      WITH NAME     coam_parameter
+Library            taf.sbts.oam.coam.admin           WITH NAME   sbts_coam
+Library            ute_wtssim           WITH NAME    wts
+Library            taf.wts.runner              WITH NAME       wtsemu
+Library            OperatingSystem
+Library            String
+Library            BuiltIn
+
+
+*** Variables ***
+
+${gnb_alias}                      gnb_under_test
+
+${nrarfcnDl}                      392500
+${nrarfcnUl}                      376500
+${gscn}                           4907
+${off}                            off
+
+${NRCELLID_1_idx}                   1
+${NRCELLID_2_idx}                   2
+${NRCELLID_3_idx}                   3
+
+# expected counters value with CB009215 activated
+# &{BB_POOL_Counter_Expected}             PM_ID=M55308C10006
+# ...                                     CELL_1_Expected=5250000
+# ...                                     CELL_2_Expected=5250000
+# ...                                     CELL_3_Expected=6750000
+
+
+# expected counters value without CB009215 activated
+# &{BB_POOL_Counter_Expected}             PM_ID=M55308C10006
+# ...                                     CELL_1_Expected=5850000
+# ...                                     CELL_2_Expected=5850000
+# ...                                     CELL_3_Expected=7350000
+
+# expected counters value without CB009215 activated since FB2521
+&{BB_POOL_Counter_Expected}             PM_ID=M55308C10006
+...                                     CELL_1_Expected=6442500
+...                                     CELL_2_Expected=6442500
+...                                     CELL_3_Expected=7942500
+
+*** Keywords ***
+
+CB010850_Configuration
+    [Documentation]               Dedicated KW to add use a delta commissioning file
+    ...                           3 cells 10Mhz configuration n25
+    [Arguments]                   ${pooling_delta_file}     ${gnb_alias}
+
+    # Open connection towards cOAM
+    sbts_coam.connect_to          name=${gnb_alias}
+
+
+    # Apply delta scf
+    coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${pooling_delta_file}
+    ...                           connection=${gnb_alias}
+    ...                           timeout=300
+
+    OAM wait available
+
+    sbts_coam.teardown            connection=${gnb_alias}
+
+    GnbXmlTools.Get Data From Gnb TargetBD File        card_name=AHFII
+
+    # Update IPHY GSCN to new value
+    WtsXmlConfig.startSession           file=iphy
+    WtsXmlConfig.setListEltText         //cardName                      AHFII
+    WtsXmlConfig.setListEltText         //resourceBuildKey              LTX_AHFII
+    WtsXmlConfig.setListEltText         //GSCN                          4907
+
+    # update iphy.xml with swVersion and swFileKey values taken fomr GNB TargetBD_*.xml
+    WtsXmlConfig.setListEltText        //version                        ${g_resource_swVersion}
+    WtsXmlConfig.setListEltText        //bldVersion                     ${g_resource_swVersion}
+    #WtsXmlConfig.setListEltText        //buildversion                   ${g_resource_swVersion}
+    WtsXmlConfig.setListEltText        //software/file/name             ${g_resource_swFileKey}
+    WtsXmlConfig.stopSession              file=iphy
+
+
+    #Update gscn & nrarfcn
+    Modify Field in WtsEmu Cfg File     field=nr_arfcn       value=${nrarfcnUl}:${nrarfcnDl}
+    Modify Field in WtsEmu Cfg File     field=gscn           value=${gscn}
+    Modify Field in WtsEmu Cfg File     field=tdd_cell       value=${off}
+
+Build UEs list SA Multi UEs
+
+    [Arguments]             ${dict_ues}
+    ${totalNbOfUe}          get length          ${dict_ues}
+    Dated Log           Configure the setting for the ${totalNbOfUe} ue's
+    Set Global Variable     ${totalNbOfUe}
+
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${totalNbOfUe}
+        ${current_ue}=                Evaluate                      ${current_id} + 1
+        ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          pdu                 1
+        Set To Dictionary             ${current_ueSetting}          trf_id              ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          target_gnb          2
+        Set To Dictionary             ${current_ueSetting}          target_cells        ${dict_ues[${current_id}].originalCell}
+        Set To Dictionary             ${current_ueSetting}          throughput          ${dict_ues[${current_id}].throughput}
+        Set To Dictionary             ${current_ueSetting}          ue_nr_capa          ${dict_ues[${current_id}].ue_nr_capa}
+
+        Append To List                ${listOfUes}                  ${current_ueSetting}
+    END
+    Dated Log New Line                UE_List=${listOfUes}
+
+    [Return]                          ${listOfUes}
+
+Set UE_Capa Context_WTS CFG
+
+    [Arguments]       ${listOfUes}
+
+    Create UEs in Cfg File             nb_sa_ues=${totalNbOfUe}
+
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Modify UE Data in Cfg File     sa_or_nsa=SA    ue_id=${current_elem.ue}    ue_nr_capa=${current_elem.ue_nr_capa}
+        ...                            cell_id=${current_elem.target_cells}
+    END
+
+
+Multi Cells Setup for 10850
+    [Arguments]       ${nbCell}        ${listOfUes}
+    ${msgStr}=    Catenate  Test ${nbCell} Cells Setup
+    Dated Log   ${msgStr}
+
+    Check Multi Ues Setting In List                                 multiUesList=${listOfUes}
+    CallSetup.Setup Wtsemu SA                                       nbUe=${totalNbOfUe}
+    ...                                                             nbSaUe=${totalNbOfUe}
+    ...                                                             shouldUseLua=False
+    ...                                                             shouldSaveBasicCfg=True
+    WTS Set X2 Link
+    sleep    5s
+
+
+Check Multi Ues Setting In List
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${multiUesList}
+    ...     Actions:        it logs all the ue's settings
+    ...     Checks:         it needs no checks
+    ...     Verdict:        the ue's list is defined
+    [Arguments]             ${multiUesList}=None
+
+    ${NbOfUes}              get length     ${multiUesList}
+    Dated Log New Line      ===> Check Multi Ues Setting In List number of ue's in list: NbOfUes=${NbOfUes}
+    FOR    ${current_elem}    IN      @{multiUesList}
+        Dated Log    serving cell=${current_elem.target_cells} on gnb=${current_elem.target_gnb} for ue=${current_elem.ue}
+    END
+
+
+SA Start Traffic Multi UEs NonGBR
+    [Arguments]       ${listOfUes}
+
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Dated Log New Line     === SA Register UE ${current_elem.ue} on cell ${current_elem.target_cells} ===
+        CallSetup.UE Register                                   ue=${current_elem.ue}
+
+        CallSetup.Launch PDU Session                            ue=${current_elem.ue}
+        ...                                                     pdu=${current_elem.pdu}
+        ...                                                     gw=${current_elem.ue}
+    END
+
+# Start the Non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Run Keyword If      ${current_elem.throughput} > 0     Run Keywords
+        ...    Dated Log New Line
+        ...         === Launch ${current_elem.throughput}Mbits/s NonGBR DL& ULtraffic UE ${current_elem.ue} on cell ${current_elem.target_cells} ===
+        ...    AND       Traffic SA Not Stopped
+        ...                                                     ueSetting=${current_elem}
+    END
+
+
+
+Traffic SA Not Stopped
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${ueSetting}
+    ...     Actions:        it manages the DL and UL traffic on the UE
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        DL UL traffic is passed
+    [Arguments]             ${ueSetting}
+#DL
+    Set To Dictionary          ${ueSetting}        trf_id    1
+    Traffic UE DL                ueSetting=${ueSetting}
+    ...                               throughput=${ueSetting.throughput}
+    ...                               captureCallback=None
+    ...                               capture=None
+    ...                               captureDuration=0
+    ...                               duration=3
+    ...                               shouldBeStop=False
+    ...                               shouldBeCheck=False
+
+#UL
+
+    Set To Dictionary       ${ueSetting}        trf_id    1
+    Traffic UE UL           ueSetting=${ueSetting}
+    ...                               throughput=${ueSetting.throughput}
+    ...                               captureCallback=None
+    ...                               capture=None
+    ...                               captureDuration=0
+    ...                               duration=3
+    ...                               shouldBeStop=False
+    ...                               shouldBeCheck=False
+
+Check 10850 PM Counters
+    [Documentation]                 Retrieve and Check 10850 PM counter values are as expected
+    Dated Log                       Waiting 10 minutes before collecting counters
+    sleep                           600s
+    ${date}                         Get Current Date
+    ${date_in_dir_name}             Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                  Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+    Dated Log                       The PM counters file collected from gnb will be stored under : ${log_path_pm}
+    ${pm_latest}                    Counters.Collect PM files from BTS      ${log_path_pm}
+    set Suite Variable              ${LATEST_PM_FILE}       ${pm_latest}
+    set Suite Variable              ${log_path_pm}
+    Dated Log                       Latest pm counters file : ${LATEST_PM_FILE}
+
+    PM Counters Expected values      ${BB_POOL_Counter_Expected}
+
+PM Counters Expected values
+    [Documentation]                 Check PM counter "M55308C10006:Prbs available
+    ...                              For PUSCH with pooling values" are as expected
+    [Arguments]                     ${BB_POOL_Counter_Expected}
+    Dated Log                       =======================================================================
+    Dated Log                       PM counter : ${BB_POOL_Counter_Expected}
+    Dated Log                       --------------------------------------------------------------------------------
+    ${Value_PM_Counter_Cell_1}=            Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${BB_POOL_Counter_Expected.PM_ID}       ${NRCELLID_1_idx}
+    Dated Log                         Value of PM counter : ${BB_POOL_Counter_Expected.PM_ID} : cell : ${NRCELLID_1_idx} : ${Value_PM_Counter_Cell_1}
+    ${Value_PM_Counter_Cell_2}=            Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${BB_POOL_Counter_Expected.PM_ID}       ${NRCELLID_2_idx}
+    Dated Log                         Value of PM counter : ${BB_POOL_Counter_Expected.PM_ID} : cell : ${NRCELLID_2_idx} : ${Value_PM_Counter_Cell_2}
+    ${Value_PM_Counter_Cell_3}=            Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${BB_POOL_Counter_Expected.PM_ID}       ${NRCELLID_3_idx}
+    Dated Log                         Value of PM counter : ${BB_POOL_Counter_Expected.PM_ID} : cell : ${NRCELLID_3_idx} : ${Value_PM_Counter_Cell_3}
+
+    should be true      ${Value_PM_Counter_Cell_1} == ${BB_POOL_Counter_Expected.CELL_1_Expected}
+    should be true      ${Value_PM_Counter_Cell_2} == ${BB_POOL_Counter_Expected.CELL_2_Expected}
+    should be true      ${Value_PM_Counter_Cell_3} == ${BB_POOL_Counter_Expected.CELL_3_Expected}

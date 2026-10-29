@@ -1,0 +1,952 @@
+# -*- coding: utf-8 -*
+
+"""
+:copyright: Nokia Networks
+:author: Christophe SAMSON
+:contact: christophe.samson@nokia.com
+:maintainer:
+:contact:
+"""
+
+import time
+from decimal import *
+import re
+import os
+import csv
+
+import linux_cmds as linux
+
+# Robot Framework Libraries:
+from robot.libraries.BuiltIn import BuiltIn
+from robot.libraries.OperatingSystem import OperatingSystem
+
+# TAF & UTE Libraries:
+from taf.transport.ssh import ssh
+from robot.api import logger
+from taf.analyzer.ttitrace import TtitraceReader
+from taf.config.scf import scf
+
+from ta5g_throughput.throughput_measurement import ThroughputMeasurement
+from ta5g_throughput.egate_interface import *
+from ta5g_throughput.table_parser import *
+
+
+class EgateRetryException(Exception):
+    pass
+
+# ====================================================================================================[120 characters]
+#   Global Variables
+# ====================================================================================================[120 characters]
+
+
+logLevel = "INFO"
+RED = '\033[31m'
+GREEN = '\033[32m'
+YELLOW = '\033[33m'
+RESET = '\033[0m'
+BOLD = '\033[1m'
+offlineVerification = ""
+wtsObj = None
+rbi = BuiltIn()
+
+ssh = ssh()
+
+
+def calculate_average_of_list_in_file(file_name):
+    data_sum = 0
+    none_zero_cnt = 0
+    with open(file_name, 'r') as f_p:
+        for each_line in f_p:
+            line_data = each_line.rstrip()
+            #  Pipeline modif requested : testsuite/RRM/ECE/DSS/5GC002535/resources/python/tools.py:53:26:
+            #  W605 invalid escape sequence 'antislash d'
+            if re.match("\\d+", line_data):
+                new_data = int(each_line.rstrip())
+                if new_data != 0:
+                    none_zero_cnt += 1
+                    data_sum += new_data
+    if none_zero_cnt == 0:
+        return none_zero_cnt
+    return data_sum/none_zero_cnt
+
+
+def Calculate_UL_throughoutput_old(alias, location=14, size=2000, cellid='', sleep_time=5):
+    ssh.send_command('journalctl -f | grep --line-buffered rlcPdus | grep "{}"'.format(cellid),
+                     connection=alias, timeout=60)
+    time.sleep(sleep_time)
+    output = ssh.read_output(size=size, connection=alias).split('\r\n')
+    ul_output = output[0].split('\n')
+    ul_output.pop()
+    num = 0
+    sum = 0
+    for element in ul_output:
+        data = element.split(' ')[location]
+        traffic_data = data.split('(')[-1]
+        num += 1
+        sum += int(traffic_data)
+        logger.info(
+            "Traffic data {} bytes received from UE".format(traffic_data))
+    UL_Throughoutput = round(
+        float(8 * Decimal(sum) / Decimal(num) / 1048576), 3)
+    logger.info("UL_Throughoutput is {}".format(UL_Throughoutput))
+    return UL_Throughoutput
+
+
+def Calculate_UL_throughput(alias, file_name, location=9, size=20000, cellid='', sleep_time=5):
+    # ssh.send_command('grep --line-buffered rlcPduBytes /tmp/ASP-124A_startup.log | grep "{}"'.format(cellid),
+    #                 connection=alias, timeout=60)
+    ssh.send_command('grep --line-buffered rlcPduBytes "{}" | grep "{}"'.format(file_name, cellid),
+                     connection=alias, timeout=60)
+    time.sleep(sleep_time)
+    output = ssh.read_output(size=size, connection=alias).split('\r\n')
+    ul_output = output[0].split('\n')
+    # logger.info("Traffic data 1  {} bytes received from UE".format(output))
+    ul_output.pop()
+    num = 0
+    sum = 0
+    output.pop()
+    # logger.info("Traffic data 2 {} bytes received from UE".format(ul_output))
+    for element in output:
+        data = element.split(' ')[location]
+        traffic_data = data.split('(')[-1]
+        if int(traffic_data) > 0:
+            num += 1
+            sum += int(traffic_data)
+            # logger.info("Traffic data 3 {} bytes received from UE".format(traffic_data))
+    logger.info("Traffic data sum {} bytes received from UE".format(sum))
+    logger.info("Traffic num data {} received from UE".format(num))
+    UL_Throughoutput = round(
+        float(8 * Decimal(sum) / Decimal(num) / 1000000), 3)
+    logger.info("UL_Throughput(Mbps) is {}".format(UL_Throughoutput))
+    return UL_Throughoutput
+
+
+def Calculate_DL_throughput(alias, file_name, location=11, size=20000, cellid=''):
+    ssh.send_command('grep --line-buffered -i SentDataMeasurementCounting "{}" | grep DataPdu | grep "{}"'
+                     .format(file_name, cellid), connection=alias, timeout=60)
+    time.sleep(5)
+    output = ssh.read_output(size=size, connection=alias).split('\r\n')
+    dl_output = output[0].split('\n')
+    dl_output.pop()
+    num = 0
+    sum = 0
+    output.pop()
+    for element in output:
+        data = element.split(' ')[location]
+        # traffic_data = data.split('|')[-1].split(']')[0]
+        traffic_data = data.split('|')[0]
+        if int(traffic_data) > 0:
+            num += 1
+            sum += int(traffic_data)
+            logger.info(
+                "Traffic data {} bytes sent to UE".format(traffic_data))
+    logger.info("Traffic data sum {} bytes sent to UE".format(sum))
+    logger.info("Traffic num data {} sent to UE".format(num))
+    DL_Throughoutput = round(
+        float(8 * Decimal(sum) / Decimal(num) / 1024000), 3)
+    logger.info("DL_Throughput(Mbps) is {}".format(DL_Throughoutput))
+    return DL_Throughoutput
+
+
+def Calculate_DL_throughoutput_old(alias, location=17, size=3000, cellid=''):
+    ssh.send_command(r'journalctl -f | grep --line-buffered -i SentDataMeasurementCounting | grep "{}"'.format(cellid),
+                     connection=alias, timeout=60)
+    time.sleep(5)
+    output = ssh.read_output(size=size, connection=alias).split('\r\n')
+    dl_output = output[0].split('\n')
+    dl_output.pop()
+    num = 0
+    sum = 0
+    for element in dl_output:
+        data = element.split(' ')[location]
+        traffic_data = data.split('|')[-1].split(']')[0]
+        num += 1
+        sum += int(traffic_data)
+        logger.info("Traffic data {} bytes sent to UE".format(traffic_data))
+    DL_Throughoutput = round(
+        float(8 * Decimal(sum) / Decimal(num) / 1048576), 3)
+    logger.info("DL_Throughoutput is {}".format(DL_Throughoutput))
+    return DL_Throughoutput
+
+
+def Calculate_DL_throughput2(alias, file_name, size=50000, cellid=''):
+    ssh.send_command('grep --line-buffered -a -i DataPdu "{}" | grep -a "{}"'.format(file_name, cellid),
+                     connection=alias, timeout=60)
+    time.sleep(5)
+    output = ssh.read_output(size=size, connection=alias).split('\r\n')
+    dl_output = output[0].split('\n')
+    dl_output.pop()
+    num = 0
+    sum = 0
+    output.pop()
+    return _get_throughput_result(output, "dl")
+
+
+def Calculate_UL_throughput2(alias, file_name, size=50000, cellid=''):
+    ssh.send_command('grep --line-buffered -a -i rlcPdus "{}" | grep -a "{}"'.format(file_name, cellid),
+                     connection=alias, timeout=60)
+    time.sleep(5)
+    output = ssh.read_output(size=size, connection=alias).split('\r\n')
+    dl_output = output[0].split('\n')
+    dl_output.pop()
+    num = 0
+    sum = 0
+    output.pop()
+    return _get_throughput_result(output, "ul")
+
+
+def _get_throughput_result(output, direct):
+    # l2_putput = output.split('\n')
+    # l2_putput.pop()
+    num = 0
+    sum = 0
+    for i, element in enumerate(output):
+        if i == 0:
+            continue
+        data = element.split(' ')
+        for i, content in enumerate(data):
+            if direct == "dl":
+                if content.count('DataPdu') > 0:
+                    traffic_data = data[i+1].split('|')[-1].split(']')[0]
+                    break
+            elif direct == "ul":
+                if content.count('rlcPduBytes') > 0:
+                    traffic_data = data[i-1].split('(')[-1]
+            else:
+                traffic_data = 0
+        if int(traffic_data) > 0:
+            num += 1
+            sum += int(traffic_data)
+        # logger.info("Traffic data {} bytes received from UE".format(traffic_data))
+    if num == 0:
+        num += 1
+    throughoutput = round((8 * Decimal(sum) / Decimal(num) / 1048000), 3)
+    logger.info("throughput {} is {}".format(direct, throughoutput))
+    return throughoutput
+
+    # ${sw_version}=       pcap.Get Software Version
+
+
+def get_root_path():
+    """
+    computing root path where to deploy Luashark
+    Strategy is :
+        if /home/<user> exists, it will be root path
+        otherwise, retrieve TEMP_PATH robot variable as root path
+    """
+    root = "/home/{}".format(linux.get_user())
+    if os.path.isdir(root):
+        return root
+    output_dir = BuiltIn().get_variable_value("${TEMP_PATH}")
+    assert output_dir is not None, \
+        "${TEMP_PATH} robot variable was not set in robot context"
+    return output_dir
+
+
+def reform_coam_sw_version(version):
+    """reform SW Version from COAM GNB to QC required form:
+    from 5G19_FSMK_0000_018351_001507 to 5G_0.18351.1507
+    from 5G19B_FDD_GNB_0008_001840_000327 to 5G19B_0.1840.327
+    from SBTS21B_ENB_0000_210310_000024 to SBTS21B_ENB_0000_210310_000024
+    from SBTS21B_ENB_9999_210310_000024 to SBTS00_ENB_9999_210310_000024
+    from vDUCNF22R2_0.300.3624 to vDUCNF22R2_0_300_3624"""
+    version = version.replace(".", "_")
+    subversions = version.split('_')
+    if version.startswith('5G'):
+        version = strip_version(subversions[-3:])
+        if version[0] == '0':
+            result = '_'.join(['5G', version])
+        else:
+            result = '_'.join([subversions[0], version])
+    elif version.startswith('SBTS'):
+        if subversions[2].startswith('9'):
+            subversions[0] = 'SBTS00'
+        result = '_'.join(subversions)
+    elif version.startswith('vDU'):
+        if subversions[2].startswith('9'):
+            subversions[0] = 'SBTS00'
+        result = '_'.join(subversions)
+    return result
+
+
+def strip_version(version):
+    """remove 0 from sw version"""
+    for i in range(len(version)):
+        if version[i].lstrip('0') == '':
+            version[i] = '0'
+        else:
+            version[i] = version[i].lstrip('0')
+    return '.'.join(version)
+
+
+def install_multidynamic_if_needed_to_remove():
+    # Author : Nikolay Shkulepov
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    # Private Keyword: Install Multidynamic if neeeded
+    # It helps to check whether MULTI is installed and install it if not
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    try:
+        import multi
+    except ImportError:
+        try:
+            if os.getenv("VIRTUAL_ENV"):
+                pip_path = os.path.join(os.getenv("VIRTUAL_ENV"), "bin", "pip")
+            else:
+                pip_path = "pip"
+            cmdStr = "sudo mkdir /opt/tti_dissectors ; sudo chmod 777 /opt/tti_dissectors ; cd /opt/tti_dissectors"
+            rbi.log("install_multidynamic_if_neeeded(): cmdStr = %s" % cmdStr, "TRACE")
+            os.system(cmdStr)
+            # swVersion = rbi.run_keyword("Get gNB SW version").split("_")[1]
+            # swVersion = rbi.run_keyword("Get Software Version")
+            swVersion = rbi.run_keyword("Get gNB Software Version")
+            rbi.log("install_multidynamic_if_neeeded(): swVersion = %s" % swVersion, "TRACE")
+            os.chdir("/opt/tti_dissectors")
+            if swVersion.startswith("SBTS"):
+                swVersionSBTS = rbi.run_keyword("Get gNB Software Version")
+                cmdStr1 = "wget https://lterel.es-si-s3-z2.eecloud.nsn-net.net/build/SBTS00/"
+                cmdStr2 = "%s_tti-dissectors.zip" % swVersionSBTS
+                zipFileName = "%s_tti-dissectors.zip" % swVersionSBTS
+            else:
+                swVersion = rbi.run_keyword("Get gNB Software Version").split("_")[1]
+                cmdStr1 = "wget https://artifactory-espoo1.ext.net.nokia.com/artifactory/mnp5g-central-public-local/"
+                cmdStr2 = "System_Release/%s/tti-dissectors-%s.zip" % (swVersion, swVersion)
+                zipFileName = "tti-dissectors-%s.zip" % swVersion
+            cmdStr = cmdStr1 + cmdStr2
+            rbi.log("install_multidynamic_if_neeeded(): cmdStr = %s" % cmdStr, "TRACE")
+            os.system(cmdStr)
+            cmdStr1 = "unzip -n %s ; " % zipFileName
+            cmdStr2 = "chmod 777 * ; " + pip_path + " install --no-index -f . multidynamic.zip"
+            cmdStr = cmdStr1 + cmdStr2
+            rbi.log("install_multidynamic_if_neeeded(): cmdStr = %s" % cmdStr, "TRACE")
+            os.system(cmdStr)
+        except Exception as e:
+            rbi.log("install_multidynamic_if_neeeded(): Exception = <%s>" % str(e))
+
+
+def logException(functionNameStr, e, silent=False):
+    rbi.log("%s(): Exception = <%s>" % (functionNameStr, str(e)), "TRACE")
+    if not silent:
+        rbi.log_to_console(
+            "  %s: exception happened (see log.html)" % functionNameStr)
+
+
+def decode_tti_traces_to_remove(inputStr="", event_nr_max=1000):
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    rbi.log_to_console("TTI Trace decoding .", no_newline=True)
+    resultDir = rbi.run_keyword("5GC002535_Keywords.Get Testcase Log Directory")
+    pcapPathName = resultDir + "/ttitrace_streaming.pcap"
+    rbi.log("decode_tti_traces_in_streaming_mode(): pcapPathName = %s" % pcapPathName)
+    udpPathName = pcapPathName.replace(".pcap", ".udp")
+    if os.path.exists(pcapPathName) and os.path.getsize(pcapPathName) > 24:
+        try:
+            rbi.log_to_console(".1.", no_newline=True)
+            cmdStr1 = "tshark -r %s --disable-protocol swe --disable-protocol syscom -T fields -e data" % pcapPathName
+            cmdStr2 = " | perl -0ne's/\\n//g;print pack\"H*\",$_' > %s" % udpPathName
+            cmdStr = cmdStr1 + cmdStr2
+            rbi.log("decode_tti_traces_in_streaming_mode(): cmdStr = %s" % cmdStr)
+            stdoutStr = os.system(cmdStr)
+            rbi.log("decode_tti_traces_in_streaming_mode(): stdoutStr = %s" % stdoutStr)
+            rbi.log_to_console(".2.", no_newline=True)
+        except Exception as e:
+            logException("decode_tti_traces_in_streaming_mode [1]", e)
+            rbi.log_to_console(".ERROR")
+            return
+    rbi.log("decode_tti_traces_in_streaming_mode(): udpPathName = %s" % udpPathName)
+    if os.path.exists(udpPathName) and os.path.getsize(udpPathName) > 24:
+        try:
+            # os.system("rm %s >/dev/null 2>&1" % pcapPathName)
+            rbi.log_to_console(".3.", no_newline=True)
+            file_name = udpPathName
+            msgFile_all = open(resultDir + "/msg_all.csv", "w")
+            with open(file_name, 'rb') as file_obj:
+                startTime = int(time.time())
+                msgFile_all.write("-;" * 10 + "\n")
+                for i, event in enumerate(TtitraceReader(file_obj=file_obj)):
+                    if i > event_nr_max:
+                        break
+                    if event.type != "ttiStartInd":
+                        outStr = str(event.type) + ";" + repr(event.data) + "\n"
+                        outStr = outStr.replace("{", "").replace("}", "").replace(" ", "")
+                        outStr = outStr.replace("[", "").replace("]", "").replace("'", "")
+                        outStr = outStr.replace(":", ";").replace(",", ";")
+                        msgFile_all.write(outStr)
+            msgFile_all.close()
+            rbi.log_to_console(".4.", no_newline=True)
+            os.system("zip -mj %s/ttiTrace_stream_udp.zip %s >/dev/null 2>&1" % (resultDir, udpPathName))
+        except Exception as e:
+            logException("decode_tti_traces_in_streaming_mode [2]", e)
+            rbi.log_to_console(".ERROR")
+            return
+    rbi.log_to_console(".done")
+
+
+def verify_5GC002535_UL_MCS_NbrPrb_old(resultDir):
+    # TTITraces Events: dlFdSchedData + csiSrReportData
+    filePathName = resultDir + "/msg_all.csv"
+    BuiltIn().log("verify_qc_test_case(5GC002535): filePathName = %s" %
+                  filePathName, logLevel)
+    mcsList = []
+    numOfPrbList = []
+    averageMcs = 0
+    gradiantMcs = 0
+    averageNbrPrb = 0
+    gradiantNbrPrb = 0
+    tcResult = "failed"
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("verify_qc_test_case(5GC002535): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("verify_qc_test_case(5GC002535): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("verify_qc_test_case(5GC002535): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("verify_qc_test_case(5GC002535): line content = %s %s" % (line,lineNumber))
+                    if "ulFdSchedData;" in line and "isValidWhatIsProposed;1" in line:
+                        a = line.find(";rrmUlProposedMcs;") + 18
+                        b = line[a:].find(";") + a
+                        mcs = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC002535): mcs = %s (%s)" % (mcs, lineNumber))
+                        try:
+                            mcsList.append(int(mcs))
+                        except Exception as e:
+                            BuiltIn().log("verify_qc_test_case(5GC002535): MCS exit")
+                            logException("verify_qc_test_case", e, True)
+                        # numOfPrb;35;startPrb;4
+                        a = line.find(";numOfPrb;") + 10
+                        b = line[a:].find(";") + a
+                        numOfPrbs = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrb = %s (%s)" % (numOfPrbs, lineNumber))
+                        try:
+                            numOfPrbList.append(int(numOfPrbs))
+                        except Exception as e:
+                            BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrbs exit")
+                            logException("verify_qc_test_case", e, True)
+                    if "csiSrReportData;" in line:
+                        a = line.find(";cqi;") + 5
+                        b = line[a:].find(";") + a
+                        cqi = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC002535): cqi = %s (%s)" % (cqi, lineNumber))
+                        # break
+            BuiltIn().log("verify_qc_test_case(5GC002535): mcsList = %s" % (mcsList))
+            length = len(mcsList)
+            if length > 2:
+                aX = sum(mcsList)/length
+                BuiltIn().log("verify_qc_test_case(5GC002535): aX = %s" % (aX))
+                averageMcs = aX
+                aY = (1+length)/2
+                BuiltIn().log("verify_qc_test_case(5GC002535): aY = %s" % (aY))
+                y, m1, m2, m = 0, 0, 0, 0
+                for mcs in mcsList:
+                    y += 1
+                    m1 += (mcs-aX) * (y-aY)
+                    m2 += (mcs-aX) * (mcs-aX)
+                BuiltIn().log("verify_qc_test_case(5GC002535): m1 = %s" % (m1))
+                BuiltIn().log("verify_qc_test_case(5GC002535): m2 = %s" % (m2))
+                if m2 == 0:
+                    m2 = 1.0
+                m = m1 / m2
+                BuiltIn().log("verify_qc_test_case(5GC002535): m = %s" % (m))
+                gradiantMcs = m
+            BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrbList = %s" % (numOfPrbList))
+            length = len(numOfPrbList)
+            if length > 2:
+                aX = sum(numOfPrbList)/length
+                BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrb aX = %s" % (aX))
+                averagenumOfPrb = aX
+                aY = (1+length)/2
+                BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrb aY = %s" % (aY))
+                y, m1, m2, m = 0, 0, 0, 0
+                for numOfPrb in numOfPrbList:
+                    y += 1
+                    m1 += (numOfPrb-aX) * (y-aY)
+                    m2 += (numOfPrb-aX) * (numOfPrb-aX)
+                BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrb m1 = %s" % (m1))
+                BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrb m2 = %s" % (m2))
+                if m2 == 0:
+                    m2 = 1.0
+                m = m1 / m2
+                BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrb m = %s" % (m))
+                gradiantNbrPrb = m
+        if averagenumOfPrb >= 35 and 35 in numOfPrbList and gradiantNbrPrb >= 0.0:
+            tcResult = "passed"
+        msg = "averageNumOfPrb=" + str(averagenumOfPrb)
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult
+
+
+def verify_5GC002535_UL_MCS_StartPrb_old(resultDir):
+    # TTITraces Events: dlFdSchedData + csiSrReportData
+    filePathName = resultDir + "/msg_all.csv"
+    BuiltIn().log("verify_qc_test_case(5GC002535): filePathName = %s" %
+                  filePathName, logLevel)
+    mcsList = []
+    startPrbList = []
+    averagestartPrb = 0
+    gradiantstartPrb = 0
+    tcResult = "failed"
+    try:
+        if os.path.isfile(filePathName):
+            BuiltIn().log("verify_qc_test_case(5GC002535): file OK = %s " % (filePathName))
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                BuiltIn().log("verify_qc_test_case(5GC002535): open file OK = %s " % (filePathName))
+                for line in csvFile:
+                    # BuiltIn().log("verify_qc_test_case(5GC002535): line content = %s " % (line))
+                    lineNumber += 1
+                    # BuiltIn().log("verify_qc_test_case(5GC002535): line content = %s %s" % (line,lineNumber))
+                    if "ulFdSchedData;" in line and "isValidWhatIsProposed;1" in line:
+                        a = line.find(";rrmUlProposedMcs;") + 18
+                        b = line[a:].find(";") + a
+                        mcs = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC002535): mcs = %s (%s)" % (mcs, lineNumber))
+                        try:
+                            mcsList.append(int(mcs))
+                        except Exception as e:
+                            BuiltIn().log("verify_qc_test_case(5GC002535): MCS exit")
+                            logException("verify_qc_test_case", e, True)
+                        # numOfPrb;35;startPrb;4
+                        a = line.find(";startPrb;") + 10
+                        b = line[a:].find(";") + a
+                        startPrb = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC002535): numOfPrb = %s (%s)" % (numOfPrbs, lineNumber))
+                        try:
+                            startPrbList.append(int(startPrb))
+                        except Exception as e:
+                            BuiltIn().log("verify_qc_test_case(5GC002535): startPrb exit")
+                            logException("verify_qc_test_case", e, True)
+                    if "csiSrReportData;" in line:
+                        a = line.find(";cqi;") + 5
+                        b = line[a:].find(";") + a
+                        cqi = line[a:b]
+                        # BuiltIn().log("verify_qc_test_case(5GC002535): cqi = %s (%s)" % (cqi, lineNumber))
+                        # break
+            BuiltIn().log("verify_qc_test_case(5GC002535): startPrbList = %s" % (startPrbList))
+            length = len(startPrbList)
+            if length > 2:
+                aX = sum(startPrbList)/length
+                BuiltIn().log("verify_qc_test_case(5GC002535): aX = %s" % (aX))
+                averagestartPrb = aX
+                aY = (1+length)/2
+                BuiltIn().log("verify_qc_test_case(5GC002535): aY = %s" % (aY))
+                y, m1, m2, m = 0, 0, 0, 0
+                for startPrb in startPrbList:
+                    y += 1
+                    m1 += (startPrb-aX) * (y-aY)
+                    m2 += (startPrb-aX) * (startPrb-aX)
+                BuiltIn().log("verify_qc_test_case(5GC002535): m1 = %s" % (m1))
+                BuiltIn().log("verify_qc_test_case(5GC002535): m2 = %s" % (m2))
+                if m2 == 0:
+                    m2 = 1.0
+                m = m1 / m2
+                BuiltIn().log("verify_qc_test_case(5GC002535): m = %s" % (m))
+                gradiantstartPrb = m
+            BuiltIn().log("verify_qc_test_case(5GC002535): startPrbList = %s" % (startPrbList))
+#        if averageMcs > 20 and 28 in mcsList and gradiantMcs >= 0.0:
+#            tcResult = "passed"
+        if startPrb >= 4 and 4 in startPrbList and gradiantstartPrb >= 0.0:
+            tcResult = "passed"
+        msg = "averagesSartPrb=" + str(averagestartPrb)
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult
+
+
+def verify_5GC002535_DL_numOfDmrsCdmGroupWithoutData_Based_Mcs_2(resultDir, rnti_ue, rdMcsIndexForDmrsFDMThreshold=20):
+    # TTITraces Events: dlFdSchedData + csiSrReportData
+    filePathName = resultDir + "/msg_all.csv"
+    BuiltIn().log("verify_qc_test_case(5GC002535): filePathName = %s" % filePathName)
+    rrmDlProposedMcsList = []
+    cqiList = []
+    tbSizeList = []
+    averagerrmDlProposedMcs = 0
+    averageCqi = 0
+    gradiantCqi = 0
+    tcResult = "failed"
+    rnti_csiSrReportData_s = 0
+    averagetbSize = 0
+    try:
+        if os.path.isfile(filePathName):
+            with open(filePathName, "r") as csvFile:
+                lineNumber = 0
+                for line in csvFile:
+                    lineNumber += 1
+                    # s = "line1 : Nbr line = %s (%s) "
+                    # BuiltIn().log(s % (line, lineNumber))
+                    if "csiSrReportData;" in line:
+                        a = line.find(";cqi;") + 5
+                        b = line[a:].find(";") + a
+                        cqi = (int)(line[a:b])
+                        a = line.find(";rnti;") + 6
+                        b = line[a:].find(";") + a
+                        rnti_csiSrReportData = (int)(line[a:b])
+                        s = "csiSrReportData : rnti_csiSrReportData = %s (%s) "
+                        BuiltIn().log(s % (rnti_csiSrReportData, rnti_ue))
+                        if rnti_csiSrReportData != rnti_ue:
+                            BuiltIn().log("csiSrReportData : %s discarded => continue..." % rnti_csiSrReportData)
+                            continue
+                        BuiltIn().log("csiSrReportData : rnti %s found (%s)" %
+                                      (rnti_csiSrReportData, rnti_ue))
+                        rnti_csiSrReportData_s = rnti_csiSrReportData
+                        cqi_csiSrReportData_s = cqi
+                        try:
+                            cqiList.append(int(cqi_csiSrReportData_s))
+                        except Exception as e:
+                            logException("verify_qc_test_case", e, True)
+                        s = "verify_qc_test_case(5GC002535): cqi = %s rnti = %s (%s)"
+                        BuiltIn().log(s % (cqi, rnti_csiSrReportData, lineNumber))
+                    if "dlFdSchedData;" in line and "isValidWhatIsProposed;1" in line:
+                        # s = "line2 : Nbr line = %s (%s) "
+                        # BuiltIn().log(s % (line, lineNumber))
+                        a = line.find(";rnti;") + 6
+                        # a = line.find(";rrmDlProposedMcs;") + 18
+                        b = line[a:].find(";") + a
+                        rnti2 = (int)(line[a:b])
+                        if rnti2 != rnti_csiSrReportData_s:
+                            BuiltIn().log("dlFdSchedData: %s discarded => continue..." % rnti2)
+                            continue
+                        a = line.find(";rrmDlProposedMcs;") + 18
+                        b = line[a:].find(";") + a
+                        # AL is the last field
+                        # b = a + 1
+                        rrmDlProposedMcs = (int)(line[a:b])
+                        a = line.find(";rrmDlUsedMcs;") + 14
+                        b = line[a:].find(";") + a
+                        # AL is the last field
+                        # b = a + 1
+                        rrmDlUsedMcs = (int)(line[a:b])
+                        # BuiltIn().log("ligne = %s" % line)
+                        a = line.find(";numCdmGroupNoData;") + 19
+                        b = line[a:].find(";") + a
+                        # AL is the last field
+                        # b = a + 1
+                        numCdmGroupNoData = (int)(line[a:b])
+                        a = line.find(";numOfLayers;") + 13
+                        b = line[a:].find(";") + a
+                        # AL is the last field
+                        # b = a + 1
+                        # numOfLayers = (int)(line[a:b])
+                        numOfLayers = (line[a:b])
+                        if numOfLayers == 'RANK1':
+                            numOfLayers = 1
+                        else:
+                            numOfLayers = 2
+                        a = line.find(";tbSize;") + 8
+                        b = line[a:].find(";") + a
+                        # AL is the last field
+                        # b = a + 1
+                        tbSize = (int)(line[a:b])
+                        s = "verify_qc_test_case(5GC002535): dlFdSchedData : "
+                        s = s + \
+                            "rrmDlUsedMcs = %s numOfLayers = %s numCdmGroupNoData = %s rnti = %s (%s)"
+                        BuiltIn().log(s % (rrmDlUsedMcs, numOfLayers, numCdmGroupNoData, rnti2, lineNumber))
+                        if (((rrmDlUsedMcs >= rdMcsIndexForDmrsFDMThreshold) and (numOfLayers <= 2)
+                             and (numCdmGroupNoData != 1)) or ((rrmDlUsedMcs < rdMcsIndexForDmrsFDMThreshold) and
+                                                               (numCdmGroupNoData == 1))):
+                            tcResult = "failed"
+                            BuiltIn().log("test condition is failed => exit with failed result")
+                            s = "verify_qc_test_case(5GC002535): dlFdSchedData : "
+                            s = s + \
+                                "rrmDlUsedMcs = %s numOfLayers = %s numCdmGroupNoData = %s rnti = %s (%s)"
+                            BuiltIn().log(s % (rrmDlUsedMcs, numOfLayers, numCdmGroupNoData, rnti2, lineNumber))
+                            BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg +
+                                                     RESET + "", no_newline=False)
+                            break
+                        try:
+                            rrmDlProposedMcsList.append(int(rrmDlProposedMcs))
+                            tbSizeList.append(int(tbSize))
+                        except Exception as e:
+                            logException("verify_qc_test_case", e, True)
+            BuiltIn().log("verify_qc_test_case(5GC002535): rrmDlProposedMcsList = %s" % (rrmDlProposedMcsList))
+            BuiltIn().log("verify_qc_test_case(5GC002535): cqiList = %s" % (cqiList))
+            length = len(rrmDlProposedMcsList)
+            if length > 2:
+                averagerrmDlProposedMcs = sum(rrmDlProposedMcsList)/length
+                s = "verify_qc_test_case(5GC002535): averagerrmDlProposedMcs = %s"
+                BuiltIn().log(s % averagerrmDlProposedMcs)
+            length = len(tbSizeList)
+            if length > 2:
+                averagetbSize = sum(tbSizeList) / length
+                s = "verify_qc_test_case(5GC002535): averagetbSize = %s"
+                BuiltIn().log(s % averagetbSize)
+            length = len(cqiList)
+            if length > 2:
+                averageCqi = sum(cqiList)/length
+                aX = averageCqi
+                aY = (1+length)/2
+                BuiltIn().log("verify_qc_test_case(5GC002535): aY = %s" % (aY))
+                y, m1, m2, m = 0, 0, 0, 0
+                for cqi in cqiList:
+                    y += 1
+                    m1 += (cqi-aX) * (y-aY)
+                    m2 += (cqi-aX) * (cqi-aX)
+                BuiltIn().log("verify_qc_test_case(5GC002535): m1 = %s" % (m1))
+                BuiltIn().log("verify_qc_test_case(5GC002535): m2 = %s" % (m2))
+                if m2 == 0:
+                    m2 = 1.0
+                m = m1 / m2
+                BuiltIn().log("verify_qc_test_case(5GC002535): m = %s" % (m))
+                gradiantCqi = m
+                msg = "verify_qc_test_case(5GC002535): averageCqi = %s gradiantCqi=%s "
+                BuiltIn().log(msg % (averageCqi, gradiantCqi))
+        tcResult = "passed"
+        msg = "rnti_ue=" + str(rnti_ue)\
+              + " averagerrmDlProposedMcs=" + str(averagerrmDlProposedMcs)\
+              + " averagetbSize=" + str(averagetbSize)\
+              + " averageCqi=" + str(averageCqi)\
+              + " gradiantCqi=" + str(gradiantCqi)\
+              + " rdMcsIndexForDmrsFDMThreshold=" + \
+            str(rdMcsIndexForDmrsFDMThreshold)
+        BuiltIn().log_to_console(BOLD + (GREEN if tcResult.lower() == 'passed' else RED) + msg + RESET + "",
+                                 no_newline=False)
+    except Exception as e:
+        logException("verify_qc_test_case", e)
+    return tcResult
+
+
+def verifyFeatureActivation_old(resultBaseDir):
+    tcResult = "failed"
+    actDlDataDmrsFdm = ""
+    try:
+        scfObj = scf()
+        scfFilePath = BuiltIn().run_keyword(
+            "5GC002535_Keywords.Get Testcase Log Directory") + "/SCF.xml"
+        # BuiltIn().log("verifyFeatureActivation: scfFilePath = %s (SCF)" % scfFilePath)
+        scfObj.load_scf(scfFilePath)
+        NRBTS = "NRBTS-1"
+        NRCELL = "NRCELL-1"
+        if os.path.isfile(scfFilePath):
+            # BuiltIn().log("isfile scfFilePath = %s (SCF)" % scfFilePath)
+            with open(scfFilePath, "r") as scfFile:
+                line = scfFile.readline()
+                # BuiltIn().log("readline scfFilePath = %s (line)" % line)
+                while line:
+                    line = scfFile.readline()
+                    # BuiltIn().log("readline scfFilePath = %s (line)" % line)
+                    if "/NRBTS-" in line and "/NRCELL-" in line:
+                        # BuiltIn().log("readline scfFilePath = %s (line)" % line)
+                        rbi.log("getNeededValuesFromScf(): line = %s" %
+                                line, logLevel)
+                        nrbtsIndex = line.find("/NRBTS-") + 1
+                        nrcellIndex = line.find("/NRCELL-") + 1
+                        endIndex = line[nrcellIndex:].find("\" ") + nrcellIndex
+                        NRBTS = line[nrbtsIndex:nrcellIndex - 1]
+                        NRCELL = line[nrcellIndex:endIndex]
+                        break
+        dist_name = NRBTS + "/" + NRCELL
+        list_name = "dlDataDmrsFdm"
+        p_name = "actDlDataDmrsFdm"
+        actDlDataDmrsFdm = scfObj.get_value_from_scf(
+            list_name=list_name, p_name=p_name, dist_name=dist_name)
+        BuiltIn().log("verifyFeatureActivation: actDlDataDmrsFdm = %s (SCF)" % actDlDataDmrsFdm)
+        if actDlDataDmrsFdm.lower() == "true":
+            tcResult = "passed"
+        # check also that actDl256Qam = True
+        p_name = "actDl256Qam"
+        actDl256Qam = scfObj.get_value_from_scf(
+            p_name=p_name, dist_name=dist_name)
+        BuiltIn().log("verifyFeatureActivation: actDl256Qam = %s (SCF)" % actDl256Qam)
+        if tcResult == "passed" and actDl256Qam.lower() == "true":
+            tcResult = "passed"
+        else:
+            tcResult = "failed"
+    except Exception as e:
+        logException("verifyFeatureActivation", e)
+    BuiltIn().log("verifyFeatureActivation(5GC002535): tcResult = %s" % tcResult, logLevel)
+    return tcResult
+
+
+def verify_qc_test_case_old(testCaseName, repFlag="without Reporting", rnti_ue=61, rdMcsIndexForDmrsFDMThreshold=20):
+    """Keyword: Verify QC Test Case"""
+    BuiltIn().log_to_console(
+        BOLD + " Verify QC Test Case(s) of 5GC002535: " + RESET + "~" * 102 + "")
+    BuiltIn().log_to_console(("  "+testCaseName+"   "+repFlag).ljust(133), no_newline=True)
+    tcResult = "failed"
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    if offlineVerification:
+        resultBaseDir = offlineVerification[:
+                                            offlineVerification[:-2].rfind("/")]
+        resultDir = offlineVerification
+    else:
+        resultBaseDir = BuiltIn().run_keyword(
+            "5GC002535_Keywords.Get Testcase Log Directory")
+        resultDir = BuiltIn().run_keyword("5GC002535_Keywords.Get Testcase Log Directory")
+    BuiltIn().log("verify_qc_test_case(): resultBaseDir = %s" % resultBaseDir, logLevel)
+    BuiltIn().log("verify_qc_test_case(): resultDir = %s" % resultDir, logLevel)
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    if verifyFeatureActivation(resultBaseDir) == "failed":
+        BuiltIn().log_to_console(BOLD + RED +
+                                 "5GC002535 is NOT enabled!" + RESET + "", no_newline=True)
+    if "verify_5GC002535_UL_MCS_NbrPrb" == testCaseName:
+        featureList = ["5GC002535"]
+        tcResult = verify_5GC002535_UL_MCS_NbrPrb(resultDir)
+    if "verify_5GC002535_UL_MCS_StartPrb" == testCaseName:
+        featureList = ["5GC002535"]
+        tcResult = verify_5GC002535_UL_MCS_StartPrb(resultDir)
+    if "verify_5GC002535_DL_numOfDmrsCdmGroupWithoutData_Based_Mcs" == testCaseName:
+        featureList = ["5GC002535"]
+        tcResult = verify_5GC002535_DL_numOfDmrsCdmGroupWithoutData_Based_Mcs(resultDir, rnti_ue,
+                                                                              rdMcsIndexForDmrsFDMThreshold)
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    BuiltIn().log_to_console((GREEN if tcResult.lower()
+                              == 'passed' else RED) + tcResult + RESET + "")
+    if "without" not in repFlag:
+        BuiltIn().run_keyword("Online Reporting to ReP",
+                              testCaseName,
+                              tcResult,
+                              "resultDir=%s" % resultDir,
+                              "isForDebugging=%s" % ("YES" if "without" in repFlag or "ailed" in tcResult else "NO"))
+    return tcResult
+
+
+def set_cqi_to(inputStr=""):
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    # Private Keyword: Set CQI to
+    # ------------------------------------------------------------------------------------------------[120 characters]
+    BuiltIn().log_to_console(" Set CQI to %s ." % inputStr, no_newline=True)
+    ueType = BuiltIn().run_keyword("Get UE type")
+    BuiltIn().log("set_cqi_to(): ueType = %s" % ueType, logLevel)
+    wtsObj = BuiltIn().get_variable_value("${wtsObj}")
+    try:
+        if ueType.lower() == "airphone":
+            if inputStr.lower() == "oscillating":
+                cmdStr1 = "ue_cqi_param id=1 on=nr nr_cqi=0 nr_cqi_mode=oscillating"
+                cmdStr2 = " nr_cqi_min=0 nr_cqi_max=15 nr_cqi_step=15 nr_cqi_period=2 scell=5"
+                cmdStr = cmdStr1 + cmdStr2
+            else:
+                cmdStr = "ue_cqi_param id=1 on=nr nr_cqi=%s nr_cqi_mode=fixed scell=5" % inputStr
+            wtsObj.execute_egate_command(cmd=cmdStr, alias="egate")
+        else:
+            BuiltIn().log("set_cqi_to(ERROR): not supported UE Type!")
+            return
+        BuiltIn().sleep("3s")
+        BuiltIn().log_to_console(".done")
+    except Exception as e:
+        logException("set_cqi_to", e)
+        BuiltIn().log_to_console(".ERROR")
+
+
+def get_rntis(resultDir):
+    # TTITraces Events: csiSrReportData
+    filePathName = resultDir + "/msg_all.csv"
+    BuiltIn().log("get_rntis: filePathName = %s" % filePathName)
+    rnti_csiSrReportData_s = 0
+    rntiList = []
+    try:
+        if os.path.isfile(filePathName):
+            with open(filePathName, "r") as csvFile:
+                linenumber = 0
+                for line in csvFile:
+                    linenumber += 1
+                    if "csiSrReportData;" in line:
+                        a = line.find(";rnti;") + 6
+                        b = line[a:].find(";") + a
+                        rnti_csiSrReportData = (int)(line[a:b])
+                        s = "csiSrReportData : rnti_csiSrReportData = %s "
+                        BuiltIn().log(s % rnti_csiSrReportData)
+                        rnti_csiSrReportData_s = (int)(rnti_csiSrReportData)
+                        try:
+                            if rnti_csiSrReportData_s not in rntiList:
+                                rntiList.append(int(rnti_csiSrReportData))
+                        except Exception as e:
+                            logException("get_rntis", e, True)
+                        s = "get_rntis(5GC002535): rnti = %s (%s)"
+                        BuiltIn().log(s % (rnti_csiSrReportData, linenumber))
+            print("get_rntis(5GC002535): rntiList = %s" % (rntiList))
+
+    except Exception as e:
+        logException("get_rntis", e)
+
+    return rntiList
+
+
+def _get_cell_data_rate(throughput_stats, precision=3):
+    for row in throughput_stats:
+        if row['Parameter'] == 'Average data rate':
+            return round(float(row['Value']) / 1000000, precision)
+
+
+def get_bearer_stats(ue, bearer, direction, retry=0, precision=3):
+    table_parser = TableParser()
+    raw_throughput_string = _get_bearer_stats(ue, bearer, direction, retry)
+    throughput_stats = table_parser.parse_egate_table(raw_throughput_string)
+    try:
+        return _get_cell_data_rate(throughput_stats, precision)
+    except KeyError:
+        raise ThroughputException()
+
+
+def _get_bearer_stats(ue, bearer, direction, retry=0):
+    try:
+        cmd = "bearer_stats ue={} id={} type=l3 dir={}".format(
+            ue, bearer, direction)
+    except KeyError:
+        raise ThroughputException("Wrong direction and/or layer name")
+    return send_cmd_with_retry(cmd, retry)
+
+
+def send_cmd_with_retry(cmd, retry):
+    raw_throughput_string = ''
+    egate_interface = EgateInterface()
+    for i in range(0, int(retry) + 1):
+        raw_throughput_string = egate_interface.send_command_check_for_faults(
+            cmd)
+        if '===' in raw_throughput_string:
+            break
+        elif i == int(retry):
+            raise EgateRetryException(
+                'Egate was not able to find valid throughput output in {} retries:\n {}'.format(
+                    retry, raw_throughput_string
+                )
+            )
+    return raw_throughput_string
+
+
+def get_bearer_stats_old(ue, bearer,  direction, retry=0):
+    try:
+        cmd = "bearer_stats ue={} id={} type=l3 dir={}".format(
+            ue, bearer, direction)
+    except KeyError:
+        raise ThroughputException("Wrong direction and/or layer name")
+    return send_cmd_with_retry(cmd, retry)
+
+
+def send_cmd_with_retry_old(cmd, retry):
+    raw_throughput_string = ''
+    for i in range(0, int(retry) + 1):
+        raw_throughput_string = egate_interface.send_command_check_for_faults(
+            cmd)
+        if '===' in raw_throughput_string:
+            break
+        elif i == int(retry):
+            raise EgateRetryException(
+                'Egate was not able to find valid throughput output in {} retries:\n {}'.format(
+                    retry, raw_throughput_string
+                )
+            )
+    return raw_throughput_string
+
+
+def add_File_ending_if_missing(file_path, file_ending):
+    if file_ending not in file_path:
+        file_path += file_ending
+    return file_path
+
+
+def filter_non_printable_and_remove_head(string):
+    result = []
+    ws_last = False
+    for c in string:
+        if ws_last:
+            result.append(c)
+        if c == ']':
+            result = []
+            ws_last = True
+    string_f = ''.join(result).replace(' ', '_')
+    string_f = re.sub("[^A-Z_a-z0-9]", "", string_f.strip())
+    return string_f

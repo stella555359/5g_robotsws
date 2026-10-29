@@ -1,0 +1,144 @@
+*** Settings ***
+
+Documentation     [SUITE PURPOSE]  Verification of tests for 5GC001248-D feature
+...               Test Case Scenario author   : yann.ah.herve@nokia.com
+...               Test Case Scenario contact  : yann.ah.herve@nokia.com
+...               Test Case automation author : yann.ah.herve@nokia.com
+...               Test Case automation contact: bernard.hoche@nokia.com
+...               Creation Date               : 19-March-2020
+...               Modified Date               : 14-April-2023
+...               Last Modified by            : vincent.boulet@nokia.com
+...               06-10-2021           |        Snashot/sosReport are now triggered inside suite teardown
+...               06-15-2021           |        Reduce GP overlap duration to 5 mn instead of 15 mn
+...               08-31-2022           |        Clean the pm files before starting the call to eliminate inappropriate counters
+...               09-08-2022           |        Stop CPRT capture before the counters check
+...               04-14-2023           |        Skip the Sherpa capture for VRAN because it would require a commissioning to create a route on Vdu
+
+Library              ../../../resources/python/luashark_tools.py
+Library              luashark_tools.analyzer       WITH NAME       analyzer
+Library              taf.config.scf                WITH NAME       cscf
+Library              taf.gnb.oam.commissioning     WITH NAME       commissioning
+
+# ADT - add resources
+Resource             ../../../../../resources/SWENG/robot/Setup.robot
+
+Resource             ../../../../../resources/SWENG/robot/Restart.robot
+Resource             ../../../../../resources/SWENG/robot/Traffic.robot
+Resource             ../../../../../resources/SWENG/robot/Tools.robot
+Resource             ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource             ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource             ../../../../../resources/SWENG/robot/Capture.robot
+Resource             ../../../../../resources/SWENG/robot/Counters.robot
+Resource             ../../../../../resources/SWENG/robot/Sherpa.robot
+
+Resource             5GC001248_Keywords.robot
+
+Variables            ../../../../../resources/SWENG/python/ReadConfig.py
+Variables            ../python/Constants.py
+
+
+*** Variables ***
+
+&{UE_PROFILE_1}                 ue=1                                    profile=None
+...                             pdu=${None}           qfi=${None}       type=l3
+...                             bearer=2                                testMode=False
+...                             trf_id=1                                burst=${None}
+...                             period_ms=${None}
+
+*** Keywords ***
+
+5GC001248_D_BWP_Configuration_Check
+   [Documentation]            Common KW for 1248-D  in TDD classical and FDD classical
+   ...                        To be updated for cloud FR2
+   ...                        The aim of the test is to check the removal of duplicated
+   ...                        initialDownlinkBWP and initialUplinkBWP and also perform
+   ...                        5G attach as traffic already exist on 4G leg.
+   [Arguments]                ${data_rate}=5
+
+   Restart TL
+   #vbo#clean the pm files before starting the call to eliminate inappropriate counters
+   Run Keyword If    ${isAic}
+   ...               Clean PM on Aic TL
+
+   #vbo#start tcpdump on cp_rt
+   ${CaptureCPRT}    Run Keyword If    ${isAic}    Capture CPRT Set Upon Config    airscale=${GNB_DU}
+   Run Keyword If    ${isAic}    Run Keywords
+   ...                                       Capture Init          ${CaptureCPRT}    withTN=True
+   ...    AND                                Set Suite Variable    ${CaptureCPRT}   
+   ...    AND                                Capture Start         capture=${CaptureCPRT}
+
+   # ADT - replace below KWs
+   # Setup Wtsemu environment sudo
+   # KWs_Classical_GNB_Classical_AP.Verify AP Classical Cell Setup
+   WTS Setup
+   #vbo#disable UE Cell Setup Check for vRAN2.0 because this operation is included into WTS Setup
+   Run Keyword If    not ${isAic}    UE Cell Setup Check
+
+   Run Keyword If                   ${enable_sherpa}==${True} and not ${isAic}    Sherpa.Activate Sherpa
+
+   # Attach to 4G
+   UE Attach Enb                   ueSetting=${UE_SIMPLE}
+
+   # Start 5 Mbps DL traffic for 5 mn
+   ${status}   ${msg}      Run Keyword And Ignore Error
+   ...                             Traffic UE DL                   ueSetting=${UE_PROFILE_1}
+   ...                             throughput=${data_rate}
+   ...                             shouldBeStop=False
+   ...                             duration=20s
+   ...                             deviation=5
+
+   # Start capture on ASIK_M to get X2 messages
+   ${CaptureCORE}                  Capture CORE Set Upon Config            airscale=${GNB_DU}
+   Set Suite Variable              ${CaptureCORE}
+   Capture Init                    ${CaptureCORE}
+   Capture Start                   ${CaptureCORE}
+
+   # Attach to 5G
+   UE Attach Gnb                   ueSetting=${UE_SIMPLE}
+
+   # Stop capture on ASIK_M
+   Capture Stop                    ${CaptureCORE}
+
+   # Analyse Reconfiguration messages to see if duplicated initialDownlinkBWP and initialUplinkBWP
+   # have been removed from F1 and X2 messages
+   ${pdmlFileX2}=                    analyzer.pcap_to_pdml          ${CaptureCORE.path}
+
+   # Look for definition of initialUplinkBWP
+   Dated log    \tOn X2 side look for first occurence of initialUplinkBWP inside SgNBAdditionRequestAcknowledge
+   # Check that initialUplinkBWP definition is only available inside uplinkConfigCommon
+   Dated Log    Check that initialUplinkBWP definition is only available once inside uplinkConfigCommon
+   ${count}     analyzer.count_path
+   ...              pdmlFile=${pdmlFileX2}
+   ...              packetName=SgNBAdditionRequestAcknowledge
+   ...              path=x2ap.SgNBAdditionRequestAcknowledge_element/.*/nr-rrc.initialUplinkBWP_element$
+   should be equal as integers     ${count}    ${1}
+   ...              "More than one occurence of initialUplinkBWP was found in SgNBAdditionRequestAcknowledge
+
+   # Look for defintion of initialDownlinkBWP
+    Dated log    \tOn X2 side look for first occurence of initialDownlinkBWP inside SgNBAdditionRequestAcknowledge
+   # Check that initialDownlinkBWP definition is only available inside uplinkConfigCommon
+   Dated Log     Check that initialDownlinkBWP definition is only available once inside uplinkConfigCommon
+   ${count}      analyzer.count_path
+   ...               pdmlFile=${pdmlFileX2}
+   ...               packetName=SgNBAdditionRequestAcknowledge
+   ...               path=x2ap.SgNBAdditionRequestAcknowledge_element/.*/nr-rrc.initialDownlinkBWP_element$
+   should be equal as integers     ${count}    ${1}
+   ...               "More than one occurence of initialDownlinkBWP was found in SgNBAdditionRequestAcknowledge
+
+   Traced Sleep  5 minutes
+   Traffic Stop                    ueSetting=${UE_PROFILE_1}
+
+   # Sleep 5 mn in case of GP overlap
+   Traced Sleep  ${auto_1248_gp_period} minutes       msg=GP overlap
+
+   # ADT - replace "UE Detach"
+   # UE Detach
+   UE Detach Enb    ueSetting=${UE_SIMPLE}
+
+   #vbo#start tcpdump on cp_rt
+   Run Keyword If    ${isAic}    Capture Stop    capture=${CaptureCPRT}
+
+   # Retrieve counters and compare with a reference
+   # Verify Object Counter cumulative values
+   ${status}         run Keyword if   not ${isAiC}    Verify Counter Cumulative Values With Margin     5GC001248_D
+   ...                 ELSE                           Verify Counter Cumulative Values With Margin for AiC     5GC001248_D

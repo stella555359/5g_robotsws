@@ -1,0 +1,3033 @@
+import csv
+import re
+import math
+import logging
+
+# Robot Framework Libraries:
+from robot.libraries.BuiltIn import BuiltIn
+
+from taf.config.scf import scf
+from taf.analyzer.pdml import PdmlReader
+from taf.ul.ettf.logger import custom_logger, log
+from testsuite.Paris.resources.SWENG.python.StringTool import datedConsole, getHeaderLine
+
+from testsuite.Paris.RRM.ET.CB009915.resources.python.tti_analyzer_framework import pandas_gate
+from testsuite.Paris.RRM.ET.CB009915.resources.python.tti_analysis.dtx import get_dtx_stats
+from testsuite.Paris.RRM.ET.CB009915.resources.python.tti_analysis.mumimo import get_mumimo_stats, \
+    generate_rank_stats, generate_subcellId_stats
+from testsuite.Paris.RRM.ET.CB009915.resources.python.tti_analysis.ue_cell_identification import identify_cells_and_ues
+from testsuite.Paris.RRM.ET.CB009915.resources.python.tti_analysis.check_nack import\
+    filter_valid_events_and_check_acknack_retx
+from testsuite.Paris.RRM.ET.CB009915.resources.python.tools import get_rnti_from_csv_file, \
+    get_specified_column_from_csv_file_for_rnti, get_cell_from_csv_file, get_specified_column_from_csv_file
+
+import SlotSfn_PDSCH
+import SlotSfn_PUSCH
+import SlotSfn_pucchBoundary
+import SlotSfn_pucchResources
+import SlotSfn_eCpriPucchResourceAllocationStructure
+from testsuite.Paris.RRM.ET.CB009915.resources.python.verify_rnti_bwpid import check_rnti_bwpid
+
+# ====================================================================================================[120 characters]
+#   Global Variables
+# ====================================================================================================[120 characters]
+
+
+logLevel = "INFO"
+RED = '\033[31m'
+GREEN = '\033[32m'
+YELLOW = '\033[33m'
+RESET = '\033[0m'
+BOLD = '\033[1m'
+rbi = BuiltIn()
+logger = custom_logger(name='CB009915-lib', filename='test_execution_CB009915_Overlap_test.log')
+
+
+def logException(functionNameStr, e, silent=False):
+    rbi.log("%s(): Exception = <%s>" % (functionNameStr, str(e)), "TRACE")
+    if not silent:
+        rbi.log_to_console(
+            "  %s: exception happened (see log.html)" % functionNameStr)
+
+
+def extract_ESTATUS5G_NOTOK_from_syslog(syslogextract):
+    """
+    Analyzing this kind of trace:
+    ESTATUS5G_NOTOK
+    :param syslogextract:
+    :return:  err
+    """
+    err = re.findall(r"(\d*).*.ESTATUS5G_NOTOK.(.*)", syslogextract)
+    print(err)
+    return err
+
+
+def extract_GnbOamCellUpdateFailed_from_syslog(syslogextract):
+    """
+    Analyzing this kind of trace:
+    ESTATUS5G_NOTOK
+    :param syslogextract:
+    :return:  err
+    """
+    err = re.findall(r"(\d*).*.GnbOamCellUpdateFailed.(.*)", syslogextract)
+    print(err)
+    return err
+
+
+def extract_AASYSINFO_FS_OVERLOAD_IND_MSG_from_syslog(syslogextract):
+    """
+    Analyzing this kind of trace:
+    AASYSINFO_FS_OVERLOAD_IND_MSG
+    :param syslogextract:
+    :return:  err
+    """
+    err = re.findall(r"(\d*).*.AASYSINFO_FS_OVERLOAD_IND_MSG.(.*)", syslogextract)
+    print(err)
+    return err
+
+
+def extract_IncorrectCellParameterSettingAI_from_syslog(syslogextract):
+    """
+    Analyzing this kind of trace:
+    Raising fault IncorrectCellParameterSettingAI
+    :param syslogextract:
+    :return:  err
+    """
+    err = re.findall(r"(\d*).*.Raising fault IncorrectCellParameterSettingAI.(.*)", syslogextract)
+    print(err)
+    return err
+
+
+def extract_BearerErrorIndication_from_syslog(syslogextract):
+    """
+    Analyzing this kind of trace:
+    Raising fault IncorrectCellParameterSettingAI
+    :param syslogextract:
+    :return:  err
+    """
+    err = re.findall(r"(\d*).*.Sending BearerErrorIndication due to MaxRlcRetransmission exceeded.(.*)", syslogextract)
+    print(err)
+    return err
+
+
+def extract_ERR_uplane_L2_PS_from_syslog(syslogextract):
+    """
+    Analyzing this kind of trace:
+    ERR/.uplane/L2-PS
+    :param syslogextract:
+    :return:  err
+    """
+    err = re.findall(r"(\d*).*.ERR/\.uplane/L2-PS.(.*)", syslogextract)
+    print(err)
+    return err
+
+
+def extract_ERR_L2_PS_from_syslog(syslogextract):
+    """
+    Analyzing this kind of trace:
+    ERR/L2-PS
+    :param syslogextract:
+    :return:  err
+    """
+    err = re.findall(r"(\d*).*.ERR/L2-PS.(.*)", syslogextract)
+    print(err)
+    return err
+
+
+def extract_L2_PS_CellSetupLogger_from_syslog(syslogextract):
+    """
+    Analyzing this kind of trace:
+    INF/.uplane/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp:
+    :param syslogextract:
+    :return:  err
+    """
+    err = re.findall(r"(\d*).*.INF/\.uplane/L2-PS/src/sgnl/psCell/CellSetupLogger\.cpp:.(.*)", syslogextract)
+    print(err)
+    return err
+
+
+def extract_INF_L2_PS_CellSetupLogger_from_syslog(syslogextract):
+    """
+    Analyzing this kind of trace:
+    INF/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp:
+    :param syslogextract:
+    :return:  err
+    """
+    err = re.findall(r"(\d*).*.INF/L2-PS/src/sgnl/psCell/CellSetupLogger\.cpp:.(.*)", syslogextract)
+    print(err)
+    return err
+
+
+def extract_session_from_egateconsole(egateconsoleextract):
+    """
+    Analyzing this kind of trace:
+    [session
+    :param egateconsoleextract:
+    :return:  cmd
+    """
+    # cmd = re.findall(r"*.[session .(\d*).].(.*)", egateconsoleextract)
+    cmd = re.findall(r"]:.(.*)", egateconsoleextract)
+    print(cmd)
+    return cmd
+
+
+def extract_SlotTypeSelectorBase_from_syslog(syslogextract):
+    """
+    Analyzing BBRM_conf
+    :param syslogextract:
+    :return:  bbrmconf
+    """
+    # SlotType = re.findall(r"(\d*).*Slot: (\d*).*Type: (.*)", syslogextract)
+    SlotType = re.findall(r"(\d*).*Slot= (\d*).*Type= (.*)", syslogextract)
+    print(SlotType)
+    return SlotType
+
+
+def extract_dll1sp_from_COAM(cellinfo, sp):
+    #  subCellList=['Subcell-0 (DL)', 'Subcell-0 (UL)', 'Subcell-3 (DL)', 'Subcell-3 (UL)','
+    #                                                    ' 'Subcell-4 (DL)', 'Subcell-5 (DL)']
+    # sp = []
+    for element in cellinfo:
+        print(element)
+        cid2sp = re.findall(r"Subcell-(\d*) \(DL\)", element)
+        print(cid2sp)
+        if cid2sp:
+            sp.append(int(cid2sp[0]))
+            sp.sort()
+    return sp
+
+
+def extract_ull1sp_from_COAM(cellinfo, sp):
+    #  subCellList=['Subcell-0 (DL)', 'Subcell-0 (UL)', 'Subcell-3 (DL)', 'Subcell-3 (UL)','
+    #                                                    ' 'Subcell-4 (DL)', 'Subcell-5 (DL)']
+    # sp = []
+    for element in cellinfo:
+        print(element)
+        cid2sp = re.findall(r"Subcell-(\d*) \(UL\)", element)
+        print(cid2sp)
+        if cid2sp:
+            sp.append(int(cid2sp[0]))
+            sp.sort()
+    return sp
+
+
+def get_sfn_column(row_from_list):
+    sfn_column = 0
+    for i, element in enumerate(row_from_list):
+        if element.isdigit():
+            sfn_column = i
+            break
+    return sfn_column
+
+
+def read_and_parse_tti_data(path_to_tti, num_of_events=1000):
+    with open(path_to_tti, 'r') as csv_file:
+        csv_dict = csv.DictReader(csv_file)
+        csv_reader = list(csv_dict)
+        # print("dic: {}".format(csv_dict))
+        # print("list: {}".format(csv_reader))
+        line_count = 0
+        tti_dict = list()
+        ttifilter = ['dlMetricIndData: hfnTickCount', 'dlTdSchedSubcellData: hfnTickCount',
+                     'dlAllocatedPooledResourcesData: hfnTickCount',
+                     'dlDtxOptimData: hfnTickCount', 'dlFdSchedData: hfnTickCount']
+        if num_of_events is not None:
+            num_of_events = int(num_of_events)
+        for row in csv_reader:
+            # print("line: {}.".format(line_count), "Content: {}".format(row))
+            # print("line: {}.".format(line_count), "Content: {}".format(row[None][0]))
+            # if row[None][0] == 'ulMetricIndData: sfn' or row[None][0] == 'ulTdSchedSubcellData: sfn':
+            if row[None][0] in ttifilter:
+                # if row[None][0] == 'dlMetricIndData: hfnTickCount'\
+                # or row[None][0] == 'dlTdSchedSubcellData: hfnTickCount'\
+                #       or row[None][0] == 'dlAllocatedPooledResourcesData: hfnTickCount'\
+                #       or row[None][0] == 'dlDtxOptimData: hfnTickCount'\
+                #       or row[None][0] == 'dlFdSchedData: hfnTickCount':
+                new_row = dict()
+                # new_row.update({'Event': row[None][0][:-5]})
+                new_row.update({'Event': row[None][0][:-14]})
+                print("Content1: {}".format(row[None]))
+                print("Content new_row: {}".format(new_row))
+                col_sfn = get_sfn_column(row[None])
+                col_sfn = col_sfn + 1
+                print("col_sfn: {}".format(col_sfn))
+                print("sfn: {}".format(row[None][col_sfn]))
+                # new_row.update({'sfn': row[None][col_sfn]})
+                for index_dic in range(1, col_sfn):
+                    if index_dic + col_sfn < len(row[None]):
+                        print(index_dic, row[None][index_dic], row[None][index_dic + col_sfn - 1])
+                        # BEWARE that 2 columns can have the same name (case of largeBwpPrbs in dlDtxOptimData)
+                        if row[None][index_dic] in new_row:
+                            continue
+                        new_row.update({row[None][index_dic]: row[None][index_dic + col_sfn - 1]})
+                    else:
+                        break
+                tti_dict.append(new_row)
+                print("line: {}.".format(line_count), "Content new_row: {}".format(new_row))
+            line_count += 1
+            if line_count > num_of_events:
+                break
+
+    return tti_dict
+
+
+def read_and_parse_tti_data_ul(path_to_tti, num_of_events=1000):
+    with open(path_to_tti, 'r') as csv_file:
+        csv_dict = csv.DictReader(csv_file)
+        csv_reader = list(csv_dict)
+        # print("dic: {}".format(csv_dict))
+        # print("list: {}".format(csv_reader))
+        line_count = 0
+        tti_dict = list()
+        ttifilter = ['ulMetricIndData: hfnTickCount', 'ulTdSchedSubcellData: hfnTickCount',
+                     'ulAllocatedPooledResourcesData: hfnTickCount']
+        if num_of_events is not None:
+            num_of_events = int(num_of_events)
+        for row in csv_reader:
+            print("line: {}.".format(line_count), "Content: {}".format(row))
+            if row[None][0] in ttifilter:
+                # if row[None][0] == 'ulMetricIndData: hfnTickCount'\
+                # or row[None][0] == 'ulTdSchedSubcellData: hfnTickCount'\
+                # or row[None][0] == 'ulAllocatedPooledResourcesData: hfnTickCount':
+                new_row = dict()
+                # new_row.update({'Event': row[None][0][1:-5]})
+                new_row.update({'Event': row[None][0][:-14]})
+                print(row[None])
+                col_sfn = get_sfn_column(row[None])
+                col_sfn = col_sfn + 1
+                print(col_sfn)
+                # new_row.update({'sfn': row[None][col_sfn]})
+                for index_dic in range(1, col_sfn):
+                    if index_dic + col_sfn < len(row[None]):
+                        print(index_dic, row[None][index_dic], row[None][index_dic + col_sfn - 1])
+                        # BEWARE that 2 columns can have the same name (case of largeBwpPrbs in dlDtxOptimData)
+                        # if row[None][index_dic] in new_row:
+                        #     continue
+                        new_row.update({row[None][index_dic]: row[None][index_dic + col_sfn - 1]})
+                    else:
+                        break
+                tti_dict.append(new_row)
+                print("line: {}.".format(line_count), "Content new_row: {}".format(new_row))
+            line_count += 1
+            if line_count > num_of_events:
+                break
+
+    return tti_dict
+
+
+def get_numOfPrb_dlFdSchedData(tti_dic, sfntocheck, num_of_events=10):
+    numAllocCellPrbDl_key = 'numOfPrb'
+    numOfPrbCellPrbDl = []
+    numAllocCellPrbDldlFdSchedData = []
+    line_count = 0
+    for lcrId in range(1, 4):
+        filteredprbs_i = [int(i) for i in
+                          list(map(lambda d: d[numAllocCellPrbDl_key],
+                                   filter(lambda d: d['Event'] == 'dlFdSchedData',
+                                          filter(lambda d: d['sfn'] == sfntocheck,
+                                                 filter(lambda d: d['lcrId'] == str(lcrId), tti_dic)))))]
+
+        filteredprbs = list(map(lambda d: d[numAllocCellPrbDl_key],
+                                filter(lambda d: d['Event'] == 'dlFdSchedData',
+                                       filter(lambda d: d['sfn'] == sfntocheck,
+                                              filter(lambda d: d['lcrId'] == str(lcrId), tti_dic)))))
+        if not filteredprbs_i:
+            numOfPrbCellPrbDl.append(0)
+        else:
+            numOfPrbCellPrbDl.append(filteredprbs_i[1])
+        line_count += 1
+        if line_count > num_of_events:
+            break
+        # numAllocCellPrbDl.append(int(max(filteredprbs) if filteredprbs else 0))
+        # numAllocCellPrbDl.append(int(filteredprbs[1]) if filteredprbs else 0)
+    numAllocCellPrbDldlFdSchedData.append({'sfn': sfntocheck, 'numAllocCellPrbDl': numOfPrbCellPrbDl})
+    return numAllocCellPrbDldlFdSchedData
+
+
+def getValue(scfObj, pName, distName):
+    outString = ""
+    logging.info("getValue(): pName = %s" % pName)
+    logging.info("getValue(): outString = %s" % outString)
+    try:
+        outString = scfObj.get_value_from_scf(p_name=pName, dist_name=distName)
+        outString = "true" if outString == "True" else outString
+        outString = "false" if outString == "False" else outString
+        logging.info("getValue(): '%s' = '%s' (SCF)" % (pName, outString))
+    except Exception as e:
+        logException("getValue", e)
+    return outString
+
+
+def verifyParametersInScf(verifyScfList, scfFilePath):
+    isPassed = True
+    scfObj = scf()
+    for parameter in verifyScfList:
+        returnedValue = 0
+        try:
+            scfObj.load_scf(scfFilePath)
+            returnedValue = getValue(scfObj, parameter["p_name"], parameter["dist_name"])
+            aResult = (returnedValue == parameter["value"])
+        except Exception as e:
+            logException("verifyParametersInScf", e, silent=True)
+            aResult = "SCF is NOT available"
+            isPassed = False
+        else:
+            isPassed = (isPassed and aResult)
+        logging.info(30*"-" + "> %s == %s (%s)" % (parameter["value"], returnedValue, aResult))
+    return isPassed
+
+
+def verify_SCF_Paramaters():
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    # - CB009915 feature should get activated
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_SCF_correct = False
+    path_to_scf_xml = rbi.get_variable_value("${test_scf_file}")
+    # scfFilePath = BuiltIn().run_keyword(
+    #    "CB009915-C-Keywords.Get Testcase Log Directory") + "/SCF.xml"
+    # BuiltIn().log("verifyFeatureActivation: scfFilePath = %s (SCF)" % scfFilePath)
+    mrbts_id = BuiltIn().get_variable_value('${MRBTS_ID}')
+    nrbts_id = BuiltIn().get_variable_value('${NRBTS_ID}')
+    mr_nr_bts = 'MRBTS-' + str(mrbts_id) + '/NRBTS-' + str(nrbts_id)
+    mr_nr_cell_name_cell1 = 'MRBTS-' + str(mrbts_id) + '/NRBTS-' + str(nrbts_id) + '/NRCELL-1'
+    mr_nr_cell_name_cell2 = 'MRBTS-' + str(mrbts_id) + '/NRBTS-' + str(nrbts_id) + '/NRCELL-2'
+    try:
+        expected_scf_list = [{'p_name': 'actLongPucchResourceOpt', 'value': 'true', 'dist_name': mr_nr_cell_name_cell1},
+                             {'p_name': 'actLongPucchResourceOpt', 'value': 'true', 'dist_name': mr_nr_cell_name_cell2},
+                             {'p_name': 'actPRBBlanking', 'value': 'true', 'dist_name': mr_nr_cell_name_cell1},
+                             {'p_name': 'actPRBBlanking', 'value': 'true', 'dist_name': mr_nr_cell_name_cell2}]
+        is_SCF_correct = verifyParametersInScf(expected_scf_list, path_to_scf_xml)
+    except Exception as e:
+        logException("verify_SCF_Paramaters", e)
+    rbi.should_be_true(is_SCF_correct)
+
+
+def verify_SCF_Paramaters_TC_w_PSBWP():
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    # - CB009915 feature should get activated
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_SCF_correct = False
+    path_to_scf_xml = rbi.get_variable_value("${test_scf_file}")
+    # scfFilePath = BuiltIn().run_keyword(
+    #    "CB009915-C-Keywords.Get Testcase Log Directory") + "/SCF.xml"
+    # BuiltIn().log("verifyFeatureActivation: scfFilePath = %s (SCF)" % scfFilePath)
+    mrbts_id = BuiltIn().get_variable_value('${MRBTS_ID}')
+    nrbts_id = BuiltIn().get_variable_value('${NRBTS_ID}')
+    mr_nr_bts = 'MRBTS-' + str(mrbts_id) + '/NRBTS-' + str(nrbts_id)
+    mr_nr_cell_name_cell1 = 'MRBTS-' + str(mrbts_id) + '/NRBTS-' + str(nrbts_id) + '/NRCELL-1'
+    mr_nr_cell_name_cell2 = 'MRBTS-' + str(mrbts_id) + '/NRBTS-' + str(nrbts_id) + '/NRCELL-2'
+    name = 'actInitialBWPFlexibility'
+    try:
+        expected_scf_list = [{'p_name': 'actLongPucchResourceOpt', 'value': 'true', 'dist_name': mr_nr_cell_name_cell1},
+                             {'p_name': 'actLongPucchResourceOpt', 'value': 'true', 'dist_name': mr_nr_cell_name_cell2},
+                             {'p_name': 'actPRBBlanking', 'value': 'true', 'dist_name': mr_nr_cell_name_cell1},
+                             {'p_name': name, 'value': 'true', 'dist_name': mr_nr_cell_name_cell1},
+                             {'p_name': 'actPRBBlanking', 'value': 'true', 'dist_name': mr_nr_cell_name_cell2},
+                             {'p_name': 'actPowerSavingBWP', 'value': 'true', 'dist_name': mr_nr_cell_name_cell1},
+                             {'p_name': 'actPowerSavingBWP', 'value': 'false', 'dist_name': mr_nr_cell_name_cell2}]
+        is_SCF_correct = verifyParametersInScf(expected_scf_list, path_to_scf_xml)
+    except Exception as e:
+        logException("verify_SCF_Paramaters", e)
+    rbi.should_be_true(is_SCF_correct)
+
+
+def verify_SCF_Paramaters_TC_w_PSBWP_2_Cells():
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    # - CB009915 feature should get activated
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_SCF_correct = False
+    path_to_scf_xml = rbi.get_variable_value("${test_scf_file}")
+    # scfFilePath = BuiltIn().run_keyword(
+    #    "CB009915-C-Keywords.Get Testcase Log Directory") + "/SCF.xml"
+    # BuiltIn().log("verifyFeatureActivation: scfFilePath = %s (SCF)" % scfFilePath)
+    mrbts_id = BuiltIn().get_variable_value('${MRBTS_ID}')
+    nrbts_id = BuiltIn().get_variable_value('${NRBTS_ID}')
+    mr_nr_bts = 'MRBTS-' + str(mrbts_id) + '/NRBTS-' + str(nrbts_id)
+    mr_nr_cell_name_cell1 = 'MRBTS-' + str(mrbts_id) + '/NRBTS-' + str(nrbts_id) + '/NRCELL-1'
+    mr_nr_cell_name_cell2 = 'MRBTS-' + str(mrbts_id) + '/NRBTS-' + str(nrbts_id) + '/NRCELL-2'
+    name = 'actInitialBWPFlexibility'
+    try:
+        expected_scf_list = [{'p_name': 'actLongPucchResourceOpt', 'value': 'true', 'dist_name': mr_nr_cell_name_cell1},
+                             {'p_name': 'actLongPucchResourceOpt', 'value': 'true', 'dist_name': mr_nr_cell_name_cell2},
+                             {'p_name': 'actPRBBlanking', 'value': 'true', 'dist_name': mr_nr_cell_name_cell1},
+                             {'p_name': name, 'value': 'true', 'dist_name': mr_nr_cell_name_cell1},
+                             {'p_name': 'actPRBBlanking', 'value': 'true', 'dist_name': mr_nr_cell_name_cell2},
+                             {'p_name': name, 'value': 'true', 'dist_name': mr_nr_cell_name_cell2},
+                             {'p_name': 'actPowerSavingBWP', 'value': 'true', 'dist_name': mr_nr_cell_name_cell1},
+                             {'p_name': 'actPowerSavingBWP', 'value': 'true', 'dist_name': mr_nr_cell_name_cell2}]
+        is_SCF_correct = verifyParametersInScf(expected_scf_list, path_to_scf_xml)
+    except Exception as e:
+        logException("verify_SCF_Paramaters", e)
+    rbi.should_be_true(is_SCF_correct)
+
+
+def is_CB010544_activated_for_Cell1():
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    # - return of CB010544 feature activated
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_SCF_correct = False
+    path_to_scf_xml = rbi.get_variable_value("${test_scf_file}")
+    mrbts_id = BuiltIn().get_variable_value('${MRBTS_ID}')
+    nrbts_id = BuiltIn().get_variable_value('${NRBTS_ID}')
+    mr_nr_cell_name_cell1 = 'MRBTS-' + str(mrbts_id) + '/NRBTS-' + str(nrbts_id) + '/NRCELL-1'
+    name = 'actInitialBWPFlexibility'
+    try:
+        expected_scf_list = [{'p_name': name, 'value': 'true', 'dist_name': mr_nr_cell_name_cell1}]
+        is_SCF_correct = verifyParametersInScf(expected_scf_list, path_to_scf_xml)
+    except Exception as e:
+        logException("is_CB010544_activated_for_Cell1", e)
+    return is_SCF_correct
+
+
+def load_dataframe(path_to_pickle):
+    global pd
+    pd = pandas_gate.install_and_import_pandas()
+    df = pd.read_pickle(path_to_pickle)
+    return df
+
+
+def get_dtx_statistics_physCellId_ul(filename):
+    is_TTITrace_correct = False
+    path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    df = load_dataframe(path_to_ttitrace_pkl)
+    try:
+        output = get_dtx_stats(df, by='physCellId', direction='ul')
+        logging.info("output = %s" % (output))
+    except Exception as e:
+        logException("get_dtx_statistics", e)
+    return output
+
+
+def get_dtx_statistics_rnti_ul(filename):
+    is_TTITrace_correct = False
+    isPassed = True
+    output = ""
+    path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    df = load_dataframe(path_to_ttitrace_pkl)
+    try:
+        output = get_dtx_stats(df, by='rnti', direction='ul')
+        logging.info("output = %s" % (output))
+    except Exception as e:
+        logException("get_dtx_statistics", e)
+        isPassed = False
+    return output
+
+
+def get_dtx_statistics_lcrId_ul(filename):
+    is_TTITrace_correct = False
+    path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    df = load_dataframe(path_to_ttitrace_pkl)
+    try:
+        output = get_dtx_stats(df, by='lcrId', direction='ul')
+        logging.info("output = %s" % (output))
+    except Exception as e:
+        logException("get_dtx_statistics", e)
+    return output
+
+
+def get_dtx_statistics_physCellId_dl(filename):
+    is_TTITrace_correct = False
+    path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    df = load_dataframe(path_to_ttitrace_pkl)
+    try:
+        output = get_dtx_stats(df, by='physCellId', direction='dl')
+        logging.info("output = %s" % (output))
+    except Exception as e:
+        logException("get_dtx_statistics", e)
+    return output
+
+
+def log_begin_end_func_name(fn):
+    def inner(*args, **kwargs):
+        logging.info("============================== Begin Function {0}".format(fn.__name__))
+        func_return = fn(*args, **kwargs)
+        logging.info("============================== End Function {0}".format(fn.__name__))
+        return func_return
+    return inner
+
+
+@log_begin_end_func_name
+def get_mumimo_statistics_physCellId_dl(path_to_ttitrace_pkl):
+    is_TTITrace_correct = False
+    # path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    df = load_dataframe(path_to_ttitrace_pkl)
+    try:
+        combined_mumimo_stats, mumimo_stats = get_mumimo_stats(df, by='physCellId', direction='dl')
+        logging.info("combined_mumimo_stats = %s" % (combined_mumimo_stats))
+    except Exception as e:
+        logException("get_mumimo_statistics_physCellId_dl", e)
+    return combined_mumimo_stats, mumimo_stats
+
+
+@log_begin_end_func_name
+def get_mumimo_statistics_physCellId_ul(path_to_ttitrace_pkl):
+    is_TTITrace_correct = False
+    # path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    df = load_dataframe(path_to_ttitrace_pkl)
+    try:
+        combined_mumimo_stats, mumimo_stats = get_mumimo_stats(df, by='physCellId', direction='ul')
+        logging.info("combined_ulmumimo_stats = %s" % (combined_mumimo_stats))
+    except Exception as e:
+        logException("get_mumimo_statistics_physCellId_ul", e)
+    return combined_mumimo_stats, mumimo_stats
+
+
+def get_cells_and_ues_physCellId(path_to_ttitrace_pkl):
+    is_TTITrace_correct = False
+    # path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    df = load_dataframe(path_to_ttitrace_pkl)
+    try:
+        output = identify_cells_and_ues(df)
+        logging.info("output = %s" % (output))
+    except Exception as e:
+        logException("get_cells_and_ues_physCellId", e)
+    return output
+
+
+@log_begin_end_func_name
+def get_rank_statistics_rnti_dl(path_to_ttitrace_pkl):
+    is_TTITrace_correct = False
+    # path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    df = load_dataframe(path_to_ttitrace_pkl)
+    try:
+        combined_rank_stats, rank_stats = generate_rank_stats(df, by='rnti', direction='dl')
+        logging.info("combined_rank_stats = %s" % (combined_rank_stats))
+    except Exception as e:
+        logException("get_rank_statistics_rnti_dl", e)
+    return combined_rank_stats, rank_stats
+
+
+@log_begin_end_func_name
+def get_rank_statistics_rnti_ul(path_to_ttitrace_pkl):
+    is_TTITrace_correct = False
+    # path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    df = load_dataframe(path_to_ttitrace_pkl)
+    try:
+        combined_rank_stats, rank_stats = generate_rank_stats(df, by='rnti', direction='ul')
+        logging.info("combined_rank_stats = %s" % (combined_rank_stats))
+    except Exception as e:
+        logException("get_rank_statistics_rnti_ul", e)
+    return combined_rank_stats, rank_stats
+
+
+@log_begin_end_func_name
+def get_subcell_statistics_physCellId_dl(path_to_ttitrace_pkl):
+    is_TTITrace_correct = False
+    # path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    df = load_dataframe(path_to_ttitrace_pkl)
+    try:
+        combined_subcell_stats, subcell_stats = generate_subcellId_stats(df, by='physCellId', direction='dl')
+        logging.info("combined_dl_subcell_stats = %s" % (combined_subcell_stats))
+    except Exception as e:
+        logException("get_subcell_statistics_physCellId_dl", e)
+    return combined_subcell_stats, subcell_stats
+
+
+@log_begin_end_func_name
+def get_subcell_statistics_physCellId_ul(path_to_ttitrace_pkl):
+    is_TTITrace_correct = False
+    # path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    df = load_dataframe(path_to_ttitrace_pkl)
+    try:
+        combined_subcell_stats, subcell_stats = generate_subcellId_stats(df, by='physCellId', direction='ul')
+        logging.info("combined_ul_subcell_stats = %s" % (combined_subcell_stats))
+    except Exception as e:
+        logException("get_subcell_statistics_physCellId_ul", e)
+    return combined_subcell_stats, subcell_stats
+
+
+@log_begin_end_func_name
+def get_directory(path):
+    path_tmp = path.split("/")
+    path = "/".join(path_tmp[:-1])
+    return path
+
+
+@log_begin_end_func_name
+def filter_dataframe_ul(df):
+    required_discriminators = ['timeStamp', 'sfn', 'slot', 'rnti', 'physCellId', 'ulTdSchedSubcellData.subcellId',
+                               'ulTdSchedSubcellData.numAllocCellPrbUl', 'lcrId']
+    df = df[required_discriminators].copy()
+    df.dropna(inplace=True)
+    df['timeStamp'] = pd.to_datetime(df['timeStamp']).copy()
+    return df
+
+
+@log_begin_end_func_name
+def filter_dataframe_dl(df):
+    required_discriminators = ['timeStamp', 'sfn', 'slot', 'rnti', 'physCellId', 'dlTdSchedSubcellData.subcellId',
+                               'dlTdSchedSubcellData.numAllocCellPrbDl', 'lcrId']
+    df = df[required_discriminators].copy()
+    df.dropna(inplace=True)
+    df['timeStamp'] = pd.to_datetime(df['timeStamp']).copy()
+    return df
+
+
+@log_begin_end_func_name
+def filter_dataframe_mumimo_dl(df):
+    required_discriminators = ['timeStamp', 'sfn', 'slot', 'rnti', 'physCellId', 'dlFdSchedData.subcellId',
+                               'dlFdSchedData.muStatus', 'dlFdSchedData.numOfLayers',
+                               'lcrId']
+    #  'dlFdSchedData.patternId1',
+    df = df[required_discriminators].copy()
+    df.dropna(inplace=True)
+    df['timeStamp'] = pd.to_datetime(df['timeStamp']).copy()
+    return df
+
+
+@log_begin_end_func_name
+def filter_dataframe_mumimo_ul(df):
+    required_discriminators = ['timeStamp', 'sfn', 'slot', 'rnti', 'physCellId', 'ulFdSchedData.subcellId',
+                               'ulFdSchedData.ulMuStatus', 'ulFdSchedData.numOfLayers',
+                               'lcrId']
+    #  'dlFdSchedData.patternId1',
+    df = df[required_discriminators].copy()
+    df.dropna(inplace=True)
+    df['timeStamp'] = pd.to_datetime(df['timeStamp']).copy()
+    return df
+
+
+@log_begin_end_func_name
+def drop_head_tail_entries(df, num=1000):
+    """Function drops num entries from the beginning and the end of the dataframe to compensate for the
+    abnormalities seen in trace during start and stop of traffic"""
+    df = df[num:-num]
+    return df
+
+
+@log_begin_end_func_name
+def prepare_df_to_compute_mumimo_info(df, list_of_pooled_subcells, list_of_non_pooled_subcells):
+    for non_pooled_subcell in list_of_non_pooled_subcells:
+        df = df.where(df['dlFdSchedData.subcellId'] != non_pooled_subcell).dropna()
+    df_pooled_subcells = df
+    logging.info(df_pooled_subcells)
+    df_pooled_subcells.set_index(['timeStamp', 'sfn',	'slot', 'dlFdSchedData.subcellId',
+                                  'dlFdSchedData.muStatus', 'dlFdSchedData.numOfLayers'],
+                                 inplace=True)
+    # , 'dlFdSchedData.ackNack'
+    # df_pooled_subcells['AveragePRBAllocationPerSubcell'] = None
+    # df_pooled_subcells['AveragePRBAllocationPerSubcell'] = \
+    #     df_pooled_subcells.groupby(level=[0, 1, 2, 3])['dlTdSchedSubcellData.numAllocCellPrbDl'].mean()
+    logging.info(df_pooled_subcells)
+    return df_pooled_subcells
+
+
+@log_begin_end_func_name
+def prepare_df_to_compute_ulmumimo_info(df, list_of_pooled_subcells, list_of_non_pooled_subcells):
+    for non_pooled_subcell in list_of_non_pooled_subcells:
+        df = df.where(df['ulFdSchedData.subcellId'] != non_pooled_subcell).dropna()
+    df_pooled_subcells = df
+    logging.info(df_pooled_subcells)
+    df_pooled_subcells.set_index(['timeStamp', 'sfn',	'slot', 'ulFdSchedData.subcellId',
+                                  'ulFdSchedData.ulMuStatus', 'ulFdSchedData.numOfLayers'],
+                                 inplace=True)
+    # , 'dlFdSchedData.ackNack'
+    # df_pooled_subcells['AveragePRBAllocationPerSubcell'] = None
+    # df_pooled_subcells['AveragePRBAllocationPerSubcell'] = \
+    #     df_pooled_subcells.groupby(level=[0, 1, 2, 3])['dlTdSchedSubcellData.numAllocCellPrbDl'].mean()
+    logging.info(df_pooled_subcells)
+    return df_pooled_subcells
+
+
+@log_begin_end_func_name
+def filter_dataframe_prbblanking_dl(df):
+    required_discriminators = ['timeStamp', 'sfn', 'slot', 'rnti', 'physCellId', 'dlFdSchedData.subcellId',
+                               'dlFdSchedData.startPrb', 'dlFdSchedData.numOfPrb', 'dlFdSchedData.rat0Bitmap',
+                               'dlFdSchedData.ueBwpId', 'dlFdSchedData.cellBwpId', 'lcrId']
+    #  'dlFdSchedData.patternId1',
+    df = df[required_discriminators].copy()
+    df.dropna(inplace=True)
+    df['timeStamp'] = pd.to_datetime(df['timeStamp']).copy()
+    # logging.info("=====> filter_dataframe_prbblanking_dl=%s" % df)
+    return df
+
+
+@log_begin_end_func_name
+def prepare_df_to_compute_prbblanking_info(df, list_of_subcells, list_of_non_subcells):
+    """
+    Used only for Full BWP case
+    :param df:
+    :param list_of_subcells:
+    :param list_of_non_subcells:
+    :return:
+    """
+    for non_pooled_subcell in list_of_non_subcells:
+        df = df.where(df['dlFdSchedData.subcellId'] != non_pooled_subcell).dropna()
+    # df = df.where(df['dlFdSchedData.cellBwpId'] == 1).dropna()
+    df = df.where(df['dlFdSchedData.ueBwpId'] == 1).dropna()
+    df_pooled_subcells = df
+    # logging.info(df_pooled_subcells['dlFdSchedData.rat0Bitmap'].astype(str))
+    # df_pooled_subcells['dlFdSchedData.rat0Bitmap_hex'] =\
+    #     df_pooled_subcells['dlFdSchedData.rat0Bitmap'].astype(str).astype(int).apply(bin)
+    logging.info(df_pooled_subcells)
+    df_pooled_subcells.set_index(['timeStamp', 'sfn',	'slot', 'dlFdSchedData.subcellId',
+                                  'dlFdSchedData.startPrb', 'dlFdSchedData.numOfPrb', 'dlFdSchedData.rat0Bitmap'],
+                                 inplace=True)
+    #                              'dlFdSchedData.rat0Bitmap_hex'],
+    # df_pooled_subcells['dlFdSchedData.rat0Bitmap_hex'] = df_pooled_subcells['dlFdSchedData.rat0Bitmap'].apply(bin)
+    logging.info(df_pooled_subcells)
+    return df_pooled_subcells
+
+
+@log_begin_end_func_name
+def prepare_df_to_compute_prbblanking_bwp_info(df, list_of_subcells, list_of_non_subcells):
+    # logging.info("=====> prepare_df_to_compute_prbblanking_bwp_info=%s" % df)
+    for non_pooled_subcell in list_of_non_subcells:
+        df = df.where(df['dlFdSchedData.subcellId'] != non_pooled_subcell).dropna()
+    # df = df.where(df['dlFdSchedData.cellBwpId'] != 1).dropna()
+    df = df.where(df['dlFdSchedData.ueBwpId'] == 2).dropna()
+    df_pooled_subcells = df
+    # logging.info(df_pooled_subcells['dlFdSchedData.rat0Bitmap'].astype(str))
+    # df_pooled_subcells['dlFdSchedData.rat0Bitmap_hex'] =\
+    #     df_pooled_subcells['dlFdSchedData.rat0Bitmap'].astype(str).astype(int).apply(bin)
+    logging.info(df_pooled_subcells)
+    df_pooled_subcells.set_index(['timeStamp', 'sfn',	'slot', 'dlFdSchedData.subcellId',
+                                  'dlFdSchedData.startPrb', 'dlFdSchedData.numOfPrb', 'dlFdSchedData.rat0Bitmap'],
+                                 inplace=True)
+    #                              'dlFdSchedData.rat0Bitmap_hex'],
+    # df_pooled_subcells['dlFdSchedData.rat0Bitmap_hex'] = df_pooled_subcells['dlFdSchedData.rat0Bitmap'].apply(bin)
+    logging.info(df_pooled_subcells)
+    return df_pooled_subcells
+
+
+@log_begin_end_func_name
+@log('DL prb overlap analysis TtiTraces...', 'DL prb overlap analysis TtiTraces finished', logger)
+def run_prb_blanking_analysis_dl(path_to_pickle,
+                                 list_of_subcells=[0, 2],
+                                 list_of_non_subcells=[1],
+                                 exclude_samples_for_analysis=1000,
+                                 first_prb_non_blanking=0,
+                                 last_prb_non_blanking=273,
+                                 nbrOfBlankedPRBsHighEdgeDL=0,
+                                 nbrOfBlankedPRBsLowEdgeDL=0,
+                                 name='dl_dataframe_for_manual_analysis_prblanking_cell1'):
+    """Check PDSCH L1L2pcap PRB Constraints"""
+    # rbgSize = 16
+    rbgSize = return_only_rbgsize_pdsch(chBW=273, ConfigType=1)
+    df = load_dataframe(path_to_pickle=path_to_pickle)
+    df = filter_dataframe_prbblanking_dl(df)
+    logging.info("run_prb_blanking_analysis_dl: length of df = %s" % len(df))
+    len_df = len(df)
+    if len_df > 3*exclude_samples_for_analysis:
+        df = drop_head_tail_entries(df, num=exclude_samples_for_analysis)
+    df_pooled_subcells = prepare_df_to_compute_prbblanking_info(df,
+                                                                list_of_subcells,
+                                                                list_of_non_subcells)
+    df_pooled_subcells.to_csv(str("%s/%s.csv" % (get_directory(path_to_pickle), name)), sep=';')
+    filename = str("%s/%s.csv" % (get_directory(path_to_pickle), name))
+    logging.info("run_prb_blanking_analysis_dl filename = %s" % filename)
+    list_rnti = get_rnti_from_csv_file(filename=filename)
+    dlFdSchedData_startPrb = get_specified_column_from_csv_file_for_rnti(filename=filename,
+                                                                         linename='dlFdSchedData.startPrb')
+    dlFdSchedData_numOfPrb = get_specified_column_from_csv_file_for_rnti(filename=filename,
+                                                                         linename='dlFdSchedData.numOfPrb')
+    dlFdSchedData_subcellId = get_specified_column_from_csv_file_for_rnti(filename=filename,
+                                                                          linename='dlFdSchedData.subcellId')
+    resultTest = True
+    resultTest1 = True
+    logging.info("CB009915 list_of_subcells = %s" % list_of_subcells)
+    logging.info("CB009915 list_rnti = %s" % list_rnti)
+    # logging.info("CB009915 dlFdSchedData_startPrb = %s" % dlFdSchedData_startPrb)
+    # logging.info("CB009915 dlFdSchedData_numOfPrb = %s" % dlFdSchedData_numOfPrb)
+    if len(list_rnti) == 0:
+        logging.error("list_rnti empty")
+        resultTest = False
+        raise Exception('Check failed, list_rnti empty')
+    for rnti in list_rnti:
+        startPrb = dlFdSchedData_startPrb[rnti][1:]
+        # logging.info("rnti = %s startPrb = %s" % (rnti, startPrb))
+        numOfPrb = dlFdSchedData_numOfPrb[rnti][1:]
+        # logging.info("rnti = %s numOfPrb = %s" % (rnti, numOfPrb))
+        all_startPrb_by_rnti = len(startPrb)
+        logging.info("=====> Checking for rnti %s " % rnti)
+        for i in range(all_startPrb_by_rnti):
+            if int(float(dlFdSchedData_startPrb[rnti][i])) < int(first_prb_non_blanking):
+                logging.error("startPrb for rnti=%s < first_prb_non_blanking (%s) for Index (%s)"
+                              % (rnti, first_prb_non_blanking, i))
+                resultTest = False
+                raise Exception('Check failed, startPrb for rnti {} < first_prb_non_blanking {} for Index {}'
+                                .format(rnti, first_prb_non_blanking, i))
+            startPrb_mod_rbgSize = int(float(dlFdSchedData_startPrb[rnti][i])) % rbgSize
+            if startPrb_mod_rbgSize != 0:
+                logging.error("startPrb_mod_rbgSize for rnti=%s ERR for Index (%s)"
+                              % (rnti, i))
+                resultTest = False
+                raise Exception('Check failed, startPrb_mod_rbgSize for rnti {} ERR for Index {}'
+                                .format(rnti, i))
+            end_prb = int(float(dlFdSchedData_startPrb[rnti][i])) + int(float(dlFdSchedData_numOfPrb[rnti][i])) - 1
+            if end_prb > int(last_prb_non_blanking):
+                logging.error("end_prb (%s} for rnti=%s > last_prb_non_blanking (%s) for Index (%s)"
+                              % (end_prb, rnti, last_prb_non_blanking, i))
+                resultTest = False
+                raise Exception('Check failed, end_prb {} for rnti {} > last_prb_non_blanking {} for Index {}'
+                                .format(end_prb, rnti, last_prb_non_blanking, i))
+    subcellId = dlFdSchedData_subcellId[list_rnti[0]][0]
+    msg = "[run_prb_blanking_analysis_dl][CellId=%s] nbrOfBlankedPRBsLowEdgeDL=%s"
+    logger.info(msg % (subcellId, nbrOfBlankedPRBsLowEdgeDL))
+    msg = "[run_prb_blanking_analysis_dl][CellId=%s] nbrOfBlankedPRBsHighEdgeDL=%s"
+    logger.info(msg % (subcellId, nbrOfBlankedPRBsHighEdgeDL))
+    SlotSfnRec = SlotSfn_PDSCH.createSlotSfnRecords(csvfile=filename, prbMax=273,
+                                                    ble=nbrOfBlankedPRBsLowEdgeDL,
+                                                    bhe=nbrOfBlankedPRBsHighEdgeDL,
+                                                    pattern='dlFdSchedData')
+    # logging.info("=====> SlotSfnRec==%s" % SlotSfnRec)
+    SlotSfn_PDSCH.printSlotSfnRec(SlotSfnRec, onlyKO=True)
+    countSlotSfnRecord_dl = SlotSfn_PDSCH.countSlotSfnRecord(SlotSfnRec)
+    logging.info("=====> dl countSlotSfnRecord==%s" % countSlotSfnRecord_dl)
+    countPrbInconsistency_dl = SlotSfn_PDSCH.countPrbInconsistency(SlotSfnRec)
+    nbr_err = float(countPrbInconsistency_dl / countSlotSfnRecord_dl)
+    logging.info("=====> dl nbr_err=%s" % nbr_err)
+    logger.info("=====> countSlotSfnRecord_dl=%s" % countSlotSfnRecord_dl)
+    logger.info("=====> countPrbInconsistency_dl=%s" % countPrbInconsistency_dl)
+    logger.info("=====> dl nbr_err=%s" % nbr_err)
+    SlotSfn_PDSCH.printPartOfSlotSfnRecord(SlotSfnRec, onlyKO=True)
+    if nbr_err != 0:
+        resultTest1 = False
+        msg = 'nbr_err %f > 0 countPrbInconsistency_dl %i and countSlotSfnRecord_dl %i'
+        logger.info(msg % (nbr_err, countPrbInconsistency_dl, countSlotSfnRecord_dl))
+        raise Exception('Check failed, nbr_err {} > 0 countPrbInconsistency_dl {} and countSlotSfnRecord_dl {}'
+                        .format(nbr_err, countPrbInconsistency_dl, countSlotSfnRecord_dl))
+    return all([resultTest, resultTest1])
+
+
+@log_begin_end_func_name
+@log('DL prb overlap analysis BWP TtiTraces...', 'DL prb overlap analysis BWP TtiTraces finished', logger)
+def run_prb_blanking_analysis_bwp_dl(path_to_pickle,
+                                     list_of_subcells=[0, 2],
+                                     list_of_non_subcells=[1],
+                                     exclude_samples_for_analysis=1000,
+                                     first_prb_non_blanking=0,
+                                     last_prb_non_blanking=106,
+                                     nbrOfBlankedPRBsHighEdgeDL=0,
+                                     nbrOfBlankedPRBsLowEdgeDL=0,
+                                     name='dl_dataframe_for_manual_analysis_prblanking_bwp_cell1'):
+    """Check PDSCH TtiTraces PRB Constraints"""
+    # rbgSize = 16
+    rbgSize = return_only_rbgsize_pdsch(chBW=273, ConfigType=1)
+    df = load_dataframe(path_to_pickle=path_to_pickle)
+    df = filter_dataframe_prbblanking_dl(df)
+    logging.info("run_prb_blanking_analysis_bwp_dl: length of df = %s" % len(df))
+    len_df = len(df)
+    if len_df > 3*exclude_samples_for_analysis:
+        df = drop_head_tail_entries(df, num=exclude_samples_for_analysis)
+    df_pooled_subcells = prepare_df_to_compute_prbblanking_bwp_info(df,
+                                                                    list_of_subcells,
+                                                                    list_of_non_subcells)
+    df_pooled_subcells.to_csv(str("%s/%s.csv" % (get_directory(path_to_pickle), name)), sep=';')
+    filename = str("%s/%s.csv" % (get_directory(path_to_pickle), name))
+    logging.info("run_prb_blanking_analysis_dl filename = %s" % filename)
+    list_rnti = get_rnti_from_csv_file(filename=filename, exclude_first_samples=False)
+    dlFdSchedData_startPrb = get_specified_column_from_csv_file_for_rnti(filename=filename,
+                                                                         linename='dlFdSchedData.startPrb')
+    dlFdSchedData_numOfPrb = get_specified_column_from_csv_file_for_rnti(filename=filename,
+                                                                         linename='dlFdSchedData.numOfPrb')
+    dlFdSchedData_subcellId = get_specified_column_from_csv_file_for_rnti(filename=filename,
+                                                                          linename='dlFdSchedData.subcellId')
+    resultTest = True
+    resultTest1 = True
+    logging.info("CB009915 list_of_subcells = %s" % list_of_subcells)
+    logging.info("CB009915 list_rnti = %s" % list_rnti)
+    # logging.info("CB009915 dlFdSchedData_startPrb = %s" % dlFdSchedData_startPrb)
+    # logging.info("CB009915 dlFdSchedData_numOfPrb = %s" % dlFdSchedData_numOfPrb)
+    if len(list_rnti) == 0:
+        logging.error("list_rnti empty")
+        resultTest = False
+        raise Exception('Check failed, list_rnti empty')
+    for rnti in list_rnti:
+        startPrb = dlFdSchedData_startPrb[rnti][1:]
+        # logging.info("rnti = %s startPrb = %s" % (rnti, startPrb))
+        numOfPrb = dlFdSchedData_numOfPrb[rnti][1:]
+        # logging.info("rnti = %s numOfPrb = %s" % (rnti, numOfPrb))
+        all_startPrb_by_rnti = len(startPrb)
+        logging.info("=====> Checking for rnti %s " % rnti)
+        for i in range(all_startPrb_by_rnti):
+            if int(float(dlFdSchedData_startPrb[rnti][i])) < int(first_prb_non_blanking):
+                logging.error("startPrb for rnti=%s < first_prb_non_blanking (%s) for Index (%s)"
+                              % (rnti, first_prb_non_blanking, i))
+                resultTest = False
+                raise Exception('Check failed, startPrb for rnti {} < first_prb_non_blanking {} for Index {}'
+                                .format(rnti, first_prb_non_blanking, i))
+            end_prb = int(float(dlFdSchedData_startPrb[rnti][i])) + int(float(dlFdSchedData_numOfPrb[rnti][i])) - 1
+            if end_prb > int(last_prb_non_blanking):
+                logging.error("end_prb (%s} for rnti=%s > last_prb_non_blanking (%s) for Index (%s)"
+                              % (end_prb, rnti, last_prb_non_blanking, i))
+                resultTest = False
+                raise Exception('Check failed, end_prb {} for rnti {} > last_prb_non_blanking {} for Index {}'
+                                .format(end_prb, rnti, last_prb_non_blanking, i))
+    subcellId = dlFdSchedData_subcellId[list_rnti[0]][0]
+    msg = "[run_prb_blanking_analysis_bwp_dl][CellId=%s] nbrOfBlankedPRBsLowEdgeDL=%s"
+    logger.info(msg % (subcellId, nbrOfBlankedPRBsLowEdgeDL))
+    msg = "[run_prb_blanking_analysis_bwp_dl][CellId=%s] nbrOfBlankedPRBsHighEdgeDL=%s"
+    logger.info(msg % (subcellId, nbrOfBlankedPRBsHighEdgeDL))
+    SlotSfnRec = SlotSfn_PDSCH.createSlotSfnRecords(csvfile=filename, prbMax=273,
+                                                    ble=nbrOfBlankedPRBsLowEdgeDL,
+                                                    bhe=nbrOfBlankedPRBsHighEdgeDL,
+                                                    pattern='dlFdSchedData')
+    # logging.info("=====> SlotSfnRec==%s" % SlotSfnRec)
+    SlotSfn_PDSCH.printSlotSfnRec(SlotSfnRec, onlyKO=True)
+    countSlotSfnRecord_dl = SlotSfn_PDSCH.countSlotSfnRecord(SlotSfnRec)
+    logging.info("=====> dl countSlotSfnRecord==%s" % countSlotSfnRecord_dl)
+    countPrbInconsistency_dl = SlotSfn_PDSCH.countPrbInconsistency(SlotSfnRec)
+    nbr_err = float(countPrbInconsistency_dl / countSlotSfnRecord_dl)
+    logging.info("=====> dl nbr_err=%s" % nbr_err)
+    logger.info("=====> countSlotSfnRecord_dl=%s" % countSlotSfnRecord_dl)
+    logger.info("=====> countPrbInconsistency_dl=%s" % countPrbInconsistency_dl)
+    logger.info("=====> dl nbr_err=%s" % nbr_err)
+    SlotSfn_PDSCH.printPartOfSlotSfnRecord(SlotSfnRec, onlyKO=True)
+    if nbr_err != 0:
+        resultTest1 = False
+        msg = 'nbr_err %f > 0 countPrbInconsistency_dl %i and countSlotSfnRecord_dl %i'
+        logger.info(msg % (nbr_err, countPrbInconsistency_dl, countSlotSfnRecord_dl))
+        raise Exception('Check failed, nbr_err {} > 0 countPrbInconsistency_dl {} and countSlotSfnRecord_dl {}'
+                        .format(nbr_err, countPrbInconsistency_dl, countSlotSfnRecord_dl))
+    return all([resultTest, resultTest1])
+
+
+@log_begin_end_func_name
+def verify_TTITraces_for_DL_PRBBLANKING(first_prb_non_blanking_cell1=0,
+                                        last_prb_non_blanking_cell1=273,
+                                        first_prb_non_blanking_cell2=0,
+                                        last_prb_non_blanking_cell2=273):
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_TTITrace_correct_p0 = False
+    is_TTITrace_correct_p1 = False
+    path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    list_of_subcells = rbi.get_variable_value("${dll1spcells[0]}")
+    print("verify_TTITraces_for_DL_PRBBLANKING : list_of_subcells=" + str(list_of_subcells)[1:-1])
+    list_of_non_subcells = rbi.get_variable_value("${dll1spcells[1]}")
+    print("verify_TTITraces_for_DL_PRBBLANKING : list_of_non_subcells=" + str(list_of_non_subcells)[1:-1])
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        is_TTITrace_correct_p0 =\
+            run_prb_blanking_analysis_dl(path_to_ttitrace_pkl,
+                                         list_of_subcells=list_of_subcells,
+                                         list_of_non_subcells=list_of_non_subcells,
+                                         exclude_samples_for_analysis=1000,
+                                         first_prb_non_blanking=first_prb_non_blanking_cell1,
+                                         last_prb_non_blanking=last_prb_non_blanking_cell1,
+                                         name='dl_dataframe_for_manual_analysis_prblanking_cell1')
+        logging.info("verify_TTITraces_for_DL_PRBBLANKING: is_TTITrace_correct_p0 = %s" % (is_TTITrace_correct_p0))
+        is_TTITrace_correct_p1 = \
+            run_prb_blanking_analysis_dl(path_to_ttitrace_pkl,
+                                         list_of_subcells=list_of_non_subcells,
+                                         list_of_non_subcells=list_of_subcells,
+                                         exclude_samples_for_analysis=1000,
+                                         first_prb_non_blanking=first_prb_non_blanking_cell2,
+                                         last_prb_non_blanking=last_prb_non_blanking_cell2,
+                                         name='dl_dataframe_for_manual_analysis_prblanking_cell2')
+        logging.info("verify_TTITraces_for_DL_PRBBLANKING: is_TTITrace_correct_p1 = %s" % (is_TTITrace_correct_p1))
+        msg = 'verify_TTITraces_for_DL_PRBBLANKING CELL1: is_TTITrace_correct_p0'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p0))
+        msg = 'verify_TTITraces_for_DL_PRBBLANKING CELL2: is_TTITrace_correct_p1'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p1))
+    except Exception as e:
+        logException("verify_TTITraces_for_DL_PRBBLANKING", e)
+    rbi.should_be_true(is_TTITrace_correct_p0 and is_TTITrace_correct_p1)
+
+
+@log_begin_end_func_name
+def verify_TTITraces_for_DL_PRBBLANKING_CELL1(first_prb_non_blanking_cell1=0,
+                                              last_prb_non_blanking_cell1=273,
+                                              nbrOfBlankedPRBsHighEdgeDL=0,
+                                              nbrOfBlankedPRBsLowEdgeDL=0):
+    """
+    verify DL PRB Blanking constraint for Full BWP - DO NOT USED for dedicated BWP (PS-BWP)
+    :param first_prb_non_blanking_cell1:
+    :param last_prb_non_blanking_cell1:
+    :return:
+    """
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_TTITrace_correct_p0 = False
+    # path_to_ttitrace_pkl = "/home/ute/csamson/TRACES/ttitrace_streaming.pkl"
+    path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    list_of_subcells = rbi.get_variable_value("${dll1spcells[0]}")
+    # list_of_subcells = [0]
+    print("verify_TTITraces_for_DL_PRBBLANKING_CELL1 : list_of_subcells=" + str(list_of_subcells)[1:-1])
+    list_of_non_subcells = rbi.get_variable_value("${dll1spcells[1]}")
+    # list_of_non_subcells = [1]
+    print("verify_TTITraces_for_DL_PRBBLANKING_CELL1 : list_of_non_subcells=" + str(list_of_non_subcells)[1:-1])
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        is_TTITrace_correct_p0 =\
+            run_prb_blanking_analysis_dl(path_to_ttitrace_pkl,
+                                         list_of_subcells=list_of_subcells,
+                                         list_of_non_subcells=list_of_non_subcells,
+                                         exclude_samples_for_analysis=1000,
+                                         first_prb_non_blanking=first_prb_non_blanking_cell1,
+                                         last_prb_non_blanking=last_prb_non_blanking_cell1,
+                                         nbrOfBlankedPRBsHighEdgeDL=nbrOfBlankedPRBsHighEdgeDL,
+                                         nbrOfBlankedPRBsLowEdgeDL=nbrOfBlankedPRBsLowEdgeDL,
+                                         name='dl_dataframe_for_manual_analysis_prblanking_cell1')
+        msg = "verify_TTITraces_for_DL_PRBBLANKING_CELL1: is_TTITrace_correct_p0 = %s"
+        logging.info(msg % (is_TTITrace_correct_p0))
+        msg = 'verify_TTITraces_for_DL_PRBBLANKING_CELL1: is_TTITrace_correct_p0'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p0))
+    except Exception as e:
+        logException("verify_TTITraces_for_DL_PRBBLANKING_CELL1", e)
+    rbi.set_test_variable("${TestResult}", str(is_TTITrace_correct_p0))
+    rbi.should_be_true(is_TTITrace_correct_p0)
+
+
+@log_begin_end_func_name
+def verify_TTITraces_for_DL_PRBBLANKING_BWP_CELL1(first_prb_non_blanking_cell1=0,
+                                                  last_prb_non_blanking_cell1=106,
+                                                  nbrOfBlankedPRBsHighEdgeDL=0,
+                                                  nbrOfBlankedPRBsLowEdgeDL=0):
+    """
+    verify DL PRB Blanking constraint for Dedicated BWP (for ex fpr PS-BWP) - DO NOT USED for Full BWP
+    :param first_prb_non_blanking_cell1:
+    :param last_prb_non_blanking_cell1:
+    :return: test result
+    """
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_TTITrace_correct_p0 = False
+    path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    # path_to_ttitrace_pkl = "/home/ute/csamson/TRACES/ttitrace_streaming.pkl"
+    list_of_subcells = rbi.get_variable_value("${dll1spcells[0]}")
+    # list_of_subcells = [0]
+    print("verify_TTITraces_for_DL_PRBBLANKING_BWP_CELL1 : list_of_subcells=" + str(list_of_subcells)[1:-1])
+    list_of_non_subcells = rbi.get_variable_value("${dll1spcells[1]}")
+    # list_of_non_subcells = [1]
+    print("verify_TTITraces_for_DL_PRBBLANKING_BWP_CELL1 : list_of_non_subcells=" + str(list_of_non_subcells)[1:-1])
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        is_TTITrace_correct_p0 =\
+            run_prb_blanking_analysis_bwp_dl(path_to_ttitrace_pkl,
+                                             list_of_subcells=list_of_subcells,
+                                             list_of_non_subcells=list_of_non_subcells,
+                                             exclude_samples_for_analysis=1000,
+                                             first_prb_non_blanking=first_prb_non_blanking_cell1,
+                                             last_prb_non_blanking=last_prb_non_blanking_cell1,
+                                             nbrOfBlankedPRBsHighEdgeDL=nbrOfBlankedPRBsHighEdgeDL,
+                                             nbrOfBlankedPRBsLowEdgeDL=nbrOfBlankedPRBsLowEdgeDL,
+                                             name='dl_dataframe_for_manual_analysis_prblanking_bwp_cell1')
+        msg = "verify_TTITraces_for_DL_PRBBLANKING_BWP_CELL1: is_TTITrace_correct_p0 = %s"
+        logging.info(msg % (is_TTITrace_correct_p0))
+        msg = 'verify_TTITraces_for_DL_PRBBLANKING_BWP_CELL1: is_TTITrace_correct_p0'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p0))
+    except Exception as e:
+        logException("verify_TTITraces_for_DL_PRBBLANKING_BWP_CELL1", e)
+    rbi.set_test_variable("${TestResult}", str(is_TTITrace_correct_p0))
+    rbi.should_be_true(is_TTITrace_correct_p0)
+
+
+@log_begin_end_func_name
+def verify_TTITraces_for_DL_PRBBLANKING_BWP_CELL2(first_prb_non_blanking_cell2=0,
+                                                  last_prb_non_blanking_cell2=106,
+                                                  nbrOfBlankedPRBsHighEdgeDL=0,
+                                                  nbrOfBlankedPRBsLowEdgeDL=0):
+    """
+    verify DL PRB Blanking constraint for Dedicated BWP (for ex fpr PS-BWP) - DO NOT USED for Full BWP
+    :param first_prb_non_blanking_cell2:
+    :param last_prb_non_blanking_cell2:
+    :param nbrOfBlankedPRBsHighEdgeDL:
+    :param nbrOfBlankedPRBsLowEdgeDL:
+    :return: test result
+    """
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_TTITrace_correct_p0 = False
+    path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    # path_to_ttitrace_pkl = "/home/ute/csamson/TRACES/ttitrace_streaming.pkl"
+    list_of_subcells = rbi.get_variable_value("${dll1spcells[1]}")
+    # list_of_subcells = [0]
+    print("verify_TTITraces_for_DL_PRBBLANKING_BWP_CELL2 : list_of_subcells=" + str(list_of_subcells)[1:-1])
+    list_of_non_subcells = rbi.get_variable_value("${dll1spcells[0]}")
+    # list_of_non_subcells = [1]
+    print("verify_TTITraces_for_DL_PRBBLANKING_BWP_CELL2 : list_of_non_subcells=" + str(list_of_non_subcells)[1:-1])
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        is_TTITrace_correct_p0 =\
+            run_prb_blanking_analysis_bwp_dl(path_to_ttitrace_pkl,
+                                             list_of_subcells=list_of_subcells,
+                                             list_of_non_subcells=list_of_non_subcells,
+                                             exclude_samples_for_analysis=1000,
+                                             first_prb_non_blanking=first_prb_non_blanking_cell2,
+                                             last_prb_non_blanking=last_prb_non_blanking_cell2,
+                                             nbrOfBlankedPRBsHighEdgeDL=nbrOfBlankedPRBsHighEdgeDL,
+                                             nbrOfBlankedPRBsLowEdgeDL=nbrOfBlankedPRBsLowEdgeDL,
+                                             name='dl_dataframe_for_manual_analysis_prblanking_bwp_cell2')
+        msg = "verify_TTITraces_for_DL_PRBBLANKING_BWP_CELL2: is_TTITrace_correct_p0 = %s"
+        logging.info(msg % (is_TTITrace_correct_p0))
+        msg = 'verify_TTITraces_for_DL_PRBBLANKING_BWP_CELL2 is_TTITrace_correct_p0'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p0))
+    except Exception as e:
+        logException("verify_TTITraces_for_DL_PRBBLANKING_BWP_CELL2", e)
+    rbi.set_test_variable("${TestResult}", str(is_TTITrace_correct_p0))
+    rbi.should_be_true(is_TTITrace_correct_p0)
+
+
+@log_begin_end_func_name
+def verify_TTITraces_for_DL_PRBBLANKING_CELL2(first_prb_non_blanking_cell2=0,
+                                              last_prb_non_blanking_cell2=273,
+                                              nbrOfBlankedPRBsHighEdgeDL=0,
+                                              nbrOfBlankedPRBsLowEdgeDL=0):
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_TTITrace_correct_p1 = False
+    path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    list_of_subcells = rbi.get_variable_value("${dll1spcells[1]}")
+    print("verify_TTITraces_for_DL_PRBBLANKING_CELL2 : list_of_subcells=" + str(list_of_subcells)[1:-1])
+    list_of_non_subcells = rbi.get_variable_value("${dll1spcells[0]}")
+    print("verify_TTITraces_for_DL_PRBBLANKING_CELL2 : list_of_non_subcells=" + str(list_of_non_subcells)[1:-1])
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        is_TTITrace_correct_p1 = \
+            run_prb_blanking_analysis_dl(path_to_ttitrace_pkl,
+                                         list_of_subcells=list_of_subcells,
+                                         list_of_non_subcells=list_of_non_subcells,
+                                         exclude_samples_for_analysis=1000,
+                                         first_prb_non_blanking=first_prb_non_blanking_cell2,
+                                         last_prb_non_blanking=last_prb_non_blanking_cell2,
+                                         nbrOfBlankedPRBsHighEdgeDL=nbrOfBlankedPRBsHighEdgeDL,
+                                         nbrOfBlankedPRBsLowEdgeDL=nbrOfBlankedPRBsLowEdgeDL,
+                                         name='dl_dataframe_for_manual_analysis_prblanking_cell2')
+        msg = "verify_TTITraces_for_DL_PRBBLANKING_CELL2: is_TTITrace_correct_p1 = %s"
+        logging.info(msg % (is_TTITrace_correct_p1))
+        msg = 'verify_TTITraces_for_DL_PRBBLANKING CELL2: is_TTITrace_correct_p1'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p1))
+    except Exception as e:
+        logException("verify_TTITraces_for_DL_PRBBLANKING_CELL2", e)
+    rbi.set_test_variable("${TestResult}", str(is_TTITrace_correct_p1))
+    rbi.should_be_true(is_TTITrace_correct_p1)
+
+
+@log_begin_end_func_name
+@log('UL prb overlap analysis TtiTraces...', 'UL prb overlap analysis TtiTraces finished', logger)
+def run_prb_blanking_analysis_ul(path_to_pickle,
+                                 list_of_subcells=[0, 2],
+                                 list_of_non_subcells=[1],
+                                 exclude_samples_for_analysis=1000,
+                                 first_prb_non_blanking=0,
+                                 last_prb_non_blanking=273,
+                                 nbrOfBlankedPRBsHighEdgeUL=0,
+                                 nbrOfBlankedPRBsLowEdgeUL=0,
+                                 name='ul_dataframe_for_manual_analysis_prblanking_cell1'):
+    """Check PUSCH TtiTraces PRB Constraints"""
+    rbgSize = 16
+    df = load_dataframe(path_to_pickle=path_to_pickle)
+    df = filter_dataframe_prbblanking_ul(df)
+    df = drop_head_tail_entries(df, num=exclude_samples_for_analysis)
+    df_pooled_subcells = prepare_df_to_compute_ul_prbblanking_info(df,
+                                                                   list_of_subcells,
+                                                                   list_of_non_subcells)
+    df_pooled_subcells.to_csv(str("%s/%s.csv" % (get_directory(path_to_pickle), name)), sep=';')
+    filename = str("%s/%s.csv" % (get_directory(path_to_pickle), name))
+    logging.info("run_prb_blanking_analysis_ul filename = %s" % filename)
+    list_rnti = get_rnti_from_csv_file(filename=filename)
+    ulFdSchedData_startPrb = get_specified_column_from_csv_file_for_rnti(filename=filename,
+                                                                         linename='ulFdSchedData.startPrb')
+    ulFdSchedData_numOfPrb = get_specified_column_from_csv_file_for_rnti(filename=filename,
+                                                                         linename='ulFdSchedData.numOfPrb')
+    ulFdSchedData_subcellId = get_specified_column_from_csv_file_for_rnti(filename=filename,
+                                                                          linename='ulFdSchedData.subcellId')
+    resultTest = True
+    resultTest1 = True
+    logging.info("CB009915 list_of_subcells = %s" % list_of_subcells)
+    logging.info("CB009915 list_rnti = %s" % list_rnti)
+    # logging.info("CB009915 ulFdSchedData_startPrb = %s" % ulFdSchedData_startPrb)
+    # logging.info("CB009915 ulFdSchedData_numOfPrb = %s" % ulFdSchedData_numOfPrb)
+    if len(list_rnti) == 0:
+        logging.error("list_rnti empty")
+        resultTest = False
+        raise Exception('Check failed, list_rnti empty')
+    for rnti in list_rnti:
+        startPrb = ulFdSchedData_startPrb[rnti][1:]
+        # logging.info("rnti = %s startPrb = %s" % (rnti, startPrb))
+        numOfPrb = ulFdSchedData_numOfPrb[rnti][1:]
+        # logging.info("rnti = %s numOfPrb = %s" % (rnti, numOfPrb))
+        all_startPrb_by_rnti = len(startPrb)
+        logging.info("=====> Checking for rnti %s " % rnti)
+        for i in range(all_startPrb_by_rnti):
+            if int(float(ulFdSchedData_startPrb[rnti][i])) < int(first_prb_non_blanking):
+                startprb_int = int(float(ulFdSchedData_startPrb[rnti][i]))
+                logging.error("startPrb (%s) for rnti=%s < first_prb_non_blanking (%s) for Index (%s)"
+                              % (startprb_int, rnti, first_prb_non_blanking, i))
+                resultTest = False
+                raise Exception('Check failed, startPrb {} for rnti {} < first_prb_non_blanking {} for Index {}'
+                                .format(startprb_int, rnti, first_prb_non_blanking, i))
+            end_prb = int(float(ulFdSchedData_startPrb[rnti][i])) + int(float(ulFdSchedData_numOfPrb[rnti][i])) - 1
+            if end_prb > int(last_prb_non_blanking):
+                logging.error("end_prb (%s} for rnti=%s > last_prb_non_blanking (%s) for Index (%s)"
+                              % (end_prb, rnti, last_prb_non_blanking, i))
+                resultTest = False
+                raise Exception('Check failed, end_prb {} for rnti {} > last_prb_non_blanking {} for Index {}'
+                                .format(end_prb, rnti, last_prb_non_blanking, i))
+    subcellId = ulFdSchedData_subcellId[list_rnti[0]][0]
+    msg = "[run_prb_blanking_analysis_ul][subcellId=%s] nbrOfBlankedPRBsLowEdgeUL=%s"
+    logger.info(msg % (subcellId, nbrOfBlankedPRBsLowEdgeUL))
+    msg = "[run_prb_blanking_analysis_ul][subcellId=%s] nbrOfBlankedPRBsHighEdgeUL=%s"
+    logger.info(msg % (subcellId, nbrOfBlankedPRBsHighEdgeUL))
+    SlotSfnRec2 = SlotSfn_PUSCH.createSlotSfnRecords(csvfile=filename, prbMax=273,
+                                                     ble=nbrOfBlankedPRBsLowEdgeUL,
+                                                     bhe=nbrOfBlankedPRBsHighEdgeUL,
+                                                     pattern='ulFdSchedData')
+    # logging.info("=====> SlotSfnRec==%s" % SlotSfnRec2)
+    SlotSfn_PUSCH.printSlotSfnRec(SlotSfnRec2, onlyKO=True)
+    countSlotSfnRecord_ul = SlotSfn_PUSCH.countSlotSfnRecord(SlotSfnRec2)
+    logging.info("=====> ul countSlotSfnRecord==%s" % countSlotSfnRecord_ul)
+    countPrbInconsistency_ul = SlotSfn_PUSCH.countPrbInconsistency(SlotSfnRec2)
+    nbr_err = float(countPrbInconsistency_ul / countSlotSfnRecord_ul)
+    logging.info("=====> ul nbr_err=%s" % nbr_err)
+    logger.info("=====> countSlotSfnRecord_ul=%s" % countSlotSfnRecord_ul)
+    logger.info("=====> countPrbInconsistency_ul=%s" % countPrbInconsistency_ul)
+    logger.info("=====> ul nbr_err=%s" % nbr_err)
+    SlotSfn_PUSCH.printPartOfSlotSfnRecord(SlotSfnRec2, onlyKO=True)
+    if nbr_err != 0:
+        resultTest1 = False
+        msg = 'nbr_err %f > 0 countPrbInconsistency_ul %i and countSlotSfnRecord_ul %i'
+        logger.info(msg % (nbr_err, countSlotSfnRecord_ul, countPrbInconsistency_ul))
+        raise Exception('Check failed, nbr_err {} > 0 countPrbInconsistency_ul {} and countSlotSfnRecord_ul {}'
+                        .format(nbr_err, countPrbInconsistency_ul, countSlotSfnRecord_ul))
+    return all([resultTest, resultTest1])
+
+
+@log_begin_end_func_name
+def filter_dataframe_prbblanking_ul(df):
+    required_discriminators = ['timeStamp', 'sfn', 'slot', 'rnti', 'physCellId', 'ulFdSchedData.subcellId',
+                               'ulFdSchedData.startPrb', 'ulFdSchedData.numOfPrb', 'ulFdSchedData.cellBwpId',
+                               'lcrId']
+    df = df[required_discriminators].copy()
+    df.dropna(inplace=True)
+    df['timeStamp'] = pd.to_datetime(df['timeStamp']).copy()
+    return df
+
+
+@log_begin_end_func_name
+def prepare_df_to_compute_ul_prbblanking_info(df, list_of_subcells, list_of_non_subcells):
+    for non_pooled_subcell in list_of_non_subcells:
+        df = df.where(df['ulFdSchedData.subcellId'] != non_pooled_subcell).dropna()
+    df_pooled_subcells = df
+    logging.info(df_pooled_subcells)
+    df_pooled_subcells.set_index(['timeStamp', 'sfn',	'slot', 'ulFdSchedData.subcellId',
+                                  'ulFdSchedData.startPrb', 'ulFdSchedData.numOfPrb', 'ulFdSchedData.cellBwpId'],
+                                 inplace=True)
+    logging.info(df_pooled_subcells)
+    return df_pooled_subcells
+
+
+@log_begin_end_func_name
+def verify_TTITraces_for_UL_PRBBLANKING(first_prb_non_blanking_cell1=0,
+                                        last_prb_non_blanking_cell1=273,
+                                        first_prb_non_blanking_cell2=0,
+                                        last_prb_non_blanking_cell2=273,
+                                        nbrOfBlankedPRBsHighEdgeDL=0,
+                                        nbrOfBlankedPRBsLowEdgeDL=0
+                                        ):
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_TTITrace_correct_p0 = False
+    is_TTITrace_correct_p1 = False
+    path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    list_of_subcells = rbi.get_variable_value("${dll1spcells[0]}")
+    print("verify_TTITraces_for_UL_PRBBLANKING : list_of_subcells=" + str(list_of_subcells)[1:-1])
+    list_of_non_subcells = rbi.get_variable_value("${dll1spcells[1]}")
+    list_of_non_subcells.append(255)
+    print("verify_TTITraces_for_UL_PRBBLANKING : list_of_non_subcells=" + str(list_of_non_subcells)[1:-1])
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        is_TTITrace_correct_p0 =\
+            run_prb_blanking_analysis_ul(path_to_ttitrace_pkl,
+                                         list_of_subcells=list_of_subcells,
+                                         list_of_non_subcells=list_of_non_subcells,
+                                         exclude_samples_for_analysis=1000,
+                                         first_prb_non_blanking=first_prb_non_blanking_cell1,
+                                         last_prb_non_blanking=last_prb_non_blanking_cell1,
+                                         nbrOfBlankedPRBsHighEdgeDL=nbrOfBlankedPRBsHighEdgeDL,
+                                         nbrOfBlankedPRBsLowEdgeDL=nbrOfBlankedPRBsLowEdgeDL,
+                                         name='ul_dataframe_for_manual_analysis_prblanking_cell1')
+        logging.info("verify_TTITraces_for_UL_PRBBLANKING: is_TTITrace_correct_p0 = %s" % (is_TTITrace_correct_p0))
+        list_of_subcells.append(255)
+        list_of_non_subcells.remove(255)
+        is_TTITrace_correct_p1 = \
+            run_prb_blanking_analysis_ul(path_to_ttitrace_pkl,
+                                         list_of_subcells=list_of_non_subcells,
+                                         list_of_non_subcells=list_of_subcells,
+                                         exclude_samples_for_analysis=1000,
+                                         first_prb_non_blanking=first_prb_non_blanking_cell2,
+                                         last_prb_non_blanking=last_prb_non_blanking_cell2,
+                                         nbrOfBlankedPRBsHighEdgeDL=nbrOfBlankedPRBsHighEdgeDL,
+                                         nbrOfBlankedPRBsLowEdgeDL=nbrOfBlankedPRBsLowEdgeDL,
+                                         name='ul_dataframe_for_manual_analysis_prblanking_cell2')
+        logging.info("verify_TTITraces_for_UL_PRBBLANKING: is_TTITrace_correct_p1 = %s" % (is_TTITrace_correct_p1))
+        msg = 'verify_TTITraces_for_UL_PRBBLANKING CELL1: is_TTITrace_correct_p0'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p0))
+        msg = 'verify_TTITraces_for_UL_PRBBLANKING CELL2: is_TTITrace_correct_p1'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p1))
+    except Exception as e:
+        logException("verify_TTITraces_for_UL_PRBBLANKING", e)
+    rbi.should_be_true(is_TTITrace_correct_p0 and is_TTITrace_correct_p1)
+
+
+@log_begin_end_func_name
+def verify_TTITraces_for_UL_PRBBLANKING_CELL1(first_prb_non_blanking_cell1=0,
+                                              last_prb_non_blanking_cell1=273,
+                                              nbrOfBlankedPRBsHighEdgeUL=0,
+                                              nbrOfBlankedPRBsLowEdgeUL=0):
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_TTITrace_correct_p0 = False
+    is_TTITrace_correct_p1 = False
+    path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    list_of_subcells = rbi.get_variable_value("${dll1spcells[0]}")
+    print("verify_TTITraces_for_UL_PRBBLANKING_CELL1 : list_of_subcells=" + str(list_of_subcells)[1:-1])
+    list_of_non_subcells = rbi.get_variable_value("${dll1spcells[1]}")
+    list_of_non_subcells.append(255)
+    print("verify_TTITraces_for_UL_PRBBLANKING_CELL1 : list_of_non_subcells=" + str(list_of_non_subcells)[1:-1])
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        is_TTITrace_correct_p0 =\
+            run_prb_blanking_analysis_ul(path_to_ttitrace_pkl,
+                                         list_of_subcells=list_of_subcells,
+                                         list_of_non_subcells=list_of_non_subcells,
+                                         exclude_samples_for_analysis=1000,
+                                         first_prb_non_blanking=first_prb_non_blanking_cell1,
+                                         last_prb_non_blanking=last_prb_non_blanking_cell1,
+                                         nbrOfBlankedPRBsHighEdgeUL=nbrOfBlankedPRBsHighEdgeUL,
+                                         nbrOfBlankedPRBsLowEdgeUL=nbrOfBlankedPRBsLowEdgeUL,
+                                         name='ul_dataframe_for_manual_analysis_prblanking_cell1')
+        msg = "verify_TTITraces_for_UL_PRBBLANKING_CELL1: is_TTITrace_correct_p0 = %s"
+        logging.info(msg % (is_TTITrace_correct_p0))
+        msg = 'verify_TTITraces_for_UL_PRBBLANKING CELL1: is_TTITrace_correct_p0'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p0))
+    except Exception as e:
+        logException("verify_TTITraces_for_UL_PRBBLANKING_CELL1", e)
+    rbi.set_test_variable("${TestResult}", str(is_TTITrace_correct_p0))
+    rbi.should_be_true(is_TTITrace_correct_p0)
+
+
+@log_begin_end_func_name
+def verify_TTITraces_for_UL_PRBBLANKING_CELL2(first_prb_non_blanking_cell2=0,
+                                              last_prb_non_blanking_cell2=273,
+                                              nbrOfBlankedPRBsHighEdgeUL=0,
+                                              nbrOfBlankedPRBsLowEdgeUL=0):
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_TTITrace_correct_p1 = False
+    path_to_ttitrace_pkl = rbi.get_variable_value("${path_to_ttitrace_pkl}")
+    list_of_subcells = rbi.get_variable_value("${dll1spcells[0]}")
+    list_of_subcells.append(255)
+    print("verify_TTITraces_for_UL_PRBBLANKING_CELL2 : list_of_subcells=" + str(list_of_subcells)[1:-1])
+    list_of_non_subcells = rbi.get_variable_value("${dll1spcells[1]}")
+    print("verify_TTITraces_for_UL_PRBBLANKING_CELL2 : list_of_non_subcells=" + str(list_of_non_subcells)[1:-1])
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        is_TTITrace_correct_p1 = \
+            run_prb_blanking_analysis_ul(path_to_ttitrace_pkl,
+                                         list_of_subcells=list_of_non_subcells,
+                                         list_of_non_subcells=list_of_subcells,
+                                         exclude_samples_for_analysis=1000,
+                                         first_prb_non_blanking=first_prb_non_blanking_cell2,
+                                         last_prb_non_blanking=last_prb_non_blanking_cell2,
+                                         nbrOfBlankedPRBsHighEdgeUL=nbrOfBlankedPRBsHighEdgeUL,
+                                         nbrOfBlankedPRBsLowEdgeUL=nbrOfBlankedPRBsLowEdgeUL,
+                                         name='ul_dataframe_for_manual_analysis_prblanking_cell2')
+        msg = "verify_TTITraces_for_UL_PRBBLANKING_CELL2: is_TTITrace_correct_p1 = %s"
+        logging.info(msg % (is_TTITrace_correct_p1))
+        msg = 'verify_TTITraces_for_UL_PRBBLANKING CELL2: is_TTITrace_correct_p1'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p1))
+    except Exception as e:
+        logException("verify_TTITraces_for_UL_PRBBLANKING_CELL2", e)
+    rbi.set_test_variable("${TestResult}", str(is_TTITrace_correct_p1))
+    rbi.should_be_true(is_TTITrace_correct_p1)
+
+
+def return_only_rbgsize_pdsch(chBW=273, ConfigType=1):
+    config_1 = {2: [1, 36], 4: [37, 72], 8: [73, 144], 16: [145, 275]}
+    config_2 = {4: [1, 36], 8: [37, 72], 16: [73, 275]}
+    # chBW_int = int(chBW)
+    # ConfigType_int = int(ConfigType)
+    rbgsize = 0
+    if ConfigType == 1:
+        for key in config_1:
+            if config_1[key][0] <= chBW <= config_1[key][1]:
+                rbgsize = key
+    elif ConfigType == 2:
+        for key in config_2:
+            if config_2[key][0] <= chBW <= config_2[key][1]:
+                rbgsize = key
+    return rbgsize
+
+
+def cal_num_of_pdsch(chBW, ConfigType, nbrOfBlankedPRBsHighEdgeDL=0, nbrOfBlankedPRBsLowEdgeDL=0, w_debug=0):
+    config_1 = {2: [1, 36], 4: [37, 72], 8: [73, 144], 16: [145, 275]}
+    config_2 = {4: [1, 36], 8: [37, 72], 16: [73, 275]}
+    # chBW_int = int(chBW)
+    # ConfigType_int = int(ConfigType)
+    rbgsize = 0
+    if ConfigType == 1:
+        for key in config_1:
+            if config_1[key][0] <= chBW <= config_1[key][1]:
+                rbgsize = key
+    elif ConfigType == 2:
+        for key in config_2:
+            if config_2[key][0] <= chBW <= config_2[key][1]:
+                rbgsize = key
+    rat0bitmap = [rbgsize for i in range(chBW//rbgsize)]
+    rat0bitmap.append(chBW % rbgsize)
+    rat0bitmap_full = rat0bitmap
+    msg = 'cal_num_of_pdsch: nbrOfBlankedPRBsHighEdgeDL'
+    if w_debug:
+        datedConsole(getHeaderLine(msg, nbrOfBlankedPRBsHighEdgeDL))
+    msg = 'cal_num_of_pdsch: nbrOfBlankedPRBsLowEdgeDL'
+    if w_debug:
+        datedConsole(getHeaderLine(msg, nbrOfBlankedPRBsLowEdgeDL))
+    msg = 'cal_num_of_pdsch: rat0bitmap'
+    if w_debug:
+        datedConsole(getHeaderLine(msg, rat0bitmap_full))
+    if nbrOfBlankedPRBsHighEdgeDL != 0 or nbrOfBlankedPRBsLowEdgeDL != 0:
+        x = 0
+        y = 0
+        if w_debug:
+            datedConsole(getHeaderLine('Instrum1 '+msg, rat0bitmap[-1]))
+        res = nbrOfBlankedPRBsHighEdgeDL - rat0bitmap[-1]
+        if w_debug:
+            datedConsole(getHeaderLine('Instrum1.1 ' + msg, (res, nbrOfBlankedPRBsHighEdgeDL, rat0bitmap[-1])))
+        # if nbrOfBlankedPRBsHighEdgeDL - rat0bitmap[-1] <= 0:
+        if nbrOfBlankedPRBsHighEdgeDL - rat0bitmap[-1] == 0:
+            rat0bitmap = rat0bitmap[:-1]
+            if w_debug:
+                datedConsole(getHeaderLine('Instrum2 ' + msg, rat0bitmap))
+        elif nbrOfBlankedPRBsHighEdgeDL - rat0bitmap[-1] < 0:
+            if w_debug:
+                datedConsole(getHeaderLine('Instrum2 ' + msg, rat0bitmap))
+        else:
+            y = math.ceil((nbrOfBlankedPRBsHighEdgeDL - rat0bitmap[-1])/rbgsize)
+            if w_debug:
+                datedConsole(getHeaderLine('Instrum3.0 ' + msg, y))
+            rat0bitmap = rat0bitmap[:-1-y]
+            if w_debug:
+                datedConsole(getHeaderLine('Instrum3 ' + msg, rat0bitmap))
+        x = math.ceil(nbrOfBlankedPRBsLowEdgeDL/rbgsize)
+        rat0bitmap = rat0bitmap[x:]
+        if rat0bitmap[-1] == rbgsize:
+            usablepdsch = len(rat0bitmap) * rbgsize
+        else:
+            usablepdsch = len(rat0bitmap[:-1]) * rbgsize + rat0bitmap[-1]
+    else:
+        usablepdsch = chBW
+    msg = '=====> Full rat0bitmap'
+    datedConsole(getHeaderLine(msg, rat0bitmap_full))
+    msg = '=====> Full NbrRBG'
+    datedConsole(getHeaderLine(msg, len(rat0bitmap_full)))
+    msg = '=====> Usable rat0bitmap'
+    datedConsole(getHeaderLine(msg, rat0bitmap))
+    msg = '=====> Usable NbrRBG'
+    datedConsole(getHeaderLine(msg, len(rat0bitmap)))
+    msg = '=====> Usable PRB PDSCH'
+    datedConsole(getHeaderLine(msg, usablepdsch))
+    return chBW, rat0bitmap_full, usablepdsch, rat0bitmap
+
+
+@log_begin_end_func_name
+def run_prb_blanking_analysis_pcap_dl_version1(pcapfile,
+                                               first_prb_non_blanking=0,
+                                               last_prb_non_blanking=273):
+    logging.info("run_prb_blanking_analysis_pcap_dl filename = %s" % pcapfile)
+    rbgSize = return_only_rbgsize_pdsch(chBW=273, ConfigType=1)
+    list_rnti = get_rnti_from_csv_file(filename=pcapfile, pattern='3gpp.rnti')
+    dlFdSchedData_startPrb = get_specified_column_from_csv_file_for_rnti(filename=pcapfile,
+                                                                         linename='DlData_PdschGrant.startPrb',
+                                                                         pattern='3gpp.rnti')
+    dlFdSchedData_numOfPrb = get_specified_column_from_csv_file_for_rnti(filename=pcapfile,
+                                                                         linename='DlData_PdschGrant.numOfPrb',
+                                                                         pattern='3gpp.rnti')
+    resultTest = True
+    # logging.info("CB009915 list_of_subcells = %s" % list_of_subcells)
+    logging.info("CB009915 list_rnti = %s" % list_rnti)
+    # logging.info("CB009915 dlFdSchedData_startPrb = %s" % dlFdSchedData_startPrb)
+    # logging.info("CB009915 dlFdSchedData_numOfPrb = %s" % dlFdSchedData_numOfPrb)
+    if len(list_rnti) == 0:
+        logging.error("list_rnti empty")
+        resultTest = False
+        raise Exception('Check failed, list_rnti empty')
+    for rnti in list_rnti:
+        startPrb = dlFdSchedData_startPrb[rnti][1:]
+        # logging.info("rnti = %s startPrb = %s" % (rnti, startPrb))
+        numOfPrb = dlFdSchedData_numOfPrb[rnti][1:]
+        # logging.info("rnti = %s numOfPrb = %s" % (rnti, numOfPrb))
+        all_startPrb_by_rnti = len(startPrb)
+        logging.info("=====> Checking for rnti %s " % rnti)
+        for i in range(all_startPrb_by_rnti):
+            if int(float(dlFdSchedData_startPrb[rnti][i])) < int(first_prb_non_blanking):
+                logging.error("startPrb for rnti=%s < first_prb_non_blanking (%s) for Index (%s)"
+                              % (rnti, first_prb_non_blanking, i))
+                raise Exception('Check failed, startPrb for rnti {} < first_prb_non_blanking {} for Index {}'
+                                .format(rnti, first_prb_non_blanking, i))
+                resultTest = False
+            startPrb_mod_rbgSize = int(float(dlFdSchedData_startPrb[rnti][i])) % rbgSize
+            if startPrb_mod_rbgSize != 0:
+                logging.error("startPrb_mod_rbgSize for rnti=%s ERR for Index (%s)"
+                              % (rnti, i))
+                raise Exception('Check failed, startPrb_mod_rbgSize for rnti {} ERR for Index {}'
+                                .format(rnti, i))
+                resultTest = False
+            end_prb = int(float(dlFdSchedData_startPrb[rnti][i])) + int(float(dlFdSchedData_numOfPrb[rnti][i])) - 1
+            if end_prb > int(last_prb_non_blanking):
+                logging.error("end_prb (%s} for rnti=%s > last_prb_non_blanking (%s) for Index (%s)"
+                              % (end_prb, rnti, last_prb_non_blanking, i))
+                raise Exception('Check failed, end_prb {} for rnti {} > last_prb_non_blanking {} for Index {}'
+                                .format(end_prb, rnti, last_prb_non_blanking, i))
+                resultTest = False
+    return all([resultTest])
+
+
+def run_prb_blanking_analysis_pcap_dl(pcapfile,
+                                      first_prb_non_blanking=0,
+                                      last_prb_non_blanking=273,
+                                      first_prb_non_blanking_PS_BWP=0,
+                                      last_prb_non_blanking_PS_BWP=106,
+                                      chBW_PSBWP=106
+                                      ):
+    """ Support only full dedicated BWP and Power Saving BWP case """
+    logging.info("run_prb_blanking_analysis_pcap_dl filename = %s" % pcapfile)
+    rbgSize = return_only_rbgsize_pdsch(chBW=273, ConfigType=1)
+    rbgSize_PSBWP = return_only_rbgsize_pdsch(chBW=chBW_PSBWP, ConfigType=1)
+    list_rnti = get_rnti_from_csv_file(filename=pcapfile, pattern='3gpp.rnti')
+    dlFdSchedData_startPrb = get_specified_column_from_csv_file_for_rnti(filename=pcapfile,
+                                                                         linename='DlData_PdschGrant.startPrb',
+                                                                         pattern='3gpp.rnti')
+    dlFdSchedData_numOfPrb = get_specified_column_from_csv_file_for_rnti(filename=pcapfile,
+                                                                         linename='DlData_PdschGrant.numOfPrb',
+                                                                         pattern='3gpp.rnti')
+    dlFdSchedData_rbgSize = get_specified_column_from_csv_file_for_rnti(filename=pcapfile,
+                                                                        linename='DlData_PdschGrant.rbgSize',
+                                                                        pattern='3gpp.rnti')
+    resultTest = True
+    # logging.info("CB009915 list_of_subcells = %s" % list_of_subcells)
+    logging.info("CB009915 list_rnti = %s" % list_rnti)
+    # logging.info("CB009915 dlFdSchedData_startPrb = %s" % dlFdSchedData_startPrb)
+    # logging.info("CB009915 dlFdSchedData_numOfPrb = %s" % dlFdSchedData_numOfPrb)
+    if len(list_rnti) == 0:
+        logging.error("list_rnti empty")
+        raise Exception('Check failed, list_rnti empty')
+        resultTest = False
+    for rnti in list_rnti:
+        startPrb = dlFdSchedData_startPrb[rnti][1:]
+        # logging.info("rnti = %s startPrb = %s" % (rnti, startPrb))
+        numOfPrb = dlFdSchedData_numOfPrb[rnti][1:]
+        # logging.info("rnti = %s numOfPrb = %s" % (rnti, numOfPrb))
+        all_startPrb_by_rnti = len(startPrb)
+        logging.info("=====> Checking for rnti %s " % rnti)
+        for i in range(all_startPrb_by_rnti):
+            rbgSize_rnti = int(dlFdSchedData_rbgSize[rnti][i])
+            if rbgSize_rnti == rbgSize_PSBWP:
+                first_prb_non_blanking_to_check = first_prb_non_blanking_PS_BWP
+                last_prb_non_blanking_to_check = last_prb_non_blanking_PS_BWP
+                rbgSize_to_check = rbgSize_PSBWP
+            else:
+                first_prb_non_blanking_to_check = first_prb_non_blanking
+                last_prb_non_blanking_to_check = last_prb_non_blanking
+                rbgSize_to_check = rbgSize
+            if int(float(dlFdSchedData_startPrb[rnti][i])) < int(first_prb_non_blanking_to_check):
+                logging.error("startPrb for rnti=%s < first_prb_non_blanking (%s) for Index (%s)"
+                              % (rnti, first_prb_non_blanking_to_check, i))
+                raise Exception('Check failed, startPrb for rnti {} < first_prb_non_blanking {} for Index {}'
+                                .format(rnti, first_prb_non_blanking_to_check, i))
+                resultTest = False
+            startPrb_mod_rbgSize = int(float(dlFdSchedData_startPrb[rnti][i])) % rbgSize_to_check
+            if rbgSize_to_check != rbgSize_PSBWP and startPrb_mod_rbgSize != 0:
+                logging.error("startPrb_mod_rbgSize for rnti=%s ERR for Index (%s)"
+                              % (rnti, i))
+                raise Exception('Check failed, startPrb_mod_rbgSize for rnti {} ERR for Index {}'
+                                .format(rnti, i))
+                resultTest = False
+            end_prb = int(float(dlFdSchedData_startPrb[rnti][i])) + int(float(dlFdSchedData_numOfPrb[rnti][i])) - 1
+            if end_prb > int(last_prb_non_blanking_to_check):
+                logging.error("end_prb (%s} for rnti=%s > last_prb_non_blanking (%s) for Index (%s)"
+                              % (end_prb, rnti, last_prb_non_blanking_to_check, i))
+                raise Exception('Check failed, end_prb {} for rnti {} > last_prb_non_blanking {} for Index {}'
+                                .format(end_prb, rnti, last_prb_non_blanking_to_check, i))
+                resultTest = False
+    return all([resultTest])
+
+
+@log_begin_end_func_name
+def verify_Pcap_for_DL_PRBBLANKING(filecsv,
+                                   first_prb_non_blanking_cell=0,
+                                   last_prb_non_blanking_cell=273,
+                                   first_prb_non_blanking_cell_PS_BWP=0,
+                                   last_prb_non_blanking_cell_PS_BWP=106,
+                                   chBW_PSBWP=106):
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_TTITrace_correct_p0 = False
+    path_to_pcaptrace = filecsv
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        is_TTITrace_correct_p0 =\
+            run_prb_blanking_analysis_pcap_dl(path_to_pcaptrace,
+                                              first_prb_non_blanking=first_prb_non_blanking_cell,
+                                              last_prb_non_blanking=last_prb_non_blanking_cell,
+                                              first_prb_non_blanking_PS_BWP=first_prb_non_blanking_cell_PS_BWP,
+                                              last_prb_non_blanking_PS_BWP=last_prb_non_blanking_cell_PS_BWP,
+                                              chBW_PSBWP=chBW_PSBWP
+                                              )
+        logging.info("verify_Pcap_for_DL_PRBBLANKING: is_TTITrace_correct_p0 = %s" % is_TTITrace_correct_p0)
+        msg = 'verify_Pcap_for_DL_PRBBLANKING CELL: is_TTITrace_correct_p0'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p0))
+    except Exception as e:
+        logException("verify_Pcap_for_DL_PRBBLANKING", e)
+    rbi.set_test_variable("${TestResult}", str(is_TTITrace_correct_p0))
+    rbi.should_be_true(is_TTITrace_correct_p0)
+
+
+@log_begin_end_func_name
+def check_ul_fragmentation_with_prb_blanking(list_cells,
+                                             longpucchstartprb,
+                                             longpucchnumprb,
+                                             first_prb_non_blanking=0,
+                                             last_prb_non_blanking=273):
+    resultTest = True
+    for cell in list_cells:
+        cell_val = int(cell)
+        startPrb = longpucchstartprb[cell][0:]
+        logging.info("cell = %s startPrb = %s" % (cell, startPrb))
+        numOfPrb = longpucchnumprb[cell][0:]
+        logging.info("cell = %s numOfPrb = %s" % (cell, numOfPrb))
+        all_startPrb_by_cell = len(startPrb)
+        logging.info("=====> Checking for cell %s " % cell)
+        for i in range(all_startPrb_by_cell):
+            if int(float(longpucchstartprb[cell][i])) < int(first_prb_non_blanking):
+                logging.error("startPrb for cell=%s < first_prb_non_blanking (%s) for Index (%s)"
+                              % (cell, first_prb_non_blanking, i))
+                raise Exception('Check failed, startPrb for cell {} < first_prb_non_blanking {} for Index {}'
+                                .format(cell, first_prb_non_blanking, i))
+                resultTest = False
+            end_prb = int(float(longpucchstartprb[cell][i])) + int(float(longpucchnumprb[cell][i])) - 1
+            if end_prb > int(last_prb_non_blanking):
+                logging.error("end_prb (%s} for cell=%s > last_prb_non_blanking (%s) for Index (%s)"
+                              % (end_prb, cell, last_prb_non_blanking, i))
+                raise Exception('Check failed, end_prb {} for rnti {} > last_prb_non_blanking {} for Index {}'
+                                .format(end_prb, cell, last_prb_non_blanking, i))
+                resultTest = False
+    return resultTest, startPrb, numOfPrb, cell_val
+
+
+@log_begin_end_func_name
+def get_pucch_region_position(longPucchStartSr1Prb_val,
+                              longPucchStartSr2Prb_val,
+                              longPucchNumSrPrb_val,
+                              longPucchStartHarq1Prb_val,
+                              longPucchStartHarq2Prb_val,
+                              longPucchNumHarqPrb_val,
+                              longPucchStartPcsi1Prb_val,
+                              longPucchStartPcsi2Prb_val,
+                              longPucchNumPcsiPrb_val):
+    if ((int(longPucchStartHarq1Prb_val) + int(longPucchNumHarqPrb_val) == int(longPucchStartSr2Prb_val)) and
+            (int(longPucchStartSr2Prb_val) + int(longPucchNumSrPrb_val) == int(longPucchStartHarq2Prb_val)) and
+            (int(longPucchStartHarq2Prb_val) + int(longPucchNumHarqPrb_val) == int(longPucchStartPcsi1Prb_val))):
+        pucch_low_edge_region_position = True
+        pucch_high_edge_region_position = False
+    else:
+        pucch_low_edge_region_position = True
+        pucch_high_edge_region_position = True
+    return pucch_low_edge_region_position, pucch_high_edge_region_position
+
+
+@log_begin_end_func_name
+def get_start_end_prb_pusch_decicatedBWP(cell_val,
+                                         first_prb_non_blanking,
+                                         last_prb_non_blanking,
+                                         longPucchStartSr1Prb_val,
+                                         longPucchStartSr2Prb_val,
+                                         longPucchNumSrPrb_val,
+                                         longPucchStartHarq1Prb_val,
+                                         longPucchStartHarq2Prb_val,
+                                         longPucchNumHarqPrb_val,
+                                         longPucchStartPcsi1Prb_val,
+                                         longPucchStartPcsi2Prb_val,
+                                         longPucchNumPcsiPrb_val):
+    """return first PUSCH prb and last PUSCH prb for dedicated BWP case and return also PUCCH size"""
+    # Check that longPucchStartSr1Prb + longPucchNumSrPrb == longPucchStartHarq1Prb
+    # Check that longPucchStartHarq1Prb + longPucchNumHarqPrb == longPucchStartPcsi1Prb
+    # Check that longPucchStartPcsi2Prb + longPucchNumPcsiPrb == longPucchStartHarq2Prb
+    # Check that longPucchStartHarq2Prb + longPucchNumHarqPrb == longPucchStartSr2Prb
+
+    resultTest7 = True
+    resultTest8 = True
+    resultTest9 = True
+    resultTest10 = True
+    CellId = {50: 1, 51: 2, 52: 3, 53: 4}
+
+    logging.info("CB009915 longPucchStartSr1Prb_val = %s" % longPucchStartSr1Prb_val)
+
+    if not (int(longPucchStartSr1Prb_val) + int(longPucchNumSrPrb_val) == int(longPucchStartHarq1Prb_val)
+            or int(longPucchStartHarq1Prb_val) == int(longPucchStartSr1Prb_val)):
+        logging.error("longPucchStartSr1Prb + longPucchNumSrPrb != longPucchStartHarq1Prb (%s, %s, %s)"
+                      % (longPucchStartSr1Prb_val, longPucchNumSrPrb_val, longPucchStartHarq1Prb_val))
+        logging.error("or longPucchStartHarq1Prb != longPucchStartSr1Prb (%s, %s)"
+                      % (longPucchStartHarq1Prb_val, longPucchStartSr1Prb_val))
+        text = 'longPucchStartSr1Prb + longPucchNumSrPrb != longPucchStartHarq1Prb ({}, {}, {})' \
+               + 'or longPucchStartHarq1Prb != longPucchStartSr1Prb ({}, {})'
+        resultTest7 = False
+        raise Exception(text.format(longPucchStartSr1Prb_val, longPucchNumSrPrb_val,
+                                    longPucchStartHarq1Prb_val, longPucchStartHarq1Prb_val,
+                                    longPucchStartSr1Prb_val))
+
+    logging.info("CB009915 resultTest7 = %s" % resultTest7)
+
+    if not (int(longPucchStartHarq1Prb_val) + int(longPucchNumHarqPrb_val) == int(longPucchStartPcsi1Prb_val)):
+        logging.error("longPucchStartHarq1Prb + longPucchNumHarqPrb != longPucchStartPcsi1Prb (%s, %s, %s)"
+                      % (longPucchStartHarq1Prb_val, longPucchNumHarqPrb_val,
+                         longPucchStartPcsi1Prb_val))
+        text = 'longPucchStartHarq1Prb + longPucchNumHarqPrb != longPucchStartPcsi1Prb ({}, {}, {})'
+        resultTest8 = False
+        raise Exception(text.format(longPucchStartHarq1Prb_val, longPucchNumHarqPrb_val,
+                                    longPucchStartPcsi1Prb_val))
+
+    logging.info("CB009915 resultTest8 = %s" % resultTest8)
+
+    if int(longPucchStartPcsi2Prb_val) + int(longPucchNumPcsiPrb_val) != \
+            int(longPucchStartHarq2Prb_val):
+        logging.error("longPucchStartPcsi2Prb + longPucchStartPcsi2Prb != longPucchStartHarq2Prb (%s, %s, %s)"
+                      % (longPucchStartPcsi2Prb_val, longPucchNumPcsiPrb_val,
+                         longPucchStartHarq2Prb_val))
+        resultTest9 = False
+        raise Exception('longPucchStartPcsi2Prb + longPucchStartPcsi2Prb != longPucchStartHarq2Prb ({}, {}, {})'
+                        .format(longPucchStartPcsi2Prb_val, longPucchNumPcsiPrb_val,
+                                longPucchStartHarq2Prb_val))
+
+    logging.info("CB009915 resultTest9 = %s" % resultTest9)
+
+    if not (int(longPucchStartHarq2Prb_val) + int(longPucchNumHarqPrb_val) == int(longPucchStartSr2Prb_val)
+            or int(longPucchStartHarq2Prb_val) == int(longPucchStartSr2Prb_val)):
+        logging.error("longPucchStartHarq2Prb + longPucchNumHarqPrb != longPucchStartSr2Prb_val (%s, %s, %s)"
+                      % (longPucchStartHarq2Prb_val, longPucchNumHarqPrb_val, longPucchStartSr2Prb_val))
+        logging.error("or longPucchStartHarq2Prb != longPucchStartSr2Prb_val (%s, %s)"
+                      % (longPucchStartHarq2Prb_val, longPucchStartSr2Prb_val))
+        text = 'longPucchStartHarq2Prb + longPucchNumHarqPrb != longPucchStartSr2Prb_val ({}, {}, {})' \
+               + 'or longPucchStartHarq2Prb != longPucchStartSr2Prb_val ({}, {})'
+        resultTest10 = False
+        raise Exception(text.format(longPucchStartHarq2Prb_val, longPucchNumHarqPrb_val,
+                                    longPucchStartSr2Prb_val, longPucchStartHarq2Prb_val,
+                                    longPucchStartSr2Prb_val))
+
+    logging.info("CB009915 resultTest10 = %s" % resultTest10)
+
+    logging.info("longPucchNumSrPrb_val = %s" % str(longPucchNumSrPrb_val))
+    logging.info("longPucchNumHarqPrb_val = %s" % str(longPucchNumHarqPrb_val))
+    logging.info("longPucchNumPcsiPrb_val = %s" % str(longPucchNumPcsiPrb_val))
+
+    #  take into account when CB006878 is activated (actDynUlResAlloc = TRUE)
+    #  if actDynUlResAlloc = TRUE => PRB regions for pCSI are shareable with PUSCH region
+    path_to_scf_xml = rbi.get_variable_value("${test_scf_file}")
+    # test_scf_file = '/home/ute/csamson/TRACES/SCF.xml'
+    BuiltIn().log("verifyFeatureActivation: scfFilePath = %s (SCF)" % path_to_scf_xml)
+    mrbts_id = rbi.get_variable_value('${MRBTS_ID}')
+    nrbts_id = rbi.get_variable_value('${NRBTS_ID}')
+    cellid_val = CellId[cell_val]
+    mr_nr_cell = 'MRBTS-' + str(mrbts_id) + '/NRBTS-' + str(nrbts_id) + '/NRCELL-' + str(cellid_val)
+    logging.info("mr_nr_cell = %s" % mr_nr_cell)
+    expected_scf_list = [{'p_name': 'actDynUlResAlloc', 'value': 'true', 'dist_name': mr_nr_cell}]
+    is_CB006878_activated = verifyParametersInScf(expected_scf_list, path_to_scf_xml)
+    # is_CB006878_activated = True
+    logging.info("CB006878 activated = %s" % is_CB006878_activated)
+    if is_CB006878_activated:
+        longPucchNumPcsiPrb_val_int = 0
+    else:
+        longPucchNumPcsiPrb_val_int = int(longPucchNumPcsiPrb_val)
+    first_pusch_prb = int(first_prb_non_blanking)
+    if int(longPucchStartHarq1Prb_val) == int(longPucchStartSr1Prb_val):
+        first_pusch_prb = \
+            int(first_pusch_prb) + int(longPucchNumSrPrb_val) + longPucchNumPcsiPrb_val_int
+    else:
+        first_pusch_prb = \
+            int(first_pusch_prb) + int(longPucchNumSrPrb_val) + int(longPucchNumHarqPrb_val) \
+            + longPucchNumPcsiPrb_val_int
+
+    if int(longPucchStartHarq2Prb_val) == int(longPucchStartSr2Prb_val):
+        last_pusch_prb = \
+            int(last_prb_non_blanking) - int(longPucchNumSrPrb_val) - longPucchNumPcsiPrb_val_int
+    else:
+        last_pusch_prb = \
+            int(last_prb_non_blanking) - int(longPucchNumSrPrb_val) \
+            - int(longPucchNumHarqPrb_val) - longPucchNumPcsiPrb_val_int
+
+    logging.info("CB009915 first_pusch_prb w PUCCH size = %s" % str(first_pusch_prb))
+    logging.info("CB009915 last_pusch_prb w PUCCH size = %s" % str(last_pusch_prb))
+
+    if int(longPucchStartHarq1Prb_val) == int(longPucchStartSr1Prb_val):
+        pucch_size_lower = int(longPucchNumSrPrb_val) + int(longPucchNumPcsiPrb_val)
+    else:
+        pucch_size_lower = \
+            int(longPucchNumSrPrb_val) + int(longPucchNumHarqPrb_val) + int(longPucchNumPcsiPrb_val)
+    if int(longPucchStartHarq2Prb_val) == int(longPucchStartSr2Prb_val):
+        pucch_size_upper = int(longPucchNumSrPrb_val) + int(longPucchNumPcsiPrb_val)
+    else:
+        pucch_size_upper = \
+            int(longPucchNumSrPrb_val) + int(longPucchNumHarqPrb_val) + int(longPucchNumPcsiPrb_val)
+    pucch_size = pucch_size_lower + pucch_size_upper
+    logging.info("CB009915 pucch_size = %s" % str(pucch_size))
+    rbi.set_test_variable("${PUCCH_SIZE}", str(pucch_size))
+    rbi.set_test_variable("${FIRST_PUSCH_PRB}", str(first_pusch_prb))
+    rbi.set_test_variable("${LAST_PUSCH_PRB}", str(last_pusch_prb))
+    msg = 'verify_Cprt_Pcap_for_UL_Fragmentation_w_PrbBlanking CELL' + str(cell_val) + ': PUCCH_SIZE'
+    datedConsole(getHeaderLine(msg, str(pucch_size)))
+    msg = 'verify_Cprt_Pcap_for_UL_Fragmentation_w_PrbBlanking CELL' + str(cell_val) + ': FIRST_PUSCH_PRB'
+    datedConsole(getHeaderLine(msg, str(first_pusch_prb)))
+    msg = 'verify_Cprt_Pcap_for_UL_Fragmentation_w_PrbBlanking CELL' + str(cell_val) + ': LAST_PUSCH_PRB'
+    datedConsole(getHeaderLine(msg, str(last_pusch_prb)))
+    return first_pusch_prb, last_pusch_prb, pucch_size, resultTest7, resultTest8, resultTest9, resultTest10
+
+
+@log_begin_end_func_name
+def get_start_end_prb_pusch_decicatedPSBWP(cell_val,
+                                           first_prb_non_blanking,
+                                           last_prb_non_blanking,
+                                           longPucchStartSr1Prb_val,
+                                           longPucchStartSr2Prb_val,
+                                           longPucchNumSrPrb_val,
+                                           longPucchStartHarq1Prb_val,
+                                           longPucchStartHarq2Prb_val,
+                                           longPucchNumHarqPrb_val,
+                                           longPucchStartPcsi1Prb_val,
+                                           longPucchStartPcsi2Prb_val,
+                                           longPucchNumPcsiPrb_val):
+    """return first PUSCH prb and last PUSCH prb for dedicated BWP case and return also PUCCH size"""
+    # Check that longPucchStartSr1Prb + longPucchNumSrPrb == longPucchStartHarq1Prb
+    # Check that longPucchStartHarq1Prb + longPucchNumHarqPrb == longPucchStartPcsi1Prb
+    # Check that longPucchStartPcsi1Prb + longPucchNumPcsiPrb == longPucchStartSr2Prb
+    # Check that longPucchStartSr2Prb + longPucchNumSrPrb == longPucchStartHarq2Prb
+    # Check that longPucchStartHarq2Prb + longPucchNumHarqPrb == longPucchStartPcsi2Prb
+
+    resultTest7 = True
+    resultTest8 = True
+    resultTest9 = True
+    resultTest10 = True
+    CellId = {50: 1, 51: 2, 52: 3, 53: 4}
+
+    logging.info("CB009915 longPucchStartSr1Prb_val = %s" % longPucchStartSr1Prb_val)
+
+    if not (int(longPucchStartSr1Prb_val) + int(longPucchNumSrPrb_val) == int(longPucchStartHarq1Prb_val)):
+        logging.error("longPucchStartSr1Prb + longPucchNumSrPrb != longPucchStartHarq1Prb (%s, %s, %s)"
+                      % (longPucchStartSr1Prb_val, longPucchNumSrPrb_val, longPucchStartHarq1Prb_val))
+        logging.error("or longPucchStartHarq1Prb != longPucchStartSr1Prb (%s, %s)"
+                      % (longPucchStartHarq1Prb_val, longPucchStartSr1Prb_val))
+        text = 'longPucchStartSr1Prb + longPucchNumSrPrb != longPucchStartHarq1Prb ({}, {}, {})'
+        resultTest7 = False
+        raise Exception(text.format(longPucchStartSr1Prb_val, longPucchNumSrPrb_val,
+                                    longPucchStartHarq1Prb_val))
+
+    logging.info("CB009915 resultTest7 = %s" % resultTest7)
+
+    if not (int(longPucchStartHarq1Prb_val) + int(longPucchNumHarqPrb_val) == int(longPucchStartSr2Prb_val)):
+        logging.error("longPucchStartHarq1Prb + longPucchNumHarqPrb != longPucchStartSr2Prb (%s, %s, %s)"
+                      % (longPucchStartHarq1Prb_val, longPucchNumHarqPrb_val,
+                         longPucchStartSr2Prb_val))
+        text = 'longPucchStartHarq1Prb + longPucchNumHarqPrb != longPucchStartSr2Prb ({}, {}, {})'
+        resultTest8 = False
+        raise Exception(text.format(longPucchStartHarq1Prb_val, longPucchNumHarqPrb_val,
+                                    longPucchStartSr2Prb_val))
+
+    logging.info("CB009915 resultTest8 = %s" % resultTest8)
+
+    if int(longPucchStartHarq2Prb_val) + int(longPucchNumHarqPrb_val) != \
+            int(longPucchStartPcsi1Prb_val):
+        logging.error("longPucchStartHarq2Prb + longPucchNumHarqPrb != longPucchStartPcsi1Prb (%s, %s, %s)"
+                      % (longPucchStartHarq2Prb_val, longPucchNumHarqPrb_val,
+                         longPucchStartPcsi1Prb_val))
+        resultTest9 = False
+        raise Exception('longPucchStartHarq2Prb + longPucchNumHarqPrb != longPucchStartPcsi1Prb ({}, {}, {})'
+                        .format(longPucchStartHarq2Prb_val, longPucchNumHarqPrb_val,
+                                longPucchStartPcsi1Prb_val))
+
+    logging.info("CB009915 resultTest9 = %s" % resultTest9)
+
+    if not (int(longPucchStartPcsi1Prb_val) + int(longPucchNumPcsiPrb_val) == int(longPucchStartPcsi2Prb_val)):
+        logging.error("longPucchStartPcsi1Prb + longPucchNumPcsiPrb != longPucchStartPcsi2rb (%s, %s, %s)"
+                      % (longPucchStartPcsi1Prb_val, longPucchNumPcsiPrb_val, longPucchStartPcsi2Prb_val))
+        text = 'longPucchStartPcsi1Prb + longPucchNumPcsiPrb != longPucchStartPcsi2rb ({}, {}, {})'
+        resultTest10 = False
+        raise Exception(text.format(longPucchStartPcsi1Prb_val, longPucchNumPcsiPrb_val,
+                                    longPucchStartPcsi2Prb_val))
+
+    logging.info("CB009915 resultTest10 = %s" % resultTest10)
+
+    logging.info("longPucchNumSrPrb_val = %s" % str(longPucchNumSrPrb_val))
+    logging.info("longPucchNumHarqPrb_val = %s" % str(longPucchNumHarqPrb_val))
+    logging.info("longPucchNumPcsiPrb_val = %s" % str(longPucchNumPcsiPrb_val))
+
+    #  take into account when CB006878 is activated (actDynUlResAlloc = TRUE)
+    #  if actDynUlResAlloc = TRUE => PRB regions for pCSI are shareable with PUSCH region
+    path_to_scf_xml = rbi.get_variable_value("${test_scf_file}")
+    # path_to_scf_xml = '/home/ute/csamson/TRACES/SCF.xml'
+    BuiltIn().log("verifyFeatureActivation: scfFilePath = %s (SCF)" % path_to_scf_xml)
+    mrbts_id = rbi.get_variable_value('${MRBTS_ID}')
+    nrbts_id = rbi.get_variable_value('${NRBTS_ID}')
+    cellid_val = CellId[cell_val]
+    mr_nr_cell = 'MRBTS-' + str(mrbts_id) + '/NRBTS-' + str(nrbts_id) + '/NRCELL-' + str(cellid_val)
+    # mr_nr_cell = 'MRBTS-' + '1' + '/NRBTS-' + '1' + '/NRCELL-' + str(cellid_val)
+    logging.info("mr_nr_cell = %s" % mr_nr_cell)
+    expected_scf_list = [{'p_name': 'actDynUlResAlloc', 'value': 'true', 'dist_name': mr_nr_cell}]
+    is_CB006878_activated = verifyParametersInScf(expected_scf_list, path_to_scf_xml)
+    # is_CB006878_activated = True
+    logging.info("CB006878 activated = %s" % is_CB006878_activated)
+    if is_CB006878_activated:
+        longPucchNumPcsiPrb_val_int = 0
+    else:
+        longPucchNumPcsiPrb_val_int = int(longPucchNumPcsiPrb_val)
+    first_pusch_prb = int(first_prb_non_blanking)
+    last_pusch_prb = int(last_prb_non_blanking)
+    logging.info("CB009915 first_pusch_prb wo PUCCH size = %s" % str(first_pusch_prb))
+    logging.info("CB009915 last_pusch_prb wo PUCCH size = %s" % str(last_pusch_prb))
+    pucch_size_lower = 0
+    if int(longPucchStartHarq1Prb_val) == int(longPucchStartSr1Prb_val):
+        pucch_size_lower = pucch_size_lower + int(longPucchNumSrPrb_val)
+    else:
+        pucch_size_lower = pucch_size_lower + int(longPucchNumSrPrb_val) + int(longPucchNumHarqPrb_val)
+    if int(longPucchStartHarq2Prb_val) == int(longPucchStartSr2Prb_val):
+        pucch_size_lower = pucch_size_lower + int(longPucchNumSrPrb_val)
+    else:
+        pucch_size_lower = pucch_size_lower + int(longPucchNumSrPrb_val) + int(longPucchNumHarqPrb_val)
+    if int(longPucchStartPcsi1Prb_val) == int(longPucchStartPcsi2Prb_val):
+        pucch_size_lower = pucch_size_lower + int(longPucchNumPcsiPrb_val_int)
+    else:
+        pucch_size_lower = pucch_size_lower + 2 * int(longPucchNumPcsiPrb_val_int)
+    pucch_size_upper = 0
+    pucch_size = pucch_size_lower + pucch_size_upper
+    first_pusch_prb = first_pusch_prb + pucch_size_lower
+    # add here the pCsi NumPrb to pucch size if CB006878 is activated
+    if is_CB006878_activated:
+        pucch_size = pucch_size + 2 * int(longPucchNumPcsiPrb_val)
+    logging.info("CB009915 first_pusch_prb w PUCCH size = %s" % str(first_pusch_prb))
+    logging.info("CB009915 last_pusch_prb w PUCCH size = %s" % str(last_pusch_prb))
+    logging.info("CB009915 pucch_size = %s" % str(pucch_size))
+    rbi.set_test_variable("${PUCCH_SIZE}", str(pucch_size))
+    rbi.set_test_variable("${FIRST_PUSCH_PRB}", str(first_pusch_prb))
+    rbi.set_test_variable("${LAST_PUSCH_PRB}", str(last_pusch_prb))
+    msg = 'verify_Cprt_Pcap_for_UL_Fragmentation_w_PrbBlanking CELL' + str(cell_val) + ': PUCCH_SIZE'
+    datedConsole(getHeaderLine(msg, str(pucch_size)))
+    msg = 'verify_Cprt_Pcap_for_UL_Fragmentation_w_PrbBlanking CELL' + str(cell_val) + ': FIRST_PUSCH_PRB'
+    datedConsole(getHeaderLine(msg, str(first_pusch_prb)))
+    msg = 'verify_Cprt_Pcap_for_UL_Fragmentation_w_PrbBlanking CELL' + str(cell_val) + ': LAST_PUSCH_PRB'
+    datedConsole(getHeaderLine(msg, str(last_pusch_prb)))
+    return first_pusch_prb, last_pusch_prb, pucch_size, resultTest7, resultTest8, resultTest9, resultTest10
+
+
+@log_begin_end_func_name
+def run_prb_blanking_analysis_cprt_pcap(file,
+                                        first_prb_non_blanking=0,
+                                        last_prb_non_blanking=273):
+    logging.info("run_prb_blanking_analysis_cprt_pcap filename = %s" % file)
+    CellId = {50: 1, 51: 2, 52: 3, 53: 4}
+    # rbgSize = return_only_rbgsize_pdsch(chBW=273, ConfigType=1)
+    # list by itf_l2_ps_cell_CellSetupReq_t.physCellId
+    list_cells = get_cell_from_csv_file(filename=file, pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchStartSr1Prb'
+    longPucchStartSr1Prb =\
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchStartSr2Prb'
+    longPucchStartSr2Prb =\
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchNumSrPrb'
+    longPucchNumSrPrb =\
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchStartHarq1Prb'
+    longPucchStartHarq1Prb = \
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchStartHarq2Prb'
+    longPucchStartHarq2Prb = \
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchNumHarqPrb'
+    longPucchNumHarqPrb = \
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchStartPcsi1Prb'
+    longPucchStartPcsi1Prb = \
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchStartPcsi2Prb'
+    longPucchStartPcsi2Prb = \
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchNumPcsiPrb'
+    longPucchNumPcsiPrb = \
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+
+    resultTest = True
+    resultTest1 = True
+    resultTest2 = True
+    resultTest3 = True
+    resultTest4 = True
+    resultTest5 = True
+    resultTest6 = True
+    resultTest7 = True
+    resultTest8 = True
+    resultTest9 = True
+    resultTest10 = True
+
+    logging.info("CB009915 first_prb_non_blanking = %s" % first_prb_non_blanking)
+    logging.info("CB009915 last_prb_non_blanking = %s" % last_prb_non_blanking)
+
+    logging.info("CB009915 list_cells = %s" % list_cells)
+    logging.info("CB009915 longPucchStartSr1Prb = %s" % longPucchStartSr1Prb)
+    logging.info("CB009915 longPucchStartSr2Prb = %s" % longPucchStartSr2Prb)
+    logging.info("CB009915 longPucchNumSrPrb = %s" % longPucchNumSrPrb)
+
+    logging.info("CB009915 longPucchStartHarq1Prb = %s" % longPucchStartHarq1Prb)
+    logging.info("CB009915 longPucchStartHarq2Prb = %s" % longPucchStartHarq2Prb)
+    logging.info("CB009915 longPucchNumHarqPrb = %s" % longPucchNumHarqPrb)
+
+    logging.info("CB009915 longPucchStartPcsi1Prb = %s" % longPucchStartPcsi1Prb)
+    logging.info("CB009915 longPucchStartPcsi2Prb = %s" % longPucchStartPcsi2Prb)
+    logging.info("CB009915 longPucchNumPcsiPrb = %s" % longPucchNumPcsiPrb)
+
+    if len(list_cells) == 0:
+        logging.error("list_cells empty")
+        resultTest = False
+        raise Exception('Check failed, list_cells empty')
+
+    # Check that longPucchStartSr1Prb + longPucchNumSrPrb == longPucchStartHarq1Prb or
+    #            longPucchStartSr1Prb == longPucchStartHarq1Prb
+    # Check that longPucchStartHarq1Prb + longPucchNumHarqPrb == longPucchStartPcsi1Prb
+    # Check that longPucchStartPcsi2Prb + longPucchNumPcsiPrb == longPucchStartHarq2Prb
+    # Check that longPucchStartHarq2Prb + longPucchNumHarqPrb == longPucchStartSr2Prb or
+    #            longPucchStartHarq2Prb == longPucchStartSr2Prb
+
+    # pusch lower start prb should be (first_prb_non_blanking + longPucchNumSrPrb + longPucchNumHarqPrb +
+    # longPucchNumPcsiPrb) and pusch upper start prb should be (last_prb_non_blanking - longPucchNumSrPrb -
+    # longPucchNumHarqPrb - longPucchNumPcsiPrb)
+
+    # longPucchStartSr1Prb check with Prb blanking constraint
+    resultTest1, longPucchStartSr1Prb_val, longPucchNumSrPrb_val, cell_val =\
+        check_ul_fragmentation_with_prb_blanking(list_cells=list_cells,
+                                                 longpucchstartprb=longPucchStartSr1Prb,
+                                                 longpucchnumprb=longPucchNumSrPrb,
+                                                 first_prb_non_blanking=first_prb_non_blanking,
+                                                 last_prb_non_blanking=last_prb_non_blanking)
+
+    resultTest2, longPucchStartSr2Prb_val, longPucchNumSrPrb_val, cell_val =\
+        check_ul_fragmentation_with_prb_blanking(list_cells=list_cells,
+                                                 longpucchstartprb=longPucchStartSr2Prb,
+                                                 longpucchnumprb=longPucchNumSrPrb,
+                                                 first_prb_non_blanking=first_prb_non_blanking,
+                                                 last_prb_non_blanking=last_prb_non_blanking)
+
+    resultTest3, longPucchStartHarq1Prb_val, longPucchNumHarqPrb_val, cell_val =\
+        check_ul_fragmentation_with_prb_blanking(list_cells=list_cells,
+                                                 longpucchstartprb=longPucchStartHarq1Prb,
+                                                 longpucchnumprb=longPucchNumHarqPrb,
+                                                 first_prb_non_blanking=first_prb_non_blanking,
+                                                 last_prb_non_blanking=last_prb_non_blanking)
+
+    resultTest4, longPucchStartHarq2Prb_val, longPucchNumHarqPrb_val, cell_val =\
+        check_ul_fragmentation_with_prb_blanking(list_cells=list_cells,
+                                                 longpucchstartprb=longPucchStartHarq2Prb,
+                                                 longpucchnumprb=longPucchNumHarqPrb,
+                                                 first_prb_non_blanking=first_prb_non_blanking,
+                                                 last_prb_non_blanking=last_prb_non_blanking)
+
+    resultTest5, longPucchStartPcsi1Prb_val, longPucchNumPcsiPrb_val, cell_val =\
+        check_ul_fragmentation_with_prb_blanking(list_cells=list_cells,
+                                                 longpucchstartprb=longPucchStartPcsi1Prb,
+                                                 longpucchnumprb=longPucchNumPcsiPrb,
+                                                 first_prb_non_blanking=first_prb_non_blanking,
+                                                 last_prb_non_blanking=last_prb_non_blanking)
+
+    resultTest6, longPucchStartPcsi2Prb_val, longPucchNumPcsiPrb_val, cell_val =\
+        check_ul_fragmentation_with_prb_blanking(list_cells=list_cells,
+                                                 longpucchstartprb=longPucchStartPcsi2Prb,
+                                                 longpucchnumprb=longPucchNumPcsiPrb,
+                                                 first_prb_non_blanking=first_prb_non_blanking,
+                                                 last_prb_non_blanking=last_prb_non_blanking)
+
+    logging.info("CB009915 resultTest1 = %s" % resultTest1)
+    logging.info("CB009915 resultTest2 = %s" % resultTest2)
+    logging.info("CB009915 resultTest3 = %s" % resultTest3)
+    logging.info("CB009915 resultTest4 = %s" % resultTest4)
+    logging.info("CB009915 resultTest5 = %s" % resultTest5)
+    logging.info("CB009915 resultTest6 = %s" % resultTest6)
+
+    # Check that longPucchStartSr1Prb + longPucchNumSrPrb == longPucchStartHarq1Prb
+    # Check that longPucchStartHarq1Prb + longPucchNumHarqPrb == longPucchStartPcsi1Prb
+    # Check that longPucchStartPcsi2Prb + longPucchNumPcsiPrb == longPucchStartHarq2Prb
+    # Check that longPucchStartHarq2Prb + longPucchNumHarqPrb == longPucchStartSr2Prb
+
+    # add detection of PDCCH region position
+    pucch_low_edge_region_position, pucch_high_edge_region_position =\
+        get_pucch_region_position(longPucchStartSr1Prb_val=longPucchStartSr1Prb_val[0],
+                                  longPucchStartSr2Prb_val=longPucchStartSr2Prb_val[0],
+                                  longPucchNumSrPrb_val=longPucchNumSrPrb_val[0],
+                                  longPucchStartHarq1Prb_val=longPucchStartHarq1Prb_val[0],
+                                  longPucchStartHarq2Prb_val=longPucchStartHarq2Prb_val[0],
+                                  longPucchNumHarqPrb_val=longPucchNumHarqPrb_val[0],
+                                  longPucchStartPcsi1Prb_val=longPucchStartPcsi1Prb_val[0],
+                                  longPucchStartPcsi2Prb_val=longPucchStartPcsi2Prb_val[0],
+                                  longPucchNumPcsiPrb_val=longPucchNumPcsiPrb_val[0])
+    text = "CB009915 pucch_low_edge_region_position = %s and pucch_high_edge_region_position = %s"
+    logging.info(text % (pucch_low_edge_region_position, pucch_high_edge_region_position))
+    if pucch_low_edge_region_position and pucch_high_edge_region_position:
+        get_start_end_prb_pusch_decicatedBWP(cell_val=cell_val,
+                                             first_prb_non_blanking=first_prb_non_blanking,
+                                             last_prb_non_blanking=last_prb_non_blanking,
+                                             longPucchStartSr1Prb_val=longPucchStartSr1Prb_val[0],
+                                             longPucchStartSr2Prb_val=longPucchStartSr2Prb_val[0],
+                                             longPucchNumSrPrb_val=longPucchNumSrPrb_val[0],
+                                             longPucchStartHarq1Prb_val=longPucchStartHarq1Prb_val[0],
+                                             longPucchStartHarq2Prb_val=longPucchStartHarq2Prb_val[0],
+                                             longPucchNumHarqPrb_val=longPucchNumHarqPrb_val[0],
+                                             longPucchStartPcsi1Prb_val=longPucchStartPcsi1Prb_val[0],
+                                             longPucchStartPcsi2Prb_val=longPucchStartPcsi2Prb_val[0],
+                                             longPucchNumPcsiPrb_val=longPucchNumPcsiPrb_val[0])
+    elif pucch_low_edge_region_position and not pucch_high_edge_region_position:
+        get_start_end_prb_pusch_decicatedPSBWP(cell_val=cell_val,
+                                               first_prb_non_blanking=first_prb_non_blanking,
+                                               last_prb_non_blanking=last_prb_non_blanking,
+                                               longPucchStartSr1Prb_val=longPucchStartSr1Prb_val[0],
+                                               longPucchStartSr2Prb_val=longPucchStartSr2Prb_val[0],
+                                               longPucchNumSrPrb_val=longPucchNumSrPrb_val[0],
+                                               longPucchStartHarq1Prb_val=longPucchStartHarq1Prb_val[0],
+                                               longPucchStartHarq2Prb_val=longPucchStartHarq2Prb_val[0],
+                                               longPucchNumHarqPrb_val=longPucchNumHarqPrb_val[0],
+                                               longPucchStartPcsi1Prb_val=longPucchStartPcsi1Prb_val[0],
+                                               longPucchStartPcsi2Prb_val=longPucchStartPcsi2Prb_val[0],
+                                               longPucchNumPcsiPrb_val=longPucchNumPcsiPrb_val[0])
+    else:
+        text = 'impossible case !!! pucch_low_edge_region_position = {} and pucch_high_edge_region_position = {}'
+        raise Exception(text.format(pucch_low_edge_region_position, pucch_high_edge_region_position))
+
+    return all([resultTest, resultTest1, resultTest2, resultTest3, resultTest4, resultTest5,
+                resultTest6, resultTest7, resultTest8, resultTest9, resultTest10])
+
+
+@log_begin_end_func_name
+def run_prb_blanking_analysis_cprt_pcap_version1(file,
+                                                 first_prb_non_blanking=0,
+                                                 last_prb_non_blanking=273):
+    logging.info("run_prb_blanking_analysis_cprt_pcap filename = %s" % file)
+    CellId = {50: 1, 51: 2, 52: 3, 53: 4}
+    # rbgSize = return_only_rbgsize_pdsch(chBW=273, ConfigType=1)
+    # list by itf_l2_ps_cell_CellSetupReq_t.physCellId
+    list_cells = get_cell_from_csv_file(filename=file, pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchStartSr1Prb'
+    longPucchStartSr1Prb =\
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchStartSr2Prb'
+    longPucchStartSr2Prb =\
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchNumSrPrb'
+    longPucchNumSrPrb =\
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchStartHarq1Prb'
+    longPucchStartHarq1Prb = \
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchStartHarq2Prb'
+    longPucchStartHarq2Prb = \
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchNumHarqPrb'
+    longPucchNumHarqPrb = \
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchStartPcsi1Prb'
+    longPucchStartPcsi1Prb = \
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchStartPcsi2Prb'
+    longPucchStartPcsi2Prb = \
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+    linename = 'itf_l2_ps_cell_ResourceRegionsForPrbFragmentation.longPucchNumPcsiPrb'
+    longPucchNumPcsiPrb = \
+        get_specified_column_from_csv_file_for_rnti(filename=file,
+                                                    linename=linename,
+                                                    pattern='itf_l2_ps_cell_CellSetupReq_t.physCellId')
+
+    resultTest = True
+    resultTest1 = True
+    resultTest2 = True
+    resultTest3 = True
+    resultTest4 = True
+    resultTest5 = True
+    resultTest6 = True
+    resultTest7 = True
+    resultTest8 = True
+    resultTest9 = True
+    resultTest10 = True
+
+    logging.info("CB009915 first_prb_non_blanking = %s" % first_prb_non_blanking)
+    logging.info("CB009915 last_prb_non_blanking = %s" % last_prb_non_blanking)
+
+    logging.info("CB009915 list_cells = %s" % list_cells)
+    logging.info("CB009915 longPucchStartSr1Prb = %s" % longPucchStartSr1Prb)
+    logging.info("CB009915 longPucchStartSr2Prb = %s" % longPucchStartSr2Prb)
+    logging.info("CB009915 longPucchNumSrPrb = %s" % longPucchNumSrPrb)
+
+    logging.info("CB009915 longPucchStartHarq1Prb = %s" % longPucchStartHarq1Prb)
+    logging.info("CB009915 longPucchStartHarq2Prb = %s" % longPucchStartHarq2Prb)
+    logging.info("CB009915 longPucchNumHarqPrb = %s" % longPucchNumHarqPrb)
+
+    logging.info("CB009915 longPucchStartPcsi1Prb = %s" % longPucchStartPcsi1Prb)
+    logging.info("CB009915 longPucchStartPcsi2Prb = %s" % longPucchStartPcsi2Prb)
+    logging.info("CB009915 longPucchNumPcsiPrb = %s" % longPucchNumPcsiPrb)
+
+    if len(list_cells) == 0:
+        logging.error("list_cells empty")
+        resultTest = False
+        raise Exception('Check failed, list_cells empty')
+
+    # Check that longPucchStartSr1Prb + longPucchNumSrPrb == longPucchStartHarq1Prb or
+    #            longPucchStartSr1Prb == longPucchStartHarq1Prb
+    # Check that longPucchStartHarq1Prb + longPucchNumHarqPrb == longPucchStartPcsi1Prb
+    # Check that longPucchStartPcsi2Prb + longPucchNumPcsiPrb == longPucchStartHarq2Prb
+    # Check that longPucchStartHarq2Prb + longPucchNumHarqPrb == longPucchStartSr2Prb or
+    #            longPucchStartHarq2Prb == longPucchStartSr2Prb
+
+    # pusch lower start prb should be (first_prb_non_blanking + longPucchNumSrPrb + longPucchNumHarqPrb +
+    # longPucchNumPcsiPrb) and pusch upper start prb should be (last_prb_non_blanking - longPucchNumSrPrb -
+    # longPucchNumHarqPrb - longPucchNumPcsiPrb)
+
+    # longPucchStartSr1Prb check with Prb blanking constraint
+    resultTest1, longPucchStartSr1Prb_val, longPucchNumSrPrb_val, cell_val =\
+        check_ul_fragmentation_with_prb_blanking(list_cells=list_cells,
+                                                 longpucchstartprb=longPucchStartSr1Prb,
+                                                 longpucchnumprb=longPucchNumSrPrb,
+                                                 first_prb_non_blanking=first_prb_non_blanking,
+                                                 last_prb_non_blanking=last_prb_non_blanking)
+
+    resultTest2, longPucchStartSr2Prb_val, longPucchNumSrPrb_val, cell_val =\
+        check_ul_fragmentation_with_prb_blanking(list_cells=list_cells,
+                                                 longpucchstartprb=longPucchStartSr2Prb,
+                                                 longpucchnumprb=longPucchNumSrPrb,
+                                                 first_prb_non_blanking=first_prb_non_blanking,
+                                                 last_prb_non_blanking=last_prb_non_blanking)
+
+    resultTest3, longPucchStartHarq1Prb_val, longPucchNumHarqPrb_val, cell_val =\
+        check_ul_fragmentation_with_prb_blanking(list_cells=list_cells,
+                                                 longpucchstartprb=longPucchStartHarq1Prb,
+                                                 longpucchnumprb=longPucchNumHarqPrb,
+                                                 first_prb_non_blanking=first_prb_non_blanking,
+                                                 last_prb_non_blanking=last_prb_non_blanking)
+
+    resultTest4, longPucchStartHarq2Prb_val, longPucchNumHarqPrb_val, cell_val =\
+        check_ul_fragmentation_with_prb_blanking(list_cells=list_cells,
+                                                 longpucchstartprb=longPucchStartHarq2Prb,
+                                                 longpucchnumprb=longPucchNumHarqPrb,
+                                                 first_prb_non_blanking=first_prb_non_blanking,
+                                                 last_prb_non_blanking=last_prb_non_blanking)
+
+    resultTest5, longPucchStartPcsi1Prb_val, longPucchNumPcsiPrb_val, cell_val =\
+        check_ul_fragmentation_with_prb_blanking(list_cells=list_cells,
+                                                 longpucchstartprb=longPucchStartPcsi1Prb,
+                                                 longpucchnumprb=longPucchNumPcsiPrb,
+                                                 first_prb_non_blanking=first_prb_non_blanking,
+                                                 last_prb_non_blanking=last_prb_non_blanking)
+
+    resultTest6, longPucchStartPcsi2Prb_val, longPucchNumPcsiPrb_val, cell_val =\
+        check_ul_fragmentation_with_prb_blanking(list_cells=list_cells,
+                                                 longpucchstartprb=longPucchStartPcsi2Prb,
+                                                 longpucchnumprb=longPucchNumPcsiPrb,
+                                                 first_prb_non_blanking=first_prb_non_blanking,
+                                                 last_prb_non_blanking=last_prb_non_blanking)
+
+    logging.info("CB009915 resultTest1 = %s" % resultTest1)
+    logging.info("CB009915 resultTest2 = %s" % resultTest2)
+    logging.info("CB009915 resultTest3 = %s" % resultTest3)
+    logging.info("CB009915 resultTest4 = %s" % resultTest4)
+    logging.info("CB009915 resultTest5 = %s" % resultTest5)
+    logging.info("CB009915 resultTest6 = %s" % resultTest6)
+
+    # Check that longPucchStartSr1Prb + longPucchNumSrPrb == longPucchStartHarq1Prb
+    # Check that longPucchStartHarq1Prb + longPucchNumHarqPrb == longPucchStartPcsi1Prb
+    # Check that longPucchStartPcsi2Prb + longPucchNumPcsiPrb == longPucchStartHarq2Prb
+    # Check that longPucchStartHarq2Prb + longPucchNumHarqPrb == longPucchStartSr2Prb
+
+    logging.info("CB009915 longPucchStartSr1Prb_val = %s" % longPucchStartSr1Prb_val[0])
+
+    if not (int(longPucchStartSr1Prb_val[0]) + int(longPucchNumSrPrb_val[0]) == int(longPucchStartHarq1Prb_val[0])
+            or int(longPucchStartHarq1Prb_val[0]) == int(longPucchStartSr1Prb_val[0])):
+        logging.error("longPucchStartSr1Prb + longPucchNumSrPrb != longPucchStartHarq1Prb (%s, %s, %s)"
+                      % (longPucchStartSr1Prb_val[0], longPucchNumSrPrb_val[0], longPucchStartHarq1Prb_val[0]))
+        logging.error("or longPucchStartHarq1Prb != longPucchStartSr1Prb (%s, %s)"
+                      % (longPucchStartHarq1Prb_val[0], longPucchStartSr1Prb_val[0]))
+        text = 'longPucchStartSr1Prb + longPucchNumSrPrb != longPucchStartHarq1Prb ({}, {}, {})'\
+               + 'or longPucchStartHarq1Prb != longPucchStartSr1Prb ({}, {})'
+        resultTest7 = False
+        raise Exception(text.format(longPucchStartSr1Prb_val[0], longPucchNumSrPrb_val[0],
+                                    longPucchStartHarq1Prb_val[0], longPucchStartHarq1Prb_val[0],
+                                    longPucchStartSr1Prb_val[0]))
+
+    logging.info("CB009915 resultTest7 = %s" % resultTest7)
+
+    if not (int(longPucchStartHarq1Prb_val[0]) + int(longPucchNumHarqPrb_val[0]) == int(longPucchStartPcsi1Prb_val[0])):
+        logging.error("longPucchStartHarq1Prb + longPucchNumHarqPrb != longPucchStartPcsi1Prb (%s, %s, %s)"
+                      % (longPucchStartHarq1Prb_val[0], longPucchNumHarqPrb_val[0],
+                         longPucchStartPcsi1Prb_val[0]))
+        text = 'longPucchStartHarq1Prb + longPucchNumHarqPrb != longPucchStartPcsi1Prb ({}, {}, {})'
+        resultTest8 = False
+        raise Exception(text.format(longPucchStartHarq1Prb_val[0], longPucchNumHarqPrb_val[0],
+                                    longPucchStartPcsi1Prb_val[0]))
+
+    logging.info("CB009915 resultTest8 = %s" % resultTest8)
+
+    if int(longPucchStartPcsi2Prb_val[0]) + int(longPucchNumPcsiPrb_val[0]) != \
+            int(longPucchStartHarq2Prb_val[0]):
+        logging.error("longPucchStartPcsi2Prb + longPucchStartPcsi2Prb != longPucchStartHarq2Prb (%s, %s, %s)"
+                      % (longPucchStartPcsi2Prb_val[0], longPucchNumPcsiPrb_val[0],
+                         longPucchStartHarq2Prb_val[0]))
+        resultTest9 = False
+        raise Exception('longPucchStartPcsi2Prb + longPucchStartPcsi2Prb != longPucchStartHarq2Prb ({}, {}, {})'
+                        .format(longPucchStartPcsi2Prb_val[0], longPucchNumPcsiPrb_val[0],
+                                longPucchStartHarq2Prb_val[0]))
+
+    logging.info("CB009915 resultTest9 = %s" % resultTest9)
+
+    if not (int(longPucchStartHarq2Prb_val[0]) + int(longPucchNumHarqPrb_val[0]) == int(longPucchStartSr2Prb_val[0])
+            or int(longPucchStartHarq2Prb_val[0]) == int(longPucchStartSr2Prb_val[0])):
+        logging.error("longPucchStartHarq2Prb + longPucchNumHarqPrb != longPucchStartSr2Prb_val (%s, %s, %s)"
+                      % (longPucchStartHarq2Prb_val[0], longPucchNumHarqPrb_val[0], longPucchStartSr2Prb_val[0]))
+        logging.error("or longPucchStartHarq2Prb != longPucchStartSr2Prb_val (%s, %s)"
+                      % (longPucchStartHarq2Prb_val[0], longPucchStartSr2Prb_val[0]))
+        text = 'longPucchStartHarq2Prb + longPucchNumHarqPrb != longPucchStartSr2Prb_val ({}, {}, {})'\
+               + 'or longPucchStartHarq2Prb != longPucchStartSr2Prb_val ({}, {})'
+        resultTest10 = False
+        raise Exception(text.format(longPucchStartHarq2Prb_val[0], longPucchNumHarqPrb_val[0],
+                                    longPucchStartSr2Prb_val[0], longPucchStartHarq2Prb_val[0],
+                                    longPucchStartSr2Prb_val[0]))
+
+    logging.info("CB009915 resultTest10 = %s" % resultTest10)
+
+    logging.info("longPucchNumSrPrb_val[0] = %s" % str(longPucchNumSrPrb_val[0]))
+    logging.info("longPucchNumHarqPrb_val[0] = %s" % str(longPucchNumHarqPrb_val[0]))
+    logging.info("longPucchNumPcsiPrb_val[0] = %s" % str(longPucchNumPcsiPrb_val[0]))
+
+    #  take into account when CB006878 is activated (actDynUlResAlloc = TRUE)
+    #  if actDynUlResAlloc = TRUE => PRB regions for pCSI are shareable with PUSCH region
+    path_to_scf_xml = rbi.get_variable_value("${test_scf_file}")
+    # test_scf_file = '/home/ute/csamson/TRACES/SCF.xml'
+    BuiltIn().log("verifyFeatureActivation: scfFilePath = %s (SCF)" % path_to_scf_xml)
+    mrbts_id = rbi.get_variable_value('${MRBTS_ID}')
+    nrbts_id = rbi.get_variable_value('${NRBTS_ID}')
+    cellid_val = CellId[cell_val]
+    mr_nr_cell = 'MRBTS-' + str(mrbts_id) + '/NRBTS-' + str(nrbts_id) + '/NRCELL-' + str(cellid_val)
+    logging.info("mr_nr_cell = %s" % mr_nr_cell)
+    expected_scf_list = [{'p_name': 'actDynUlResAlloc', 'value': 'true', 'dist_name': mr_nr_cell}]
+    is_CB006878_activated = verifyParametersInScf(expected_scf_list, path_to_scf_xml)
+    # is_CB006878_activated = True
+    logging.info("CB006878 activated = %s" % is_CB006878_activated)
+    if is_CB006878_activated:
+        longPucchNumPcsiPrb_val_int = 0
+    else:
+        longPucchNumPcsiPrb_val_int = int(longPucchNumPcsiPrb_val[0])
+    first_pusch_prb = int(first_prb_non_blanking)
+    if int(longPucchStartHarq1Prb_val[0]) == int(longPucchStartSr1Prb_val[0]):
+        first_pusch_prb = \
+            int(first_pusch_prb) + int(longPucchNumSrPrb_val[0]) + longPucchNumPcsiPrb_val_int
+    else:
+        first_pusch_prb = \
+            int(first_pusch_prb) + int(longPucchNumSrPrb_val[0]) + int(longPucchNumHarqPrb_val[0])\
+            + longPucchNumPcsiPrb_val_int
+
+    if int(longPucchStartHarq2Prb_val[0]) == int(longPucchStartSr2Prb_val[0]):
+        last_pusch_prb = \
+            int(last_prb_non_blanking) - int(longPucchNumSrPrb_val[0]) - longPucchNumPcsiPrb_val_int
+    else:
+        last_pusch_prb = \
+            int(last_prb_non_blanking) - int(longPucchNumSrPrb_val[0]) \
+            - int(longPucchNumHarqPrb_val[0]) - longPucchNumPcsiPrb_val_int
+
+    logging.info("CB009915 first_pusch_prb w PUCCH size = %s" % str(first_pusch_prb))
+    logging.info("CB009915 last_pusch_prb w PUCCH size = %s" % str(last_pusch_prb))
+
+    if int(longPucchStartHarq1Prb_val[0]) == int(longPucchStartSr1Prb_val[0]):
+        pucch_size_lower = int(longPucchNumSrPrb_val[0]) + int(longPucchNumPcsiPrb_val[0])
+    else:
+        pucch_size_lower =\
+            int(longPucchNumSrPrb_val[0]) + int(longPucchNumHarqPrb_val[0]) + int(longPucchNumPcsiPrb_val[0])
+    if int(longPucchStartHarq2Prb_val[0]) == int(longPucchStartSr2Prb_val[0]):
+        pucch_size_upper = int(longPucchNumSrPrb_val[0]) + int(longPucchNumPcsiPrb_val[0])
+    else:
+        pucch_size_upper = \
+            int(longPucchNumSrPrb_val[0]) + int(longPucchNumHarqPrb_val[0]) + int(longPucchNumPcsiPrb_val[0])
+    pucch_size = pucch_size_lower + pucch_size_upper
+    logging.info("CB009915 pucch_size = %s" % str(pucch_size))
+    rbi.set_test_variable("${PUCCH_SIZE}", str(pucch_size))
+    rbi.set_test_variable("${FIRST_PUSCH_PRB}", str(first_pusch_prb))
+    rbi.set_test_variable("${LAST_PUSCH_PRB}", str(last_pusch_prb))
+    msg = 'verify_Cprt_Pcap_for_UL_Fragmentation_w_PrbBlanking CELL' + str(cell_val) + ': PUCCH_SIZE'
+    datedConsole(getHeaderLine(msg, str(pucch_size)))
+    msg = 'verify_Cprt_Pcap_for_UL_Fragmentation_w_PrbBlanking CELL' + str(cell_val) + ': FIRST_PUSCH_PRB'
+    datedConsole(getHeaderLine(msg, str(first_pusch_prb)))
+    msg = 'verify_Cprt_Pcap_for_UL_Fragmentation_w_PrbBlanking CELL' + str(cell_val) + ': LAST_PUSCH_PRB'
+    datedConsole(getHeaderLine(msg, str(last_pusch_prb)))
+
+    return all([resultTest, resultTest1, resultTest2, resultTest3, resultTest4, resultTest5,
+                resultTest6, resultTest7, resultTest8, resultTest9, resultTest10])
+
+
+@log_begin_end_func_name
+def verify_Cprt_Pcap_for_UL_Fragmentation_w_PrbBlanking(filecsv,
+                                                        first_prb_non_blanking_cell=0,
+                                                        last_prb_non_blanking_cell=273):
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_TTITrace_correct_p0 = False
+    path_to_csvtrace = filecsv
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        is_TTITrace_correct_p0 =\
+            run_prb_blanking_analysis_cprt_pcap(file=path_to_csvtrace,
+                                                first_prb_non_blanking=first_prb_non_blanking_cell,
+                                                last_prb_non_blanking=last_prb_non_blanking_cell)
+        text = "verify_Cprt_Pcap_for_UL_Fragmentation_w_PrbBlanking: is_TTITrace_correct_p0 = %s"
+        logging.info(text % is_TTITrace_correct_p0)
+        msg = 'verify_Cprt_Pcap_for_UL_Fragmentation_w_PrbBlanking CELL: is_TTITrace_correct_p0'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p0))
+    except Exception as e:
+        logException("verify_Cprt_Pcap_for_UL_Fragmentation_w_PrbBlanking", e)
+    rbi.set_test_variable("${TestResult}", str(is_TTITrace_correct_p0))
+    rbi.should_be_true(is_TTITrace_correct_p0)
+
+
+@log_begin_end_func_name
+@log('UL pucchBoundary overlap analysis pcap...', 'UL pucchBoundary overlap analysis pcap finished', logger)
+def run_pucchBoundary_prb_blanking_analysis_pcap_ul(csvfile,
+                                                    nbrOfBlankedPRBsHighEdgeUL=0,
+                                                    nbrOfBlankedPRBsLowEdgeUL=0):
+    logging.info("run_pucchBoundary_prb_blanking_analysis_pcap_ul filename = %s" % csvfile)
+    logging.info("nbrOfBlankedPRBsHighEdgeUL=%s" % nbrOfBlankedPRBsHighEdgeUL)
+    logging.info("nbrOfBlankedPRBsLowEdgeUL=%s" % nbrOfBlankedPRBsLowEdgeUL)
+    logger.info("run_pucchBoundary_analysis filename = %s" % csvfile)
+    list_cells = get_cell_from_csv_file(csvfile, '3gpp.subcellid')
+    subcellid = list_cells[0]
+    msg = "[CellId=%s] nbrOfBlankedPRBsLowEdgeUL=%s"
+    logger.info(msg % (subcellid, nbrOfBlankedPRBsLowEdgeUL))
+    msg = "[CellId=%s] nbrOfBlankedPRBsHighEdgeUL=%s"
+    logger.info(msg % (subcellid, nbrOfBlankedPRBsHighEdgeUL))
+    resultTest = True
+    SlotSfnRec = SlotSfn_pucchBoundary.createSlotSfnRecords(csvfile=csvfile, prbMax=273, ble=nbrOfBlankedPRBsLowEdgeUL,
+                                                            bhe=nbrOfBlankedPRBsHighEdgeUL,
+                                                            pattern='UlData_pucchBoundary_t')
+    # logging.info("=====> SlotSfnRec==%s" % SlotSfnRec)
+    SlotSfn_pucchBoundary.printSlotSfnRec(SlotSfnRec, onlyKO=True)
+    countSlotSfnRecord_subcellId = SlotSfn_pucchBoundary.countSlotSfnRecord(SlotSfnRec)
+    countPrbInconsistency_subcellId = SlotSfn_pucchBoundary.countPrbInconsistency(SlotSfnRec)
+    logging.info("=====> countSlotSfnRecord_subcellId=%s" % countSlotSfnRecord_subcellId)
+    logging.info("=====> countPrbInconsistency_subcellId=%s" % countPrbInconsistency_subcellId)
+    if int(countSlotSfnRecord_subcellId) > 0:
+        nbr_err = float(countPrbInconsistency_subcellId / countSlotSfnRecord_subcellId)
+    else:
+        logging.info("=====> countSlotSfnRecord_subcellId=%s" % countSlotSfnRecord_subcellId)
+        logging.info("=====> countPrbInconsistency_subcellId=%s" % countPrbInconsistency_subcellId)
+        nbr_err = 0
+    logging.info("=====> nbr_err=%s" % nbr_err)
+    logger.info("=====> countSlotSfnRecord_subcellId=%s" % countSlotSfnRecord_subcellId)
+    logger.info("=====> countPrbInconsistency_subcellId=%s" % countPrbInconsistency_subcellId)
+    logger.info("=====> nbr_err=%s" % nbr_err)
+    SlotSfn_pucchBoundary.printPartOfSlotSfnRecord(SlotSfnRec, onlyKO=True)
+    if nbr_err != 0:
+        resultTest = False
+        msg = 'nbr_err %f > 0 countPrbInconsistency_subcellId %i and countSlotSfnRecord_subcellId %i'
+        logger.info(msg % (nbr_err, countPrbInconsistency_subcellId, countSlotSfnRecord_subcellId))
+        msg = 'Check failed, nbr_err {} > 0 countPrbInconsistency_subcellId {} and countSlotSfnRecord_subcellId {}'
+        raise Exception(msg.format(nbr_err, countPrbInconsistency_subcellId, countSlotSfnRecord_subcellId))
+
+    return all([resultTest])
+
+
+@log_begin_end_func_name
+def verify_Pcap_for_pucchAreaBoundaries_UL_PRBBLANKING(filecsv,
+                                                       nbrOfBlankedPRBsHighEdgeUL=0,
+                                                       nbrOfBlankedPRBsLowEdgeUL=0):
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_TTITrace_correct_p0 = False
+    path_to_csvtrace = filecsv
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        is_TTITrace_correct_p0 =\
+            run_pucchBoundary_prb_blanking_analysis_pcap_ul(csvfile=path_to_csvtrace,
+                                                            nbrOfBlankedPRBsHighEdgeUL=nbrOfBlankedPRBsHighEdgeUL,
+                                                            nbrOfBlankedPRBsLowEdgeUL=nbrOfBlankedPRBsLowEdgeUL)
+        text = "verify_Pcap_for_pucchAreaBoundaries_UL_PRBBLANKING: is_TTITrace_correct_p0 = %s"
+        logging.info(text % is_TTITrace_correct_p0)
+        msg = 'verify_Pcap_for_pucchAreaBoundaries_UL_PRBBLANKING CELL: is_TTITrace_correct_p0'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p0))
+    except Exception as e:
+        logException("verify_Pcap_for_pucchAreaBoundaries_UL_PRBBLANKING", e)
+    rbi.set_test_variable("${TestResult}", str(is_TTITrace_correct_p0))
+    rbi.should_be_true(is_TTITrace_correct_p0)
+
+
+@log_begin_end_func_name
+@log('UL pucchresources overlap analysis pcap...', 'UL pucchresources overlap analysis pcap finished', logger)
+def run_pucchresources_prb_blanking_analysis_pcap_ul(csvfile,
+                                                     nbrOfBlankedPRBsHighEdgeUL=0,
+                                                     nbrOfBlankedPRBsLowEdgeUL=0):
+    logging.info("run_pucchresources_prb_blanking_analysis_pcap_ul filename = %s" % csvfile)
+    list_cells = get_cell_from_csv_file(csvfile, '3gpp.subcellid')
+    subcellid = list_cells[0]
+    msg = "[SubCellId=%s] nbrOfBlankedPRBsHighEdgeUL=%s"
+    logging.info(msg % (subcellid, nbrOfBlankedPRBsHighEdgeUL))
+    msg = "[SubCellId=%s] nbrOfBlankedPRBsLowEdgeUL=%s"
+    logging.info(msg % (subcellid, nbrOfBlankedPRBsLowEdgeUL))
+    msg = "[pucchresources_analysis][SubCellId=%s] nbrOfBlankedPRBsLowEdgeUL=%s"
+    logger.info(msg % (subcellid, nbrOfBlankedPRBsLowEdgeUL))
+    msg = "[pucchresources_analysis][SubCellId=%s] nbrOfBlankedPRBsHighEdgeUL=%s"
+    logger.info(msg % (subcellid, nbrOfBlankedPRBsHighEdgeUL))
+    resultTest = True
+    SlotSfnRec = SlotSfn_pucchResources.createSlotSfnRecords(csvfile=csvfile, prbMax=273,
+                                                             ble=nbrOfBlankedPRBsLowEdgeUL,
+                                                             bhe=nbrOfBlankedPRBsHighEdgeUL,
+                                                             pattern='UlData_pucchReceiveReqPucchResource_t')
+    # logging.info("=====> SlotSfnRec==%s" % SlotSfnRec)
+    SlotSfn_pucchResources.printSlotSfnRec(SlotSfnRec, onlyKO=True)
+    countSlotSfnRecord_subcellId = SlotSfn_pucchResources.countSlotSfnRecord(SlotSfnRec)
+    countPrbInconsistency_subcellId = SlotSfn_pucchResources.countPrbInconsistency(SlotSfnRec)
+    logging.info("=====> countSlotSfnRecord_subcellId=%s" % countSlotSfnRecord_subcellId)
+    logging.info("=====> countPrbInconsistency_subcellId=%s" % countPrbInconsistency_subcellId)
+    if int(countSlotSfnRecord_subcellId) > 0:
+        nbr_err = float(countPrbInconsistency_subcellId / countSlotSfnRecord_subcellId)
+    else:
+        logging.info("=====> countSlotSfnRecord_subcellId=%s" % countSlotSfnRecord_subcellId)
+        logging.info("=====> countPrbInconsistency_subcellId=%s" % countPrbInconsistency_subcellId)
+        nbr_err = 0
+    logging.info("=====> nbr_err=%s" % nbr_err)
+    logger.info("=====> countSlotSfnRecord_subcellId=%s" % countSlotSfnRecord_subcellId)
+    logger.info("=====> countPrbInconsistency_subcellId=%s" % countPrbInconsistency_subcellId)
+    logger.info("=====> nbr_err=%s" % nbr_err)
+    # SlotSfn_pucchResources.printPartOfSlotSfnRecord(SlotSfnRec, onlyKO=True)
+    if nbr_err != 0:
+        resultTest = False
+        msg = 'nbr_err %f > 0 countPrbInconsistency_subcellId %i and countSlotSfnRecord_subcellId %i'
+        logger.info(msg % (nbr_err, countPrbInconsistency_subcellId, countSlotSfnRecord_subcellId))
+        msg = 'Check failed, nbr_err {} > 0 countPrbInconsistency_subcellId {} and countSlotSfnRecord_subcellId {}'
+        raise Exception(msg.format(nbr_err, countPrbInconsistency_subcellId, countSlotSfnRecord_subcellId))
+
+    return all([resultTest])
+
+
+@log_begin_end_func_name
+def verify_Pcap_for_pucchResources_UL_PRBBLANKING(filecsv,
+                                                  nbrOfBlankedPRBsHighEdgeUL=0,
+                                                  nbrOfBlankedPRBsLowEdgeUL=0):
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_TTITrace_correct_p0 = False
+    path_to_csvtrace = filecsv
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        is_TTITrace_correct_p0 =\
+            run_pucchresources_prb_blanking_analysis_pcap_ul(csvfile=path_to_csvtrace,
+                                                             nbrOfBlankedPRBsHighEdgeUL=nbrOfBlankedPRBsHighEdgeUL,
+                                                             nbrOfBlankedPRBsLowEdgeUL=nbrOfBlankedPRBsLowEdgeUL)
+        text = "verify_Pcap_for_pucchResources_UL_PRBBLANKING: is_TTITrace_correct_p0 = %s"
+        logging.info(text % is_TTITrace_correct_p0)
+        msg = 'verify_Pcap_for_pucchResources_UL_PRBBLANKING CELL: is_TTITrace_correct_p0'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p0))
+    except Exception as e:
+        logException("verify_Pcap_for_pucchResources_UL_PRBBLANKING", e)
+    rbi.set_test_variable("${TestResult}", str(is_TTITrace_correct_p0))
+    rbi.should_be_true(is_TTITrace_correct_p0)
+
+
+@log_begin_end_func_name
+@log('UL eCpriPucchResourceAllocationStructure overlap analysis pcap...',
+     'UL eCpriPucchResourceAllocationStructure overlap analysis pcap finished', logger)
+def run_eCpriPucchResourceAllocationStructure_prb_blanking_analysis_pcap_ul(csvfile,
+                                                                            nbrOfBlankedPRBsHighEdgeUL=0,
+                                                                            nbrOfBlankedPRBsLowEdgeUL=0):
+    logging.info("run_eCpriPucchResourceAllocationStructure_prb_blanking_analysis_pcap_ul filename = %s" % csvfile)
+    list_cells = get_cell_from_csv_file(csvfile, '3gpp.subcellid')
+    subcellid = list_cells[0]
+    msg = "[SubCellId=%s] nbrOfBlankedPRBsHighEdgeUL=%s"
+    logging.info(msg % (subcellid, nbrOfBlankedPRBsHighEdgeUL))
+    msg = "[SubCellId=%s] nbrOfBlankedPRBsLowEdgeUL=%s"
+    logging.info(msg % (subcellid, nbrOfBlankedPRBsLowEdgeUL))
+    msg = "[eCpriPucchResourceAllocationStructure][SubCellId=%s] nbrOfBlankedPRBsLowEdgeUL=%s"
+    logger.info(msg % (subcellid, nbrOfBlankedPRBsLowEdgeUL))
+    msg = "[eCpriPucchResourceAllocationStructure][SubCellId=%s] nbrOfBlankedPRBsHighEdgeUL=%s"
+    logger.info(msg % (subcellid, nbrOfBlankedPRBsHighEdgeUL))
+    resultTest = True
+    pattern = 'UlData_eCpriPucchResourceAllocationStructure_t'
+    SlotSfnRec =\
+        SlotSfn_eCpriPucchResourceAllocationStructure.createSlotSfnRecords(csvfile=csvfile, prbMax=273,
+                                                                           ble=nbrOfBlankedPRBsLowEdgeUL,
+                                                                           bhe=nbrOfBlankedPRBsHighEdgeUL,
+                                                                           pattern=pattern)
+    # logging.info("=====> SlotSfnRec==%s" % SlotSfnRec)
+    SlotSfn_eCpriPucchResourceAllocationStructure.printSlotSfnRec(SlotSfnRec, onlyKO=True)
+    countSlotSfnRecord_subcellId = SlotSfn_eCpriPucchResourceAllocationStructure.countSlotSfnRecord(SlotSfnRec)
+    countPrbInconsistency_subcellId = SlotSfn_eCpriPucchResourceAllocationStructure.countPrbInconsistency(SlotSfnRec)
+    logging.info("=====> countSlotSfnRecord_subcellId=%s" % countSlotSfnRecord_subcellId)
+    logging.info("=====> countPrbInconsistency_subcellId=%s" % countPrbInconsistency_subcellId)
+    if int(countSlotSfnRecord_subcellId) > 0:
+        nbr_err = float(countPrbInconsistency_subcellId / countSlotSfnRecord_subcellId)
+    else:
+        logging.info("=====> countSlotSfnRecord_subcellId=%s" % countSlotSfnRecord_subcellId)
+        logging.info("=====> countPrbInconsistency_subcellId=%s" % countPrbInconsistency_subcellId)
+        nbr_err = 0
+    logging.info("=====> nbr_err=%s" % nbr_err)
+    logger.info("=====> countSlotSfnRecord_subcellId=%s" % countSlotSfnRecord_subcellId)
+    logger.info("=====> countPrbInconsistency_subcellId=%s" % countPrbInconsistency_subcellId)
+    logger.info("=====> dl nbr_err=%s" % nbr_err)
+    # SlotSfn_eCpriPucchResourceAllocationStructure.printPartOfSlotSfnRecord(SlotSfnRec, onlyKO=True)
+    if nbr_err != 0:
+        resultTest = False
+        msg = 'nbr_err %f > 0 countSlotSfnRecord_subcellId %i and countPrbInconsistency_subcellId %i'
+        logger.info(msg % (nbr_err, countSlotSfnRecord_subcellId, countPrbInconsistency_subcellId))
+        msg = 'Check failed, nbr_err {} > 0 countPrbInconsistency_subcellId {} and countSlotSfnRecord_subcellId {}'
+        raise Exception(msg.format(nbr_err, countPrbInconsistency_subcellId, countSlotSfnRecord_subcellId))
+
+    return all([resultTest])
+
+
+@log_begin_end_func_name
+def verify_Pcap_for_eCpriPucchResourceAllocation_UL_PRBBLANKING(filecsv,
+                                                                nbrOfBlankedPRBsHighEdgeUL=0,
+                                                                nbrOfBlankedPRBsLowEdgeUL=0):
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_TTITrace_correct_p0 = False
+    path_to_csvtrace = filecsv
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        is_TTITrace_correct_p0 =\
+            run_eCpriPucchResourceAllocationStructure_prb_blanking_analysis_pcap_ul(
+                csvfile=path_to_csvtrace,
+                nbrOfBlankedPRBsHighEdgeUL=nbrOfBlankedPRBsHighEdgeUL,
+                nbrOfBlankedPRBsLowEdgeUL=nbrOfBlankedPRBsLowEdgeUL)
+        text = "verify_Pcap_for_eCpriPucchResourceAllocation_UL_PRBBLANKING: is_TTITrace_correct_p0 = %s"
+        logging.info(text % is_TTITrace_correct_p0)
+        msg = 'verify_Pcap_for_eCpriPucchResourceAllocation_UL_PRBBLANKING CELL: is_TTITrace_correct_p0'
+        datedConsole(getHeaderLine(msg, is_TTITrace_correct_p0))
+    except Exception as e:
+        logException("verify_Pcap_for_eCpriPucchResourceAllocation_UL_PRBBLANKING", e)
+    rbi.set_test_variable("${TestResult}", str(is_TTITrace_correct_p0))
+    rbi.should_be_true(is_TTITrace_correct_p0)
+
+
+@log_begin_end_func_name
+def verify_BwPId_rnti_FromTtiTraces(filecsv_dl,
+                                    filecsv_ul,
+                                    rnti_ueid_1_cell=0,
+                                    bwpid_ue_rnti_1='1',
+                                    rnti_ueid_2_cell=0,
+                                    bwpid_ue_rnti_2='1'):
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    Check_dl = False
+    Check_ul = False
+    path_to_csvtrace_dl = filecsv_dl
+    path_to_csvtrace_ul = filecsv_ul
+    rntiBwp = {
+        rnti_ueid_1_cell: bwpid_ue_rnti_1,
+        rnti_ueid_2_cell: bwpid_ue_rnti_2
+    }
+    logging.info("rntiBwp = %s" % (rntiBwp))
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        Check_dl = check_rnti_bwpid(csv_file=path_to_csvtrace_dl, rnti=rntiBwp)
+        logging.info("Check for DL rntiBwp = %s" % (Check_dl))
+        text = "verify_BwPId_rnti_FromTtiTraces: Check_dl = %s"
+        logging.info(text % Check_dl)
+        msg = 'verify_BwPId_rnti_FromTtiTraces: DL Check'
+        datedConsole(getHeaderLine(msg, Check_dl))
+        Check_ul = check_rnti_bwpid(csv_file=path_to_csvtrace_ul, rnti=rntiBwp, pattern='ulFdSchedData.cellBwpId')
+        logging.info("Check for UL rntiBwp = %s" % (Check_ul))
+        text = "verify_BwPId_rnti_FromTtiTraces: Check_ul = %s"
+        logging.info(text % Check_ul)
+        msg = 'verify_BwPId_rnti_FromTtiTraces: UL Check'
+        datedConsole(getHeaderLine(msg, Check_ul))
+    except Exception as e:
+        logException("verify_BwPId_rnti_FromTtiTraces", e)
+    rbi.set_test_variable("${TestResult}", str(Check_dl and Check_ul))
+    rbi.should_be_true(Check_dl and Check_ul)
+
+
+@log_begin_end_func_name
+def verify_TTITraces_for_acknack_retx(path_to_pickle):
+    filter_valid_events_and_check_acknack_retx(path_to_pickle=path_to_pickle)
+
+
+@log_begin_end_func_name
+def extract_l1subpool_cell_relation(filename):
+    phycell_ul_subcell = {}
+    l1_subcell_pool_lcr_id = {}
+    logging.info("extract_l1subpool_cell_relation: pdml file = %s" % (filename))
+    with open(filename, "rb") as file_obj:
+        print("Extracting data from Cell Setup Trace")
+        for entry in PdmlReader(file_obj=file_obj):
+            root = entry.packet
+            if "icom_5g" in root:
+                phycell_id = root.xpath("icom_5g//pscell//itf_l2_ps_cell_cellsetupreq//"
+                                        "itf_l2_ps_cell_CellSetupReq_t.physCellId")
+                lcr_id = root.xpath("icom_5g//pscell//itf_l2_ps_cell_cellsetupreq//"
+                                    "itf_l2_ps_cell_CellSetupReq_t.lcrId")
+                ulsubcell_pool_id = root.xpath(
+                    "icom_5g//pscell//itf_l2_ps_cell_cellsetupreq//itf_l2_ps_ulsubcell//*")
+                if len(phycell_id) != 0:
+                    phycell_id = int(phycell_id[0].show)
+                    lcr_id = int(lcr_id[0].show)
+                    for item in ulsubcell_pool_id:
+                        if "l1SubPoolId" in str(item.showname):
+                            l1_pool_id = item.show
+                            phycell_ul_subcell[phycell_id] = int(l1_pool_id)
+                            if l1_subcell_pool_lcr_id.get(int(l1_pool_id)) is not None:
+                                l1_subcell_pool_lcr_id[int(
+                                    l1_pool_id)].append(lcr_id)
+                            else:
+                                l1_subcell_pool_lcr_id[int(l1_pool_id)] = [
+                                    lcr_id]
+                            break
+    return l1_subcell_pool_lcr_id, phycell_ul_subcell
+
+
+@log_begin_end_func_name
+def display_dynamic_pusch(filecsv):
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    path_to_csvtrace = filecsv
+    try:
+        logging.basicConfig(level=logging.DEBUG)
+        physcellid = get_specified_column_from_csv_file(path_to_csvtrace, 'itf_l2_ps_cell_CellSetupReq_t.physCellId')
+        # text = "display_dynamic_pusch: physcellid = %s"
+        # logging.info(text % physcellid)
+        subcellid = get_specified_column_from_csv_file(path_to_csvtrace, '3gpp.subcellid')
+        cellbwpid = get_specified_column_from_csv_file(path_to_csvtrace, 'itf_l2_ps_cell_Bwp.cellBwpId')
+        bwpType = get_specified_column_from_csv_file(path_to_csvtrace, 'itf_l2_ps_cell_Bwp.bwpType')
+        bandwidth = get_specified_column_from_csv_file(path_to_csvtrace, 'itf_l2_ps_cell_BwpDefinitionUl.bandwidth')
+        long_pucch_start_pusch_prb = \
+            get_specified_column_from_csv_file(path_to_csvtrace,
+                                               'itf_l2_ps_cell_BwpDefinitionUl.longPucchStartPuschPrb_item')
+        long_pucch_num_pusch_prb = \
+            get_specified_column_from_csv_file(path_to_csvtrace,
+                                               'itf_l2_ps_cell_BwpDefinitionUl.longPucchNumPuschPrb_item')
+        long_pucch_start_dyn_pusch_prb = \
+            get_specified_column_from_csv_file(path_to_csvtrace,
+                                               'itf_l2_ps_cell_BwpDefinitionUl.longPucchStartDynPuschPrb_item')
+        long_pucch_num_dyn_pusch_prb = \
+            get_specified_column_from_csv_file(path_to_csvtrace,
+                                               'itf_l2_ps_cell_BwpDefinitionUl.longPucchNumDynPuschPrb_item')
+        datedConsole(getHeaderLine('physcellid', physcellid))
+        datedConsole(getHeaderLine('subcellid', subcellid))
+        datedConsole(getHeaderLine('cellbwpid', cellbwpid))
+        datedConsole(getHeaderLine('bwpType', bwpType))
+        datedConsole(getHeaderLine('bandwidth', bandwidth))
+        datedConsole(getHeaderLine('long_pucch_start_pusch_prb', long_pucch_start_pusch_prb))
+        datedConsole(getHeaderLine('long_pucch_num_pusch_prb', long_pucch_num_pusch_prb))
+        datedConsole(getHeaderLine('long_pucch_num_pusch_prb', long_pucch_start_dyn_pusch_prb))
+        datedConsole(getHeaderLine('long_pucch_num_pusch_prb', long_pucch_num_dyn_pusch_prb))
+    except Exception as e:
+        logException("display_dynamic_pusch", e)
+    return long_pucch_start_dyn_pusch_prb, long_pucch_num_dyn_pusch_prb
+
+
+@log_begin_end_func_name
+def verify_CellSetup_SysCom_Pdml_Traces():
+    # -------------------------------------------------------------------------------------------------[120 characters]
+    is_SysCom_correct = False
+    path_to_syscom_pdml = rbi.get_variable_value("${path_to_syscom_pdml}")
+    logging.info("pdml file = %s" % (path_to_syscom_pdml))
+    expected_phycell_ul_subcell = {50: 0, 51: 1, 52: 0}
+    expected_l1_subcell_pool_lcr_id = {0: [1, 3], 1: [2]}
+    try:
+        l1_subcell_pool_lcr_id, phycell_ul_subcell = extract_l1subpool_cell_relation(path_to_syscom_pdml)
+        is_SysCom_correct = ((expected_phycell_ul_subcell == phycell_ul_subcell) and
+                             (expected_l1_subcell_pool_lcr_id == l1_subcell_pool_lcr_id))
+        logging.info("phycell_ul_subcell = %s" % (phycell_ul_subcell))
+        logging.info("l1_subcell_pool_lcr_id = %s" % (l1_subcell_pool_lcr_id))
+    except Exception as e:
+        logException("verify_CellSetup_SysCom_Pdml_Traces", e)
+    rbi.should_be_true(is_SysCom_correct)
+
+
+@log_begin_end_func_name
+@log('DL prb overlap analysis pcap...', 'DL prb overlap analysis pcap finished', logger)
+def run_PDSCH_prb_blanking_overlap_analysis_pcap_dl(filecsv,
+                                                    nbrOfBlankedPRBsHighEdgeDL=0,
+                                                    nbrOfBlankedPRBsLowEdgeDL=0):
+    """Check PDSCH L1L2pcap PRB Constraints"""
+    logging.info("run_PDSCH_prb_blanking_overlap_analysis_pcap_dl filename = %s" % filecsv)
+    list_cells = get_cell_from_csv_file(filecsv, '3gpp.subcellid')
+    subcellid = list_cells[0]
+    msg = "[PDSCH_prb_blanking_overlap_analysis][SubCellId=%s] nbrOfBlankedPRBsLowEdgeDL=%s"
+    logging.info(msg % (subcellid, nbrOfBlankedPRBsLowEdgeDL))
+    logger.info(msg % (subcellid, nbrOfBlankedPRBsLowEdgeDL))
+    msg = "[PDSCH_prb_blanking_overlap_analysis][SubCellId=%s] nbrOfBlankedPRBsHighEdgeDL=%s"
+    logging.info(msg % (subcellid, nbrOfBlankedPRBsHighEdgeDL))
+    logger.info(msg % (subcellid, nbrOfBlankedPRBsHighEdgeDL))
+    # Validation Threshold to accept
+    threshold = 0.01
+    resultTest = True
+    pattern = 'DlData_PdschGrant'
+    SlotSfnRec =\
+        SlotSfn_PDSCH.createSlotSfnRecords(csvfile=filecsv, prbMax=273,
+                                           ble=nbrOfBlankedPRBsLowEdgeDL,
+                                           bhe=nbrOfBlankedPRBsHighEdgeDL,
+                                           pattern=pattern,
+                                           pattern_3gpp='3gpp.')
+    # logging.info("=====> SlotSfnRec==%s" % SlotSfnRec)
+    SlotSfn_PDSCH.printSlotSfnRec(SlotSfnRec, onlyKO=True)
+    countSlotSfnRecord_subcellId = SlotSfn_PDSCH.countSlotSfnRecord(SlotSfnRec)
+    countPrbInconsistency_subcellId = SlotSfn_PDSCH.countPrbInconsistency(SlotSfnRec)
+    logging.info("=====> countSlotSfnRecord_subcellId=%s" % countSlotSfnRecord_subcellId)
+    logging.info("=====> countPrbInconsistency_subcellId=%s" % countPrbInconsistency_subcellId)
+    logger.info("=====> countSlotSfnRecord_subcellId=%s" % countSlotSfnRecord_subcellId)
+    logger.info("=====> countPrbInconsistency_subcellId=%s" % countPrbInconsistency_subcellId)
+    if int(countSlotSfnRecord_subcellId) > 0:
+        nbr_err = float(countPrbInconsistency_subcellId / countSlotSfnRecord_subcellId)
+    else:
+        logging.info("=====> countSlotSfnRecord_subcellId=%s" % countSlotSfnRecord_subcellId)
+        logging.info("=====> countPrbInconsistency_subcellId=%s" % countPrbInconsistency_subcellId)
+        nbr_err = 0.0
+    logging.info("=====> nbr_err=%s" % nbr_err)
+    logger.info("=====> nbr_err=%s" % nbr_err)
+    # SlotSfn_PDSCH.printPartOfSlotSfnRecord(SlotSfnRec, onlyKO=True)
+    if nbr_err >= threshold:
+        resultTest = False
+        rbi.log("nbr_err %f present and threshold %f reached..." % (nbr_err, threshold), 'ERROR')
+        logger.info("nbr_err %f present and threshold %f reached..." % (nbr_err, threshold))
+        msg = 'Check failed, nbr_err %f > %f countPrbInconsistency_subcellId %i and countSlotSfnRecord_subcellId %i'
+        raise Exception(msg.format(nbr_err, threshold, countPrbInconsistency_subcellId, countSlotSfnRecord_subcellId))
+    else:
+        resultTest = True
+        msg = 'WARN, nbr_err %f < %f countPrbInconsistency_subcellId %i and countSlotSfnRecord_subcellId %i'
+        if nbr_err != 0.0:
+            logging.info(msg % (nbr_err, threshold, countPrbInconsistency_subcellId, countSlotSfnRecord_subcellId))
+            logger.info(msg % (nbr_err, threshold, countPrbInconsistency_subcellId, countSlotSfnRecord_subcellId))
+        nbr_err_percent = nbr_err*100
+        msg = "nbr_err=%f [%f percent] present but threshold=%f not reached.. Passing test case"
+        if nbr_err != 0.0:
+            rbi.log(msg % (nbr_err, nbr_err_percent, threshold), 'WARN')
+            logger.info(msg % (nbr_err, nbr_err_percent, threshold))
+    countRat0BitmapInconsistency_dl = SlotSfn_PDSCH.countRat0BitmapInconsistency(SlotSfnRec)
+    logging.info("=====> dl countRat0BitmapInconsistency_dl=%s" % countRat0BitmapInconsistency_dl)
+    nbr_err_rat0bitmap = float(countRat0BitmapInconsistency_dl / countSlotSfnRecord_subcellId)
+    logging.info("=====> dl nbr_err_rat0bitmap=%f" % nbr_err_rat0bitmap)
+    logger.info("=====> countRat0BitmapInconsistency_dl=%i" % countRat0BitmapInconsistency_dl)
+    logger.info("=====> dl nbr_err_rat0bitmap=%f" % nbr_err_rat0bitmap)
+    if nbr_err_rat0bitmap != 0.0:
+        msg = 'WARN, nbr_err %f != 0 countPrbInconsistency_subcellId %i and countSlotSfnRecord_subcellId %i'
+        logging.info(msg % (nbr_err_rat0bitmap, countRat0BitmapInconsistency_dl, countSlotSfnRecord_subcellId))
+        logger.info(msg % (nbr_err_rat0bitmap, countRat0BitmapInconsistency_dl, countSlotSfnRecord_subcellId))
+        msg = "nbr_err_rat0bitmap %f [count=%i] present..."
+        rbi.log(msg % (nbr_err_rat0bitmap, countRat0BitmapInconsistency_dl), 'ERROR')
+    msg = 'run_PDSCH_prb_blanking_overlap_analysis_pcap_dl CELL: resultTest'
+    datedConsole(getHeaderLine(msg, resultTest))
+    rbi.set_test_variable("${TestResult}", str(resultTest))
+    return all([resultTest])
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
+
+    # filename = '/home/ute/csamson/TRACES/IssueDL/pcapprocessed_PRb_Blanking_dldata_pdschsendreq_subcellId0.csv'
+    # result = run_PDSCH_prb_blanking_overlap_analysis_pcap_dl(filecsv=filename,
+    #                                                          nbrOfBlankedPRBsHighEdgeDL=0,
+    #                                                          nbrOfBlankedPRBsLowEdgeDL=0)
+    # logging.info("run_PDSCH_prb_blanking_overlap_analysis_pcap_dl result = %s" % result)
+
+    chBW, rat0bitmap_full, usablepdsch, rat0bitmap = cal_num_of_pdsch(chBW=106, ConfigType=1,
+                                                                      nbrOfBlankedPRBsHighEdgeDL=0,
+                                                                      nbrOfBlankedPRBsLowEdgeDL=55,
+                                                                      w_debug=1)
+    logging.info("=====> usablepdsch=%s rat0bitmap=%s" % (usablepdsch, rat0bitmap))
+    logging.info("=====> Nbr RBG==%s" % len(rat0bitmap))
+
+    chBW, rat0bitmap_full, usablepdsch, rat0bitmap = cal_num_of_pdsch(chBW=273, ConfigType=1,
+                                                                      nbrOfBlankedPRBsHighEdgeDL=0,
+                                                                      nbrOfBlankedPRBsLowEdgeDL=55,
+                                                                      w_debug=1)
+    logging.info("=====> usablepdsch=%s rat0bitmap=%s" % (usablepdsch, rat0bitmap))
+    logging.info("=====> Nbr RBG==%s" % len(rat0bitmap))
+
+    chBW, rat0bitmap_full, usablepdsch, rat0bitmap = cal_num_of_pdsch(chBW=162, ConfigType=1,
+                                                                      nbrOfBlankedPRBsHighEdgeDL=0,
+                                                                      nbrOfBlankedPRBsLowEdgeDL=55,
+                                                                      w_debug=1)
+    logging.info("=====> usablepdsch=%s rat0bitmap=%s" % (usablepdsch, rat0bitmap))
+    logging.info("=====> Nbr RBG==%s" % len(rat0bitmap))
+
+    path_to_ttitrace_pkl = "/home/ute/csamson/TRACES/ttitrace_streaming.pkl"
+    res = verify_TTITraces_for_DL_PRBBLANKING_CELL1(first_prb_non_blanking_cell1=64,
+                                                    last_prb_non_blanking_cell1=273,
+                                                    nbrOfBlankedPRBsHighEdgeDL=0,
+                                                    nbrOfBlankedPRBsLowEdgeDL=55)
+    logging.info("=====> verify_TTITraces_for_DL_PRBBLANKING_BWP_CELL1 res=%s" % res,)
+
+    filename = \
+        '/home/ute/csamson/TRACES/pcapprocessed_Read_Dynamic_PUSCH_itf_l2_ps_cell_CellSetupReq_CPRT_subcellId0.csv'
+    display_dynamic_pusch(filename)
+
+    # filename = '/home/ute/csamson/TRACES/pcapprocessed_UL_Fragmentation_itf_l2_ps_cell_CellSetupReq_CPRT.csv'
+    filename =\
+        '/home/ute/csamson/TRACES/pcapprocessed_UL_Fragmentation_itf_l2_ps_cell_CellSetupReq_CPRT_subcellId0.csv'
+
+    # filename = \
+    #    '/home/ute/csamson/TRACES/pcapprocessed_UL_Fragmentation_itf_l2_ps_cell_CellSetupReq_CPRT_subcellId0_TC1.csv'
+
+    result = run_prb_blanking_analysis_cprt_pcap(file=filename,
+                                                 first_prb_non_blanking=0,
+                                                 last_prb_non_blanking=273)
+    logging.info("run_prb_blanking_analysis_cprt_pcap result = %s" % result)
+
+    chBW, rat0bitmap_full, usablepdsch, rat0bitmap = cal_num_of_pdsch(chBW=273, ConfigType=1,
+                                                                      nbrOfBlankedPRBsHighEdgeDL=0,
+                                                                      nbrOfBlankedPRBsLowEdgeDL=0,
+                                                                      w_debug=1)
+    logging.info("=====> usablepdsch=%s rat0bitmap=%s" % (usablepdsch, rat0bitmap))
+    logging.info("=====> Nbr RBG==%s" % len(rat0bitmap))
+
+    chBW, rat0bitmap_full, usablepdsch, rat0bitmap = cal_num_of_pdsch(chBW=273, ConfigType=1,
+                                                                      nbrOfBlankedPRBsHighEdgeDL=0,
+                                                                      nbrOfBlankedPRBsLowEdgeDL=5,
+                                                                      w_debug=1)
+    logging.info("=====> usablepdsch=%s rat0bitmap=%s" % (usablepdsch, rat0bitmap))
+    logging.info("=====> Nbr RBG==%s" % len(rat0bitmap))
+
+    chBW, rat0bitmap_full, usablepdsch, rat0bitmap = cal_num_of_pdsch(chBW=273, ConfigType=1,
+                                                                      nbrOfBlankedPRBsHighEdgeDL=14,
+                                                                      nbrOfBlankedPRBsLowEdgeDL=14,
+                                                                      w_debug=1)
+    logging.info("=====> usablepdsch=%s rat0bitmap=%s" % (usablepdsch, rat0bitmap))
+    logging.info("=====> Nbr RBG==%s" % len(rat0bitmap))
+
+    chBW, rat0bitmap_full, usablepdsch, rat0bitmap = cal_num_of_pdsch(chBW=273, ConfigType=1,
+                                                                      nbrOfBlankedPRBsHighEdgeDL=22,
+                                                                      nbrOfBlankedPRBsLowEdgeDL=14,
+                                                                      w_debug=1)
+    logging.info("=====> usablepdsch=%s rat0bitmap=%s" % (usablepdsch, rat0bitmap))
+    logging.info("=====> Nbr RBG==%s" % len(rat0bitmap))
+
+    chBW, rat0bitmap_full, usablepdsch, rat0bitmap = cal_num_of_pdsch(chBW=273, ConfigType=1,
+                                                                      nbrOfBlankedPRBsHighEdgeDL=22,
+                                                                      nbrOfBlankedPRBsLowEdgeDL=25,
+                                                                      w_debug=1)
+    logging.info("=====> usablepdsch=%s rat0bitmap=%s" % (usablepdsch, rat0bitmap))
+    logging.info("=====> Nbr RBG==%s" % len(rat0bitmap))
+
+    chBW, rat0bitmap_full, usablepdsch, rat0bitmap = cal_num_of_pdsch(chBW=273, ConfigType=1,
+                                                                      nbrOfBlankedPRBsHighEdgeDL=1,
+                                                                      nbrOfBlankedPRBsLowEdgeDL=0,
+                                                                      w_debug=1)
+    logging.info("=====> usablepdsch=%s rat0bitmap=%s" % (usablepdsch, rat0bitmap))
+    logging.info("=====> Nbr RBG==%s" % len(rat0bitmap))
+
+    path_to_ttitrace_pkl = "/home/ute/csamson/TRACES/ttitrace_streaming.pkl"
+    pd = pandas_gate.install_and_import_pandas()
+    df = pd.read_pickle(path_to_ttitrace_pkl)
+    df.to_csv(str("%s/%s.csv" % (get_directory(path_to_ttitrace_pkl), 'ttiTrace_test')), sep=';')
+    combined_mumimo_stats, mumimo_stats = get_mumimo_statistics_physCellId_dl(path_to_ttitrace_pkl)
+    logging.info("combined_mumimo_stats = %s" % (combined_mumimo_stats))
+    logging.info("mumimo_stats = %s" % (mumimo_stats))

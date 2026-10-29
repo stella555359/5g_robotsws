@@ -1,0 +1,8 @@
+smod_test_boundaries = [(20, 65), (2000, 4500), (0, 50), (100, 2000), (100, 2000)]
+rmod_test_boundaries = [(20, 75), (2000, 4500), (0, 50), (100, 2000), (100, 2000)]
+bbmod_test_boundaries = [(20, 65), (2000, 4500), (0, 50), (100, 2000), (100, 2000)]
+smod_test_devices_list = ['SMOD']
+rmod_test_devices_list = ['RMOD_R-1']
+bbmod_test_devices_list = ['BBMOD_R-1']
+xml_boundaries = [(-128, 128), (0, 100), (0, 1000), (-100, 100), (-100, 100)]
+temperature_static_boundaries = [(-128, 128), (-128, 128)]

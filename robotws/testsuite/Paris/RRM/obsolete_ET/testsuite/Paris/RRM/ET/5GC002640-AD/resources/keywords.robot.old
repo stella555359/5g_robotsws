@@ -1,0 +1,719 @@
+*** Settings ***
+Library     ta_messaging
+Library     BuiltIn
+Library     String
+Library     Collections
+Library     suite_specific_keywords.py
+Library     egate_actions.py
+Library     tti_trace_keywords.py
+Library     ../../resources_KRK/python/utilities2.py    WITH NAME    logger
+
+Variables   ta_messaging_filters.py
+Variables   ta_messaging_filters_fftt.py
+
+*** Keywords ***
+Attach UE and establish PDU session
+    [Arguments]    ${ue_id}=1
+    Attach UE    ue_id=${ue_id}
+    Establish PDU session    ue_id=${ue_id}    gw_id=${ue_id}
+    Sleep    3s
+
+
+Wait for attach to finish
+    Sleep   2s
+
+
+Start traffic
+    [Arguments]    ${ue_id}=1    ${ul_mbps}=5    ${dl_mbps}=150
+    logger.Logger Console    Start data traffic
+    Start DL traffic    ue_id=${ue_id}  trf_id=2  dl_mbps=${dl_mbps}
+    Start UL traffic    ue_id=${ue_id}  ul_mbps=${ul_mbps}
+
+
+Start traffic on bearer 5qi 5
+    [Arguments]    ${ue_id}=1    ${ul_mbps}=5    ${dl_mbps}=150
+    logger.Logger Console    Start data traffic on bearer 5qi 5
+    ${ue_list} =    Create List    ${ue_id}
+    start_traffic_for_multiple_ues    number_of_ues=${ue_list}
+    ...                                          traffic_direction=bi
+    ...                                          ul_mbps=${ul_mbps}
+    ...                                          dl_mbps=${dl_mbps}
+    ...                                          first_trf_id=1
+    ...                                          seconds=${1800}
+    ...                                          size=${1358}
+
+
+Start traffic on bearer 5qi 1
+    [Arguments]    ${ue_id}=1
+    logger.Logger Console    Start data traffic on bearer 5qi 1
+    Start DL traffic on bearer 5qi 1    ue_id=${ue_id}
+    Start UL traffic on bearer 5qi 1    ue_id=${ue_id}
+
+
+Create aliases
+    [Arguments]     ${ue_id}
+    Create GNB device with alias 'gNB2' identified by ip=10.0.1.2
+    Create Ue Alias  alias=UE_${ue_id}  ue_id=${ue_id}  id_type=wts_5g
+    Enable internal mirroring for alias  gNB2
+
+
+Create aliases for gNB
+    Create GNB device with alias 'gNB2' identified by ip=10.0.1.2
+    Enable internal mirroring for alias  gNB2
+
+
+Create aliases multi UE for FTF
+    Create Ue Alias  alias=UE_4  ue_id=4  id_type=wts_5g
+    Create Ue Alias  alias=UE_5  ue_id=5  id_type=wts_5g
+    Create Ue Alias  alias=UE_6  ue_id=6  id_type=wts_5g
+    Create Ue Alias  alias=UE_7  ue_id=7  id_type=wts_5g
+    Create Ue Alias  alias=UE_8  ue_id=8  id_type=wts_5g
+
+
+Create aliases multi UE for FTT
+    Create Ue Alias  alias=UE_12  ue_id=12  id_type=wts_5g
+    Create Ue Alias  alias=UE_13  ue_id=13  id_type=wts_5g
+    Create Ue Alias  alias=UE_14  ue_id=14  id_type=wts_5g
+    Create Ue Alias  alias=UE_15  ue_id=15  id_type=wts_5g
+    Create Ue Alias  alias=UE_16  ue_id=16  id_type=wts_5g
+
+
+Expect PDU messages flow
+    [Arguments]     ${ue_id}
+    Expect message flow
+    ...    gNB2:NGAP_InitialContextSetupRequest as InitialContextSetupRequest
+    ...    gNB2:F1AP_UEContextModificationRequest (SCell-ToBeSetupMod-List is present) as UEContextModificationRequest
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse_2nd
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse_3rd
+    ...    alias=Established_PDU_UE${ue_id}   overall_timeout=30
+
+
+Expect PDU messages flow for multi UE
+    [Arguments]     ${ue_id}
+    Expect message flow
+    ...    gNB2:NGAP_InitialContextSetupRequest as InitialContextSetupRequest
+    ...    gNB2:F1AP_UEContextModificationRequest (SCell-ToBeSetupMod-List is present) as UEContextModificationRequest
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse_2nd
+    ...    alias=Established_PDU_UE${ue_id}   overall_timeout=60
+
+
+Expect PDU messages flow for VoNR FTF Along drxProf1 grOrEq drxProf2 no fallback
+    [Arguments]     ${ue_id}
+    Expect message flow
+    ...    gNB2:NGAP_InitialContextSetupRequest as InitialContextSetupRequest
+    ...    gNB2:F1AP_UEContextModificationRequest (SCell-ToBeSetupMod-List is present) as UEContextModificationRequest
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse_3rd
+    ...    gNB2:F1AP_UEContextModificationRequest (DRXCycle is present) as UEContextModificationRequest_2nd
+    ...    gNB2:F1AP_UEContextModificationFailure as UEContextModificationFailure
+    ...    alias=Established_PDU_UE${ue_id}   overall_timeout=60
+
+
+Expect PDU messages flow for Non GBR for VoNR
+    [Arguments]     ${ue_id}
+    Expect message flow
+    ...    gNB2:NGAP_InitialContextSetupRequest as InitialContextSetupRequest
+    ...    gNB2:F1AP_UEContextModificationRequest (SCell-ToBeSetupMod-List is present) as UEContextModificationRequest
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse_3rd
+    ...    gNB2:F1AP_UEContextModificationRequest as UEContextModificationRequest_2nd
+    ...    gNB2:F1AP_UEContextModificationFailure as UEContextModificationFailure
+    ...    alias=Established_PDU_UE${ue_id}   overall_timeout=30
+
+
+Expect PDU session modify message flow for VoNR
+    [Arguments]     ${ue_id}
+    Expect message flow
+    ...    gNB2:NGAP_PDUSessionResourceModifyRequest as PDUSessionResourceModifyRequest
+    ...    gNB2:F1AP_UEContextModificationResponse (drx-Config is present) as UEContextModificationResponse
+    ...    gNB2:F1AP_UEContextModificationResponse (drx-Config is present) as UEContextModificationResponse_2nd
+    ...    alias=Modify_PDU_UE${ue_id}   overall_timeout=30
+
+
+Expect PDU session modify message flow for Non GBR for VoNR after
+    [Arguments]     ${ue_id}
+    Expect message flow
+    ...    gNB2:NGAP_PDUSessionResourceModifyResponse as NGAP_PDUSessionResourceModifyResponse
+    ...    gNB2:F1AP_UEContextModificationRequest (DRXCycle is present) as UEContextModificationRequest
+    ...    gNB2:F1AP_UEContextModificationFailure as UEContextModificationFailure
+    ...    alias=Modify_PDU_UE${ue_id}   overall_timeout=30
+
+
+Expect PDU session modify message flow for VoNR after
+    [Arguments]     ${ue_id}
+    Expect message flow
+    ...    gNB2:NGAP_PDUSessionResourceModifyRequest as PDUSessionResourceModifyRequest
+    ...    gNB2:NGAP_PDUSessionResourceModifyResponse as PDUSessionResourceModifyResponse
+    ...    gNB2:F1AP_UEContextModificationRequest (DRXCycle is present) as UEContextModificationRequest_2nd
+    ...    gNB2:F1AP_UEContextModificationFailure as UEContextModificationFailure
+    ...    alias=Modify_PDU_UE${ue_id}   overall_timeout=30
+
+Expect PDU session modify message flow for VoNR after drxStOffset_drxSlotOffset not found
+    [Arguments]     ${ue_id}
+    Expect message flow
+    ...    gNB2:NGAP_PDUSessionResourceModifyRequest as PDUSessionResourceModifyRequest
+    ...    gNB2:F1AP_UEContextModificationResponse (drx-Config is present) as UEContextModificationResponse
+    ...    gNB2:F1AP_UEContextModificationResponse (drx-Config is present) as UEContextModificationResponse_2nd
+    ...    gNB2:F1AP_UEContextModificationResponse (drx-Config is present) as UEContextModificationResponse_3rd
+    ...    alias=Modify_PDU_UE${ue_id}   overall_timeout=30
+
+
+Check if PDU session modify messages flow occurred
+    [Arguments]     ${ue_id}
+    Flow occurred as expected  alias=Modify_PDU_UE${ue_id}
+    logger.Logger Console    Pcap message flow occured as excepted
+
+
+Check if PDU messages flow occurred
+    [Arguments]     ${ue_id}
+    Flow occurred as expected  alias=Established_PDU_UE${ue_id}
+    logger.Logger Console    Pcap message flow occured as excepted
+
+
+Verify fiveQI QosFlowSetupRequestList after VONR for 3CC CA in INIT CON SET REQ
+    [Arguments]     ${ue_id}=10
+    Verify That Message Fulfills Query
+    ...      ${fiveQI_one_value_on_QosFlowSetupRequestList_after_VONR_for_3CC_CA_in_INIT_CON_SET_REQ}
+    ...  message_alias=InitialContextSetupRequest
+    ...  flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify fiveQI QosFlowSetupRequestList after VONR for 3CC CA in PDU SES RSC MOD REQ
+    [Arguments]     ${ue_id}=10
+    Verify That Message Fulfills Query
+    ...      ${fiveQI_one_value_QosFlowSetupRequestList_after_VONR_for_3CC_CA_in_PDU_SES_RSC_MOD_REQ}
+    ...  message_alias=PDUSessionResourceModifyRequest
+    ...  flow_alias=Modify_PDU_UE${ue_id}
+
+
+Verify fiveQI QosFlowSetupRequestList along VONR for 3CC CA in INIT CON SET REQ
+    [Arguments]     ${ue_id}=10
+    Verify That Message Fulfills Query
+    ...      ${fiveQI_two_values_on_QosFlowSetupRequestList_along_VONR_for_3CC_CA_in_INIT_CON_SET_REQ}
+    ...  message_alias=InitialContextSetupRequest
+    ...  flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify drx Config in UE_CON_MOD_RESP
+    [Arguments]     ${ue_id}=10    ${inactivity_timer}=${None}    ${on_duration_timer}=${None}
+    ...             ${retransmission_timer_dl}=${None}    ${retransmission_timer_ul}=${None}
+    ...             ${long_cycle_start_offset}=${None}    ${slot_offset}=${None}
+    ...             ${message_alias}=UEContextModificationResponse_3rd
+    ...             ${flow_alias}=Established_PDU_UE
+    ${query} =   Get drx config query    inactivity_timer=${inactivity_timer}    on_duration_timer=${on_duration_timer}
+    ...                                  retransmission_timer_dl=${retransmission_timer_dl}    slot_offset=${slot_offset}
+    ...                                  retransmission_timer_ul=${retransmission_timer_ul}    long_cycle_start_offset=${long_cycle_start_offset}
+    Verify That Message Fulfills Query
+    ...      ${query}
+    ...  message_alias=${message_alias}
+    ...  flow_alias=${flow_alias}${ue_id}
+
+
+Verify drx Cycle with drxprofile2 for 3CC CA in UE CON MOD REQ
+    [Arguments]     ${ue_id}=6
+    ${longDRXCycleLength}  BuiltIn.Set Variable   40
+    ${query} =   String.Format String   ${drx_Cycle_for_3CC_CA_in_UE_CON_MOD_REQ}   ${longDRXCycleLength}
+    Verify That Message Fulfills Query
+    ...      ${query}
+    ...  message_alias=UEContextModificationRequest_2nd
+    ...  flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify drx Cycle with drxprofile1 for 3CC CA in UE CON MOD REQ
+    [Arguments]     ${ue_id}=10    ${longDRXCycleLength}=160    ${flow_alias}=Established_PDU_UE
+    ${query} =   String.Format String   ${drx_Cycle_for_3CC_CA_in_UE_CON_MOD_REQ}   ${longDRXCycleLength}
+    Verify That Message Fulfills Query
+    ...      ${query}
+    ...  message_alias=UEContextModificationRequest_2nd
+    ...  flow_alias=${flow_alias}${ue_id}
+
+
+Verify maxMIMO Layers for 3CC CA in UE CON MOD RESP
+    [Arguments]     ${ue_id}=6     ${message}=UEContextModificationResponse_3rd     ${scell_variant}=${None}
+    Run Keyword If      '${AP_HARDWARE}' == 'ASIL' and '${scell_variant}' == 'FTT'
+    ...     Verify That Message Fulfills Query
+    ...         ${maxMIMO_Layers_for_3CC_CA_in_UE_CON_MOD_RESP_FTT_LO}
+    ...         message_alias=${message}
+    ...         flow_alias=Established_PDU_UE${ue_id}
+    ...     ELSE IF     '${AP_HARDWARE}' == 'ASIL' and '${scell_variant}' == 'FTF'
+    ...     Verify That Message Fulfills Query
+    ...         ${maxMIMO_Layers_for_3CC_CA_in_UE_CON_MOD_RESP_FTF_LO}
+    ...         message_alias=${message}
+    ...         flow_alias=Established_PDU_UE${ue_id}
+    ...     ELSE
+    ...     Verify That Message Fulfills Query
+    ...         ${maxMIMO_Layers_for_3CC_CA_in_UE_CON_MOD_RESP}
+    ...         message_alias=${message}
+    ...         flow_alias=Established_PDU_UE${ue_id}
+
+
+Pcap Verify maxMIMO Layers
+    [Arguments]     ${ue_id}=6      ${scells_variant}=${None}
+    logger.Logger Console    Verify Pcap messages for maxMimo layers
+    Verify maxMIMO Layers for 3CC CA in UE CON MOD RESP     ue_id=${ue_id}  scell_variant=${scells_variant}
+
+
+Verify cause-misc of failure in UE_CON_MOD_FAIL
+    [Arguments]     ${ue_id}=10    ${misc}=not-enough-user-plane-processing-resources   ${flow_alias}=Modify_PDU_UE
+    ${query} =   String.Format String     ${failure_cause_in_misc_in_UE_CON_MOD_FAIL}   ${misc}
+    Verify That Message Fulfills Query    ${query}
+    ...                                   message_alias=UEContextModificationFailure
+    ...                                   flow_alias=${flow_alias}${ue_id}
+
+
+#FTF
+Verify CSI ReportConfigToAddModList for BF enabled BR disabled for FTF 3CC CA in UE CON MOD RESP
+    [Arguments]     ${ue_id}=6
+    Run Keyword If    '${AP_HARDWARE}' == 'ASIL'
+    ...     Verify That Message Fulfills Query
+    ...         ${CSIReportConfigToAddModList_for_BF_enabled_BR_disabled_for_FTF_3CC_CA_AP_LO_in_UE_CON_MOD_RESP}
+    ...         message_alias=UEContextModificationResponse_3rd
+    ...         flow_alias=Established_PDU_UE${ue_id}
+    ...     ELSE
+    ...     Verify That Message Fulfills Query
+    ...         ${CSIReportConfigToAddModList_for_BF_enabled_BR_disabled_for_FTF_3CC_CA_in_UE_CON_MOD_RESP}
+    ...         message_alias=UEContextModificationResponse_3rd
+    ...         flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify CSI ReportConfigToAddModList for BF enabled BR enabled for FTF 3CC CA in UE CON MOD RESP
+    [Arguments]     ${ue_id}=6
+    Run Keyword If    '${AP_HARDWARE}' == 'ASIL'
+    ...    Verify That Message Fulfills Query
+    ...         ${CSIReportConfigToAddModList_for_BF_enabled_BR_enabled_for_FTF_3CC_CA_AP_LO_in_UE_CON_MOD_RESP}
+    ...         message_alias=UEContextModificationResponse_3rd
+    ...         flow_alias=Established_PDU_UE${ue_id}
+    ...    ELSE
+    ...    Verify That Message Fulfills Query
+    ...         ${CSIReportConfigToAddModList_for_BF_enabled_BR_enabled_for_FTF_3CC_CA_in_UE_CON_MOD_RESP}
+    ...         message_alias=UEContextModificationResponse_3rd
+    ...         flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify CSI ReportConfigToAddModList for BF disabled BR disabled for FTF 3CC CA in UE CON MOD RESP
+    [Arguments]     ${ue_id}=6
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_disabled_BR_disabled_for_FTF_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify selected SCells for FTF 3CC CA in UE CON MOD REQ
+    [Arguments]     ${ue_id}=6
+    Run Keyword If    '${AP_HARDWARE}' == 'ASIL'
+    ...     Verify That Message Fulfills Query
+    ...         ${selected_SCells_for_FTF_3CC_CA_AP_LO_in_UE_CON_MOD_REQ}
+    ...         message_alias=UEContextModificationRequest
+    ...         flow_alias=Established_PDU_UE${ue_id}
+    ...     ELSE
+    ...     Verify That Message Fulfills Query
+    ...         ${selected_SCells_for_FTF_3CC_CA_in_UE_CON_MOD_REQ}
+    ...         message_alias=UEContextModificationRequest
+    ...         flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify added SCells for FTF 3CC CA in UE CON MOD RESP
+    [Arguments]     ${ue_id}=6      ${message}=UEContextModificationResponse_3rd
+    Run Keyword If    '${AP_HARDWARE}' == 'ASIL'
+    ...     Verify That Message Fulfills Query
+    ...         ${added_SCells_for_FTF_3CC_CA_AP_LO_in_UE_CON_MOD_RESP}
+    ...         message_alias=${message}
+    ...         flow_alias=Established_PDU_UE${ue_id}
+    ...     ELSE
+    ...     Verify That Message Fulfills Query
+    ...         ${added_SCells_for_FTF_3CC_CA_in_UE_CON_MOD_RESP}
+    ...         message_alias=${message}
+    ...         flow_alias=Established_PDU_UE${ue_id}
+
+
+Pcap verify BF enabled BR disabled for FTF
+    [Arguments]     ${ue_id}=6
+    logger.Logger Console    Verify Pcap messages for Beamforming enabled and Beam Refinement disabled
+    Verify CSI ReportConfigToAddModList for BF enabled BR disabled for FTF 3CC CA in UE CON MOD RESP
+    ...     ue_id=${ue_id}
+    Verify resourceToAddModList for BF enabled BR disabled for FTF 3CC CA in UE CON MOD RESP    ue_id=${ue_id}
+
+
+Pcap verify BF disabled BR disabled for FTF
+    [Arguments]     ${ue_id}=6
+    logger.Logger Console    Verify Pcap messages for Beamforming disabled and Beam Refinement disabled
+    Verify CSI ReportConfigToAddModList for BF disabled BR disabled for FTF 3CC CA in UE CON MOD RESP    ue_id=${ue_id}
+    Verify resourceToAddModList for BF disabled BR disabled for FTT or FTF 3CC CA in UE CON MOD RESP
+    ...                 ue_id=${ue_id}
+    ...                 message=UEContextModificationResponse_2nd
+
+
+Pcap verify BF enabled BR enabled for FTF
+    [Arguments]     ${ue_id}=10
+    logger.Logger Console    Verify Pcap messages for Beamforming enabled Beam Refinement enabled
+    Verify resourceToAddModList for BF enabled BR disabled for FTF 3CC CA in UE CON MOD RESP     ue_id=${ue_id}
+    Verify CSI ReportConfigToAddModList for BF enabled BR enabled for FTF 3CC CA in UE CON MOD RESP    ue_id=${ue_id}
+
+
+Pcap verify DRX success for FTF
+    [Arguments]     ${ue_id}=6
+    logger.Logger Console    Verify Pcap messages for DRX success
+    Verify selected SCells for FTF 3CC CA in UE CON MOD REQ     ue_id=${ue_id}
+    Verify added SCells for FTF 3CC CA in UE CON MOD RESP     ue_id=${ue_id}
+    Verify drx config in UE_CON_MOD_RESP    ue_id=${ue_id}   inactivity_timer=40    on_duration_timer=20
+    ...                                     retransmission_timer_dl=16    retransmission_timer_ul=16
+
+# FTT
+Verify CSI ReportConfigToAddModList for BF enabled BR disabled for FTT 3CC CA in UE CON MOD RESP
+    [Arguments]     ${ue_id}=10
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_enabled_BR_disabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=UEContextModificationResponse_3rd
+    ...  flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify resourceToAddModList for BF enabled BR enabled or disabled for FTT 3CC CA in UE CON MOD RESP
+    [Arguments]     ${ue_id}=10
+    ${resource_ids} =    Create List    0   10   11   9   19   20   21   22
+    ${query} =    get_pucch_resource_ids_in_resource_to_add_mod_list_query    resource_ids=${resource_ids}
+    Verify That Message Fulfills Query    ${query}
+    ...                                   message_alias=UEContextModificationResponse_3rd
+    ...                                   flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify resourceToAddModList for BF enabled BR disabled for FTF 3CC CA in UE CON MOD RESP
+    [Arguments]     ${ue_id}=6
+    ${resource_ids} =    Run Keyword If    '${AP_HARDWARE}' == 'ASIL'
+    ...                 Create List    0   10   11   9   19   20   21
+    ...     ELSE        Create List    0   10   11   9   19   21   22
+    ${query} =    get_pucch_resource_ids_in_resource_to_add_mod_list_query    resource_ids=${resource_ids}
+    Verify That Message Fulfills Query    ${query}
+    ...                                   message_alias=UEContextModificationResponse_3rd
+    ...                                   flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify resourceToAddModList for BF disabled BR disabled for FTT or FTF 3CC CA in UE CON MOD RESP
+    [Arguments]     ${ue_id}=10    ${message}=UEContextModificationResponse_3rd
+    ${resource_ids} =    Create List    0   10   11   9   19   21
+    ${query} =    get_pucch_resource_ids_in_resource_to_add_mod_list_query    resource_ids=${resource_ids}
+    Verify That Message Fulfills Query    ${query}
+    ...                                   message_alias=${message}
+    ...                                   flow_alias=Established_PDU_UE${ue_id}
+
+
+
+
+Verify CSI ReportConfigToAddModList for BF enabled BR enabled for FTT 3CC CA in UE CON MOD RESP
+    [Arguments]     ${ue_id}=10
+    Verify That Message Fulfills Query
+    ...    ${CSIReportConfigToAddModList_for_BF_enabled_BR_enabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...    message_alias=UEContextModificationResponse_3rd
+    ...    flow_alias=Established_PDU_UE${ue_id}
+
+
+
+Verify selected SCells for FTT 3CC CA in UE CON MOD REQ
+    [Arguments]     ${ue_id}=10
+    Verify That Message Fulfills Query
+    ...      ${selected_SCells_for_FTT_3CC_CA_in_UE_CON_MOD_REQ}
+    ...  message_alias=UEContextModificationRequest
+    ...  flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify added SCells for FTT 3CC CA in UE CON MOD RESP
+    [Arguments]     ${ue_id}=10    ${message}=UEContextModificationResponse_3rd
+    Verify That Message Fulfills Query
+    ...      ${added_SCells_for_FTT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=${message}
+    ...  flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify CSI ReportConfigToAddModList for BF disabled BR disabled for FTT 3CC CA in UE CON MOD RESP
+    [Arguments]     ${ue_id}=10     ${message}=UEContextModificationResponse_3rd
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_disabled_BR_disabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=${message}
+    ...  flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify selected SCells for FFTT 4CC in UE CON MOD REQ
+    [Arguments]     ${ue_id}=10
+    Verify That Message Fulfills Query
+    ...      ${selected_SCells_for_FFTT_3CC_CA_in_UE_CON_MOD_REQ}
+    ...  message_alias=UEContextModificationRequest
+    ...  flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify added SCells for FFTT 4CC in UE CON MOD RESP
+    [Arguments]     ${ue_id}=10    ${message}=UEContextModificationResponse_2nd
+    Verify That Message Fulfills Query
+    ...      ${added_SCells_for_FFTT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=${message}
+    ...  flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify resourceToAddModList for FFTT 4CC in UE CON MOD RESP
+    [Arguments]     ${ue_id}=10    ${message}=UEContextModificationResponse_2nd
+    ${resource_ids} =    Create List    10  11  19  20  21  23  24
+    ${query} =    get_pucch_resource_ids_in_resource_to_add_mod_list_query    resource_ids=${resource_ids}
+    Verify That Message Fulfills Query    ${query}
+    ...                                   message_alias=${message}
+    ...                                   flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify aperiodicTriggerStateList for FFTT 4CC in UE CON MOD RESP
+    [Arguments]     ${ue_id}=10    ${message}=UEContextModificationResponse_2nd
+    Verify That Message Fulfills Query
+    ...      ${aperiodicTriggerStateList_for_FFTT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=${message}
+    ...  flow_alias=Established_PDU_UE${ue_id}
+
+
+Verify CSI ReportConfigToAddModList for FFTT 4CC in UE CON MOD RESP
+    [Arguments]     ${ue_id}=10     ${message}=UEContextModificationResponse_2nd
+    Run Keyword If      '${AP_HARDWARE}' == 'ASIL'
+    ...     Verify That Message Fulfills Query
+    ...         ${CSIReportConfigToAddModList_for_BF_disabled_BR_disabled_for_FFTT_3CC_CA_in_UE_CON_MOD_RESP_LO}
+    ...         message_alias=${message}
+    ...         flow_alias=Established_PDU_UE${ue_id}
+    ...     ELSE
+    ...     Verify That Message Fulfills Query
+    ...         ${CSIReportConfigToAddModList_for_BF_disabled_BR_disabled_for_FFTT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...         message_alias=${message}
+    ...         flow_alias=Established_PDU_UE${ue_id}
+
+
+
+Verify maxMimoLayers for FFTT 4CC in UE CON MOD RESP
+    [Arguments]     ${ue_id}=10     ${message}=UEContextModificationResponse_2nd
+    Run Keyword If      '${AP_HARDWARE}' == 'ASIL'
+    ...     Verify That Message Fulfills Query
+    ...         ${maxMIMO_Layers_for_FFTT_4CC_CA_in_UE_CON_MOD_RESP_LO}
+    ...         message_alias=${message}
+    ...         flow_alias=Established_PDU_UE${ue_id}
+    ...     ELSE
+    ...     Verify That Message Fulfills Query
+    ...         ${maxMIMO_Layers_for_FFTT_4CC_CA_in_UE_CON_MOD_RESP}
+    ...         message_alias=${message}
+    ...         flow_alias=Established_PDU_UE${ue_id}
+
+
+
+Verify iE Extensions for FFTT 4CC in UE CON MOD RESP
+    [Arguments]     ${ue_id}=10     ${message}=UEContextModificationResponse
+    Run Keyword If     '${AP_HARDWARE}' == 'ASIL'
+    ...     Verify That Message Fulfills Query
+    ...         ${iE_Extensions_for_FFTT_4CC_CA_in_UE_CON_MOD_RESP_LO}
+    ...         message_alias=${message}
+    ...         flow_alias=Established_PDU_UE${ue_id}
+    ...     ELSE
+    ...     Verify That Message Fulfills Query
+    ...         ${iE_Extensions_for_FFTT_4CC_CA_in_UE_CON_MOD_RESP}
+    ...         message_alias=${message}
+    ...         flow_alias=Established_PDU_UE${ue_id}
+
+
+
+Pcap verify BF enabled BR disabled for FTT
+    [Arguments]     ${ue_id}=10
+    logger.Logger Console    Verify Pcap messages for Beamforming enabled and Beam Refinement disabled
+    Verify resourceToAddModList for BF enabled BR enabled or disabled for FTT 3CC CA in UE CON MOD RESP     ue_id=${ue_id}
+    Verify CSI ReportConfigToAddModList for BF enabled BR disabled for FTT 3CC CA in UE CON MOD RESP    ue_id=${ue_id}
+
+
+Pcap verify BF enabled BR enabled for FTT
+    [Arguments]     ${ue_id}=10
+    logger.Logger Console    Verify Pcap messages for Beamforming enabled Beam Refinement enabled
+    Verify resourceToAddModList for BF enabled BR enabled or disabled for FTT 3CC CA in UE CON MOD RESP     ue_id=${ue_id}
+    Verify CSI ReportConfigToAddModList for BF enabled BR enabled for FTT 3CC CA in UE CON MOD RESP    ue_id=${ue_id}
+
+
+Pcap verify BF disabled BR disabled for FTT
+    [Arguments]     ${ue_id}=10
+    logger.Logger Console    Verify Pcap messages for Beamforming disabled and Beam Refinement disabled
+    Verify CSI ReportConfigToAddModList for BF disabled BR disabled for FTT 3CC CA in UE CON MOD RESP    ue_id=${ue_id}
+    Verify resourceToAddModList for BF disabled BR disabled for FTT or FTF 3CC CA in UE CON MOD RESP    ue_id=${ue_id}
+
+
+Pcap verify BF disabled BR disabled for Multi UE for FTT
+    [Arguments]     ${ue_id}=10
+    logger.Logger Console    Verify Pcap messages for Beamforming disabled and Beam Refinement disabled
+    Verify CSI ReportConfigToAddModList for BF disabled BR disabled for FTT 3CC CA in UE CON MOD RESP    ue_id=${ue_id}
+    ...                                                                     message=UEContextModificationResponse_2nd
+    Verify resourceToAddModList for BF disabled BR disabled for FTT or FTF 3CC CA in UE CON MOD RESP    ue_id=${ue_id}
+    ...                                                                     message=UEContextModificationResponse_2nd
+
+
+Pcap verify DRX success for FTT
+    [Arguments]     ${ue_id}=10
+    logger.Logger Console    Verify Pcap messages for DRX success
+    Verify selected SCells for FTT 3CC CA in UE CON MOD REQ    ue_id=${ue_id}
+    Verify added SCells for FTT 3CC CA in UE CON MOD RESP    ue_id=${ue_id}
+    Verify drx config in UE_CON_MOD_RESP    ue_id=${ue_id}   inactivity_timer=40    on_duration_timer=80
+    ...                                     long_cycle_start_offset=160   retransmission_timer_dl=16    retransmission_timer_ul=16
+
+
+Pcap verify DRX failed for FTT
+    [Arguments]     ${ue_id}=10
+    logger.Logger Console    Verify Pcap messages for DRX failed    ue_id=${ue_id}
+    Verify selected SCells for FTT 3CC CA in UE CON MOD REQ    ue_id=${ue_id}
+    Verify added SCells for FTT 3CC CA in UE CON MOD RESP    ue_id=${ue_id}
+    Verify drx config in UE_CON_MOD_RESP    ue_id=${ue_id}   inactivity_timer=40    on_duration_timer=1
+
+
+Register UE and PDU Session and validate msg flow for multiUE FTF
+    [Arguments]     ${ue_id}
+    Register UE and PDU Session and validate msg flow    ue_id=${ue_id}
+    Pcap verify BF disabled BR disabled for FTF    ue_id=${ue_id}
+    Verify maxMIMO Layers for 3CC CA in UE CON MOD RESP     ue_id=${ue_id}     message=UEContextModificationResponse_2nd
+    Verify selected SCells for FTF 3CC CA in UE CON MOD REQ     ue_id=${ue_id}
+    Verify added SCells for FTF 3CC CA in UE CON MOD RESP     ue_id=${ue_id}    message=UEContextModificationResponse_2nd
+
+
+Register UE and PDU Session and validate msg flow for multiUE FTT
+    [Arguments]     ${ue_id}
+    Register UE and PDU Session and validate msg flow    ue_id=${ue_id}
+    Pcap verify BF disabled BR disabled for Multi UE for FTT    ue_id=${ue_id}
+    Verify maxMIMO Layers for 3CC CA in UE CON MOD RESP     ue_id=${ue_id}     message=UEContextModificationResponse_2nd
+    Verify selected SCells for FTT 3CC CA in UE CON MOD REQ     ue_id=${ue_id}
+    Verify added SCells for FTT 3CC CA in UE CON MOD RESP     ue_id=${ue_id}    message=UEContextModificationResponse_2nd
+
+
+Register UE and PDU Session and validate msg flow for multiUE FFTT
+    [Arguments]     ${ue_id}
+    Register UE and PDU Session and validate msg flow    ue_id=${ue_id}
+    Verify selected SCells for FFTT 4CC in UE CON MOD REQ    ue_id=${ue_id}
+    Verify added SCells for FFTT 4CC in UE CON MOD RESP    ue_id=${ue_id}
+    Verify resourceToAddModList for FFTT 4CC in UE CON MOD RESP    ue_id=${ue_id}
+    Verify CSI ReportConfigToAddModList for FFTT 4CC in UE CON MOD RESP    ue_id=${ue_id}
+    Verify aperiodicTriggerStateList for FFTT 4CC in UE CON MOD RESP    ue_id=${ue_id}
+    Verify maxMimoLayers for FFTT 4CC in UE CON MOD RESP    ue_id=${ue_id}
+    Verify iE Extensions for FFTT 4CC in UE CON MOD RESP    ue_id=${ue_id}
+
+
+Start TTI trace collection
+    ${configurations}=  tcc.Load Configurations
+    ...  ${CURDIR}/tti_trace_collectors.yaml
+    ${webservices}=  Set To Dictionary    ${configurations['webservices'][0]}    release=${RELEASE_NO_CONV}
+    ${configurations}=  Set To Dictionary    ${configurations}    webservices=${webservices}
+    tcc.Create Collectors
+    ...  names=l2stream3
+    ...  configurations=${configurations['collectors']}
+    tcl.Set Suite Alias
+    ...  alias=l2stream3
+    tcc.Setup Collectors
+    ...  names=l2stream3
+    tcc.Start Collectors
+    ...  names=l2stream3
+    logger.Logger Console    ${\n}TTI traces collecting started
+
+
+Stop TTI trace collection
+    logger.Logger Console    Stopping TTI traces collecting
+    tcc.Stop Collectors
+    ...  names=l2stream3
+    tcc.Collect Collectors
+    ...  names=l2stream3
+    tcc.Teardown Collectors
+    ...  names=l2stream3
+
+
+Convert TTI trace from pcap
+    [Arguments]  ${format}  ${directory_name}
+    ${prefix}   suite_specific_keywords.Get test prefix
+    logger.Logger Console    Converting TTI traces to ${format}
+    tce.Create eventDecoder Converter
+    ...  name=ttitrace_converter
+    ...  input_file_path=${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/l2stream3/tcpdump/tcpdump.pcap
+    ...  output_file_format=${format}
+    ...  output_file_path=${OUTPUTDIR}/${prefix}/${directory_name}/output
+    tce.Convert
+    ...  name=ttitrace_converter
+    Move Directory	${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/l2stream3/tcpdump/  ${OUTPUTDIR}/${prefix}/${directory_name}/
+    Remove Directory  ${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/   recursive=True
+
+
+Collect TTI Traces during
+    [Arguments]     ${sec}
+    Start TTI trace collection
+    Sleep  ${sec}
+    Stop TTI trace collection
+
+
+Register UE and PDU Session and validate msg flow
+    [Arguments]    ${ue_id}
+    Expect PDU messages flow for multi UE    ue_id=${ue_id}
+    Attach UE and establish PDU session     ue_id=${ue_id}
+    Check if PDU messages flow occurred     ue_id=${ue_id}
+
+
+Collect additional logs
+    [Arguments]    ${prefix}
+    Collect gnb snapshot        output_filepath=${OUTPUT_DIR}/${prefix}/snapshot_gNB_${prefix}.zip
+    Collect sos report log      prefix=${prefix}    log_output_dir=${OUTPUT_DIR}/${prefix}
+    Collect airphone snapshot   output_filepath=${OUTPUT_DIR}/${prefix}/snapshot_AP_${prefix}.zip
+
+
+Collect additional logs if test failed
+    [Arguments]    ${prefix}
+    Run Keyword If Test Failed    Collect additional logs    ${prefix}
+
+
+Collect snapshot if suite setup failed
+    Run keyword If  ${SUITE_SETUP_PASSED} == ${False}    Collect gnb snapshot
+    ...                                                  output_filepath=${OUTPUT_DIR}/${SUITE_NAME}/snapshot_gNB_suite.zip
+
+
+Enforce gNB snapshot collection if requested
+    [Arguments]    ${prefix}
+    Run Keyword If  '${TEST_STATUS}' == 'PASS' and '${COLLECT_SNAPSHOT}' == 'True'   Collect gnb snapshot
+    ...                             output_filepath=${OUTPUT_DIR}/${prefix}/snapshot_gNB_${prefix}.zip
+
+
+Teardown collecting logs in robot
+    ${prefix} =   suite_specific_keywords.Get test prefix
+    Teardown collecting logs
+    Run Keyword If Test Failed    Stop pcap collecting
+    Compress bip logs
+    Collect additional logs if test failed    ${prefix}
+    Enforce gNB snapshot collection if requested    ${prefix}
+    Collect admin api logs    subdir=${prefix}    dir_name=admin_api_logs
+    Cleanup logs_dir at teardown
+
+
+Check TTI Traces for Beam Reports and CSI-RS and CSI Measurements and DTX ratio
+    [Arguments]    ${scells}   ${pcell}=16388    ${beamforming}=${True}    ${beamrefinement}=${False}
+
+    ${pcell_id}  ${scells}  ${all_cells}  ${tdd_scells} =   suite_specific_keywords.Get cells converted to phycellid
+    ...                                                         pcell_id=${pcell}  scells=${scells}
+
+    FOR   ${cell_id}   IN    @{all_cells}
+        Verify if CSI RS is present for cell    ${cell_id}
+    END
+    Run Keyword If    ${beamforming}==${True}    Verify that Beam Reports are sent for cells   ${tdd_scells}   ${beamrefinement}
+    Run Keyword If    ${beamforming}==${False}   Verify that Beam Reports are not sent for cells    ${tdd_scells}
+    Verify if CSI measurement reports are done via dedicated pucch FORMAT3    pcell=${pcell_id}   scells=${scells}    beamforming=${beamforming}
+    Verify CSI reports dtx ratio   phys_cells_ids=${all_cells}   accepted_ratio=${10}
+
+
+Check TTI Traces for CB008533
+    @{all_cells} =   Create List    50  52  53  55
+    FOR   ${cell_id}   IN    @{all_cells}
+        Verify if CSI RS is present for cell    ${cell_id}
+    END
+    Verify Beam reports for CB008533
+    Verify CSI measurements for CB008533
+    Verify APERIODIC CSI for CB008533
+    Verify CSI reports dtx ratio   phys_cells_ids=${all_cells}   accepted_ratio=${10}
+
+
+Collect BIP and TTItrace logs
+    [Arguments]    ${tti_collection_time}=3
+    Stop pcap collecting
+    Run Keyword If      '${AP_HARDWARE}' == 'ASIK'    Start BIP Collection
+    Sleep    3s
+    Collect TTI Traces during     sec=${tti_collection_time}
+    Sleep    3s
+    Stop pcap collecting
+
+
+Start BIP Collection
+    Enable port mirroring for bips
+    Start remote tcpdump bip collecting

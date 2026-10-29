@@ -1,0 +1,984 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   Configuration related to common keywords for feature CB010513 ...
+...               Prerequisite :
+...               Scope : Common keywords for CB010513
+...
+...               Test Case Scenario author   : vincent.boulet@nokia.com
+...               Creation Date               : 2023-06-27
+...               Modified Date               : 2023-07-07
+
+...               Last Modified by            : vincent.boulet@nokia.com
+...               Version    Date      Author                                Notes
+...               0.1        FB2313    vincent.boulet@nokia.com              Creation robot
+...               0.2        FB2313    vincent.boulet@nokia.com              Introduce RAD parameters configuration to disable or not CB010513-E
+...               1.0        FB2313    vincent.boulet@nokia.com              Updated explanation of calculation of expected values for counters
+...                                                                          Add a parameter to Check Counter And KPI Constraints
+...               1.1        FB2314    vincent.boulet@nokia.com              Add the full path name to reach the KPI definition file
+...               1.2        FB2314    vincent.boulet@nokia.com              Unset RAD parameters related to CB008941 as it is activated by default
+...                                                                          Introduce new parameter on ue settings for throughput ul
+...               1.3        FB2316    yann.merlin@nokia.com                 Introduce Suite Setup CB010513-ABIP
+...               1.4        FB2410    ying.yw.wu@nokia.com                  Not to check the tput ul (TC is dl only)
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+#vbo#observation#
+#vbo#deviation for traffic ul#
+
+# Libraries
+Library                                         BuiltIn
+Library                                         DateTime
+Library                                         OperatingSystem
+Library                                         taf.wts.runner    WITH NAME    wtsemu
+Library                                         taf.config.scf    WITH NAME    scf
+Library                                         taf.sbts.oam.coam.admin    WITH NAME    sbts_coam
+Library                                         ../../../../../resources/SWENG/python/CoamParameter.py    WITH NAME    coam_parameter
+Library                                         ../../../../../resources/SWENG/python/PandasCsv.py
+Library                                         ../../../../../resources/SWENG/python/ScfVendorOperations.py
+Library                                         ../python/checkSearchSpaceId.py
+
+# Resources
+Resource                                        ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource                                        ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource                                        ../../../../../resources/SWENG/robot/Capture.robot
+Resource                                        ../../../../../resources/SWENG/robot/Counters.robot
+Resource                                        ../../../../../resources/SWENG/robot/KPIs.robot
+Resource                                        ../../../../../resources/SWENG/robot/Restart.robot
+Resource                                        ../../../../../resources/SWENG/robot/Scf.robot
+Resource                                        ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource                                        ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource                                        ../../../../../resources/SWENG/robot/Syslogs.robot
+Resource                                        ../../../../../resources/SWENG/robot/Tools.robot
+Resource                                        ../../../../../resources/SWENG/robot/Traffic.robot
+Resource                                        ../../../resources/common/TtiTrace/ttitrace.robot
+
+*** Variables ***
+${TestSharkTool}                                MC_SHARK
+${AUTO_SAVE_DEBUG_DATA}                         ${True}
+${CELL_SETUP_ONLY}                              ${False}
+${SUITE_DEBUG_MODE}                             ${True}
+# column names for sherpa
+${COL_NAME_BEAMID}                              BEAM ID
+${COL_NAME_GBRPRBREQUEST}                       GbrPrbRequest
+${COL_NAME_L1SUBPOOLSTREAMPRBCAPACITY}          l1SubPoolStreamPrbCapacity
+${COL_NAME_MODE}                                Mode
+${COL_NAME_NOGBRPRBREQUEST}                     noGbrPrbRequest
+${COL_NAME_NRCELLID}                            NRCellid
+${COL_NAME_NUMALLOCSTREAMPRB}                   NumAllocStreamPrb
+${COL_NAME_NUMMAXPRBALLOC}                      NumMaxPrbAlloc
+${COL_NAME_NUMMINPRBALLOC}                      NumMinPrbAlloc
+${COL_NAME_NUMPRBALLOC}                         PrbAllocated
+${COL_NAME_POOLID}                              PoolId
+${COL_NAME_SUBPOOLID}                           SubPoolId
+${COL_NAME_TPKBS}                               TP(kb/s)
+${COL_NAME_ZAB}                                 ZAB Privilege
+# ID nrcell
+${ID_NRCELL_1}                                  0x4001
+${ID_NRCELL_2}                                  0x4002
+${ID_NRCELL_3}                                  0x4003
+# ID pool and subpool
+${ID_POOL}                                      10
+${ID_SUBPOOL_1}                                 0
+${ID_SUBPOOL_2}                                 1
+
+# maximum number of layer PRB by L1 subpool
+${NUM_MAX_LAYER_PRB_L1_SP_DEFAULT}              2184
+${NUM_MAX_LAYER_PRB_L1_SP}                      1200
+# maximum number of stream PRB by L1 subpool
+${NUM_MAX_STREAM_PRB_L1_SP_DEFAULT}             2184
+${NUM_MAX_STREAM_PRB_L1_SP}                     1200
+# maximum number of wideband stream PRB by L1 subpool
+${NUM_MAX_WB_STREAM_PRB_L1_SP_DEFAULT}          1092
+${NUM_MAX_WB_STREAM_PRB_L1_SP}                  600
+# minimum of PRB that can be allocated to one cell
+${NUM_MIN_PRB_DEFAULT}                          48
+# maximum of PRB that can be allocated to one cell
+${NUM_MAX_PRB_DEFAULT}                          273
+# maximum of stream that can be distributed in one subpool when interL1subpool is disabled
+${NUM_MAX_STREAM_DEFAULT}                       ${NUM_MAX_STREAM_PRB_L1_SP}
+# maximum of stream ... when interL1subpool is disabled and in case of only one cell <=> ${NUM_MAX_PRB_DEFAULT} * 4 = 273 * 4 = 1092
+${NUM_MAX_STREAM_WHEN_ONLY_1_CELL}              1092
+# maximum of PRB that can be allocated by the cells in one subpool <=> in our configuration to ${NUM_MAX_STREAM_DEFAULT} / 4 = 1200 / 4 = 300
+# the sum of the allocated PRB for cell-1 and cell-3 as co-located into the same subpool id 0 should be 300
+${NUM_MAX_PRB_GLOBAL}                           300
+
+# frameStructureType=semiStatic + ulDlDataSlotRatio=1/4
+# basicBeamSet=beamSet_6 w/ nrBtsBeamRefinementP2=true
+# chBW=100Mhz + ssBurstSetPeriod=20 + csirsTrackingPeriod=80ms
+#  - 12 SSB slots          : 273-32-32=209 PRB or 54-20-28=6 PRB for PDSCH
+#  - 12 SIB slots          : 273 or 54 PRB for PDSCH
+#  - 32 specific slots     : 273 or 54 PRB for PDSCH
+#  - 32 RACH+UL slots      : 0 PRB for PDSCH
+#  - 72 full DL slots maxi. or 72-x muted slots for PDSCH if cell is not zab
+#  when the cell is not zab then slots are muted for TRS on cells (C0, C1, C2) and/or CSI-RS groups <=> 0 PRB for PDSCH
+#
+# if cell is zab and BBRM allocates 273 PRB for PDSCH due to inter subpool pooling => cell 1
+#        in every 160slots : 12*209+12*273+32*273+72*273=2508+3276+8736+19656=34176
+#        in 5 mins : (5*60*1000*2)/160=3750 => 34176*3750=128160000
+${NUM_MAX_PRB_COUNT_CELL_ZAB_INTERL1SP}         128160000
+#
+# if cell is not zab but BBRM allocates 273 PRB for PDSCH due to inter subpool pooling => cell 3
+# before activation of CB010513-E then 10 slots were muted: 34176-(10*273)=34176-2730=31446 and 31446*3750=117922500
+#  after activation of CB010513-E then 14 slots are muted instead of 10: 34176-(14*273)=34176-3822=30354 and 30354*3750=113827500
+${NUM_MAX_PRB_COUNT_CELL_NONZAB_INTERL1SP}      113827500
+#
+# if cell is not zab but BBRM allocates only 54 PRB for PDSCH due to inter subpool pooling => cell 2
+# before activation of CB010513-E then 10 slots were muted:
+#        in every 160slots : 12*6+12*54+32*54+(72-10)*54=72+648+1728+3348=5796
+#        in 5mins : 5796*3750=21735000
+#  after activation of CB010513-E then 14 slots are muted instead of 10: 5796-(14-10*54)=5796-216=5580 and 5580*3750=20925000
+${NUM_PRB_COUNT_CELL_NONZAB_INTERL1SP}          20925000
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+*** Keywords ***
+Suite Setup CB010513-Common
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${keep_all_data_in_file}
+    ...     Actions:        it performs the generic suite setup and backup the configurations files
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        suite setup is passed
+    [Arguments]             ${keep_all_data_in_file}=${False}
+
+    Setup.Suite Setup From Scratch              automaticTeardown=${True}    keepAllUeDataInCfgFile=${keep_all_data_in_file}
+    Backup Files
+    ${scf_suite_setup_backup}                   OAM Get SCF File    file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable                          ${scf_suite_setup_backup}
+    Dated Log                                   ===> backup file is ${scf_suite_setup_backup}
+
+Suite Setup CB010513-ABIP
+    [Documentation]
+    ...     Conditions:     customs configurations scf et basic setup
+    ...     Actions:        it performs the generic suite setup and backup the configurations files
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        suite setup is passed
+    [Arguments]             ${scfPath}=${EMPTY}
+    ...                     ${basiccfgPath}=${EMPTY}
+
+    Setup.Suite Setup From Scratch    keepAllUeDataInCfgFile=${True}        automaticTeardown=${True}
+    ...                     scfcPathname=${scfPath}     basicPathname=${basiccfgPath}
+    Backup Files
+    ${scf_suite_setup_backup}         OAM Get SCF File    file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable      ${scf_suite_setup_backup}
+    Dated Log               SCF backup file = ${scf_suite_setup_backup}
+
+
+Suite Teardown CB010513-Common
+    [Documentation]
+    ...     Conditions:     it needs no conditions
+    ...     Actions:        it restores the files when the test is finished
+    ...     Checks:         it needs no checks
+    ...     Verdict:        suite teardown is passed
+
+    Restore Files
+    ${scf_suite_teardown_restore}=              Get Variable Value    ${scf_suite_setup_backup}    None
+    OAM Perform Full Commissioning              scf_file=${scf_suite_teardown_restore}
+    OAM wait available
+    ${std_output}=                              Run    rm -f ${scf_suite_setup_backup}
+    Dated Log                                   ===> ${std_output}
+    Dated Log                                   ===> restore file is ${scf_suite_teardown_restore}
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# RAD Parameters #
+Set RAD Parameters for CB010513
+    [Documentation]
+    ...     Conditions:     it needs no conditions
+    ...     Actions:        it adds or modifies the RAD parameters for CB010513 to activate the CB008941 feature. It will be replaced later by NIDD
+    ...     Checks:         it needs no checks
+    ...     Verdict:        the setting is passed
+
+    Dated Log New Line                          ===> set RAD parameters
+    #
+    #0x190297=1#CB008941 BOAM_RUMAG#                                          ${rad_0x190297}=        Create Dictionary    field=0x190297    value=1
+    #0x190305=1#CB008941 BOAM_RUMAG UL default enabled#                       ${rad_0x190305}=        Create Dictionary    field=0x190305    value=1
+    #0x190306=1#CB008941 BOAM_RUMAG DL default enabled#                       ${rad_0x190306}=        Create Dictionary    field=0x190306    value=1
+    #
+
+    ${rad_0x580117}=        Create Dictionary    field=0x580117    value=9    #0x580117=9#CSI-RS Event Sherpa#+ Events 47 and 48#
+
+    #0x58066a=0#CB008940-G InterL1SubPool 0:Disabled - 1:Enabled#             ${rad_0x58066a}=        Create Dictionary    field=0x58066a    value=0
+    #...70a=0#rdCellCsiRsPeriodicityBbPoolExtensionTddFr1 L2PS 0:Disabled#    ${rad_0x58070a}=        Create Dictionary    field=0x58070a    value=0
+    #
+    #0x5901C9=1#CB008941 L3_rdUlUpFragmentationEnable#                        ${rad_0x5901C9}=        Create Dictionary    field=0x5901C9    value=1
+	#0x5901dd=0#rdCprt L3 0:Disabled#                                     ${rad_0x5901dd}=        Create Dictionary    field=0x5901dd    value=0
+    #0x5901CA=1#CB008941 L3_rdDlUpFragmentationEnable#                        ${rad_0x5901CA}=        Create Dictionary    field=0x5901CA    value=1
+    #
+    #0x600012=1#CB008941 BOAM_NRTS#                                           ${rad_0x600012}=        Create Dictionary    field=0x600012    value=1
+    #0x600013=1#CB008941 WA_FROM_BOAM_NRTS#                                   ${rad_0x600013}=        Create Dictionary    field=0x600013    value=1
+    #0x600017=1#CB008941 BOAM_NRTS_rdDlUpFragmentation ---> DL muting#        ${rad_0x600017}=        Create Dictionary    field=0x600017    value=1
+    #0x600018=1#CB008941 BOAM_NRTS_rdUlUpFragmentation ---> UL muting#        ${rad_0x600018}=        Create Dictionary    field=0x600018    value=1
+    #
+    ${list_rad_param}=                          Create List    ${rad_0x580117}
+    Dated Log                                   ===> RAD params list is ${list_rad_param}
+    SetConfig.Set Fields in swconfig DU         param_list=${list_rad_param}
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Vendor configuration #
+Deploy Vendor File Config
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${vendor_param} ${is_perform_full_commissioning}
+    ...     Actions:
+    ...     Checks:
+    ...     Verdict:
+    [Arguments]             ${vendor_param}
+    ...                     ${is_perform_full_commissioning}=${True}
+
+    # OAM Perform Full Commissioning is mandatory to apply vendor configuration
+    Update Vendor File Config For bbL1SpPrbInitCapacity    ${vendor_param}
+    # Force the full commissioning when it is requested
+    Run Keyword if    ${is_perform_full_commissioning}    Run Keywords
+    ...                                         OAM Perform Full Commissioning    scf_file=${scf_suite_setup_backup}
+    ...    AND                                  Restart Airphone
+    ...    AND                                  Wait Airphone Available
+    ...    AND                                  OAM wait available    wait_time=300
+
+
+Update Vendor File Config For bbL1SpPrbInitCapacity
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${vendor_param}
+    ...     Actions:
+    ...     Checks:
+    ...     Verdict:
+    [Arguments]             ${vendor_param}
+
+    ${original_vendor_file}                     ${modified_vendor_file}    SetConfig.Download Vendor File
+    Dated Log                                   ===> original vendor file name is ${original_vendor_file}
+    Dated Log                                   ===> modified vendor file name will be ${modified_vendor_file}
+
+    ScfVendorOperations.setup reader    ${original_vendor_file}
+    ${mo_dict}                                  ScfVendorOperations.get moelements byclass    NRBTS
+    # bbL1SpPrbInitCapacity
+    # Original value should be related to <!-- 48 CS, only DL -->
+    &{original_values}                          Create Dictionary    bbHwVariant=${vendor_param.bb_hw_variant}
+    ...                                                             csSize=48
+    ...                                                             direction=DL
+    ...                                                             l1PoolType=NR_L1_Loki_TDD_FR1_eCPRI_IQF_Asymm
+    ...                                                             maxNumLayerPrbL1Sp=${NUM_MAX_LAYER_PRB_L1_SP_DEFAULT}
+    ...                                                             maxNumStreamPrbL1Sp=${NUM_MAX_STREAM_PRB_L1_SP_DEFAULT}
+    ...                                                             maxNumWbStreamPrbL1Sp=${NUM_MAX_WB_STREAM_PRB_L1_SP_DEFAULT}
+
+    ${vendor_param.max_num_layer_prb_l1_sp}=    Run Keyword If    ${vendor_param.max_num_layer_prb_l1_sp} == None
+    ...                                                             Set Variable    ${NUM_MAX_LAYER_PRB_L1_SP_DEFAULT}
+    ...                                                     ELSE    Set Variable    ${vendor_param.max_num_layer_prb_l1_sp}
+
+    ${vendor_param.max_num_stream_prb_l1_sp}=    Run Keyword If    ${vendor_param.max_num_stream_prb_l1_sp} == None
+    ...                                                             Set Variable    ${NUM_MAX_STREAM_PRB_L1_SP_DEFAULT}
+    ...                                                      ELSE    Set Variable    ${vendor_param.max_num_stream_prb_l1_sp}
+
+    ${vendor_param.max_num_wb_stream_prb_l1_sp}=    Run Keyword If    ${vendor_param.max_num_wb_stream_prb_l1_sp} == None
+    ...                                                             Set Variable    ${NUM_MAX_WB_STREAM_PRB_L1_SP_DEFAULT}
+    ...                                                         ELSE    Set Variable    ${vendor_param.max_num_wb_stream_prb_l1_sp}
+
+    &{new_values}                               Create Dictionary    bbHwVariant=${vendor_param.bb_hw_variant}
+    ...                                                             csSize=48
+    ...                                                             direction=DL
+    ...                                                             l1PoolType=NR_L1_Loki_TDD_FR1_eCPRI_IQF_Asymm
+    ...                                                             maxNumLayerPrbL1Sp=${vendor_param.max_num_layer_prb_l1_sp}
+    ...                                                             maxNumStreamPrbL1Sp=${vendor_param.max_num_stream_prb_l1_sp}
+    ...                                                             maxNumWbStreamPrbL1Sp=${vendor_param.max_num_wb_stream_prb_l1_sp}
+    @{original_items_list}=                     Create List    ${original_values}
+    @{new_items_list}=                          Create List    ${new_values}
+    ${list_name}                                Set Variable    bbL1SpPrbInitCapacity
+    ${modified_mo}=    ScfVendorOperations.replace items inList    ${original_items_list}    ${new_items_list}    ${list_name}    ${mo_dict}
+
+    #Modify parameter actTddCsiRsallocationOptimization to false in vendor file
+    @{set_9836}=            Create List       actTddCsirsAllocOptimization      false
+    @{Param_To_Replace}=    Create List       ${set_9836}
+    ${modified_mo}=         ScfVendorOperations.replace params inMo      ${Param_To_Replace}    ${mo_dict}
+
+    ScfVendorOperations.save back toxml    ${modified_vendor_file}
+    ${Tmp_file_ls}                              OperatingSystem.run    ls -altr ${modified_vendor_file}
+    Dated log                                   Obtained file ${Tmp_file_ls}
+    &{args}                                     Create Dictionary    vendor_file="${modified_vendor_file}"
+    OAM Run Command                             cmd=set_vendor_file    cmd_args=${args}
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Capture #
+Captures Init
+    [Documentation]
+    ...     Conditions:     it needs no conditions
+    ...     Actions:        it configures the parameters to initialize the captures for L1L2, CORE and CPRT
+    ...     Checks:         it needs no checks
+    ...     Verdict:        the parameters for the captures are initialized
+
+    ${capture_l1l2}                             Capture L1L2 Set Upon Config    airscale=${GNB_DU}
+    ${capture_core}    Run Keyword If    ${isAic}
+    ...                                         Capture CORE Set Upon Config    airscale=${GNB_CU}
+    ...                            ELSE         Capture CORE Set Upon Config    airscale=${GNB_DU}
+    ${capture_cprt}                             Capture CPRT Set Upon Config    airscale=${GNB_DU}
+    Capture Init                                ${capture_l1l2}    withTN=True
+    Capture Init                                ${capture_core}    withTN=True
+    Capture Init                                ${capture_cprt}    withTN=True
+    Set Suite Variable                          ${capture_l1l2}
+    Set Suite Variable                          ${capture_core}
+    Set Suite Variable                          ${capture_cprt}
+
+
+Captures Start
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${action_core} ${action_cprt} ${action_l1l2}
+    ...     Actions:        it starts the captures for L1L2 and/or CORE and/or CPRT depends on an argument
+    ...     Checks:         it needs no checks
+    ...     Verdict:        the captures are started
+    [Arguments]             ${action_core}=${False}    # Capture CORE is not started by default
+    ...                     ${action_cprt}=${False}    # Capture CPRT is not started by default
+    ...                     ${action_l1l2}=${False}    # Capture L1L2 is not started by default
+
+    Run Keyword If    ${action_core}    Capture Start    capture=${capture_core}
+    Run Keyword If    ${action_cprt}    Capture Start    capture=${capture_cprt}
+    Run Keyword If    ${action_l1l2}    Capture Start    capture=${capture_l1l2}
+
+
+Captures Stop
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${action_core} ${action_cprt} ${action_l1l2}
+    ...     Actions:        it stops the captures for L1L2 and/or CORE and/or CPRT depending on an argument
+    ...     Checks:         it needs no checks
+    ...     Verdict:        the captures are stopped
+    [Arguments]             ${action_core}=${True}     # Capture CORE is stopped by default
+    ...                     ${action_cprt}=${True}     # Capture CPRT is stopped by default
+    ...                     ${action_l1l2}=${True}     # Capture L1L2 is stopped by default
+
+    Run Keyword If    ${action_l1l2}    Capture Stop    capture=${capture_l1l2}
+    Run Keyword If    ${action_core}    Capture Stop    capture=${capture_core}
+    Run Keyword If    ${action_cprt}    Capture Stop    capture=${capture_cprt}
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Traffic #
+DL Traffic GBR SA Not Stopped
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${current_ue_setting} ${current_trf_id}
+    ...     Actions:        it manages the DL traffic GBR on the UE
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        DL traffic is passed
+    [Arguments]             ${param}
+    ...                     ${current_ue_setting}=${BASIC_UE_SA}
+    ...                     ${current_trf_id}=20
+
+    # Step 1 on qfi=2 with protocol tcp
+    Set To Dictionary                           ${current_ue_setting}    trf_id    ${current_trf_id}
+    Set To Dictionary                           ${current_ue_setting}    qfi    2
+    Traffic UE DL                               ueSetting=${current_ue_setting}
+    ...                                         throughput=${current_ue_setting.throughput_gbr}
+    ...                                         captureCallback=None
+    ...                                         capture=None
+    ...                                         captureDuration=0
+    ...                                         duration=${param.duration}
+    ...                                         shouldBeStop=False
+    ...                                         deviation=${param.deviation}
+    ...                                         protocol=tcp
+    # Step 2 on qfi=3 with protocol udp
+    ${current_trf_id}=                          Evaluate    ${current_trf_id} + 1
+    Set To Dictionary                           ${current_ue_setting}    trf_id    ${current_trf_id}
+    Set To Dictionary                           ${current_ue_setting}    qfi    3
+    Traffic UE DL                               ueSetting=${current_ue_setting}
+    ...                                         throughput=${current_ue_setting.throughput_gbr}
+    ...                                         captureCallback=None
+    ...                                         capture=None
+    ...                                         captureDuration=0
+    ...                                         duration=${param.duration}
+    ...                                         shouldBeStop=False
+    ...                                         deviation=${param.deviation}
+    ...                                         protocol=udp
+
+
+DL Traffic Not Stopped
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${current_ue_setting} ${current_trf_id}
+    ...     Actions:        it manages the DL traffic on the UE
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        DL traffic is passed
+    [Arguments]             ${param}
+    ...                     ${current_ue_setting}
+    ...                     ${current_trf_id}=1
+
+    Set To Dictionary                           ${current_ue_setting}    trf_id    ${current_trf_id}
+    Traffic UE DL                               ueSetting=${current_ue_setting}
+    ...                                         throughput=${current_ue_setting.throughput}
+    ...                                         captureCallback=None
+    ...                                         capture=None
+    ...                                         captureDuration=0
+    ...                                         duration=${param.duration}
+    ...                                         shouldBeStop=False
+    ...                                         deviation=${param.deviation}
+
+
+UL Traffic Not Stopped
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${current_ue_setting} ${current_trf_id}
+    ...     Actions:        it manages the UL traffic on the UE fixed to 5 Mbps
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        UL traffic is passed
+    [Arguments]             ${param}
+    ...                     ${current_ue_setting}
+    ...                     ${current_trf_id}=10
+
+    Set To Dictionary                           ${current_ue_setting}    trf_id    ${current_trf_id}
+    Traffic UE UL                               ueSetting=${current_ue_setting}
+    ...                                         throughput=${current_ue_setting.throughput_ul}
+    ...                                         captureCallback=None
+    ...                                         capture=None
+    ...                                         captureDuration=0
+    ...                                         duration=${param.duration}
+    ...                                         shouldBeStop=False
+    ...                                         shouldBeCheck=False
+    #...                                         deviation=50    #vbo#deviation for traffic ul#
+
+
+UL+DL Traffic Not Stopped
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${current_ue_setting} ${current_trf_id}
+    ...     Actions:        it manages the DL traffic on the UE
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        DL traffic is passed
+    [Arguments]             ${param}
+    ...                     ${current_ue_setting}
+    ...                     ${current_trf_id}=1
+
+    Set To Dictionary                           ${current_ue_setting}    trf_id    ${current_trf_id}
+    Traffic UE DL                               ueSetting=${current_ue_setting}
+    ...                                         throughput=${current_ue_setting.throughput}
+    ...                                         captureCallback=None
+    ...                                         capture=None
+    ...                                         captureDuration=0
+    ...                                         duration=${param.duration}
+    ...                                         shouldBeStop=False
+    ...                                         deviation=${param.deviation}
+
+    ${current_trf_id}=                          Evaluate    ${current_trf_id} + 9
+    Set To Dictionary                           ${current_ue_setting}    trf_id    ${current_trf_id}
+    Traffic UE UL                               ueSetting=${current_ue_setting}
+    ...                                         throughput=${current_ue_setting.throughput_ul}
+    ...                                         captureCallback=None
+    ...                                         capture=None
+    ...                                         captureDuration=0
+    ...                                         duration=${param.duration}
+    ...                                         shouldBeStop=False
+    ...                                         shouldBeCheck=False
+    # ...                                         deviation=50    #vbo#deviation for traffic ul#
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# UE settings #
+Get Number Of Ue Configured With GBR Traffic
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${dict_ues}
+    ...     Actions:        it returns the number of ue's configured with GBR traffic
+    ...     Checks:         it checks that the requested GBR throughput for the ue's is different from 0
+    ...     Verdict:        the number of ue's configured with GBR traffic is returned
+    [Arguments]             ${dict_ues}
+
+    ${current_value}                            Set Variable    0
+    FOR    ${current_ue}    IN    @{dict_ues}
+        ${current_value}=    Run Keyword If    ${current_ue.throughput_gbr} > ${NO_THROUGHPUT}
+        ...                                     Evaluate    ${current_value} + 1
+        ...                              ELSE    Evaluate    ${current_value} + 0
+    END
+    Dated Log                                   ===> number of ue's configured with GBR traffic is ${current_value}
+    [Return]    ${current_value}
+
+
+Check Multi Ues Setting In List
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${list_multi_ue}
+    ...     Actions:        it logs all the ue's settings
+    ...     Checks:         it needs no checks
+    ...     Verdict:        the ue's list is defined
+    [Arguments]             ${list_multi_ue}=None
+
+    ${nb_ue}                                    get length    ${list_multi_ue}
+    Dated Log New Line                          ===> number of ue's is ${nb_ue}
+    FOR    ${current_elem}    IN      @{list_multi_ue}
+        Dated Log                     ===> serving cell=${current_elem.target_cells} on gnb=${current_elem.target_gnb} for ue=${current_elem.ue}
+    END
+
+
+Configure New Ues
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${dict_ues} ${initial_nb_ue} ${total_nb_ue} ${dict_new_ue}
+    ...     Actions:        it automatically configures new ue's to increase the number of ue's
+    ...     Checks:         it needs no checks
+    ...     Verdict:        the ue's list is increased
+    [Arguments]             ${dict_ues}
+    ...                     ${initial_nb_ue}
+    ...                     ${total_nb_ue}
+    ...                     ${dict_new_ue}
+
+    ${diff_nb_ue}=                              Evaluate    ${total_nb_ue} - ${initial_nb_ue}
+    FOR    ${current_ue}    IN RANGE    0    ${diff_nb_ue}
+        Append To List                          ${dict_ues}    ${dict_new_ue}
+    END
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Panda Extract #
+Calling Panda Extract Csv For PRB Pooling
+    [Documentation]
+    ...     Conditions:     it is not based on argument
+    ...     Actions:        it extracts the requested information from the Sherpa micro__l1l2Trace.csv input
+    ...     Checks:         it needs no checks
+    ...     Verdict:        csv files are created containing the information
+    [Arguments]
+
+    ${file_path_micro_l1l2} =                   Set Variable    ${sherpa_output_path}/tcpdump/micro__l1l2Trace.csv
+    BuiltIn.Log    ${file_path_micro_l1l2}
+    PandasCsv.Setup Reader    ${file_path_micro_l1l2}    # Load data from a csv file using pandas library
+    PandasCsv.Extract Cvs Files Forcolumn    filter_column=TEXT
+    ...                                                             by_value=MSGID
+    ...                                                             filter=PrbPoolingAllocationReport(45)
+    ...                                                             list_grp=None
+    ...                                                             csv_sep=;
+    PandasCsv.Extract Cvs Files Forcolumn    filter_column=TEXT
+    ...                                                             by_value=MSGID
+    ...                                                             filter=PrbPoolingAllocationSubpool(45)
+    ...                                                             list_grp=None
+    ...                                                             csv_sep=;
+    PandasCsv.Extract Cvs Files Forcolumn    filter_column=TEXT
+    ...                                                             by_value=MSGID
+    ...                                                             filter=PsCellSlotRrmInfos(47)
+    ...                                                             list_grp=None
+    ...                                                             csv_sep=;
+
+
+# Verification #
+Verification of Pool Id within PRB Pooling Report
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${pool_id} ${subpool_id}
+    ...     Actions:        it verifies the pool id of the recommended sub pool id
+    ...     Checks:         it checks the values within PRB Pooling Allocation Report
+    ...     Verdict:        pool id value is as expected
+    [Arguments]             ${pool_id}=10
+    ...                     ${subpool_id}=0
+
+    ${file_path_report}                         Set Variable    Dl_PrbPoolingAllocationReport_45_.csv
+    Dated Log                                   ===> used file is ${file_path_report}
+    # PoolId
+    @{list_values}                              Create List    ${pool_id}
+    Dated Log New Line                          ===> check if ${list_values} = ${COL_NAME_POOLID} when ${COL_NAME_SUBPOOLID} is ${subpool_id}
+    ${verif_result}                             Verify Value List In csv File Column    CsvName=${file_path_report}
+    ...                                                             Column_name=${COL_NAME_POOLID}
+    ...                                                             value_list=${list_values}
+    ...                                                             prereq_column=${COL_NAME_SUBPOOLID}
+    ...                                                             prereq_column_val=${subpool_id}
+    Run Keyword If    ${verif_result} == True
+    ...                 Dated Log               ===> DL L1 Pool Id is equal to ${pool_id} when subpool is ${subpool_id}
+    ...         ELSE    Dated Log               ===> DL L1 Pool Id IS NOT EQUAL TO ${pool_id} when subpool is ${subpool_id}
+    Should Be True    ${verif_result} == True
+
+
+Verification of BB Pooling Mode within PRB Pooling Allocation Report
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${pool_id}
+    ...     Actions:        it verifies all the pooling mode values of the recommended pool id
+    ...     Checks:         it checks that pooling mode is set to LoadBased within PRB Pooling Allocation SubPool Report
+    ...     Verdict:        pooling mode is set to LoadBased or not (RoundRobin)
+    [Arguments]             ${pool_id}=10
+
+    ${file_path_report}                         Set Variable    Dl_PrbPoolingAllocationSubpool_45_.csv
+    Dated Log                                   ===> used file is ${file_path_report}
+    # Mode
+    @{list_values}                              Create List    LB
+    Dated Log New Line                          ===> check if ${list_values} = ${COL_NAME_MODE} when ${COL_NAME_POOLID} is ${pool_id}
+    ${verif_result}                             Verify Value List In csv File Column    CsvName=${file_path_report}
+    ...                                                             Column_name=${COL_NAME_MODE}
+    ...                                                             value_list=${list_values}
+    ...                                                             prereq_column=${COL_NAME_POOLID}
+    ...                                                             prereq_column_val=${pool_id}
+    Run Keyword If    ${verif_result} == True
+    ...                 Dated Log               ===> Baseband Resource Manager Pooling mode is set to LoadBased when pool is ${pool_id}
+    ...         ELSE    Dated Log               ===> Baseband Resource Manager Pooling mode is set to RoundRobin when pool is ${pool_id}
+    Should Be True    ${verif_result} == True
+
+
+Verification of BB Pooling cell distribution within PRB Pooling Report
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${nr_cell_id} ${subpool_id} ${result_req}
+    ...     Actions:        it verifies the sub pool id distribution for NRCell
+    ...     Checks:         it checks the sub pool id value for NRCell within PRB Pooling Allocation SubPool Report
+    ...     Verdict:        distribution is as expected
+    [Arguments]             ${nr_cell_id}
+    ...                     ${subpool_id}=0
+    ...                     ${result_req}=True
+
+    ${file_path_report}                         Set Variable    Dl_PrbPoolingAllocationReport_45_.csv
+    Dated Log                                   ===> used file is ${file_path_report}
+    # subpool_id
+    @{list_values}                              Create List    ${subpool_id}
+    Dated Log New Line                          ===> check if ${list_values} = ${COL_NAME_SUBPOOLID} when ${COL_NAME_NRCELLID} is ${nr_cell_id}
+    ${verif_result}                             Verify Value List In csv File Column    CsvName=${file_path_report}
+    ...                                                             Column_name=${COL_NAME_SUBPOOLID}
+    ...                                                             value_list=${list_values}
+    ...                                                             prereq_column=${COL_NAME_NRCELLID}
+    ...                                                             prereq_column_val=${nr_cell_id}
+    Run Keyword If    ${verif_result} == True
+    ...                 Dated Log               ===> DL cell distribution check is passed when nrCell is ${nr_cell_id}
+    ...         ELSE    Dated Log               ===> DL cell distribution check IS NOT PASSED when nrCell is ${nr_cell_id}
+    Should Be True    ${verif_result} == ${result_req}
+
+
+Verification of BB Pooling ZAB distribution within PRB Pooling Report
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${nr_cell_id} ${zab_privilege} ${result_req}
+    ...     Actions:        it verifies the ZAB privilege distribution for NRCell
+    ...     Checks:         it checks the ZAB privilege value for NRCell within PRB Pooling Allocation SubPool Report
+    ...     Verdict:        distribution is as expected
+    [Arguments]             ${nr_cell_id}
+    ...                     ${zab_privilege}=0
+    ...                     ${result_req}=True
+
+    ${file_path_report}                         Set Variable    Dl_PrbPoolingAllocationReport_45_.csv
+    Dated Log                                   ===> used file is ${file_path_report}
+    # zab_privilege
+    @{list_values}                              Create List    ${zab_privilege}
+    Dated Log New Line                          ===> check if ${list_values} = ${COL_NAME_ZAB} when ${COL_NAME_NRCELLID} is ${nr_cell_id}
+    ${verif_result}                             Verify Value List In csv File Column    CsvName=${file_path_report}
+    ...                                                             Column_name=${COL_NAME_ZAB}
+    ...                                                             value_list=${list_values}
+    ...                                                             prereq_column=${COL_NAME_NRCELLID}
+    ...                                                             prereq_column_val=${nr_cell_id}
+    Run Keyword If    ${verif_result} == True
+    ...                 Dated Log               ===> DL ZAB cell privilege check is passed when nrCell is ${nr_cell_id}
+    ...         ELSE    Dated Log               ===> DL ZAB cell privilege check IS NOT PASSED when nrCell is ${nr_cell_id}
+    Should Be True    ${verif_result} == ${result_req}
+
+
+Verification of BB Pooling Traffic PRB Request within PRB Pooling Report
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${nr_cell_id} ${prb_req} ${prb_value} ${result_req} ${check_operator}
+    ...     Actions:        it verifies the PRB request for NRCell
+    ...     Checks:         it checks the PRB value for NRCell within PRB Pooling Allocation SubPool Report
+    ...     Verdict:        PRB request is as expected
+    [Arguments]             ${nr_cell_id}
+    ...                     ${prb_req}
+    ...                     ${prb_value}
+    ...                     ${result_req}=True
+    ...                     ${check_operator}===
+
+    ${file_path_report}                         Set Variable    Dl_PrbPoolingAllocationReport_45_.csv
+    Dated Log                                   ===> used file is ${file_path_report}
+    # prb_value
+    Dated Log New Line                          ===> check if ${prb_value} ${check_operator} ${prb_req} when ${COL_NAME_NRCELLID} is ${nr_cell_id}
+    ${verif_result}                             Verify value with operator in csv Files with Prerequisite    CsvName=${file_path_report}
+    ...                                                             ColumnName=${prb_req}
+    ...                                                             valuetocheck=${prb_value}
+    ...                                                             check_operator=${check_operator}
+    ...                                                             directory=${sherpa_output_path}
+    ...                                                             colum_prereq=${COL_NAME_NRCELLID}
+    ...                                                             regex_prereq=${nr_cell_id}
+    Run Keyword If    ${verif_result} == True
+    ...                 Dated Log               ===> DL PRB request check is passed when nrCell is ${nr_cell_id}
+    ...         ELSE    Dated Log               ===> DL PRB request check IS NOT PASSED when nrCell is ${nr_cell_id}
+    Should Be True    ${verif_result} == ${result_req}
+
+
+Verification of Stream PRB Information within PRB Pooling Report
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${stream_prb_capa} ${alloc_stream_prb} ${subpool_id} ${check_operator}
+    ...     Actions:        it verifies all the l1SubPoolStreamPrbCapacity and numAllocStreamPRB values of the recommended sub pool id
+    ...     Checks:         it checks the values within PRB Pooling Allocation SubPool Report
+    ...     Verdict:        l1SubPoolStreamPrbCapacity and numAllocStreamPRB values are as expected
+    [Arguments]             ${stream_prb_capa}
+    ...                     ${alloc_stream_prb}
+    ...                     ${subpool_id}=0
+    # ...                     ${result_req}=True
+    ...                     ${check_operator}===
+
+    ${file_path_report}                         Set Variable    Dl_PrbPoolingAllocationSubpool_45_.csv
+    Dated Log                                   ===> used file is ${file_path_report}
+    # l1SubPoolStreamPrbCapacity
+    Dated Log New Line    ===> check if ${COL_NAME_L1SUBPOOLSTREAMPRBCAPACITY} ${check_operator} ${stream_prb_capa} when subpool is ${subpool_id}
+    ${verif_result}                             Verify value with operator in csv Files with Prerequisite    CsvName=${file_path_report}
+    ...                                                             ColumnName=${COL_NAME_L1SUBPOOLSTREAMPRBCAPACITY}
+    ...                                                             valuetocheck=${stream_prb_capa}
+    ...                                                             check_operator=${check_operator}
+    ...                                                             directory=${sherpa_output_path}
+    ...                                                             colum_prereq=${COL_NAME_SUBPOOLID}
+    ...                                                             regex_prereq=${subpool_id}
+    Run Keyword If    ${verif_result} == True
+    ...                 Dated Log               ===> DL L1 SubPool stream PRB capacity is passed when ${COL_NAME_SUBPOOLID} is ${subpool_id}
+    ...         ELSE    Dated Log               ===> DL L1 SubPool stream PRB capacity IS NOT PASSED when ${COL_NAME_SUBPOOLID} is ${subpool_id}
+    #vbo#observation#Should Be True    ${verif_result} == ${result_req}
+    # numAllocStreamPRB
+    Dated Log New Line    ===> check if ${COL_NAME_NUMALLOCSTREAMPRB} ${check_operator} ${alloc_stream_prb} when subpool_id is ${subpool_id}
+    ${verif_result}                             Verify value with operator in csv Files with Prerequisite    CsvName=${file_path_report}
+    ...                                                             ColumnName=${COL_NAME_NUMALLOCSTREAMPRB}
+    ...                                                             valuetocheck=${alloc_stream_prb}
+    ...                                                             check_operator=${check_operator}
+    ...                                                             directory=${sherpa_output_path}
+    ...                                                             colum_prereq=${COL_NAME_SUBPOOLID}
+    ...                                                             regex_prereq=${subpool_id}
+    Run Keyword If    ${verif_result} == True
+    ...                 Dated Log               ===> DL num alloc stream PRB check is passed when ${COL_NAME_SUBPOOLID} is ${subpool_id}
+    ...         ELSE    Dated Log               ===> DL num alloc stream PRB check IS NOT PASSED when ${COL_NAME_SUBPOOLID} is ${subpool_id}
+    #vbo#observation#Should Be True    ${verif_result} == ${result_req}
+
+
+Verification of Number PRB Allocated within PRB Pooling Report
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${num_min_prb} ${num_max_prb} ${num_prb_alloc} ${prereq_data} ${prereq_value} ${result_req}
+    ...                     ${check_operator}
+    ...     Actions:        it verifies all the numMinPrbAlloc, numMaxPrbAlloc and numPrbAlloc values of the recommended data
+    ...     Checks:         it checks the values within PRB Pooling Allocation SubPool Report
+    ...     Verdict:        numMinPrbAlloc, numMaxPrbAlloc and numPrbAlloc values are as expected
+    [Arguments]             ${num_min_prb}=${NUM_MIN_PRB_DEFAULT}
+    ...                     ${num_max_prb}=${NUM_MAX_PRB_DEFAULT}
+    ...                     ${num_prb_alloc}=${NUM_MAX_PRB_DEFAULT}
+    ...                     ${prereq_data}=${COL_NAME_SUBPOOLID}
+    ...                     ${prereq_value}=0
+    ...                     ${result_req}=True
+    ...                     ${check_operator}===
+
+    ${file_path_report}                         Set Variable    Dl_PrbPoolingAllocationReport_45_.csv
+    Dated Log                                   ===> used file is ${file_path_report}
+    # numMinPrbAlloc
+    @{list_values}                              Create List    ${num_min_prb}
+    Dated Log New Line                          ===> check if ${list_values} = ${COL_NAME_NUMMINPRBALLOC} when ${prereq_data} is ${prereq_value}
+    ${verif_result}                             Verify Value List In csv File Column    CsvName=${file_path_report}
+    ...                                                             Column_name=${COL_NAME_NUMMINPRBALLOC}
+    ...                                                             value_list=${list_values}
+    ...                                                             prereq_column=${prereq_data}
+    ...                                                             prereq_column_val=${prereq_value}
+    Run Keyword If    ${verif_result} == True
+    ...                 Dated Log               ===> DL Num Min PRB Alloc is equal to ${num_min_prb} when ${prereq_data} is ${prereq_value}
+    ...         ELSE    Dated Log               ===> DL Num Min PRB Alloc IS NOT EQUAL TO ${num_min_prb} when ${prereq_data} is ${prereq_value}
+    Should Be True    ${verif_result} == ${result_req}
+    # numMaxPrbAlloc
+    @{list_values}                              Create List    ${num_max_prb}
+    Dated Log New Line                          ===> check if ${list_values} = ${COL_NAME_NUMMAXPRBALLOC} when ${prereq_data} is ${prereq_value}
+    ${verif_result}                             Verify Value List In csv File Column    CsvName=${file_path_report}
+    ...                                                             Column_name=${COL_NAME_NUMMAXPRBALLOC}
+    ...                                                             value_list=${list_values}
+    ...                                                             prereq_column=${prereq_data}
+    ...                                                             prereq_column_val=${prereq_value}
+    Run Keyword If    ${verif_result} == True
+    ...                 Dated Log               ===> DL Num Max PRB Alloc is equal to ${num_max_prb} when ${prereq_data} is ${prereq_value}
+    ...         ELSE    Dated Log               ===> DL Num Max PRB Alloc IS NOT EQUAL TO ${num_max_prb} when ${prereq_data} is ${prereq_value}
+    Should Be True    ${verif_result} == ${result_req}
+    # numPrbAlloc
+    Dated Log New Line    ===> check if ${num_prb_alloc} ${check_operator} ${COL_NAME_NUMPRBALLOC} when ${prereq_data} is ${prereq_value}
+    ${verif_result}                             Verify value with operator in csv Files with Prerequisite    CsvName=${file_path_report}
+    ...                                                             ColumnName=${COL_NAME_NUMPRBALLOC}
+    ...                                                             valuetocheck=${num_prb_alloc}
+    ...                                                             check_operator=${check_operator}
+    ...                                                             directory=${sherpa_output_path}
+    ...                                                             colum_prereq=${prereq_data}
+    ...                                                             regex_prereq=${prereq_value}
+    Run Keyword If    ${verif_result} == True
+    ...                 Dated Log               ===> DL Num PRB Alloc check is passed when ${prereq_data} is ${prereq_value}
+    ...         ELSE    Dated Log               ===> DL Num PRB Alloc check IS NOT PASSED when ${prereq_data} is ${prereq_value}
+    #vbo#observation#Should Be True    ${verif_result} == ${result_req}
+
+
+Verification of Throughput on Cell within Sherpa Dl Stat Report
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${throughput_req}
+    ...     Actions:        it verifies that the downlink throughput on each cell is upper than the requested value exprimed in kb/s
+    ...     Checks:         it checks the downlink throughput on each cell within Statistics Report of Sherpa
+    ...     Verdict:        downlink throughput is passed but check is disabled because macro__dlStat.csv contains empty line
+    [Arguments]             ${throughput_req}
+
+    ${file_path_report}                         Set Variable    macro__dlStat.csv
+    # throughput_req
+    Dated Log New Line                          ===> check if ${COL_NAME_TPKBS} ${check_operator} ${throughput_req} within ${file_path_report}
+    ${verif_result}                             Verify value with operator in csv Files with Prerequisite    CsvName=${file_path_report}
+    ...                                                             ColumnName=${COL_NAME_TPKBS}
+    ...                                                             valuetocheck=${throughput_req}
+    ...                                                             check_operator=<
+    ...                                                             directory=${sherpa_output_path}
+    ...                                                             colum_prereq=${COL_NAME_BEAMID}
+    ...                                                             regex_prereq=ALL
+    Run Keyword If    ${verif_result} == True
+    ...                 Dated Log               ===> downlink throughput on each cell is upper than the requested value=${throughput_req} kbs
+    ...         ELSE    Dated Log               ===> downlink throughput on cell IS LOWER THAN the requested value=${throughput_req} kbs
+    #vbo#observation#check is disabled because macro__dlStat.csv contains empty line#Should Be True    ${verif_result} == True
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Counter #
+Set Min And Max Values For Counter
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${counter_elem} ${counter_value}
+    ...     Actions:        it changes the min and the max values of the counter
+    ...     Checks:         it checks the initial configured value of a counter before the changing
+    ...     Verdict:        the counters values are changed when it is requested
+    [Arguments]             ${counter_elem}
+    ...                     ${counter_value}
+
+    ${counter_value}                            Convert To String    ${counter_value}
+    Run Keyword If    '${counter_elem.min}' == 'auto'    Set To Dictionary    ${counter_elem}    min=${counter_value}
+    Run Keyword If    '${counter_elem.max}' == 'auto'    Set To Dictionary    ${counter_elem}    max=${counter_value}
+
+
+Compute All Counters Values For Checking
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${dict_ues} ${dict_counters}
+    ...     Actions:        it computes all the counters values for checking depending on the configuration
+    ...     Checks:         it checks the initial configured value of a counter before the changing
+    ...     Verdict:        the counters values are changed when it is requested
+    [Arguments]             ${param}
+    ...                     ${dict_ues}
+    ...                     ${dict_counters}
+
+    # Adding dynamically the counters for the cells into the list
+    FOR    ${current_id}    IN RANGE    0    ${param.total_nb_cell}
+        ${current_cell}=                        Evaluate    ${current_id} + 1
+        ${current_cell}                         Convert To String    ${current_cell}
+        #M55308C17002
+        ${current_counter}=                     Copy Dictionary    ${dict_settings_M55308C17002}
+        Set To Dictionary                       ${current_counter}    obj_id    ${current_cell}
+        Append To List                          ${dict_counters}    ${current_counter}
+        #M55308C10003
+        ${current_counter}=                     Copy Dictionary    ${dict_settings_M55308C10003}
+        Set To Dictionary                       ${current_counter}    obj_id    ${current_cell}
+        Append To List                          ${dict_counters}    ${current_counter}
+        #M55308C10005
+        ${current_counter}=                     Copy Dictionary    ${dict_settings_M55308C10005}
+        Set To Dictionary                       ${current_counter}    obj_id    ${current_cell}
+        Append To List                          ${dict_counters}    ${current_counter}
+        #M55308C10007
+        ${current_counter}=                     Copy Dictionary    ${dict_settings_M55308C10007}
+        Set To Dictionary                       ${current_counter}    obj_id    ${current_cell}
+        Append To List                          ${dict_counters}    ${current_counter}
+        #M55338C01000
+        ${current_counter}=                     Copy Dictionary    ${dict_settings_M55338C01000}
+        Set To Dictionary                       ${current_counter}    obj_id    ${current_cell}
+        Append To List                          ${dict_counters}    ${current_counter}
+        #M55338C01001
+        ${current_counter}=                     Copy Dictionary    ${dict_settings_M55338C01001}
+        Set To Dictionary                       ${current_counter}    obj_id    ${current_cell}
+        Append To List                          ${dict_counters}    ${current_counter}
+        #M55359C00000
+        ${current_counter}=                     Copy Dictionary    ${dict_settings_M55359C00000}
+        Set To Dictionary                       ${current_counter}    obj_id    ${current_cell}
+        Append To List                          ${dict_counters}    ${current_counter}
+        #M55359C00001
+        ${current_counter}=                     Copy Dictionary    ${dict_settings_M55359C00001}
+        Set To Dictionary                       ${current_counter}    obj_id    ${current_cell}
+        Append To List                          ${dict_counters}    ${current_counter}
+    END
+    ${nb_ue_traffic_gbr}=                       Get Number Of Ue Configured With GBR Traffic    dict_ues=${dict_ues}
+    # Computing dynamically the counters value
+    FOR    ${current_counter}    IN      @{dict_counters}
+        Run Keyword If    '${current_counter.counter}' == 'M55140C00001' or '${current_counter.counter}' == 'M55140C00002'
+        ...                                     Set Min And Max Values For Counter    ${current_counter}    ${param.total_nb_ue}
+        Run Keyword If    '${current_counter.counter}' == 'M55140C00501'
+        ...                                     Set Min And Max Values For Counter    ${current_counter}    ${nb_ue_traffic_gbr}
+        Run Keyword If    '${current_counter.obj}' == 'NRBTS' and '${current_counter.obj_id}' == 'auto'
+        ...                                     Set To Dictionary    ${current_counter}    obj_id=${TNRBTS_ID[0]}
+    END
+
+
+Retrieve Counter List of Values From Pm Files For Object With Name
+    [Documentation]         INTERNAL USAGE
+    [Arguments]             ${pm_path}
+    ...                     ${object_name}
+    ...                     ${counter_name}
+    ...                     ${object_id}=1
+
+    Debug Dated Log                             xxx_pm_path:${pm_path}
+    Debug Dated Log                             xxx_object_id:${object_id}
+    Set Suite Variable                          ${curPmDir}    ${pm_path}/${pmCollectSubDir}
+    ${sumCal}=                                  Evaluate    0
+    Debug Dated Log                             curPmDir:${curPmDir}
+    @{filesList}                                List Directory    ${curPmDir}    *.xml
+    ${counter_values}    Extract Counter Different Values From PM Files in dir    ${curPmDir}    ${object_name}    ${counter_name}
+    ...                                         ${object_id}
+    Debug Dated Log                             counter_values= ${counter_values}
+    [Return]    ${counter_values}
+
+
+Verify Object Counter with ID List Of Values In A Range
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${vendor_param}
+    ...     Actions:        Retrieve all values of a counter defined with object id in all PM xml files and compare them with a range Min and Max
+    ...     Checks:
+    ...     Verdict:
+    [Arguments]             ${pm_path}
+    ...                     ${pm_obj_id}
+    ...                     &{expected_dict}
+
+    Debug Dated Log                             pm_path= ${pm_path}
+    Debug Dated Log                             pm_obj_id= ${pm_obj_id}
+    ${objectName}=                              Set Variable    &{expected_dict}[obj]
+    ${counterName}=                             Set Variable    &{expected_dict}[counter]
+    ${iMin}=                                    Evaluate    &{expected_dict}[min]
+    ${iMax}=                                    Evaluate    &{expected_dict}[max]
+    ${pm_iteration}                             Evaluate    &{expected_dict}[iteration]
+    ${valRetrieved}    Retrieve Counter List of Values From Pm Files For Object With Name    ${pm_path}      ${objectName}    ${counterName}
+    ...                                         ${pm_obj_id}
+    Debug Dated Log                             valRetrieved= ${valRetrieved} iMin= ${iMin} iMax= ${iMax}
+    # Compare ivalue with Min Max     ${valRetrieved}    ${iMin}   ${iMax}
+    ${nb_val_found}=                            Set Variable    0
+    ${nb_val_elem}=                             get length    ${valRetrieved}
+    FOR    ${val_elem}    IN    @{valRetrieved}
+        ${result}=                              Run Keyword And Return Status    Compare ivalue with Min Max    ${val_elem}    ${iMin}    ${iMax}
+        ${nb_val_found}=    Run Keyword If    ${result} == ${True}    Evaluate    ${nb_val_found} + 1
+        ...                             ELSE    Evaluate    ${nb_val_found} + 0
+        Debug Dated Log     result= ${result} for the comparison of val_elem= ${val_elem} with iMin= ${iMin} iMax= ${iMax}
+    END
+    # result is always considered as true when pm_iteration is 0 <=> the comparison is deactivated for this counter
+    # result is considered as true when the number of correct found values is upper or equal to the requested one
+    # result is considered as true when the pm_iteration is negative only if all the values are correct
+    # result is considered as false for the other cases
+    ${result}=    Run Keyword If    ${pm_iteration} == 0    Set Variable    ${True}
+    ...                       ELSE IF    ${pm_iteration} > 0 and ${nb_val_found} >= ${pm_iteration}    Set Variable    ${True}
+    ...                       ELSE IF    ${pm_iteration} < 0 and ${nb_val_found} == ${nb_val_elem}    Set Variable    ${True}
+    ...                       ELSE              Set Variable    ${False}
+    [Return]    ${result}
+
+
+Check All Counters From Dict
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${path_pm} ${dict_counters}
+    ...     Actions:        it checks all the counters values from the dictionary
+    ...     Checks:         it checks for all the counters that the value is in the range
+    ...     Verdict:        the values are verified
+    [Arguments]             ${path_pm}
+    ...                     ${dict_counters}
+
+    Dated Log New Line                          ===> counters list is ${dict_counters}
+    FOR    ${current_counter}    IN      @{dict_counters}
+        Dated Log                               ===> current counter for checking is ${current_counter}
+        ${status_counter}                       Verify Object Counter with ID List Of Values In A Range    ${path_pm}    ${current_counter.obj_id}
+        ...                                                         &{current_counter}
+        Should Be True    '${status_counter}' == 'True'
+    END
+
+
+Sleep Until PM Availability
+    [Arguments]             ${pm_granularity_period}=300
+    ...                     ${pm_availability_delay}=60
+
+    Dated Log                                   ===> sleep until PM availability is started
+    ${time_of_start}                            Evaluate    int(time.time())    time
+    ${time_of_next_pm_period}                   Evaluate    (int(${time_of_start} / ${pm_granularity_period}) + 1) * ${pm_granularity_period}
+    ${time_of_pm_availability}                  Evaluate    ${time_of_next_pm_period} + ${pm_availability_delay}
+    ${duration_until_pm_availability}           Evaluate    ${time_of_pm_availability} - ${time_of_start}
+    ${timeout_string}                           Catenate    ${duration_until_pm_availability}  sec
+    ${date_of_pm_availability}                  Convert date    ${time_of_pm_availability}
+    Dated Log                                   ===> PM should be available in ${timeout_string}, at ${date_of_pm_availability}
+    Sleep                                       ${timeout_string}
+    Dated Log                                   ===> sleep until PM availability is ended
+
+
+Check Counter And KPI Constraints
+    [Arguments]             ${pm_path}
+    ...                     ${test_name}
+    ...                     ${localKpiFileName}=${None}
+    Dated Log                                   ===> check counter and KPI constraints is started
+    ${localKpiFile}=    Run Keyword If    '${localKpiFileName}' == '${None}'    Set Variable   ${None}
+    ...                             ELSE        Set Variable   ${CURDIR}/../../config/counter/KPI/${localKpiFileName}
+    KPI Evaluate                                pmFile=${pm_path}
+    ...                                         constraintsFile=${CURDIR}/../../config/counter/constraint/${test_name}.csv
+    ...                                         failOnError=${True}
+    ...                                         localKpiFile=${localKpiFile}
+    Dated Log                                   ===> check counter and KPI constraints is ended
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# TTI Traces #
+Get TTI Logs
+    # TTI capture configuration
+    ${TTIdir}                                   Get TTI Trace Path    dir_suffix=TTI
+
+    # Start TTI capture
+    Dated Log New Line                          ===> start TTI traces capture
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+    Traced Sleep                                duration=3s    msg=DL TTI traffic capture 3 seconds
+
+    # Stop TTI capture
+    Dated Log New Line                          ===> stop TTI traces capture
+    ${TTIpcap}                                  Stop TTI Traces in Streaming mode    tti_trace_path=${TTIdir}    tti_trace_filename=TTI_TC
+
+    Dated Log New Line                          ===> convert TTI trace to json and csv
+    ${TTIjson}                                  Convert TTI trace from pcap to others    input_file_path=${TTIpcap}
+    ${TTIcsv}                                   decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson}    num_of_events=10000
+    set Suite Variable    ${TTIjson}
+    [Return]    ${TTIjson}
+# --------------------------------------------------------------------------------------------------------------------------------------------------

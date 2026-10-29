@@ -1,0 +1,76 @@
+"""
+Copyright: Nokia Networks
+Author: Riyad FERRAG
+Email: riyad.ferrag@nokia.com
+"""
+
+import os
+import json
+
+from builtins import FileNotFoundError
+
+# TAF Libraries:
+from taf.analyzer.ttitrace_eventdecoder import TtitraceReader as TtitraceReaderEvtDec
+
+
+# def is_valid_json_file(file_path):
+#     """
+#     Check if the file at the specified path is a valid JSON file.
+#     """
+#     try:
+#         with open(file_path, 'r') as file_obj:
+#             json.load(file_obj)
+#         return True
+#     except (json.JSONDecodeError, FileNotFoundError):
+#         return False
+
+
+def check_search_space_id(json_path_name):
+    """
+    This function checks the correct usage of the searchSpaceId associated with each slot
+    Args:
+        json_path_name (str): The path to the JSON file containing TTI trace data.
+
+    Returns:
+        bool: True if all 'searchSpaceId' values are correct, False otherwise.
+
+    Raises:
+        FileNotFoundError: If the provided JSON file path doesn't exist.
+    """
+    if not os.path.exists(json_path_name):
+        raise FileNotFoundError(f"TTI trace ERROR: {json_path_name} doesn't exist.")
+
+    if os.path.getsize(json_path_name) <= 24:
+        print(f"TTI trace WARNING: {json_path_name} size <= 24 bytes. The file may be incomplete or corrupted.")
+
+    # if not is_valid_json_file(json_path_name):
+    #     print(f"TTI trace ERROR: {json_path_name} is not a valid JSON file.")
+    #     return False
+
+    cell_id = 50
+
+    with open(json_path_name, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            if event.type == "dlFdSchedData" and event.data["eventHeader"]["physCellId"] == cell_id:
+                sfn = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                ssid = event.data["searchSpaceId"]
+
+                if None in (sfn, slot, ssid):
+                    print(f"Error: 'SFN', 'slot' or 'searchspaceId' not found for slot {sfn}/{slot}")
+
+                if sfn % 2 == 0:
+                    if slot == 15 and ssid != 12:
+                        raise ValueError(f"Error: Incorrect 'searchSpaceId' for slot {sfn}/{slot}")
+                    elif slot not in (0, 1, 15) and ssid != 9:
+                        raise ValueError(f"Error: Incorrect 'searchSpaceId' for slot {sfn}/{slot}")
+                    elif slot in (0, 1) and ssid != 10:
+                        raise ValueError(f"Error: Incorrect 'searchSpaceId' for slot {sfn}/{slot}")
+                else:
+                    if slot not in (0, 1) and ssid != 9:
+                        raise ValueError(f"Error: Incorrect 'searchSpaceId' for slot {sfn}/{slot}")
+                    elif slot in (0, 1) and ssid != 12:
+                        raise ValueError(f"Error: Incorrect 'searchSpaceId' for slot {sfn}/{slot}")
+
+    print("All 'searchSpaceId' values are correct!")
+    return True

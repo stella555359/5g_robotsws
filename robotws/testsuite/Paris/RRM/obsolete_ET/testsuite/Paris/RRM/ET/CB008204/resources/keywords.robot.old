@@ -1,0 +1,123 @@
+*** Settings ***
+
+Documentation
+...   author: Mateusz Plinta, Justyna Balcerzak, Mateusz Adamek
+...   contact: mateusz.plinta@nokia.com, justyna.balcerzak@nokia.com, mateusz.adamek@nokia.com
+...   description: CB008204
+
+Library     ta_messaging
+Library     BuiltIn
+Library     String
+Library     Collections
+Library     suite_specific_keywords.py
+Library     egate_actions.py
+Library     delta/split_A.py
+Library     ../../resources_KRK/python/utilities2.py    WITH NAME    logger
+Library    taf.sw.scout                               WITH NAME    scout
+Library    taf.sw.reporting_portal                    WITH NAME    reporting_portal
+
+Resource   testsuite/Paris/RRM/ET/resources_KRK/robot/TtiTrace/tti_trace_collector.robot
+Resource    ../../../../resources/SWENG/robot/Setup.robot
+
+Variables   ta_messaging_filters.py
+
+*** Keywords ***
+Attach UE and Establish PDU session
+    [Arguments]    ${ue_id}=1    ${cell_id}=${None}     ${timeout}=${15}
+    Attach UE    ue_id=${ue_id}    cell=${cell_id}
+    Establish PDU session    ue_id=${ue_id}    gw_id=${ue_id}   timeout=${timeout}
+    BuiltIn.Sleep    3s
+
+
+Create aliases
+    [Arguments]     ${ue_id}
+    Create GNB device with alias 'gNB2' identified by ip=10.0.1.2
+    Create Ue Alias  alias=UE_${ue_id}  ue_id=${ue_id}  id_type=wts_5g
+    Enable internal mirroring for alias  gNB2
+
+
+Expect RLO messages flow
+    [Arguments]     ${ue_id}
+    Expect message flow
+#    ...    gNB2:itf_l2_hi_cu_user_BearerUlDataSplitModeInd as itf_l2_hi_cu_user_BearerUlDataSplitModeInd
+    ...    gNB2:X2AP_SgNBModificationRequired as SgNBModificationRequired
+    ...    alias=Verify_RLO${ue_id}   overall_timeout=120
+
+
+Expect RLR messages flow
+    [Arguments]     ${ue_id}
+    Expect message flow
+#    ...    gNB2:itf_l2_hi_cu_user_BearerUlDataSplitModeInd as itf_l2_hi_cu_user_BearerUlDataSplitModeInd
+    ...    gNB2:X2AP_SgNBModificationRequired as SgNBModificationRequired
+    ...    alias=Verify_RLR${ue_id}   overall_timeout=130
+
+
+Check if RLO messages flow occurred
+    [Arguments]     ${ue_id}=11
+    Flow occurred as expected  alias=Verify_RLO${ue_id}
+    logger.Logger Console    RLO Pcap message flow occured as excepted
+
+
+Check if RLR messages flow occurred
+    [Arguments]     ${ue_id}=11
+    Flow occurred as expected  alias=Verify_RLR${ue_id}
+    logger.Logger Console    RLR Pcap message flow occured as excepted
+
+
+Verify moreThanOneRLC in X2AP_SgNBModificationRequired
+    [Arguments]     ${ue_id}     ${cellGroup}    ${dataSplitThreshold}    ${flow_alias}=Verify_RLO
+    ${query} =   String.Format String   ${moreThanOneRLC_in_X2AP_SgNBModificationRequired}   ${cellGroup}   ${dataSplitThreshold}
+    Verify That Message Fulfills Query
+    ...      ${query}
+    ...  message_alias=SgNBModificationRequired
+    ...  flow_alias=${flow_alias}${ue_id}
+
+
+Pcap verify RLO messages content
+    [Arguments]     ${ue_id}    ${cellGroup}   ${dataSplitThreshold}
+    Verify moreThanOneRLC in X2AP_SgNBModificationRequired     ue_id=${ue_id}    cellGroup=${cellGroup}
+    ...                                                        dataSplitThreshold=${dataSplitThreshold}   flow_alias=Verify_RLO
+
+
+Pcap verify RLR messages content
+    [Arguments]     ${ue_id}    ${cellGroup}   ${dataSplitThreshold}
+    Verify moreThanOneRLC in X2AP_SgNBModificationRequired     ue_id=${ue_id}   cellGroup=${cellGroup}
+    ...                                                        dataSplitThreshold=${dataSplitThreshold}   flow_alias=Verify_RLR
+
+
+Wait for Radio Link Resume
+    BuiltIn.Sleep   30
+
+
+Adjust parameters using delta for TC A10 A11 A12 in NRDRB
+    [Arguments]     ${ulDataPath}
+    ${delta} =  prepare_delta_for_TC_A10_A11_A12_depends_on_ulDataPath_in_NRDRB    ${ulDataPath}
+    adjust_parameters_using_delta    ${delta}
+
+
+Collect additional logs
+    [Arguments]    ${prefix}
+    common_gnb.Collect gnb snapshot        output_filepath=${OUTPUT_DIR}/${prefix}/snapshot_gNB_${prefix}.zip
+    Collect sos report log      prefix=${prefix}    log_output_dir=${OUTPUT_DIR}/${prefix}
+    Collect airphone snapshot   output_filepath=${OUTPUT_DIR}/${prefix}/snapshot_AP_${prefix}.zip
+
+
+Collect additional logs if test failed
+    [Arguments]    ${prefix}
+    Run Keyword If Test Failed    Collect additional logs    ${prefix}
+
+
+Teardown collecting logs in robot
+    ${prefix} =   suite_specific_keywords.Get test prefix
+    Teardown collecting logs
+    Collect additional logs if test failed    ${prefix}
+    common_gnb.Collect admin api logs    subdir=${prefix}    dir_name=admin_api_logs
+    Cleanup logs_dir at teardown
+
+Start TTI Traces
+    Start TTI Trace Collection    yaml_config_path=${CURDIR}/tti_config.yaml    release=${RELEASE_NO_CONV}
+
+
+Stop TTI Traces
+    ${prefix} =   suite_specific_keywords.Get test prefix
+    Stop TTI Trace Collection    target_path=${OUTPUT_DIR}/${prefix}/tti_traces

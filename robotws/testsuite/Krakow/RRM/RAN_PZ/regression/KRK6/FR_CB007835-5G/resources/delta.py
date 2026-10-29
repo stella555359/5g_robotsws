@@ -1,0 +1,21 @@
+delta_online = [{'distName': "MRBTS-75312/NRBTS-75312/NRCELL-3101",
+                 'operation': 'update',
+                 'parameters': [{'operation': 'update',
+                                 'parameterName': "prachConfigurationIndex",
+                                 'value': "13"}]},
+                {'distName': "MRBTS-75312/NRBTS-75312/NRCELL-3102",
+                 'operation': 'update',
+                 'parameters': [{'operation': 'update',
+                                 'parameterName': "prachConfigurationIndex",
+                                 'value': "14"}]},
+                {'distName': "MRBTS-75312/NRBTS-75312/NRCELL-3103",
+                 'operation': 'update',
+                 'parameters': [{'operation': 'update',
+                                 'parameterName': "prachConfigurationIndex",
+                                 'value': "15"}]}]
+
+delta_reset = [{"distName": "MRBTS-75312/MNL-1/MNLENT-1/SYNC-1",
+                "operation": "update",
+                "parameters": [{"parameterName": "manualFrameTimingAdjustment",
+                                "value": "100",
+                                "operation": "update"}]}]

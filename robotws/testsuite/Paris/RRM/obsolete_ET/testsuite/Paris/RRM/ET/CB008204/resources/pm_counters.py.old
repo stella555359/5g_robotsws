@@ -1,0 +1,98 @@
+import testsuite.Paris.RRM.ET.resources_KRK.python.pm_counters as pm_counters
+from robot.libraries.BuiltIn import BuiltIn
+import testsuite.Paris.RRM.ET.resources_KRK.python.utilities as utilities
+
+
+def wait_for_first_counters_values_to_arrive():
+    minutes = BuiltIn().get_variable_value("${PM_PERIOD}")
+    utilities.logger_console("Waiting for one PM period ({}min) for first counter values to arrive".format(minutes))
+    return pm_counters.wait_for_next_pm_period(int(minutes), delay=5)
+
+
+def wait_for_next_pm_period_to_start():
+    minutes = BuiltIn().get_variable_value("${PM_PERIOD}")
+    return pm_counters.wait_for_next_pm_period(int(minutes))
+
+
+def verify_counters_for_A02(packets, start_discard, finish_discard):
+    UL_PDCP_PDU_F1_PMQAP = 'M55362C00001'
+    UL_PDCP_PDU_LOST_F1_PMQAP = 'M55362C00002'
+    UL_PDCP_PDU_X2_PMQAP = 'M55361C00001'
+    UL_PDCP_PDU_LOST_X2_PMQAP = 'M55361C00002'
+    UL_PDCP_SDU_CU_PMQAP = 'M55352C02001'
+    UL_PDCP_SDU_LOST_CU_PMQAP = 'M55352C02002'
+    UL_PDCP_SDU_VOL_SNT_PMQAP = 'M55352C02006'
+
+    UL_PDCP_NUM_RCV_X2_QOS_GRP_09 = 'M55313C12009'
+    UL_PDCP_NUM_SNT_F1_QoS_GRP_09 = 'M55314C04009'
+    PDCP_SDU_USDAT_VOL_UL_NSA_PLMN = 'M55326C00002'
+
+    UL_PDCP_SDU_SNT_S1U_QOS_GRP_09 = 'M55315C02009'
+
+    UL_PDCP_VOL_SNT_S1U_QOS_GRP_09 = 'M55315C03009'
+
+    counters_list = [UL_PDCP_PDU_F1_PMQAP, UL_PDCP_PDU_LOST_F1_PMQAP, UL_PDCP_PDU_X2_PMQAP, UL_PDCP_PDU_LOST_X2_PMQAP,
+                     UL_PDCP_SDU_CU_PMQAP, UL_PDCP_SDU_LOST_CU_PMQAP, UL_PDCP_SDU_VOL_SNT_PMQAP,
+                     UL_PDCP_NUM_RCV_X2_QOS_GRP_09, UL_PDCP_NUM_SNT_F1_QoS_GRP_09, PDCP_SDU_USDAT_VOL_UL_NSA_PLMN,
+                     UL_PDCP_SDU_SNT_S1U_QOS_GRP_09, UL_PDCP_VOL_SNT_S1U_QOS_GRP_09]
+    counters_data = pm_counters.get_pm_counters_values(counter_ids_list=counters_list)
+    pm_counters.verify_any_counters(UL_PDCP_SDU_VOL_SNT_PMQAP, "> 0", 1, counters_data=counters_data)
+    value_of_counters = pm_counters.get_latest_values_for_specified_counters(
+        [
+            UL_PDCP_SDU_LOST_CU_PMQAP,
+            UL_PDCP_PDU_LOST_X2_PMQAP,
+            UL_PDCP_PDU_LOST_F1_PMQAP,
+            UL_PDCP_SDU_CU_PMQAP,
+            UL_PDCP_PDU_F1_PMQAP,
+            UL_PDCP_PDU_X2_PMQAP,
+            UL_PDCP_VOL_SNT_S1U_QOS_GRP_09,
+            UL_PDCP_SDU_SNT_S1U_QOS_GRP_09
+        ], counters_data=counters_data
+    )
+
+    pm_counters.verify_any_counters(
+        UL_PDCP_SDU_LOST_CU_PMQAP, ">= {}".format(
+            int(value_of_counters[UL_PDCP_PDU_LOST_X2_PMQAP]) + int(value_of_counters[UL_PDCP_PDU_LOST_F1_PMQAP])),
+        UL_PDCP_SDU_LOST_CU_PMQAP, ">= {}".format(
+            int(value_of_counters[UL_PDCP_PDU_F1_PMQAP]) + int(value_of_counters[UL_PDCP_PDU_X2_PMQAP])),
+        UL_PDCP_PDU_LOST_X2_PMQAP, "== {}".format(int(finish_discard) - int(start_discard)),
+        UL_PDCP_SDU_CU_PMQAP, "== {}".format(packets),
+        UL_PDCP_SDU_VOL_SNT_PMQAP, "> 0",
+        UL_PDCP_VOL_SNT_S1U_QOS_GRP_09, "== {}".format(int(value_of_counters[UL_PDCP_SDU_VOL_SNT_PMQAP]/8000)),
+        UL_PDCP_SDU_SNT_S1U_QOS_GRP_09, "== {}".format(int(packets - finish_discard)),
+        counters_data=counters_data)
+
+    pm_counters.compare_counters_with_each_other(
+            UL_PDCP_PDU_F1_PMQAP, None, ">=", UL_PDCP_PDU_LOST_F1_PMQAP, None,
+            UL_PDCP_PDU_X2_PMQAP, None, ">=", UL_PDCP_PDU_LOST_X2_PMQAP, None,
+            UL_PDCP_SDU_CU_PMQAP, None, ">=", UL_PDCP_SDU_LOST_CU_PMQAP, None,
+            UL_PDCP_PDU_X2_PMQAP, None, "==", UL_PDCP_NUM_RCV_X2_QOS_GRP_09, None,
+            UL_PDCP_PDU_F1_PMQAP, None, "==", UL_PDCP_NUM_SNT_F1_QoS_GRP_09, None,
+            UL_PDCP_SDU_VOL_SNT_PMQAP, None, "==", PDCP_SDU_USDAT_VOL_UL_NSA_PLMN, None,
+            counters_data=counters_data)
+
+
+def verify_counters_for_F04_2nd_cycle():
+    DL_RLC_SDU_TX_AIR_PMQAP = "M55353C02003"
+    counters_list = [DL_RLC_SDU_TX_AIR_PMQAP]
+    counters_data = pm_counters.get_pm_counters_values(counter_ids_list=counters_list)
+    value_of_counters = pm_counters.get_latest_values_for_specified_counters(counters_list,
+                                                                             counters_data=counters_data)
+
+    pm_counters.verify_any_counters(
+        DL_RLC_SDU_TX_AIR_PMQAP, "> 0", "MRBTS-1/NRBTS-1/NRPMRNL-1/NRPMQAP-1",
+        DL_RLC_SDU_TX_AIR_PMQAP, "== 0", "MRBTS-1/NRBTS-1/NRPMRNL-1/NRPMQAP-2",
+        counters_data=counters_data)
+
+
+def verify_counters_for_F04_3rd_cycle():
+    DL_RLC_SDU_TX_AIR_PMQAP = "M55353C02003"
+    counters_list = [DL_RLC_SDU_TX_AIR_PMQAP]
+    counters_data = pm_counters.get_pm_counters_values(counter_ids_list=counters_list)
+    value_of_counters = pm_counters.get_latest_values_for_specified_counters(counters_list,
+                                                                             counters_data=counters_data)
+
+    pm_counters.verify_any_counters(
+        DL_RLC_SDU_TX_AIR_PMQAP, "== 0", "MRBTS-1/NRBTS-1/NRPMRNL-1/NRPMQAP-1",
+        DL_RLC_SDU_TX_AIR_PMQAP, "> 0", "MRBTS-1/NRBTS-1/NRPMRNL-1/NRPMQAP-2",
+        counters_data=counters_data)

@@ -1,0 +1,116 @@
+*** Settings ***
+Documentation    :Author: Arunkumar A
+...              :contact: arunkumar.a@nokia.com
+...              :QC Test instance id for reporting portal update.
+
+
+*** Variables ***
+&{E2E_TL_Site_Reset_with_OAM_KPI}    QC_ID_SBTS00=192988
+...    QC_ID_SBTS25R2=192993
+&{E2E_TL_Activation_Reset_with_OAM_KPI}   QC_ID_SBTS00=192989
+...    QC_ID_SBTS25R2=192994
+&{E2E_TL_SW_upgrade_rollback_with_OAM_KPI_and_L3_Call}    QC_ID_SBTS00=31042
+...    QC_ID_SBTS24R1=692179
+...    QC_ID_SBTS24R2=773767
+...    QC_ID_SBTS24R2_MP=835895
+...    QC_ID_SBTS24R3=852269
+...    QC_ID_SBTS25R1=78340
+...    QC_ID_SBTS25R2=140314
+&{E2E_TL_SW_upgrade_rollback_with_OAM_KPI}  QC_ID_SBTS00=50313
+...    QC_ID_SBTS24R1=692181
+...    QC_ID_SBTS23R4=720098
+...    QC_ID_SBTS24R2=773774
+...    QC_ID_SBTS24R2_MP=835902
+...    QC_ID_SBTS00_1063=50312
+...    QC_ID_SBTS24R2_1063=773778
+...    QC_ID_SBTS24R3_1063=852268
+...    QC_ID_SBTS24R2_MP_1063=835889
+...    QC_ID_SBTS24R3=852272
+...    QC_ID_SBTS25R1_1063=78330
+...    QC_ID_SBTS25R1=78344
+...    QC_ID_SBTS25R2=140329
+...    QC_ID_SBTS25R2_1063=140313
+&{E2E_TL_Delta_Commissioning_With_NR_Rat_Reset}   QC_ID_SBTS00=31039
+...    QC_ID_SBTS24R1=692180
+...    QC_ID_SBTS23R4=720102
+...    QC_ID_SBTS24R2=773768
+...    QC_ID_SBTS24R2_MP=835898
+...    QC_ID_SBTS24R3=852266
+...    QC_ID_SBTS25R1=78339
+...    QC_ID_SBTS25R2=140322
+&{E2E_TL_Cell_Lock_Unlock_NR_with_OAM_KPI}    QC_ID_SBTS00=31032
+...    QC_ID_SBTS24R1=692186
+...    QC_ID_SBTS23R4=720101
+...    QC_ID_SBTS24R2=773775
+...    QC_ID_SBTS24R2_MP=835901
+...    QC_ID_SBTS24R3=852259
+...    QC_ID_SBTS25R1=78343
+...    QC_ID_SBTS25R2=140323
+&{E2E_TL_RU_Reset_with_OAM_KPI}   QC_ID_SBTS00=31031
+...    QC_ID_SBTS24R1=692177
+...    QC_ID_SBTS23R4=720100
+...    QC_ID_SBTS24R2=773776
+...    QC_ID_SBTS24R2_MP=835900
+...    QC_ID_SBTS24R3=852258
+...    QC_ID_SBTS25R1=78338
+...    QC_ID_SBTS25R2=140328
+&{Rjio_E2E_63_Mobility_UE_based_ANR}    QC_ID_SBTS00=31037
+...    QC_ID_SBTS24R1=692187
+...    QC_ID_SBTS24R2=773770
+...    QC_ID_SBTS24R3=852264
+...    QC_ID_SBTS25R1=78336
+...    QC_ID_SBTS25R2=140311
+&{Rjio_E2E_67_Mobility_UE_based_ANR_for_EUTRA_Neighbor}    QC_ID_SBTS00=31036
+...    QC_ID_SBTS24R1=692188
+...    QC_ID_SBTS24R2=773769
+...    QC_ID_SBTS24R3=852263
+...    QC_ID_SBTS25R1=78335
+...    QC_ID_SBTS25R2=140312
+&{SW Upgrade Rollback Via MantaRay}    QC_ID_SBTS00=53542
+...    QC_ID_SBTS24R3=858142
+...    QC_ID_SBTS25R1=78331
+...    QC_ID_SBTS25R2=140326
+&{CB007511 Deepsleep mode for energy efficiency based on CB007511}    QC_ID_SBTS00=665750
+...    QC_ID_SBTS24R1=692182
+...    QC_ID_SBTS24R3=852260
+...    QC_ID_SBTS25R2=140316
+&{Robustness Deepsleep mode for energy efficiency based on CB007511}    QC_ID_SBTS00=689265
+...    QC_ID_SBTS24R1=692189
+...    QC_ID_SBTS23R4=720103
+...    QC_ID_SBTS24R3=852261
+...    QC_ID_SBTS25R2=140317
+&{Regression Scenario for Sleeping Cell Detection when GPS signal is recovered after longer interruption}    QC_ID_SBTS00=669960
+...    QC_ID_SBTS24R1=692183
+&{RJIO_KPI & counter verification for VoNR traffic}   QC_ID_SBTS00=761661
+...    QC_ID_SBTS23R4=755662
+&{RJIO_KPI & counter verification with multiple slices}    QC_ID_SBTS00=761662
+...    QC_ID_SBTS23R4=755663
+&{RJIO_RACH success rate verification on multiple slices}    QC_ID_SBTS00=761663
+...    QC_ID_SBTS23R4=755664
+&{RJIO_Throughput verification on slicing configuration}    QC_ID_SBTS00=761664
+...    QC_ID_SBTS23R4=755665
+&{TC47 Performing parameter changes which require BTS restart in RJio configuration}   QC_ID_SBTS00=31044
+...    QC_ID_SBTS24R1=692185
+...    QC_ID_SBTS24R2=773771
+...    QC_ID_SBTS24R2_MP=835899
+...    QC_ID_SBTS24R3=852271
+...    QC_ID_SBTS25R1=78341
+...    QC_ID_SBTS25R2=140321
+&{TC43 Performing Online Parameter Changes to enable sleeping cell feature in RJio configuration}    QC_ID_SBTS00=31038
+...    QC_ID_SBTS24R1=692184
+...    QC_ID_SBTS24R2=773772
+...    QC_ID_SBTS24R3=852265
+...    QC_ID_SBTS25R1=78342
+...    QC_ID_SBTS25R2=140320
+&{UE_redirected_to_a_intergNB_TDD_frequency_layer_due_to_bad_uplink_radio_conditions_after_an_Incoming_Ng_handover}
+...    QC_ID_SBTS00=31007
+...    QC_ID_SBTS24R3=852234
+...    QC_ID_SBTS25R1=78303
+...    QC_ID_SBTS25R2=140290
+&{UE_redirected_to_a_eutra RAT_frequency_layer_due_to_bad_uplink_radio_conditions_after_an_Initial_Context_Setup}
+...    QC_ID_SBTS00=31006
+...    QC_ID_SBTS24R3=852233
+...    QC_ID_SBTS25R2=140289
+&{Online change of threshold values of Adaptive UL BLER target between min and max range}
+...    QC_ID_SBTS25R2=185093
+...    QC_ID_SBTS00=182710

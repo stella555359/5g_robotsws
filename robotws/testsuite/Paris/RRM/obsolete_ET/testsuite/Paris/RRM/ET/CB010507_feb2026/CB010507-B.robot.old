@@ -1,0 +1,394 @@
+*** Settings ***
+Documentation       [SUITE PURPOSE] CB010507-B
+...                 Aim of this test is to check the behaviour of n77 ue with or without n77 extended support
+...                 when attaching to cells with 2 BWP and large BWP partly included in the n77 extension.
+...                 The same configuration files are used for both tests.
+...                 Ue 1 is SA n77 legacy, supports BWP-1 and BWP-2 attached on Cell2
+...                 Ue 4 is SA n77 extended, supports BWP-1 and BWP-2 attached on cell2
+...                 Ue 6 is SA n77 extended, supports BWP-1 and BWP-2 attached on cell1
+...                 Cell 1 is configured with  nrarfcn: 643330  (3649.95MHz) (From 3600.81MHz to 3700.81 MHz)
+...                 gscn 7922, with 2 BWP: small 40 MHz (From 3600.81MHz to 3640.81MHz) and large 100MHz
+...                 meaning small BWP is within legacy n77, while large BWP is partly in extended BWP.
+...                 Cell 2 is configured with  nrarfcn: 633364  (3500.46MHz) (From 3451.32MHz to 3551.32 MHz)
+...                 gscn 7846, with 1 BWP: 100MHz
+...                 this BWP is fully in legacy n77.
+...                 In the test, the ue1 and ue4 are attached to cell 2 then a HO is performed toward cell1.
+...                 BWP used on cell 1 is checked, then counters are checked.
+...                 ue6 is durectly attached to cell 1, then BWP and counters are checked.
+...                 Test Case Scenario author   : axel.gouilly-frossard@nokia.com
+...                 Test Case Scenario contact  : axel.gouilly-frossard@nokia.com
+...                 Creation Date               : 26/06/2024
+...                 Then Modified by            : richard.duthu@nokia.com - 25-Sep-2024 - Produce Scout Data + some RF50 fixes
+
+# Resources
+
+Library                                         taf.sbts.oam.coam.admin    WITH NAME    sbts_coam
+Library                                         ../../../resources/SWENG/python/CoamParameter.py    WITH NAME    coam_parameter
+Library                                         taf.wts.runner             WITH NAME    wtsemu
+Library                                         Dialogs
+
+Resource                                        ../../../resources/SWENG/robot/GenericTest.robot
+# Resource                                        ../../../resources/SWENG/robot/Capture.robot
+Resource                                        ../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource                                        ../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource                                        ../../../resources/SWENG/robot/CallSetup.robot
+Resource                                        ../../../resources/SWENG/robot/Traffic.robot
+Resource                                        ../../../resources/SWENG/robot/Counters.robot
+Resource                                        ../../../resources/SWENG/robot/KPIs.robot
+Resource                                        ../../../resources/SWENG/robot/Connect.robot
+
+
+# Tags
+Force Tags                                      CA_5G_SW_FR-Villarceaux    RRM    PY36
+...                                             CLOUD_5G_I_LO_AP_LO_SANSA_FS_ECPRI_CMWV_TDD
+...                                             master_classicalbts_all    SBTS00
+...                                             CONFIGURED    5G_RAN    RAN_5G    CRT
+
+# Suites
+
+Suite Setup                         Suite Setup from scratch            listBackupFiles=${FD_ALL}
+...                                                                     keepAllUeDataInCfgFile=${True}
+
+Suite Teardown                      Suite Teardown
+
+
+*** Variables ***
+${CB010507-B_constraints-UE1}           ${CURDIR}/config/CB010507-B-ue1_constraints.csv
+${CB010507-B_constraints-UE4}           ${CURDIR}/config/CB010507-B-ue4_constraints.csv
+${CB010507-B_constraints-UE6}           ${CURDIR}/config/CB010507-B-ue6_constraints.csv
+
+${scf_delta_config_10507-IWK102}    ${CURDIR}/config/custom/CB010507-B/Delta_scf_CB010507-B-2BWP.json
+
+${gnb_alias}                        gnb_under_test
+
+${nbUEs}                            1
+
+&{dict_settings_ue_1}
+...                                 original_cell=1                         # original cell for call establishment
+...                                 throughput=10                           # dl throughput nonGBR max for ue in chBW=100MHz wo/blanking
+...                                 throughput_gbr=${NO_THROUGHPUT}         # dl throughput GBR for ue or ${NO_THROUGHPUT}
+...                                 throughput_ul=${NO_THROUGHPUT}          # ul throughput nonGBR max for ue in chBW=100MHz wo/blanking
+...                                 ue=1
+...                                 profile=None                            type=${None}
+...                                 pdu=1                                   qfi=1
+...                                 bearer=${None}                          testMode=False
+...                                 trf_id=1                                burst=${None}
+...                                 target_gnb=${None}                      target_cells=${TARGET_CELLS}
+...                                 testModeValue=csi_report_override       c_rnti=${None}
+...                                 period_ms=${None}                       size=${None}
+
+@{dict_settings_single_ue}          ${dict_settings_ue_1}
+
+
+
+${dl_tput_per_ue}                    10
+@{SA_UE_List}
+@{NSA_UE_List}
+
+
+*** Keywords ***
+
+Init Trace color
+    [Documentation]                Just a tool to use some colors in trace logs
+
+    ${trcColor}                 Evaluate    "${BG_CYAN}"
+    ${defColor}                 Evaluate    "${NORMAL}"
+    ${OkColor}                  Evaluate    "${GREEN}"
+    Set Suite Variable          ${trcColor}
+    Set Suite Variable          ${defColor}
+    Set Suite Variable          ${OkColor}
+
+CB010507_Configuration
+    [Documentation]               Dedicated KW to add use a delta commissioning file
+    ...                           to configure the 2 cells with canadian PLMN n77 extended and several BWP
+
+    [Arguments]                   ${10705_delta_file}     ${gnb_alias}
+
+    # Open connection towards cOAM
+    sbts_coam.connect_to          name=${gnb_alias}
+
+    Dated Log New Line            delta_file=${10705_delta_file}
+    # Apply delta scf
+    coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${10705_delta_file}
+    ...                           connection=${gnb_alias}
+
+    OAM wait available
+    sbts_coam.teardown            connection=${gnb_alias}
+
+
+CB010507_B_Scenario_Init
+    [Documentation]                 KW used to initialise context for CB010507 TC execution
+    ...                             Copy ue_capa file, change gscn in iphy file
+    ...                             Update SCF with suitable parameters by using a delta JSON file
+    ...                             Update basic.fcg files by custom config, then restart the TL and start WTS
+    ...                             Start X2 link and create ue lists (one ue only in this case) for SA and NSA
+
+
+    Init Trace color
+    Dated Log New Line              ${trcColor}---> Starting gNB commissioning ${defColor}
+
+    #Add UE cap file  --  the ue capabilities are in a dedicated file
+    ${std_output}=                  Run    cp ${CURDIR}/config/custom/CB010507-B/Capa-10705.cfg /opt/iphy/latest/
+    Dated Log New Line              ${trcColor}---> Copy of UE Capa File : ${std_output} ${defColor}
+
+    #Modify gscn for iPhy
+    WtsXmlConfig.startSession           file=iphy
+    WtsXmlConfig.setTextUsingIndex      //GSCN                          7922            1
+    WtsXmlConfig.setTextUsingIndex      //GSCN                          7846            2
+    WtsXmlConfig.stopSession            file=iphy
+
+    #Commissionning of the gNB with json delta scf
+    CB010507_Configuration      ${scf_delta_config_10507-IWK102}            ${gnb_alias}
+
+    #Update basic.cfg via custom config
+    Apply Custom Config    scfc=${EMPTY}
+    ...                   iphy=${EMPTY}
+    ...                   cfg=${CURDIR}/config/custom/CB010507-B/basic-CanadPlmnHO-643330-633364.cfg
+    ...                   rad_params=${EMPTY}
+    ...                   vendor_params=${EMPTY}
+
+    #restart the TL ans start WTS
+    Dated Log New Line                  ${trcColor}---> Restart TL ${defColor}
+
+    #Avoid reset to backup Partition
+    ${command}=                     Set Variable    uboot_env -r set reset_counter=0
+    ${airscale}=                    Set Variable    ${GNB_DU}
+    Dated Log New Line                  ${trcColor}---> Command ${command} ${defColor}
+    SSH Wait For Connect and Cmd                readOuput=${False}       command=${command}
+    ...                             timeout=20    host=${airscale.entryCard[0]}
+
+
+    Restart TL
+    OAM wait available
+    Dated Log New Line                  ${trcColor}---> WTS setup SA ${defColor}
+    WTS Setup                           shouldUseLua=${False}
+
+    # Start X2
+    Traced Sleep                                duration=15s    msg=setting the X2 link as WA to avoid degradation on cells
+    CallSetup.WTS Set X2 Link
+
+    # Build UE list
+    FOR        ${ue_id}      IN RANGE        0        ${nbUEs}
+        &{ue_in_list}=                  Copy dictionary     ${dict_settings_ue_1}
+        # ${ue_absolute_id}=              Evaluate            ${ue_id} + ${ue_id_base_cell}
+        # Set To Dictionary               ${ue_in_list}       ue          ${ue_absolute_id}
+        # Set To Dictionary               ${ue_in_list}       pdu         1
+        Append To List                  ${SA_UE_List}       ${ue_in_list}
+    END
+
+
+
+CB010507_Attach_All_UEs
+    Dated Log New Line       ${trcColor}---> Attaching UEs ${defColor}
+    FOR        ${current_ue}            IN         @{SA_UE_List}
+        UE Register                     ue=${current_ue.ue}
+        Launch PDU Session              ue=${current_ue.ue}    pdu=${current_ue.pdu}    gw=${current_ue.ue}
+    END
+    Dated Log New Line       ${trcColor}---> All needed UEs are now attached${defColor}
+
+CB010507_Detach_All_UEs
+    Dated Log New Line       ${trcColor}---> Detaching all UEs ${defColor}
+    FOR        ${current_ue}             IN         @{SA_UE_List}
+        UE Deregister           id=${current_ue.ue}
+    END
+
+CB010507_Check egate_console
+    [Documentation]                 This KW checks the last value of LocatioAndBandwidth parameter in egate_cosole.log
+    ...                             that indicates the BW used: default value 28875 is for 40Mhz, 13750 for 20Mhz,
+    ...                             31624 for 60Mhz and 1099 for 100MHz.
+    [Arguments]            ${bandwidth}=28875
+    CallSetup.Flush Egate Console Buffer
+    ${cmd}      Catenate
+    ...                      cd ${tl.core.dir_path};
+    ...                       grep -i "locationandband" egate_console.log
+    ...         | awk '{for(i=1;i<=NF;i++) if($i=="locationAndBandwidth") value=substr($(i+1), 1, length($(i+1))-1)} END {print value}'
+
+    ${std_output}=   Run    ${cmd}
+    Dated Log New Line       ${trcColor}--->locationAndBandwidth ${std_output} ${defColor}
+    Should be equal        ${std_output}   ${bandwidth}
+
+
+
+
+
+CB010507_RegisterNSA_All_UEs
+    Dated Log New Line       ${trcColor}---> Attaching UEs ${defColor}
+    FOR        ${current_ue}            IN         @{NSA_UE_List}
+        SgNB Addition to ENB            ueSetting=${current_ue}
+    END
+    Dated Log New Line       ${trcColor}---> All needed UEs are now attached${defColor}
+
+
+CB10507_ZOI_Start
+    ${zoi}                          ZOI Start
+    ${zoi_end_remain}=              ZOI Remaining Sec           ${zoi}
+    ${start_loop_remaining}=        Evaluate                    ${zoi_end_remain} - ${GP_DEF}
+
+
+    # To be sure to have a GP fully filled with the same events inside every loop and avoid changing KPIs/counters:
+    # If ZOI start is T0, ZOI end is T0 + ${GUARD_DELAY_DEF} + ${GP_DEF} + ${PM_AVAIL_DELAY_DEF}
+    # So, test is started at the beginning of the GP before ZOI end, so:
+    # ZOI End - ${GP_DEF}
+    # Ex. 1: ZOI start is 10h02 => ZOI End is 10h02 + 40s (GUARD_DELAY_DEF) + 1 GP + 1 mn (PM_AVAIL_DELAY_DEF)
+    #        => Time for next GP for ZOI End is 10h11, so test is started at 10h06 and KPIs retrieved at 10h11
+    # Ex. 2: ZOI start is 10h14:40s => ZOI End is 10h14:40 + 40s (GUARD_DELAY_DEF) + 1 GP + 1 mn (PM_AVAIL_DELAY_DEF)
+    #        => Time for next GP for ZOI End is 10h26 as gaurd delay excedd thenext GP frontier,
+    #        so test is started at 10h21 and KPIs retrieved at 10h26
+    # And, test duration must not exceed 1 GP - 1 mn per loop
+    Traced Sleep                    ${start_loop_remaining} seconds
+    ...                             msg=before starting scenario
+    Set Suite Variable              ${zoi}
+
+CB10507_ZOI_Wait_End
+    Dated Log New Line               ${trcColor}=== Waiting for end of ZOI ${defColor}
+    ZOI Wait End                     zoi=${zoi}
+
+CB10507_backup_egate_console
+    CallSetup.Flush Egate Console Buffer
+    ${current_date}=                    DateTime.Get Current Date       result_format=%Y%m%d-%H%M%S
+    ${filename}                         set variable                    ${current_date}_egate_console_10705-E.log
+    ${cmd}                              Catenate
+    ...                                 cd ${tl.core.dir_path};
+    ...                                 cp ${tl.core.dir_path}/egate_console.log ${LOG_PATH}/${filename}
+    ${output}                           SSH Wait For Connect and Cmd
+    ...                                 command=${cmd}
+    ...                                 host=${HOST_EPCSIM}
+
+CB010507_Traffic_SA
+    Traffic.Traffic UEs DL          ueSettingList=${SA_UE_List}
+    ...                             shouldBeStop=False      shouldBeCheck=True
+    ...                             throughput=${dl_tput_per_ue}
+
+CB010507_Traffic_NSA
+    Traffic.Traffic UEs DL          ueSettingList=${NSA_UE_List}
+    ...                             shouldBeStop=False      shouldBeCheck=True
+    ...                             throughput=${dl_tput_per_ue}
+
+CB010507_Trigger_Ho
+    [Documentation]                 This KW performs a HO for one ue to the cell.
+    ...                             Event A2 first the event A3.
+    ...                             Then it checks that the HO was successful
+    ...                             by checking that in egate_console.log, one can find the message
+    ...                             Intra-eNB handover from EXT_ENB-2.2 to EXT_ENB-2.1 performed
+
+
+    [Arguments]             ${id}=1
+    ...                     ${phycell_id}=50
+    ...                     ${meas_id_A2}=1
+    ...                     ${meas_id_A3}=5
+    wtsemu.ue_measurement_send_nr    id=${id}  meas_id=${meas_id_A2}   event=A2   srsrp_nr=5   srsrq_nr=5   srs_result=0:5:5:0
+    Traced Sleep                     duration=5s    msg=Waiting HO events
+    wtsemu.ue_measurement_send_nr    id=${id}   meas_id=${meas_id_A3}   event=A3   srsrp_nr=1
+    ...                              srsrq_nr=1   phycell_id=${phycell_id}   nrsrp_nr=30   nrsrq_nr=20
+    CallSetup.Flush Egate Console Buffer
+    ${cmd}      Catenate
+    ...                      cd ${tl.core.dir_path};
+    ...                       grep -i "Intra-eNB handover from EXT_ENB-2.2 to EXT_ENB-2.1 performed" egate_console.log
+    ...         | awk '{for(i=1;i<=NF;i++) if($i ~ /^EXT_ENB-2.1$/) value=substr($(i+1), 1, length($(i+1)))} END {print value}'
+    ${std_output}=   Run    ${cmd}
+    Dated Log New Line       ${trcColor}--->Handover ${std_output} ${defColor}
+    Should be equal        ${std_output}   performed
+
+
+
+*** Test Cases ***
+
+
+
+
+[1]CB010507-B-102-HO
+    [Documentation]              Main entry. Perform gNB initialisation, lanch call for n78 UE5
+    ...                          Check eGate.log for BWP used then check counters,
+    ...                          Then attach UE6 on cell2 (n78) then perform HO to cell 1 (MFBI)
+
+    # Change configuration
+    ${test_name}           set variable    UE n77 extended n77 cell
+    Init Sequence                   ${test_name}
+    step               CB010507_B_Scenario_Init
+    step               CB10507_ZOI_Start
+    # perform call UE5 - n78 - Cell1
+    step               CB010507_Attach_All_UEs
+
+    #dialogs.Execute Manual Step       wait keyboard
+
+    # Start UL traffic over all UEs
+    step               CB010507_Traffic_SA
+    step               CB010507_Check egate_console    bandwidth=1099
+    Step               CB010507_Trigger_Ho             id=1   phycell_id=50   meas_id_A2=1   meas_id_A3=5
+
+    step               CB010507_Check egate_console        bandwidth=28875
+    step               CB10507_ZOI_Wait_End
+    # KPIs and counters checks
+    ${pm_path}                      Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+    step      KPI Evaluate                    pmFile=${pm_path}
+    ...                             constraintsFile=${CB010507-B_constraints-UE1}
+    ...                             failOnError=${True}
+    CB10507_backup_egate_console
+    step              CB010507_Detach_All_UEs
+
+    # #Redo the test with UE4 on cell2 then perform HO
+    # step               Restart TL
+    # OAM wait available
+    # Dated Log New Line                  ${trcColor}---> WTS setup SA ${defColor}
+    # step               CallSetup.WTS Setup                 shouldUseLua=${False}
+    # # Start X2
+    # Traced Sleep       duration=15s    msg=setting the X2 link as WA to avoid degradation on cells
+    # step               CallSetup.WTS Set X2 Link
+    step               CB10507_ZOI_Start
+    #Change ue: Use ue=6, starting on cell2
+    FOR        ${current_ue}            IN         @{SA_UE_List}
+        ${current_ue.ue}            set variable        4
+    END
+    step               CB010507_Attach_All_UEs
+    # Start UL traffic over all UEs
+    step               CB010507_Traffic_SA
+    #ue shall use BWP with 100MHz, since on cell2
+    step               CB010507_Check egate_console        bandwidth=1099
+    Step               CB010507_Trigger_Ho             id=4   phycell_id=50   meas_id_A2=1   meas_id_A3=5
+    step               CB010507_Check egate_console        bandwidth=1099
+    step               CB10507_ZOI_Wait_End
+    # KPIs and counters checks
+    ${pm_path}                      Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+    step               KPI Evaluate                    pmFile=${pm_path}
+    ...                             constraintsFile=${CB010507-B_constraints-UE4}
+    ...                             failOnError=${True}
+    CB10507_backup_egate_console
+    step              CB010507_Detach_All_UEs
+
+#Redo the test with UE6 on cell1 then perform HO
+    #Avoid reset to backup Partition
+    # ${command}=                     Set Variable    uboot_env -r set reset_counter=0
+    # ${airscale}=                    Set Variable    ${GNB_DU}
+    # Dated Log New Line                  ${trcColor}---> Command ${command} ${defColor}
+    # SSH Wait For Connect and Cmd                readOuput=${False}       command=${command}
+    # ...                             timeout=20    host=${airscale.entryCard[0]}
+
+
+
+    # step               Restart TL
+    # OAM wait available
+    # Dated Log New Line                  ${trcColor}---> WTS setup SA ${defColor}
+    # step               CallSetup.WTS Setup                 shouldUseLua=${False}
+    # # Start X2
+    # Traced Sleep       duration=15s    msg=setting the X2 link as WA to avoid degradation on cells
+    # step               CallSetup.WTS Set X2 Link
+    step               CB10507_ZOI_Start
+    #Change ue: Use ue=6, starting on cell2
+    FOR        ${current_ue}            IN         @{SA_UE_List}
+        ${current_ue.ue}            set variable        6
+    END
+    step               CB010507_Attach_All_UEs
+    # Start UL traffic over all UEs
+    step               CB010507_Traffic_SA
+    #ue shall use BWP with 100MHz, since on cell2
+    step               CB010507_Check egate_console        bandwidth=1099
+        step               CB10507_ZOI_Wait_End
+    # KPIs and counters checks
+    ${pm_path}                      Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+    step               KPI Evaluate                    pmFile=${pm_path}
+    ...                             constraintsFile=${CB010507-B_constraints-UE6}
+    ...                             failOnError=${True}
+    CB10507_backup_egate_console
+    Produce Scout Data
+    [Teardown]                      GenericTest.Display diagnosis

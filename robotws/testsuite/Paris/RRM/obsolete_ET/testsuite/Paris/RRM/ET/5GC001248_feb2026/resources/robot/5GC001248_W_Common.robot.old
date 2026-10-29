@@ -1,0 +1,136 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Verification of tests for 5GC001248-W feature
+...               Test Case Scenario author   : yann.ah.herve@nokia.com
+...               Test Case Scenario contact  : yann.ah.herve@nokia.com
+...               Test Case automation author : yann.ah.herve@nokia.com
+...               Test Case automation contact: bernard.hoche@nokia.com
+...               Creation Date               : 23-March-2020
+...               Modified Date               : 17-June-2022
+...               Last Modified by            : laurent.puchelle@nokia.com
+...               06-15-2021           |        Reduce GP overlap duration to 5 mn instead of 15 mn
+...               08-11-2021           |        Add a capture filter to reduce generated pcap file
+...               08-March-2022        |        Remove counters check as not relevant and sporadic 
+...                                    |        issues encountered
+...               17-June-2022         |        Adaptation to use MC_SHARK
+
+
+Library              ../../../resources/python/luashark_tools.py
+Library              luashark_tools.analyzer       WITH NAME       analyzer
+Library              taf.config.scf                WITH NAME       cscf
+Library              taf.gnb.oam.commissioning     WITH NAME       commissioning
+Resource             ../../../../../resources/SWENG/robot/Setup.robot
+Resource             ../../../../../resources/SWENG/robot/Restart.robot
+Resource             ../../../../../resources/SWENG/robot/Traffic.robot
+Resource             ../../../../../resources/SWENG/robot/Tools.robot
+Resource             ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource             ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource             ../../../../../resources/SWENG/robot/Capture.robot
+Resource             ../../../../../resources/SWENG/robot/Counters.robot
+Resource             ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource             5GC001248_Keywords.robot
+Variables            ../../../../../resources/SWENG/python/ReadConfig.py
+Variables            ../python/Constants.py
+
+
+*** Variables ***
+
+# ADT - variable set to "${True} to automatically save debug data (SOS report and snapshot)
+#       at the end of each TC
+${AutoSaveDebugData}    ${False}
+
+
+*** Keywords ***
+
+5GC001248_W_E1 IEs_changes_checks
+   [Documentation]            Common KW for 1248 W checks
+   ...                        To be updated for cloud FR2
+
+   Restart TL
+   WTS Setup
+   UE Cell Setup Check
+
+   Run Keyword If                          ${enable_sherpa}==${True}               Sherpa.Activate Sherpa
+
+   # Contrary to 19B, reordering timer belongs now to a dedicated PDCP structure
+   # Check just one PDCP instance as some configuration (FDD) have only one PDCP instance...
+   ${dist_name}=                     Set variable        MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDRB_PDCP-1
+   &{t_reordering_ul_pdcp-1}         Evaluate            {'dist_name': '${dist_name}','parameter': 'tReorderingUl','value':'ms110'}
+   &{t_reordering_dl_pdcp-1}         Evaluate            {'dist_name': '${dist_name}','parameter': 'tReorderingDl','value':'ms110'}   
+
+   # ${dist_name}=                     Set Variable        MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDRB_PDCP-2
+   # &{t_reordering_ul_pdcp-2}         Evaluate            {'dist_name': '${dist_name}','parameter': 'tReorderingUl','value':'ms110'}
+   # &{t_reordering_dl_pdcp-2}         Evaluate            {'dist_name': '${dits_name}','parameter': 'tReorderingDl','value':'ms110'}   
+
+   # Try to update PDCP Reordering to ms110 (should not be possible as value as been removed)
+   @{param_scf_1}                    Create List         ${t_reordering_ul_pdcp-1}    ${t_reordering_dl_pdcp-1}
+
+   # ADT : replace below line
+   # ${return_status}             Run Keyword And Ignore Error       Modify COAM parameters            modify_param=${param_scf_1}
+
+   ${return_status}             Run Keyword And Ignore Error         OAM Set Params    ${param_scf_1}
+   Should Contain Match         ${return_status}      *INCORRECT_ENUM*
+
+   # Contrary to 19B, reordering timer belongs now to a dedicated PDCP structure
+   ${dist_name}=                Set variable        MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDRB_PDCP-1
+   &{t_reordering_ul_pdcp-1}    Evaluate            {'dist_name': '${dist_name}','parameter': 'tReorderingUl','value':'ms2'}
+   &{t_reordering_dl_pdcp-1}    Evaluate            {'dist_name': '${dist_name}','parameter': 'tReorderingDl','value':'ms2'}
+
+   # ${dist_name}=               Set Variable         MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDRB_PDCP-2
+   # &{t_reordering_ul_pdcp-2}    Evaluate            {'dist_name': '${dist_name}','parameter': 'tReorderingUl','value':'ms2'}
+   # &{t_reordering_dl_pdcp-2}    Evaluate            {'dist_name': '${dist_name}','parameter': 'tReorderingDl','value':'ms2'}
+
+   # Try to update PDCP tReorderingDl/Ul to ms2 (should be ok)
+   @{param_scf_2}                   Create List         ${t_reordering_ul_pdcp-1}    ${t_reordering_dl_pdcp-1}
+
+   # ADT : replace below line
+   # Modify COAM parameters           modify_param=${param_scf_2}
+
+   OAM Set Params                   ${param_scf_2}
+
+   ${CaptureCPRT}                   Capture CPRT Set Upon Config            airscale=${GNB_DU}
+   ${CaptureCPRT.filter}            Run Keyword If    'SBTS22R3' in '${TLConfig.topo.gnbVersion}'
+   ...                                                Get Filter For SCTP
+   ...                              ELSE
+   ...                                                Get Filter For TCP or SCTP
+
+   Capture Init                     ${CaptureCPRT}
+   Capture Start                    ${CaptureCPRT}
+   Set Suite Variable               ${CaptureCPRT}
+
+   SgNB Addition to ENB             ueSetting=${UE_SIMPLE}
+
+   Capture Stop                     ${CaptureCPRT}
+
+   # ADT - replace below line
+   # Detach UE
+   # UE Detach   
+   UE Detach Enb                   ueSetting=${UE_SIMPLE}
+
+   # Look for HiUserCu_BearerSetupReq
+   ${pdmlFile}=                    analyzer.pcap_to_pdml          ${CaptureCPRT.path}
+
+   analyzer.check_list             pdmlFile=${pdmlFile}
+   ...                             packetName=BearerContextSetupRequest
+   ...                             path=e1ap.*t_Reordering$
+   ...                             value=2
+
+   analyzer.check_list             pdmlFile=${pdmlFile}
+   ...                             packetName=itf_l2_hi_cu_user_BearerSetupReq
+   ...                             path=itf_l2_hi_cu_user_PdcpParams.reorderingTimer$
+   ...                             value=2
+
+   ${count}                        analyzer.count_path
+   ...                             pdmlFile=${pdmlFile}
+   ...                             packetName=itf_l2_hi_cu_user_BearerSetupReq
+   ...                             path=itf_l2_hi_cu_user_BearerSetupReq_t.physCellId$
+   should be equal as integers     ${count}    ${0}
+   ...                             "One occurence of physCellId was found in itf_l2_hi_cu_user_BearerSetupReq
+
+   # Set back PDCP tReorderingDl/Ul to ms100 (default value)
+   ${dist_name}=                     Set variable        MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRDRB_PDCP-1
+   &{t_reordering_ul_pdcp-1}         Evaluate            {'dist_name': '${dist_name}','parameter': 'tReorderingUl','value':'ms100'}
+   &{t_reordering_dl_pdcp-1}         Evaluate            {'dist_name': '${dist_name}','parameter': 'tReorderingDl','value':'ms100'}   
+
+   @{param_scf_3}                    Create List         ${t_reordering_ul_pdcp-1}    ${t_reordering_dl_pdcp-1}
+
+   OAM Set Params    ${param_scf_3}

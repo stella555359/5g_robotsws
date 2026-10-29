@@ -1,0 +1,100 @@
+heat_template_version: 2016-10-14
+description: '1.0.0: Template for assembling metadata map of LVM GlusterFS usage'
+parameters:
+  index:
+    type: number
+    description: index to fetch own parameters
+  lvm_gfs_hosts:
+    type: comma_delimited_list
+    description: LVM GFS server hostname or IP address
+  lvm_volumes:
+    type: json
+    description: parameters for LVM volumes
+outputs:
+  peer_map:
+    description: the storage peer metadata map
+    value:
+      map_merge:
+        repeat:
+          for_each:
+            <%name%>:
+            - get_param:
+              - lvm_volumes
+              - {get_param: index}
+              - name
+          template:
+            storage.peers.<%name%>:
+              repeat:
+                for_each:
+                  <%host%>: {get_param: lvm_gfs_hosts}
+                template: <%host%>.local
+
+  provider_map:
+    description: the storage provider metadata map
+    value:
+      map_merge:
+        repeat:
+          for_each:
+            <%name%>:
+            - get_param:
+              - lvm_volumes
+              - {get_param: index}
+              - name
+          template:
+            storage.provider.glusterfs.<%name%>:
+              size:
+                get_param:
+                - lvm_volumes
+                - {get_param: index}
+                - size
+              fstype: ext4
+              mount-to:
+                str_replace:
+                  template: /mnt/bricks/<%name%>
+                  params:
+                    <%name%>:
+                      get_param:
+                      - lvm_volumes
+                      - {get_param: index}
+                      - name
+              volume:
+                get_param:
+                - lvm_volumes
+                - {get_param: index}
+                - volume
+  user_map:
+    description: the storage user metadata map
+    value:
+      map_merge:
+        repeat:
+          for_each:
+            <%name%>:
+            - get_param:
+              - lvm_volumes
+              - {get_param: index}
+              - name
+          template:
+            storage.user.<%name%>:
+              fstype: glusterfs
+              options:
+                str_replace:
+                  template: rw,backupvolfile-server=<%host%>.local
+                  params:
+                    <%host%>:
+                      get_param: [lvm_gfs_hosts, 1]
+              mount-to:
+                get_param:
+                - lvm_volumes
+                - {get_param: index}
+                - mount
+              mount-from:
+                str_replace:
+                  template: <%host%>.local:/<%name%>
+                  params:
+                    <%host%>:
+                      get_param: [lvm_gfs_hosts, 0]
+                    <%name%>:
+                      get_param:
+                      - lvm_volumes
+                      - {get_param: index}
+                      - name

@@ -1,0 +1,97 @@
+import subprocess
+import importlib
+import logging
+import sys
+import re
+import socket
+import os
+
+class wraper:
+    def __init__(self):
+        # Configure logging to capture prints
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s - %(levelname)s - %(message)s",
+            handlers=[
+                logging.FileHandler("output.log"),  # Store logs in a file
+                logging.StreamHandler(sys.stdout),  # Display logs in the console
+            ],
+        )
+
+    def import_by_path(self, path):
+        def _import(module_name):
+            try:
+                return importlib.reload(__import__(module_name, fromlist=()))
+            except ImportError as e:
+                logging.info(e)
+                logging.info('Could not import configuration file')
+
+        module_dir, module_file = os.path.split(os.path.abspath(path))
+        sys.path.insert(0, module_dir)
+        try:
+            return _import(module_name='__init__')
+        finally:
+            sys.path.remove(module_dir)
+
+    def get_tl_name(self):
+        hostname = socket.gethostname()
+        pattern = r'^(\d+-\d+-\w+)(?:-\d+)?$'
+        return re.sub(pattern, r'\1', hostname).replace('-', '_')
+
+    def get_topology(self):
+        tl_name = self.get_tl_name()
+        path = f"/home/ute/testline_configuration/{tl_name}/__init__.py"
+        logging.info(f"Trying to fetch topology from {path}")
+        if os.path.exists(path):
+            config = self.import_by_path(path)
+            return config.tl.tl_cloud_topology
+
+    def agentozaur(self, str_builds, state="on_air",):
+
+        builds = [x.strip() for x in str_builds.rstrip(',').split(',')]
+        if len(builds) == 1:
+            cmd_build = f"--sm-build {builds[0]} "
+
+        else:
+            cmd_build = ""
+            for index, build in enumerate(builds, start=1):
+                cmd_build += f"--sm-build {build}:{index} "
+
+        logging.info(cmd_build)
+
+        if not topology:
+            topology = self.get_topology()
+            if "_UTECA" not in topology:
+                topology += "_UTECA"
+
+        command = f"agentctl exec --label {topology} {cmd_build} --required-state {state} --no-install-mcshark --no-install-wts --no-install-tti-dec --no-install-tti-dissectors --no-install-tti-trace --no-install-tti-tracer"
+        logging.info(command)
+        try:
+            # Run the command and capture both stdout and stderr
+            process = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+            )
+            stdout, stderr = process.communicate()
+
+            # Log the output (stdout and stderr)
+            logging.info("Output from specialized function:")
+            logging.info("STDOUT:")
+            logging.info(stdout)
+            logging.info("STDERR:")
+            logging.info(stderr)
+
+            # Return the code
+            if process.returncode != 0:
+                raise AssertionError("Agent failed")
+
+        except Exception as e:
+            logging.error(
+                "An exception occurred while running the wrapped function: %s",
+                str(e),
+            )
+            return (-1)
+

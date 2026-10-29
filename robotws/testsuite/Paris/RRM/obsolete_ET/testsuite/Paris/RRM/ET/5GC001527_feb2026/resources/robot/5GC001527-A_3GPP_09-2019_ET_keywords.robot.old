@@ -1,0 +1,817 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  keyword of 5GC001527 feature in the case of Classical Fullstack
+...               Prerequisite : GNB and Airphone should be installed
+...               Scope : Check UE attach status with/without 256QAM configuration
+...
+...               Test Case Scenario author   : eric.delastre@nokia.com
+...               Test Case Scenario contact  : eric.delastre@nokia.com
+...               Test Case automation author : eric.delastre@nokia.com
+...               Test Case automation contact: eric.delastre@nokia.com
+...               Creation Date               : 24-April-2020
+...               Modified Date               : 29-Oct-2021
+...               Last Modified by            : otilia.mihon@nokia.com
+...               Modified Date               : 08-June-2022
+...               Last Modified by            : vincent.boulet@nokia.com
+...               Last Modification           : update for supporting vRAN2.0 Cloud topology
+...               Modified Date               : 01-July-2022
+...               Last Modified by            : vincent.boulet@nokia.com
+...               Last Modification           : NRDU objId is 2 for vRAN2.0 vDU and different MaxMIMO_layer for vRAN2.0
+...               Modified Date               : 05-September-2022
+...               Last Modified by            : vincent.boulet@nokia.com
+...               Last Modification           : limit configuration to the 1st cell in Config 1527 Aic and gscn change is not needed
+...               Last Modified by            : richard.duthu@nokia.com
+...               Last Modification           : Scout data + some fixes for RF50
+
+
+Library             ../../../resources/python/luashark_tools.py
+
+Resource            ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource            ../../../../../resources/SWENG/robot/Tools.robot
+Resource            ../../../../../resources/SWENG/robot/Capture.robot
+Resource            ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource            ../../../../../resources/SWENG/robot/Traffic.robot
+Resource            ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource            ../../../../../resources/SWENG/robot/Restart.robot
+Resource            ../../../../../resources/SWENG/robot/Counters.robot
+Resource            ../../../../../resources/SWENG/robot/Oam.robot
+Resource            ../../../../../resources/SWENG/robot/Setup.robot
+Resource            ../../../../../resources/SWENG/robot/Scf.robot
+Resource            ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource            ../../../../../resources/SWENG/robot/Sherpa.robot
+
+Variables           ../../../../../resources/SWENG/python/Colors.py
+
+
+*** Variables ***
+${1527_status}              PASSED
+
+${arfcn_value}              632222
+${AbsFreqPointA}            628946
+
+${pci_value}                50
+
+${bitmapField_medium}       nr-rrc.mediumBitmap
+${ssbPosValue_medium}       1
+${bitmapField_long}         nr-rrc.longBitmap
+${ssbPosValue_long}         2
+
+&{dict_basicBeamSet_bitMap}
+...                         beamSet_1=80
+...                         beamSet_2=c0
+#Value to confirm...                         beamSet_2=f0
+#Value to confirm...                         beamSet_8=ff
+...                         beamSetAbf_1A=80:00:00:00:00:00:00:00
+...                         beamSetAbf_32A=0f:0f:0f:0f:0f:0f:0f:0f
+
+
+${C_RNTI}                   ^[0-9a-fA-F]{4}$
+${SCS}                      1
+${SCS_FR2}                  3
+${FullConfig}               0
+${RRCversion}               e0
+
+${MaxMIMO_layer}            4
+#vbo#adapt MaxMIMO_layer for vRAN2.0
+${MaxMIMO_layer_FR2}      2
+
+${std_reportingIntervalPm}  5min
+
+
+# KPIs for cell setup 1527-A
+# These counters must be equal to 1 in NSA, and 2 in SANSA
+&{dict_M55117C00528}       counter=M55117C00528       obj=NRBTS       min=1          max=2
+&{dict_M55117C00529}       counter=M55117C00529       obj=NRBTS       min=1          max=2
+&{dict_M55117C00532}       counter=M55117C00532       obj=NRBTS       min=1          max=2
+&{dict_M55117C00533}       counter=M55117C00533       obj=NRBTS       min=1          max=2
+
+@{dict_kpis_tc_1527_A_cell_setup}
+...              ${dict_M55117C00528}
+...              ${dict_M55117C00529}
+...              ${dict_M55117C00532}
+...              ${dict_M55117C00533}
+
+# KPIs for attach 1527-A
+&{dict_M55110C00034}       counter=M55110C00034       obj=NRBTS       min=1          max=1
+&{dict_M55112C00002}       counter=M55112C00002       obj=NRBTS       min=1          max=1
+&{dict_M55112C00003}       counter=M55112C00003       obj=NRBTS       min=1          max=1
+&{dict_M55112C03002}       counter=M55112C03002       obj=NRBTS       min=1          max=1
+&{dict_M55113C01001}       counter=M55113C01001       obj=NRBTS       min=1          max=1
+&{dict_M55113C01002}       counter=M55113C01002       obj=NRBTS       min=1          max=1
+
+@{dict_kpis_tc_1527_A_attach}
+...              ${dict_M55110C00034}
+...              ${dict_M55112C00002}
+...              ${dict_M55112C00003}
+...              ${dict_M55112C03002}
+...              ${dict_M55113C01001}
+...              ${dict_M55113C01002}
+
+# KPIs for traffic DL 1527-A
+&{dict_M55319C02009}       counter=M55319C02009       obj=NRBTS       min=69840      max=85360
+
+@{dict_kpis_tc_1527_A_DL_Traffic}
+...              ${dict_M55319C02009}
+
+# KPIs for traffic UL 1527-A
+&{dict_M55319C06009}       counter=M55319C06009       obj=NRBTS       min=27936      max=34144
+
+@{dict_kpis_tc_1527_A_UL_Traffic}
+...              ${dict_M55319C06009}
+
+# Dictionary embedding counters dictionaries for all TCs 1527-A
+&{dict_kpis_tc_1527_A}
+...              5GC001527_A_cell_setup=${dict_kpis_tc_1527_A_cell_setup}
+...              5GC001527_A_attach=${dict_kpis_tc_1527_A_attach}
+...              5GC001527_A_DL_Traffic=${dict_kpis_tc_1527_A_DL_Traffic}
+...              5GC001527_A_UL_Traffic=${dict_kpis_tc_1527_A_UL_Traffic}
+
+
+
+
+*** Keywords ***
+1527_A_CellSetup
+    [Arguments]                     ${topo}=None     # Should be classicalFR1, FDD, classicalFR2 or cloudFR2
+    Init 1527 color
+
+    1527_getBasicBeamSet
+
+    #vbo#adding condition for config vRAN2.0.
+    Run Keyword If    not ${isAic}
+    ...               Config 1527                     topo=${topo}
+    ...         ELSE
+    ...               Config 1527 Aic
+    Dated Log new line              ${1527color}=== 1527: Restart TL ${defColor}
+    BuiltIn.Run Keyword If          True==False            Start Capture After GNB Ready
+    Restart TL                      GNBCallback=Start Capture After GNB Ready
+    Dated Log new line              ${1527color}=== 1527: WTS setup ${defColor}
+
+    #vbo#clean the pm files before starting the call to eliminate inappropriate counters
+    Run Keyword If    ${isAic}
+    ...               Clean PM on Aic TL
+
+    WTS setup
+    # Cellsetup is now done, Sherpa can be enabled if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}           Activate Sherpa
+    #vbo#disable because already done during WTS setup    UE Cell Setup Check
+    Capture 1527 Stop               cellSetup
+
+
+1527_A_Attach
+    [Arguments]                     ${topo}=None     # Should be classicalFR1, FDD, classicalFR2 or cloudFR2
+    Start Capture Attach
+    Dated Log new line              ${1527color}=== 1527: Attach ${defColor}
+    SgNB Addition to ENB            ueSetting=${UE_SIMPLE}
+    UE Attach Check
+    Capture 1527 Stop               Attach
+
+
+1527_A_DL
+    [Arguments]                     ${topo}=None     # Should be classicalFR1, FDD, classicalFR2 or cloudFR2
+    Dated Log new line              ${1527color}=== 1527: Traffic DL ${defColor}
+    Traffic UE DL                   throughput=5                duration=120s           deviation=5
+
+
+1527_A_UL
+    [Arguments]                     ${topo}=None     # Should be classicalFR1, FDD, classicalFR2 or cloudFR2
+    Dated Log new line              ${1527color}=== 1527: Traffic UL ${defColor}
+    Traffic UE UL                   throughput=2                duration=120s           deviation=5
+
+1527_A_getCounter
+    Get Reporting Interval PM
+    #vbo#bypass use of ${reportingIntervalPm}[0] for vRAN2.0 for debugging.
+    Run Keyword if    not ${isAic}    Traced Sleep
+    ...             ${reportingIntervalPm}[0]    msg=waiting PM counter generation
+    ...         ELSE
+    ...                               Traced Sleep
+    ...             duration=${reportingIntervalPm}    msg=waiting PM counter generation
+    ${pm_path}                      Set Variable                 ${LOG_PATH}/pm_files
+    #vbo#disable Collect PM files due to ticket FIVEG_FTPS-37350.
+    ${pm_latest}    Run Keyword if    not ${isAic}
+    ...                             Collect PM files from BTS    ${pm_path}
+    Set Suite Variable              ${pm_path}
+
+#vbo#update dico in case of vRAN2.0.
+1527_A_update_dico
+    [Arguments]                     ${tc_dict}
+    ...                             ${unit}
+
+    Dated Log new line    1527_A_update_dico input: ${tc_dict}
+    FOR    ${counter_dict}    IN    @{tc_dict}
+        #update obj because it is mandatory for vRAN2.0.
+        Remove From Dictionary    ${counter_dict}    obj
+        Run Keyword If         '&{counter_dict}[counter]' == 'M55117C00528'
+        ...                    Set To Dictionary    ${counter_dict}    obj    NRDU
+        ...         ELSE IF    '&{counter_dict}[counter]' == 'M55117C00529'
+        ...                    Set To Dictionary    ${counter_dict}    obj    NRDU
+        ...         ELSE IF    '&{counter_dict}[counter]' == 'M55117C00532'
+        ...                    Set To Dictionary    ${counter_dict}    obj    NRDU
+        ...         ELSE IF    '&{counter_dict}[counter]' == 'M55117C00533'
+        ...                    Set To Dictionary    ${counter_dict}    obj    NRDU
+        ...         ELSE IF    '&{counter_dict}[counter]' == 'M55112C00002'
+        ...                    Set To Dictionary    ${counter_dict}    obj    NRCELL
+        ...         ELSE IF    '&{counter_dict}[counter]' == 'M55112C00003'
+        ...                    Set To Dictionary    ${counter_dict}    obj    NRCELL
+        ...         ELSE IF    '&{counter_dict}[counter]' == 'M55112C03002'
+        ...                    Set To Dictionary    ${counter_dict}    obj    NRCELL
+        ...         ELSE IF    '&{counter_dict}[counter]' == 'M55113C01001'
+        ...                    Set To Dictionary    ${counter_dict}    obj    NRCELL
+        ...         ELSE IF    '&{counter_dict}[counter]' == 'M55113C01002'
+        ...                    Set To Dictionary    ${counter_dict}    obj    NRCELL
+        ...         ELSE
+        ...                    Set To Dictionary    ${counter_dict}    obj    NRBTS
+        #add objId because it is mandatory to be present into dico for vRAN2.0.
+        Run Keyword If         '${unit}' == 'VCU' and '&{counter_dict}[obj]' == 'NRBTS'
+        ...                    Set To Dictionary    ${counter_dict}    objId    ${NRBTS_ID_CU}
+        ...         ELSE IF    '${unit}' == 'VCU' and '&{counter_dict}[obj]' == 'NRCELL'
+        ...                    Set To Dictionary    ${counter_dict}    objId    ${NRCELL_ID_CU}
+        ...         ELSE IF    '${unit}' == 'VCU' and '&{counter_dict}[obj]' == 'NRDU'
+        ...                    Set To Dictionary    ${counter_dict}    objId    1
+        ...         ELSE IF    '${unit}' == 'VDU' and '&{counter_dict}[obj]' == 'NRBTS'
+        ...                    Set To Dictionary    ${counter_dict}    objId    ${NRBTS_ID_DU}
+        ...         ELSE IF    '${unit}' == 'VDU' and '&{counter_dict}[obj]' == 'NRCELL'
+        ...                    Set To Dictionary    ${counter_dict}    objId    ${NRCELL_ID_DU}
+        ...         ELSE IF    '${unit}' == 'VDU' and '&{counter_dict}[obj]' == 'NRDU'
+        ...                    Set To Dictionary    ${counter_dict}    objId    2
+        ...         ELSE
+        ...                    Set To Dictionary    ${counter_dict}    objId    1
+    END
+    Dated Log new line    1527_A_update_dico output: ${tc_dict}
+
+
+#vbo#add condition to dispatch checking on VCU or VDU.
+1527_A_check_counters
+    [Arguments]                     ${TC_name}
+    ...                             ${unit}=None
+
+    ${tc_kpi_dict}                  Get From Dictionary          ${dict_kpis_tc_1527_A}       ${TC_name}
+
+    #vbo#update dico in case of vRAN2.0.
+    Run Keyword If    ${isAic}    1527_A_update_dico    tc_dict=@{tc_kpi_dict}    unit=${unit}
+    FOR    ${counter_dict}    IN    @{tc_kpi_dict}
+         Dated Log new line         ${1527color}=== 1527: check ${counter_dict.counter} ${defColor}
+         ${range_status}    Run Keyword If    not ${isAic}
+         ...                    Verify Object Counter with ID Sum Of Values In A Range    ${pm_path}    ${NRBTS_ID}    &{counter_dict}
+         ...                ELSE
+         ...                    Run Keyword If    '${unit}' == 'VCU'
+         ...                        Verify Object Counter with ID Sum Of Values In A Range on vCu    &{counter_dict}
+         ...                    ELSE
+         ...                        Verify Object Counter with ID Sum Of Values In A Range on vDu    &{counter_dict}
+         Should Be True             '${range_status}' == 'True'
+    END
+
+
+1527_getBasicBeamSet
+    ${CURRENT_SCF}               OAM Get SCF File             oam=${GNB_DU.oam}            file=SCF_DU_Current.xml
+    SCF StartSession             scf_file=${CURRENT_SCF}
+    ${dist_name}                 Set Variable                 MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${NRCELL_ID}
+    ${basicBeamSetNIDD}          SCF Get Single Value         ${dist_name}           basicBeamSet    aicListEntity=vdu    scope=both
+    SCF StopSession              scf_file=${CURRENT_SCF}
+
+    ${basicBeamSet}              Set Variable                 ${basicBeamSetNIDD}[0]
+    Dated Log new line           ${1527color}=== basicBeamSet found ${basicBeamSet} ${defColor}
+
+    ${IsKeyExist}                run keyword and return status
+    ...                          Dictionary should contain key    ${dict_basicBeamSet_bitMap}    ${basicBeamSet}
+
+    Run Keyword If               not ${IsKeyExist}
+    ...                          Dated Log new line           ${1527color}=== ERROR: undefined bitMap for basicBeamSet ${basicBeamSet} ${defColor}
+    Should be true               ${IsKeyExist}
+
+    ${expBitmapTocheck}          Get From Dictionary          ${dict_basicBeamSet_bitMap}    ${basicBeamSet}
+    Set Suite Variable           ${expBitmapTocheck}
+
+
+Get Reporting Interval PM
+    #vbo#disable for debugging vRAN2.0.
+    ${CURRENT_SCF}    Run Keyword If    not ${isAic}
+    ...                             OAM Get SCF File    oam=${GNB_DU.oam}    file=SCF_DU_Current.xml
+    Run Keyword If    not ${isAic}
+    ...                             SCF StartSession    scf_file=${CURRENT_SCF}
+    ${dist_name}                    Set Variable        MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/PMCADM-1
+    ${reportingIntervalPm}    Run Keyword If    not ${isAic}
+    ...                                       SCF Get Single Value    ${dist_name}    reportingIntervalPm
+    ...                                   ELSE
+    ...                                       Set Variable            ${std_reportingIntervalPm}
+    Run Keyword If    not ${isAic}
+    ...                           SCF StopSession       scf_file=${CURRENT_SCF}
+    Dated Log new line              ${1527color}=== 1527: ReportingIntervalPm is: ${std_reportingIntervalPm} ${defColor}
+    Set Suite Variable              ${reportingIntervalPm}
+
+
+Init 1527 color
+    ${1527color}                    evaluate                    "${CYAN}"
+    ${defColor}                     evaluate                    "${NORMAL}"
+    Set Suite Variable              ${1527color}
+    Set Suite Variable              ${defColor}
+
+
+Config 1527
+    [Arguments]                     ${topo}=None     # Should be classicalFR1, FDD, classicalFR2 or cloudFR2
+    Run Keyword If                  "${topo}"=="cloudFR2"          Config 1527 CLOUD
+    ...       ELSE                                                 Config 1527 Classical      topo=${topo}
+
+
+Config 1527 Classical
+    [Arguments]                     ${topo}=None     # Should be classicalFR1, FDD, classicalFR2 or cloudFR2
+
+    Dated Log new line              ${1527color}=== 1527 Classical: set actInactDetNSAUe to false ${defColor}
+    ${actInactDetNSAUe_nidd}        Create Dictionary              dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ...                                                            parameter=actInactDetNSAUe
+    ...                                                            value=false
+    @{SCF_classical}=               Create List                    ${actInactDetNSAUe_nidd}
+    Set Suite Variable              ${SCF_classical}
+
+    Run Keyword If                  "${topo}"=="classicalFR1"      Config 1527 FR1
+    Run Keyword If                  "${topo}"=="classicalFR2"      Config 1527 FR2
+
+    OAM Set Params                  ${SCF_classical}
+
+
+Config 1527 FR1
+    WtsXmlConfig.startSession           file=iphy
+    WtsXmlConfig.setListEltText         //GSCN                          1
+    WtsXmlConfig.stopSession            file=iphy
+    Dated Log new line              ${1527color}=== 1527: FR1 TC, NRARFCN set to ${arfcn_value} ${defColor}
+    # Set ARFCN to a known value inside cfg WTS file
+    Modify Field in WtsEmu Cfg File        field=nr_arfcn        value=${arfcn_value}:${arfcn_value}
+
+    # Set ARFCN to a known value inside SCF
+    ${arfcn_nidd}                   Create Dictionary            dist_name=${NRCELL_DIST_NAME}
+    ...                                                          parameter=nrarfcn
+    ...                                                          value=${arfcn_value}
+    ${gscn}                   Create Dictionary            dist_name=MRBTS-1/NRBTS-1/NRCELL-1
+    ...                                                          parameter=gscnOrSsPbchArfcn
+    ...                                                          value=1
+    Append To List                  ${SCF_classical}             ${arfcn_nidd}    ${gscn}
+
+Config 1527 FR2
+    Dated Log new line              ${1527color}=== 1527: FR2 TC ${defColor}
+    Run    sed -i 's/set_ue simulated id=11 /set_ue simulated id=1 /g' ${tl.core.dir_path}/${tl.core.cfg_filename}
+    Run    sed -i 's/ue_param id=11 /ue_param id=1 /g' ${tl.core.dir_path}/${tl.core.cfg_filename}
+
+Config 1527 CLOUD
+    Dated Log new line              ${1527color}=== 1527: CloudBTS SCF: No change required ${defColor}
+
+#vbo#adding configuration for vRAN2.0.
+Config 1527 Aic
+    #vbo#update gscn value for vRAN2.0 into IPHY for NRCELL1 is no more needed
+    # Set ARFCN to a known value inside cfg WTS file
+    Modify Field in WtsEmu Cfg File        field=nr_arfcn        value=${arfcn_value}:${arfcn_value}
+
+    #vbo#enable commissioning on VCU: actInactDetNSAUe and nrarfcn.
+    &{modify_param1}    Create Dictionary
+    ...    parameter=actInactDetNSAUe
+    ...    dist_name=MRBTS-${MRBTS_ID_CU}/NRBTS-${NRBTS_ID_CU}
+    ...    value=false
+    &{modify_param2}    Create Dictionary
+    ...    parameter=nrarfcn
+    ...    dist_name=${NRCELL_DN_CU}
+    ...    value=${arfcn_value}
+    @{modify_param_CU}    Create List    ${modify_param1}    ${modify_param2}
+    Dated log    Parameters to modify on CU:\n
+    Dated log    ${modify_param1}
+    Dated log    ${modify_param2}
+    OAM Set Params    oam=${GNB_CU.oam}    modify_param=${modify_param_CU}
+
+    #vbo#enable commissioning on VDU: nrarfcn but no more change on gscnOrSsPbchArfcn
+    &{modify_param5}    Create Dictionary
+    ...    parameter=nrarfcn
+    ...    dist_name=${NRCELL_DN_DU}
+    ...    value=${arfcn_value}
+    @{modify_param_DU}    Create List    ${modify_param5}
+    Dated log    Parameters to modify on DU:\n
+    Dated log    ${modify_param5}
+    OAM Set Params    oam=${GNB_DU.oam}    modify_param=${modify_param_DU}
+
+    Wait Vcu And Vdu Available
+    OAM Get SCF File    oam=${GNB_CU.oam}    file=SCF_CU_Updated.xml
+    OAM Get SCF File    oam=${GNB_DU.oam}    file=SCF_DU_Updated.xml
+
+
+Start Capture After GNB Ready
+    #vbo#support vRAN2.0 capture.
+    ${CaptureCPRT_setup}    Run Keyword if    not ${isAic}
+    ...                                       Capture CPRT Set upon config
+    ...                                 ELSE
+    ...                                       Capture CPRT Set Upon Config    airscale=${GNB_DU}
+
+    ${CaptureCPRT_setup.filter}     Get Filter For SCTP
+
+    Run Keyword if    not ${isAic}
+    ...                                       Capture Init    ${CaptureCPRT_setup}    suffix=_setup
+    ...         ELSE
+    ...                                       Capture Init    ${CaptureCPRT_setup}    suffix=_setup    withTN=True
+
+    ${CaptureCore_setup}    Run Keyword if    not ${isAic}
+    ...                                       Capture CORE Set Upon Config
+    ...                                 ELSE
+    ...                                       Capture CORE Set Upon Config    airscale=${GNB_CU}
+
+    Run Keyword if    not ${isAic}
+    ...                                       Capture Init    ${CaptureCore_setup}    suffix=_setup
+    ...         ELSE
+    ...                                       Capture Init    ${CaptureCore_setup}    suffix=_setup    withTN=True
+
+    Capture Start                   ${CaptureCPRT_setup}
+    Capture Start                   ${CaptureCore_setup}
+    Set Suite Variable              ${CaptureCPRT_setup}
+    Set Suite Variable              ${CaptureCore_setup}
+
+
+Start Capture Attach
+    ${CaptureCPRT_attach}           Capture CPRT Set upon config
+    ${CaptureCPRT_attach.filter}    Get Filter For SCTP
+    Capture Init                    ${CaptureCPRT_attach}            suffix=_attach
+
+    ${CaptureCore_attach}           Capture CORE Set Upon Config
+    Capture Init                    ${CaptureCore_attach}            suffix=_attach
+
+    Capture Start                   ${CaptureCPRT_attach}
+    Capture Start                   ${CaptureCore_attach}
+    Set Suite Variable              ${CaptureCPRT_attach}
+    Set Suite Variable              ${CaptureCore_attach}
+
+
+Capture 1527 Stop
+    [Arguments]                     ${step}
+    Run Keyword If                  "${step}" == "cellSetup"        Run Keywords
+    ...                             Capture Stop                    ${CaptureCore_setup}
+    ...                             AND
+    ...                             Capture Stop                    ${CaptureCPRT_setup}
+    Run Keyword If                  "${step}" == "Attach"           Run Keywords
+    ...                             Capture Stop                    ${CaptureCore_attach}
+    ...                             AND
+    ...                             Capture Stop                    ${CaptureCPRT_attach}
+
+
+Check 1527 Cell Setup
+    [Arguments]                     ${topo}=None     # Should be classicalFR1, FDD, classicalFR2 or cloudFR2
+    #vbo#filter pcap before generate pdml files.
+    Dated Log new line              analyzer filter_pcap for x2ap or f1ap on CPRT_setup pcap file to reduce trace
+    ${CaptureCPRT_filtered}         analyzer.filter_pcap
+    ...                                                             pcapInFile=${CaptureCPRT_setup.path}
+    ...                                                             filterName=filteredBymsg
+    ...                                                             filterExp=x2ap or f1ap
+    Dated Log                       analyzer pcap to pdml on CPRT_setup filtered pcap file
+    ${pdml_CPRT}                    analyzer.pcap_to_pdml           ${CaptureCPRT_filtered}
+    Dated Log                       analyzer filter_pcap for x2ap or f1ap on Core_setup pcap file to reduce trace
+    ${CaptureCore_filtered}         analyzer.filter_pcap
+    ...                                                             pcapInFile=${CaptureCore_setup.path}
+    ...                                                             filterName=filteredBymsg
+    ...                                                             filterExp=x2ap or f1ap
+    Dated Log                       analyzer pcap to pdml on Core_setup filtered pcap file
+    ${pdml_x2}                      analyzer.pcap_to_pdml           ${CaptureCore_filtered}
+    Run Keyword If                  "${topo}" == "classicalFR1" and not ${isAic}    Run Keywords
+    ...                             Check AbsFreqPointA             pdml_X2=${pdml_CPRT}        pdml_CPRT=${pdml_CPRT}
+    ...                             AND
+    ...                             Check RRCversion                pdml_CPRT=${pdml_CPRT}
+    ...                             AND
+    ...                             Check measTimingConfig          pdml_X2=${pdml_CPRT}        pdml_CPRT=${pdml_CPRT}
+    ...                                                             ssbPosValue=${ssbPosValue_medium}
+    ...                                                             bitmapField=${bitmapField_medium}
+    ...                                                             expBitmap=${expBitmapTocheck}
+
+    Run Keyword If                  "${topo}" == "classicalFR2" and not ${isAic}    Run Keywords
+    ...                             Check RRCversion                pdml_CPRT=${pdml_CPRT}
+    ...                             AND
+    ...                             Check measTimingConfig          pdml_X2=${pdml_x2}        pdml_CPRT=${pdml_CPRT}
+    ...                                                             ssbPosValue=${ssbPosValue_long}
+    ...                                                             bitmapField=${bitmapField_long}
+    ...                                                             expBitmap=${expBitmapTocheck}
+
+    Run Keyword If                  "${topo}" == "cloudFR2" and not ${isAic}    Check measTimingConfig    pdml_X2=${pdml_x2}
+    ...                                                             pdml_CPRT=${pdml_CPRT}
+    ...                                                             ssbPosValue=${ssbPosValue_long}
+    ...                                                             bitmapField=${bitmapField_long}
+    ...                                                             expBitmap=${expBitmapTocheck}
+
+    #vbo#update check for vRAN2.0 because f1ap setup messages are now presents into CaptureCore.
+    Run Keyword If                  "${topo}" == "classicalFR1" and ${isAic}    Run Keywords
+    ...                             Check AbsFreqPointA             pdml_X2=${pdml_x2}        pdml_CPRT=${pdml_CPRT}
+    ...                             AND
+    ...                             Check RRCversion                pdml_CPRT=${pdml_x2}
+    ...                             AND
+    ...                             Check measTimingConfig          pdml_X2=${pdml_x2}        pdml_CPRT=${pdml_x2}
+    ...                                                             ssbPosValue=${ssbPosValue_medium}
+    ...                                                             bitmapField=${bitmapField_medium}
+    ...                                                             expBitmap=${expBitmapTocheck}
+
+
+Check 1527 Attach
+    [Arguments]                     ${topo}=None     # Should be classicalFR1, FDD, classicalFR2 or cloudFR2
+    #vbo#filter pcap before generate pdml files.
+    Dated Log new line              analyzer filter_pcap for x2ap or f1ap on CPRT_setup pcap file to reduce trace
+    ${CaptureCPRT_filtered}         analyzer.filter_pcap
+    ...                                                             pcapInFile=${CaptureCPRT_attach.path}
+    ...                                                             filterName=filteredBymsg
+    ...                                                             filterExp=x2ap or f1ap
+    Dated Log                       analyzer pcap to pdml on CPRT_setup filtered pcap file
+    ${pdml_CPRT}                    analyzer.pcap_to_pdml           ${CaptureCPRT_filtered}
+    Dated Log                       analyzer filter_pcap for x2ap or f1ap on Core_setup pcap file to reduce trace
+    ${CaptureCore_filtered}         analyzer.filter_pcap
+    ...                                                             pcapInFile=${CaptureCore_attach.path}
+    ...                                                             filterName=filteredBymsg
+    ...                                                             filterExp=x2ap or f1ap
+    Dated Log                       analyzer pcap to pdml on Core_setup filtered pcap file
+    ${pdml_x2}                      analyzer.pcap_to_pdml           ${CaptureCore_filtered}
+
+    Run Keyword If                  "${topo}" == "classicalFR1"   Run Keywords
+    ...                             Check msg1SubCarrierSpacing     pdml_X2=${pdml_x2}
+    ...                             AND
+    ...                             Check fullConfiguration         pdml_CPRT=${pdml_CPRT}
+    ...                             AND
+    ...                             Check cRNTI                     pdml_CPRT=${pdml_CPRT}
+    ...                             AND
+    ...                             Check SSBPosInBurst             pdml_X2=${pdml_X2}
+    ...                                                             ssbPosValue=${ssbPosValue_medium}
+    ...                                                             bitmapField=${bitmapField_medium}
+    ...                                                             expBitmap=${expBitmapTocheck}
+    Run Keyword If                  "${topo}" == "classicalFR2"     Run Keywords
+    ...                             Check msg1SubCarrierSpacing_FR2     pdml_X2=${pdml_x2}
+    ...                             AND
+    ...                             Check fullConfiguration         pdml_CPRT=${pdml_CPRT}
+    ...                             AND
+    ...                             Check cRNTI                     pdml_CPRT=${pdml_CPRT}
+    ...                             AND
+    ...                             Check SSBPosInBurst             pdml_X2=${pdml_X2}
+    ...                                                             ssbPosValue=${ssbPosValue_long}
+    ...                                                             bitmapField=${bitmapField_long}
+    ...                                                             expBitmap=${expBitmapTocheck}
+    Run Keyword If                  "${topo}" == "cloudFR2"         Check SSBPosInBurst       pdml_X2=${pdml_X2}
+    ...                                                                                       ssbPosValue=${ssbPosValue_long}
+    ...                                                                                       bitmapField=${bitmapField_long}
+    ...                                                                                       expBitmap=${expBitmapTocheck}
+
+    Run Keyword If                  "${topo}" == "classicalFR1" or "${topo}" == "cloudFR2"    Run Keywords
+    ...                             Check MaxMIMO Layers            pdml_X2=${pdml_x2}
+    ...                             AND
+    ...                             Check IE PDCP SN length         pdml_X2=${pdml_x2}
+    ...                             AND
+    ...                             Check IE nrofCQIsPerReport      pdml_X2=${pdml_x2}
+    ...                             AND
+    ...                             Check nonCritExt-pSCellFreq     pdml_X2=${pdml_x2}
+
+    Run Keyword If                  "${topo}" == "classicalFR2"     Run Keywords
+    ...                             Check MaxMIMO Layers            pdml_X2=${pdml_x2}    topo=FR2
+    ...                             AND
+    ...                             Check IE PDCP SN length         pdml_X2=${pdml_x2}
+    ...                             AND
+    ...                             Check IE nrofCQIsPerReport      pdml_X2=${pdml_x2}
+    ...                             AND
+    ...                             Check nonCritExt-pSCellFreq     pdml_X2=${pdml_x2}
+
+Check measTimingConfig
+    [Documentation]                 Check in X2 and CPRT pcap that measurementTimingConfiguration in F1SetupRequest and X2SetupResponse
+    ...                             contains ssb-ToMeasure-v1540 and physCellId fields with proper values
+    [Arguments]                     ${pdml_X2}                      ${pdml_CPRT}
+    ...                             ${ssbPosValue}                  # Expected value in nr-rrc.ssb_PositionsInBurst field
+    ...                             ${bitmapField}                  # Name of bitmap field (long , medium, ...)
+    ...                             ${expBitmap}                    # Expected bitmap
+
+    ${mtc}                          Set Variable                    nr-rrc.MeasurementTimingConfiguration_element
+    ${ssb}                          Set Variable                    nr-rrc.ssb_ToMeasure
+    #${pci}                          Set Variable                    nr-rrc.physCellId
+
+    #Dated Log new line              ${1527color}=== 1527: check F1SetupRequest: ${pci} to ${pci_value} ${defColor}
+    #analyzer.check_path             pdmlFile=${pdml_CPRT}
+    #...                             packetName=F1SetupRequest
+    #...                             path=${mtc}/.*/${pci}
+    #...                             value=${pci_value}
+
+    Dated Log new line              ${1527color}=== 1527: check F1SetupRequest: ${ssb} to ${ssbPosValue} ${defColor}
+    analyzer.check_path             pdmlFile=${pdml_CPRT}
+    ...                             packetName=F1SetupRequest
+    ...                             path=${mtc}/.*/${ssb}$
+    ...                             value=${ssbPosValue}
+
+    Dated Log new line              ${1527color}=== 1527: check F1SetupRequest: ${bitmapField} to ${expBitmap} ${defColor}
+    analyzer.check_path             pdmlFile=${pdml_CPRT}
+    ...                             packetName=F1SetupRequest
+    ...                             path=${mtc}/.*/${ssb}/${bitmapField}
+    ...                             value=${expBitmap}
+
+    #Dated Log new line              ${1527color}=== 1527: check X2SetupResponse: ${pci} to ${pci_value} ${defColor}
+    #analyzer.check_exists_once      pdmlFile=${pdml_x2}
+    #...                             packetName=X2SetupResponse
+    #...                             path=${mtc}/.*/${pci}
+    #...                             value=${pci_value}
+
+    Dated Log new line              ${1527color}=== 1527: check X2SetupResponse: ${ssb} to ${ssbPosValue} ${defColor}
+    analyzer.check_path             pdmlFile=${pdml_x2}
+    ...                             packetName=X2SetupResponse
+    ...                             path=${mtc}/.*/${ssb}$
+    ...                             value=${ssbPosValue}
+
+    Dated Log new line              ${1527color}=== 1527: check X2SetupResponse: ${bitmapField} to ${expBitmap} ${defColor}
+    analyzer.check_path             pdmlFile=${pdml_x2}
+    ...                             packetName=X2SetupResponse
+    ...                             path=${mtc}/.*/${ssb}/${bitmapField}
+    ...                             value=${expBitmap}
+
+
+Check AbsFreqPointA
+    [Arguments]                     ${pdml_X2}                      ${pdml_CPRT}
+
+    # In case of multi cells configuration, a first cell is defined in F1SetupRequest
+    # and the others ones are defined in GNBDUConfigurationUpdate.
+    # As cell defined F1SetupRequest is not always the same one, check of AbsFreqPointA
+    # in F1SetupRequest has been removed as it is implicitly checked in X2SetupResponse.
+    #Dated Log new line              ${1527color}=== 1527: check F1SetupRequest: f1ap.nRARFCN to ${AbsFreqPointA} ${defColor}
+    #analyzer.check_path             pdmlFile=${pdml_CPRT}
+    #...                             packetName=F1SetupRequest
+    #...                             path=f1ap.nRARFCN
+    #...                             value=${AbsFreqPointA}
+
+    Dated Log new line              ${1527color}=== 1527: check X2SetupResponse: x2ap.nRARFCN to ${AbsFreqPointA} ${defColor}
+    analyzer.check_exists_once      pdmlFile=${pdml_x2}
+    ...                             packetName=X2SetupResponse
+    ...                             path=x2ap.nRARFCN
+    ...                             value=${AbsFreqPointA}
+
+Check RRCversion
+    [Arguments]                     ${pdml_CPRT}
+
+    Dated Log new line              ${1527color}=== 1527: check F1SetupRequest: latest_RRC_Version to ${RRCversion} ${defColor}
+    analyzer.check_list             pdmlFile=${pdml_CPRT}
+    ...                             packetName=F1SetupRequest
+    ...                             path=f1ap.latest_RRC_Version
+    ...                             value=${RRCversion}
+
+
+Check msg1SubCarrierSpacing
+    [Arguments]                     ${pdml_X2}
+
+    Dated Log new line              ${1527color}=== 1527: check SgNBAdditionRequestAcknowledge: msg1_SubcarrierSpacing to ${SCS} ${defColor}
+    analyzer.check_list             pdmlFile=${pdml_X2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=nr-rrc.msg1_SubcarrierSpacing
+    ...                             value=${SCS}
+
+Check msg1SubCarrierSpacing_FR2
+    [Arguments]                     ${pdml_X2}
+
+    Dated Log new line              ${1527color}=== 1527: check SgNBAdditionRequestAcknowledge: msg1_SubcarrierSpacing to ${SCS_FR2} ${defColor}
+    analyzer.check_list             pdmlFile=${pdml_X2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=nr-rrc.msg1_SubcarrierSpacing
+    ...                             value=${SCS_FR2}
+
+
+
+Check fullConfiguration
+    [Arguments]                     ${pdml_CPRT}
+
+    Dated Log new line              ${1527color}=== 1527: check UEContextSetupResponse: FullConfiguration to ${FullConfig} ${defColor}
+    analyzer.check_list             pdmlFile=${pdml_CPRT}
+    ...                             packetName=UEContextSetupResponse
+    ...                             path=f1ap.FullConfiguration
+    ...                             value=${FullConfig}
+
+
+Check cRNTI
+    [Arguments]                     ${pdml_CPRT}
+
+    Dated Log new line              ${1527color}=== 1527: check UEContextSetupResponse: C_RNTI to ${C_RNTI} ${defColor}
+
+    ${RNTI_X2}                      analyzer.get_unique
+    ...                             pdmlFile=${pdml_CPRT}
+    ...                             packetName=UEContextSetupResponse
+    ...                             path=f1ap.C_RNTI
+    ...                             kind=value
+    Should Match Regexp             ${RNTI_X2}                      ${C_RNTI}
+
+
+Check IE PDCP SN length
+    [Documentation]                 Check in X2 pcap file that in SgNBAdditionRequestAcknowledge,
+    ...                             there are 2 fields named uLpDCPSnLength and dLPDCPSnLength, set to eigtheen bits
+    [Arguments]                     ${pdml_X2}
+
+    ${req}                          Set Variable                    x2ap.SgNBAdditionRequestAcknowledge_element
+    ${ext}                          Set Variable                    x2ap.iE_Extensions
+
+    Dated Log new line              ${1527color}=== 1527: in SgNBAdditionRequestAcknowledge: ${defColor}
+    Dated Log new line              ${1527color}=== ..... check existency and naming of uLpDCPSnLength, then its length ${defColor}
+    analyzer.check_list             pdmlFile=${pdml_X2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=${req}/.*/${ext}/_.1./.*/x2ap.id$
+    ...                             value=.*id-uLpDCPSnLength.*
+    ...                             test=MATCH
+    ...                             kind=showname
+
+    analyzer.check_list             pdmlFile=${pdml_X2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=${req}/.*/${ext}/_.1./.*/x2ap.PDCPSnLength$
+    ...                             value=.*eighteen-bit.*
+    ...                             test=MATCH
+    ...                             kind=showname
+
+    Dated Log new line              ${1527color}=== 1527: in SgNBAdditionRequestAcknowledge: ${defColor}
+    Dated Log new line              ${1527color}=== ..... check existency and naming of dLPDCPSnLength, then its length ${defColor}
+    analyzer.check_list             pdmlFile=${pdml_X2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=${req}/.*/${ext}/_.2./.*/x2ap.id$
+    ...                             value=.*id-dLPDCPSnLength.*
+    ...                             test=MATCH
+    ...                             kind=showname
+
+    analyzer.check_list             pdmlFile=${pdml_X2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=${req}/.*/${ext}/_.2./.*/x2ap.PDCPSnLength$
+    ...                             value=1
+
+    analyzer.check_list             pdmlFile=${pdml_X2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=${req}/.*/${ext}/_.2./.*/x2ap.PDCPSnLength$
+    ...                             value=.*eighteen-bit.*
+    ...                             test=MATCH
+    ...                             kind=showname
+
+
+Check IE nrOfCQIsPerReport
+    [Documentation]                 Check in X2 pcap file that in SgNBAdditionRequestAcknowledge,
+    ...                             CSI-ReportConfig contains no dummy field
+    [Arguments]                     ${pdml_X2}
+
+    ${req}                          Set Variable                    x2ap.SgNBAdditionRequestAcknowledge_element
+    ${ext}                          Set Variable                    nr-rrc.CSI_ReportConfig_element
+
+    Dated Log new line              ${1527color}=== 1527: Check ${ext} present in SgNBAdditionRequestAcknowledge ${defColor}
+    analyzer.check_exists_once      pdmlFile=${pdml_X2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=${req}/.*/${ext}/nr-rrc.reportConfigId$
+    ...                             value=0
+
+    Dated Log new line              ${1527color}=== 1527: Check no dummy field in SgNBAdditionRequestAcknowledge, ${ext} path ${defColor}
+    ${count}                        analyzer.count_path
+    ...                             pdmlFile=${pdml_X2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=${req}/.*/${ext}/.*dummy$
+    should be equal as integers     ${count}    ${0}
+    ...                             "A dummy field was found in ${req}/.*/${ext} in SgNBAdditionRequestAcknowledge"
+
+
+Check nonCritExt-pSCellFreq
+    [Documentation]                 Check in X2 pcap file that in SgNBAdditionRequestAcknowledge,
+    ...                             pSCellFrequency exist in nonCriticalExtension and is equal to absoluteFrequencySsb
+    [Arguments]                     ${pdml_X2}
+
+    ${req}                          Set Variable                    x2ap.SgNBAdditionRequestAcknowledge_element
+    ${ext}                          Set Variable                    nr-rrc.nonCriticalExtension_element
+    ${freq}                         set variable                    nr-rrc.pSCellFrequency
+    ${absFreq}                      set variable                    nr-rrc.absoluteFrequencySSB
+
+    Dated Log new line              ${1527color}=== 1527: check ${freq} exists in ${ext} of SgNBAdditionRequestAcknowledge ${defColor}
+    analyzer.check_list             pdmlFile=${pdml_X2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=${req}/.*/${ext}/${freq}$
+    ...                             value=^pSCellFrequency.*
+    ...                             kind=showname
+    ...                             test=MATCH
+
+    Dated Log new line              ${1527color}=== 1527: Get ${freq} value in SgNBAdditionRequestAcknowledge ${defColor}
+    ${absFreqVal}=                  analyzer.get_unique
+    ...                             pdmlFile=${pdml_X2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=${req}/.*/${absFreq}$
+
+    Dated Log new line              ${1527color}=== 1527: check absoluteFrequencySsb equals pSCellFrequency ${defColor}
+    analyzer.check_list             pdmlFile=${pdml_X2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=${req}/.*/${ext}/${freq}$
+    ...                             value=${absFreqVal}
+
+
+Check SSBPosInBurst
+    [Documentation]                 Generic keyword to check SSBpositionInBurst and medium Bitmap
+    [Arguments]                     ${pdml_X2}
+    ...                             ${ssbPosValue}       # Expected value in nr-rrc.ssb_PositionsInBurst field
+    ...                             ${bitmapField}       # Name of bitmap field (long , medium, ...)
+    ...                             ${expBitmap}         # Expected bitmap
+
+    Dated Log new line              ${1527color}=== 1527: check SgNBAdditionRequestAcknowledge: ssb_PositionsInBurst to ${ssbPosValue} ${defColor}
+    analyzer.check_field            pdmlFile=${pdml_X2}
+    ...                             packetName=x2ap.SgNBAdditionRequestAcknowledge
+    ...                             fieldName=nr-rrc.ssb_PositionsInBurst
+    ...                             value=${ssbPosValue}
+
+    Dated Log new line              ${1527color}=== 1527: check SgNBAdditionRequestAcknowledge: ${bitmapField} to ${expBitmap} ${defColor}
+    analyzer.check_field            pdmlFile=${pdml_X2}
+    ...                             packetName=x2ap.SgNBAdditionRequestAcknowledge
+    ...                             fieldName=${bitmapField}
+    ...                             value=${expBitmap}
+
+Check MaxMIMO Layers
+    [Arguments]                     ${pdml_X2}    ${topo}=FR1
+
+    ${MaxMIMO_layer_local}    Run Keyword If    '${topo}'!='FR1'    Set Variable    ${MaxMIMO_layer_FR2}
+    ...                                   ELSE
+    ...                                                         Set Variable    ${MaxMIMO_layer}
+    Dated Log new line              ${1527color}=== 1527: check SgNBAdditionRequestAcknowledge: MaxMIMO Layers IE to ${MaxMIMO_layer} ${defColor}
+    analyzer.check_list             pdmlFile=${pdml_X2}
+    ...                             packetName=x2ap.SgNBAdditionRequestAcknowledge
+    ...                             path=nr-rrc.pdsch_ServingCellConfig/.*/nr-rrc.maxMIMO_Layers
+    ...                             value=${MaxMIMO_layer_local}
+
+
+Set 1527 failed
+    Set Global variable           ${1527_status}      FAILED

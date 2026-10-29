@@ -1,0 +1,26 @@
+*** Variables ***
+${bts_mplane_addres}=    ${tl.gnbs[0].m_plane.v4}
+${generator_ip_addres}=    10.83.179.151
+${delta_TC_12}=    ${CURDIR}/delta_plans/delta_plan_TC_12.json
+${delta_TC_16}=    ${CURDIR}/delta_plans/delta_plan_TC_16.json
+${delta_TC_17}=    ${CURDIR}/delta_plans/delta_plan_TC_17.json
+${delta_TC_18}=    ${CURDIR}/delta_plans/delta_plan_TC_18.json
+${delta_TC_19}=    ${CURDIR}/delta_plans/delta_plan_TC_19.json
+${logs_out_dir}=    /home/ute/logs
+${TC_12_UL_out_dir}=    ${logs_out_dir}/TC_12_UL
+${TC_12_DL_out_dir}=    ${logs_out_dir}/TC_12_DL
+${TC_13_UL_out_dir}=    ${logs_out_dir}/TC_13_UL
+${TC_13_DL_out_dir}=    ${logs_out_dir}/TC_13_DL
+${TC_14_UL_out_dir}=    ${logs_out_dir}/TC_14_UL
+${TC_14_DL_out_dir}=    ${logs_out_dir}/TC_14_DL
+${TC_15_UL_out_dir}=    ${logs_out_dir}/TC_15_UL
+${TC_15_DL_out_dir}=    ${logs_out_dir}/TC_15_DL
+${TC_16_UL_out_dir}=    ${logs_out_dir}/TC_16_UL
+${TC_17_DL_out_dir}=    ${logs_out_dir}/TC_17_DL
+${TC_18_UL_out_dir}=    ${logs_out_dir}/TC_18_UL
+${TC_18_DL_out_dir}=    ${logs_out_dir}/TC_18_DL
+${TC_19_UL_out_dir}=    ${logs_out_dir}/TC_19_UL
+${delta_path}=    /home/ute/robotws
+${delta_file_name}=    086_delta.json
+${gnb_logs_dir}=    /home/ute/gnb_logs
+${pcap_converter_path}=    ${CURDIR}/convert_pcap_to_one_csv.py

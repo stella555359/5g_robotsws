@@ -1,0 +1,222 @@
+__maintainer__ = "Kamil Adamowski"
+__team__ = "siso"
+__email__ = "kamil.adamowski@nokia.com"
+__owner_email__ = "kamil.adamowski@nokia.com"
+
+from typing import Optional, List, Union
+from enum import Enum
+from taf.config.testline.airscale import Airscale, CapacityUnit, CommonUnit
+from taf.config.testline.appserver import TafUeAppServer
+from taf.config.testline import PDNAndroidDetails, TafUeDataTransferProtocol
+from taf.config.testline.ue import TafUeAndroid
+from taf.config.testline.connection_details import (
+    SshServiceDetails,
+    TelnetConnectionDetails,
+)
+from taf.config.testline.gnb import DU, CU, ClassicalBts
+from taf.config.testline.enb import RealEnb
+from taf.config.testline.flexi import Flexi
+from taf.config.testline.pdu import Gude
+from taf.config.testline.testline import TestLine
+from taf.config.testline.radio import RU, RadioTypes
+from taf.config.testline.ran import BSC, RNC
+
+from taf.config.testline.gnb.networkaddress import NetworkAddress
+from taf.config.testline.connection_details import (
+    SshServiceDetails,
+    HttpConnectionDetails,
+    TelnetConnectionDetails,
+)
+from taf.config.testline.testpc import TestPc, Connection
+from taf.config.testline.optical_switch import Leoni
+
+_pdu_1 = Gude("10.42.168.97", [2, 3], "EPC", "8220-1")
+_pdu_2 = Gude("10.42.168.96", [1], "EPC", "8220-1")
+_pdu_3 = Gude("10.42.168.16", [2, 3, 4, 5], "EPC", "8220-1")
+#_pdu_4 = Gude("10.42.168.88", [1, 2, 3], "EPC", "8221-1")
+
+# _opt_sw_1 = Leoni(addr="10.42.170.184", model="mol 10x(1x2)")
+
+_rmod_1 = RU(
+    ru_hw_group="FRMr6.2_4T4R",
+    radio_type="AHFII",
+    serial_number="K9250719906",
+    pdu_port=_pdu_3.pdu_ports[3],
+)
+_rmod_2 = RU(
+    ru_hw_group="FRMr6.2_4T4R",
+    radio_type="AHFII",
+    serial_number="K9250719793",
+    pdu_port=_pdu_3.pdu_ports[4],
+)
+_rmod_3 = RU(
+    ru_hw_group="FRMr6.2_4T4R",
+    radio_type="AHFII",
+    serial_number="BL2222N406Z",
+    pdu_port=_pdu_3.pdu_ports[2],
+)
+_rmod_4 = RU(
+    ru_hw_group="FRMr5.1a_4T4R",
+    radio_type="AHEGC",
+    serial_number="EA202453537",
+    pdu_port=_pdu_2.pdu_ports[1],
+)
+_rmod_5 = RU(
+    ru_hw_group="FRMr6.2_4T4R",
+    serial_number="YK223200019",
+    pdu_port=_pdu_3.pdu_ports[5],
+    product_code="476122A.101",
+    radio_type="AHPMDG",
+)
+
+#      - node_id: 2         hw_id: 1
+
+
+_fsp_1 = CapacityUnit(
+    addr="192.168.254.125",
+    pdu_port=_pdu_1.pdu_ports[2],
+    hardware_type="ABIP",
+    hardware_version="475266A.104",
+    serial_number="L1232807080",
+)
+_fsp_2 = CapacityUnit(
+    addr="192.168.254.128",
+    pdu_port=_pdu_1.pdu_ports[2],
+    hardware_type="ABIA",
+    hardware_version="473096A.103",
+    serial_number="L1172801014",
+    rus=[_rmod_1, _rmod_2, _rmod_3, _rmod_4, _rmod_5],
+)
+_fsp_3 = CapacityUnit(
+    addr="192.168.254.127",
+    pdu_port=_pdu_1.pdu_ports[3],
+    hardware_type="ABIA",
+    hardware_version="473096A.102",
+    serial_number="L1172801004",
+)
+_fsp_4 = CapacityUnit(
+    addr="192.168.254.126",
+    pdu_port=_pdu_1.pdu_ports[3],
+    hardware_type="ABIO",
+    hardware_version="475266A.104",
+    serial_number="L1215008520",
+#    rus=[_rmod_5, _rmod_6, _rmod_7],
+)
+_fct_1 = CommonUnit(
+    SshServiceDetails(
+        addr="192.168.255.129", username="toor4nsn", password="oZPS0POrRieRtu"
+    ),
+    capacity_units=[_fsp_1, _fsp_2],
+    pdu_port=_pdu_1.pdu_ports[2],
+    hardware_type="ASIM",
+    hardware_version="475765A.102",
+    serial_number="L1230613857",
+)
+_fct_2 = CommonUnit(
+    SshServiceDetails(
+        addr="192.168.255.119", username="toor4nsn", password="oZPS0POrRieRtu"
+    ),
+    capacity_units=[_fsp_3, _fsp_4],
+    pdu_port=_pdu_1.pdu_ports[3],
+    hardware_type="ASIB",
+    hardware_version="473764A.102",
+    serial_number="DH211464429",
+)
+
+_smod_1 = Airscale([_fct_1])
+_smod_2 = Airscale([_fct_2])
+
+
+_enb_sbts_1 = RealEnb(
+    system_module=_smod_1,
+    rms=[_rmod_1, _rmod_2, _rmod_3, _rmod_4, _rmod_5],
+    oam_ip=NetworkAddress("10.42.175.18"),
+    instance_id=1389,
+)
+_enb_sbts_2 = RealEnb(
+    system_module=_smod_2,
+    rms=[_rmod_4],
+    master=_enb_sbts_1,
+)
+_enb_sbts_1.slave = _enb_sbts_2
+
+_test_pc_1 = TestPc(
+    SshServiceDetails(addr="10.42.184.107", username="ute"),
+    connections=[
+        NetworkAddress(v4="192.168.255.126"),
+        Connection(
+            interface="eth1",
+            device=_enb_sbts_1.system_module.common_units[0],
+            interface_type="lmp",
+        ),
+    ],
+)
+_test_pc_2 = TestPc(
+    SshServiceDetails(addr="10.42.184.108", username="ute"),
+    connections=[
+        NetworkAddress(v4="192.168.255.126"),
+        Connection(
+            interface="eth1",
+            device=_enb_sbts_2.system_module.common_units[0],
+            interface_type="lmp",
+        ),
+    ],
+)
+
+_rnc = RNC(
+    rnc_id=25,
+    oms_ip=NetworkAddress("10.44.44.219"),
+    logging_ssh_connection_details=SshServiceDetails(
+        addr="10.44.44.90", username="SYSTEM", password="SYSTEM"
+    ),
+)
+
+_bsc = BSC(
+    name="BSC23",
+    logging_telnet_connection_details=TelnetConnectionDetails(
+        addr="10.42.23.26", username="VRFUSER", password="VRFPASSWORD"
+    ),
+)
+
+_app_server_1 = TafUeAppServer(
+    app_server_name="IPERF_WG",
+    address="10.44.184.246",
+    user="ranpz",
+    # bind_interface_ip="10.42.129.2",
+    password="Pass4Testers!",
+)
+
+_data_transfer_iperf = TafUeDataTransferProtocol(
+    protocol_name="iperf",
+    app_server=_app_server_1,
+    interval=1,
+    server_close_delay=50,
+    # bind_ue_ip='10.42.129.2',
+    version=3,
+)
+
+_android1 = TafUeAndroid(
+    serial_number="M6AIKN007125G6M",
+    ue_pc_address="10.42.172.158",
+    proxy_mngr_port=9955,  # ueproxy manager will not be visible unless proxy_mngr_port is configured! (default value: 9955 - used in autostart)
+    data_transfer=[_data_transfer_iperf],
+    capabilities=["M6AIKN007125G6M"],
+    # ue_pc_port="9090",
+    network_mode_switch_method="adb",
+    # airplane_mode_switcher_text="Airplane mode",
+    is_rooted="no",
+)
+
+
+tl = TestLine(
+    test_pc=_test_pc_1,
+    test_pcs=[_test_pc_1, _test_pc_2],
+    enbs=[_enb_sbts_1, _enb_sbts_2],
+    bscs=[_bsc],
+    rncs=[_rnc],
+    ues=[_android1],
+)
+#    optical_switches=[_opt_sw_1]
+# )
+
+__all__ = ["tl"]

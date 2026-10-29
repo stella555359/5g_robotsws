@@ -1,0 +1,111 @@
+*** Settings ***
+Documentation
+...      == COPYRIGHT ==
+...      Nokia Networks
+...      == INTRODUCTION ==
+...      Specific UEs to which specific setting applies are identified based on information received from MeNB over X2
+...      during SgNB Addition/Modification procedure: PLMN ID,SPID
+...      If the received couple (PLMN ID, SPID) matches with the configured R&D parameters
+...      SKT_PLMN_ID and SKT_TEST_UE_SPID then the UE is identified as a specific UE.
+...
+...      == TEST SET NAME ==
+...      CB007459-A
+...      == TESTING SPLIT ==
+...      CB007459-A
+...      == AUTHORS ==
+...      - Marek Kieltyka <marek.kieltyka@nokia.com>
+...      - Tomasz Pyrek <tomasz.pyrek@nokia.com>
+...      - Karolina Sroczyk <karolina.sroczyk@nokia.com>
+...      == MAINTAINER ==
+...      I_EXT_ETK4_GMS <I_EXT_ETK4@internal.nsn.com>
+...      == REFERENCES ==
+...      CB007459 CFAM
+...      https://nokia.sharepoint.com/:f:/r/sites/ASCOP/AS%20Documents/FS1TAs-CFAMs/CB/CB007400%20-%20CB007599/CFAM
+...
+...      == HISTORY ==
+...         [10.12.2021] - Created TC
+
+Library     ute_wtssim  # must be imported before ta5g_iphy to avoid error
+Library     ute_fsmaccess
+Library     ta_messaging
+Library     ta_emss
+Library     ta5g_iphy
+Library     ta5g_testline_management
+
+Resource    ./resources/CB007459.robot
+
+Force Tags    CONFIGURED    PY36    RAN_5G    RAN_5G_TDD    SBTS00    SBTS23R4    SKIPRUN
+    ...    CLOUD_5G_I_BO_AP_KL_SANSA_FS_CPRI_CMWV_FDD
+    ...    CONFIGS_Krakow/CB007459/NSA_1_CELL_ABIO_TDD_CPRI.yaml
+
+Suite Setup  Run Keywords
+...  Setup emss    node_id=1
+#...  AND  Setup egate  egate_port=20000  alias=default
+...  AND  Connect using ssh to    gNB_CLASSICAL_OAM
+...  AND  Connect using ssh to    AP
+...  AND  Change RandD parameters
+...  AND  ABIO specific change RandD parameters
+...  AND  Backup and modify swconfig file    parameters_list=@{SWCONFIG_FLAGS_LIST}
+...  AND  Delete HashContainer files    gNB_CLASSICAL_OAM
+...  AND  Trigger site reset
+...  AND  Wait for testline ICMP Echo replies and SSH services
+...  AND  Sleep  60
+...  AND  Check radios availability
+...  AND  Reach OnAir and wait for X2 link establishment
+...  lua_cfg=${lua_cfg_file}
+...  check_version=off
+...  AND  Enable UE capture on simulated eNB  enable=${True}
+...  AND  Sleep  2s
+
+*** Variables ***
+${lua_cfg_file}=   ${CURDIR}/config/egate_1c_NSA.lua
+
+*** Test Cases ***
+CB008423_CB007459-5G-A-1_Successful_SgNB_Addition_with_specific_RD_parameters_matching_PLMN_and_different_SPID_settings
+    [Tags]    B1
+    ...    GQC_PLAN:FEATURE:CB008423
+    [Documentation]
+    ...  DESCRIPTION:
+    ...  == Info ==
+    ...  Check R&D parameters during SgNBAddition procedure for UEs having matching gNB R&D SKT PLMN and different SPID configuration
+    ...  == Precondition ==
+    ...  - Simulated MeNB up and running with LTE cell
+    ...  - SgNB up and running with one NSA cell OnAir
+    ...  - Established X2 connection MeNB-SgNB
+    ...  - UE1 configured with SPID matching rdSktSpId, UE2 configured with SPID non-matching rdSktSpId
+    ...  - gNB configured with Serving-PLMN (MCC:MNC) matching rdSktPlmnId
+    ...  - NRBTS.actSPID = True
+    ...  == Flow ==
+    ...  - Start 20Mbps DL traffics on both UEs with bearers dedicated for EN-DC split
+    ...  - Trigger SgNBAddition procedure separately for UE1, UE2
+    ...  - Stop 20Mbps DL traffics on both UEs split bearers
+    ...  == Postcondition ==
+    ...  - UE1 flow with R&D parameters values
+    ...  - UE2 flow with NIDD parameters values
+    ...  - Successful data transmission over 5G
+    ...  - Inactivity timer expiration based on rdNsaInactivityTimer value with UE1 context removal from SgNB side
+    ...  - Inactivity timer expiration based on NIDD nsaInactivityTimer value with UE2 context removal from SgNB side
+    ...  == TESTING TOOLS ==
+    ...  AirPhone, EPCSIM, UTE
+    ...  == TEST ENVIRONMENT ==
+    ...  - gNB classical BTS in NSA mode
+    ...  - HARDWARE ID: gNB(ABIL + ASIK) with simulated AEQA radio module - NR_BAND: n78
+    ...  == REQUIREMENTS COVERAGE ==
+    ...  CB007459-A#B1, CB007459-A#B6
+    ...  == REQUIRED LOGS ==
+    ...  X2AP, RRC
+    ...  == AUTHOR ==
+    ...  - Tomasz Pyrek <tomasz.pyrek@nokia.com>
+    ...  == REFERENCES ==
+    ...  CB007459-13336
+
+    [Setup]  Prepare test environment B1
+    Start 20Mbps DL traffic on split bearer for UE1
+    Start 20Mbps DL traffic on split bearer for UE2
+    Trigger SgnbAddition procedure for UE1 with SPID=${CP_UE_rdSktSpId}
+    Trigger SgnbAddition procedure for UE2 with SPID=${nonMatchingSpId}
+    Verify RD params values in addResp message in ENDC_UE1 flow having matching SPID/PLMN config
+    Verify NIDD params values in addResp message in ENDC_UE2 flow having non-matching SPID/PLMN config
+
+    Stop and verify 20Mbps DL traffics on split bearers for UE1 UE2 and verify inactivity timers
+    [Teardown]  Detach UE1 and UE2

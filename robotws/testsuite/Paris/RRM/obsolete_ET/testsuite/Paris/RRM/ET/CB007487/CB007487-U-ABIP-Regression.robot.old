@@ -1,0 +1,281 @@
+*** Settings ***
+Documentation            [SUITE PURPOSE]  CB007487 - ABIP integration part UTE Cloud introduction
+...
+...               Scope : 1/ establish simultaneously a NSA TDD and a SA FDD call in a same test
+...                       2/ be as simple as possible without any configuration file modification during the test to be  
+...                          able to validate golden config file delivered on UTE via single run UTE mechanism
+...
+...               Test Case Scenario author   : jean.bolea@nokia.com
+...               Test Case Scenario contact  : jean.bolea@nokia.com
+...               Test Case automation contact: richard.duthu@nokia.com
+...               Creation Date               : 2022/11/29
+...               Last Modified               : 2022/12/21 Luc.stenghel@nokia.com
+
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource          ../../../resources/SWENG/robot/Scf.robot
+
+Resource          ./resources/robot/CB007487_PerfKPI_Keywords.robot
+
+
+Library           taf.transport.ssh              WITH NAME    ssh
+Library           taf.wts.runner              WITH NAME       wtsemu
+
+Library           resources/python/Constants.py  WITH NAME       MyConstants
+Library           resources/python/tools.py                      WITH NAME    nps_7487_tools
+
+Variables         resources/python/Constants.py
+
+
+Suite Setup         CB007487_PerfKPI_Keywords.Test Suite Setup for CB007487      NokeepAllUe=${False}
+Suite Teardown      CB007487_PerfKPI_Keywords.Test Suite Teardown for CB007487
+Test Teardown       CB007487_PerfKPI_Keywords.Test Setup for CB007487
+
+Force Tags          CA_5G_SW_FR-Villarceaux    RRM
+...                 PY36
+...                 CONFIGURED    5G_RAN    RAN_5G
+
+*** Variables ***
+
+# variable set to ${True} to automatically save SOS report and OAM snapshot
+# (by default, these information are saved only if a test is failed)
+${AutoSaveDebugData}        ${False}
+
+&{FDD_TDD_CONCURENT}
+...                                 Downlink_throughputTDD=10     # Mbps
+...                                 Uplink_throughputTDD=10       # Mbps
+...                                 Downlink_throughputFDD=10     # Mbps
+...                                 Uplink_throughputFDD=10       # Mbps
+...                                 Timer_Wait_trafic=30          # seconds
+...                                 Deviation=50                  # percent
+
+&{UE_SIMPLE_Cell1_DL}               ue=1                                    profile=None        type=${None}
+...                                 pdu=1                                   qfi=1
+...                                 bearer=${None}                          testMode=False
+...                                 trf_id=1                                burst=${None}
+...                                 target_gnb=${None}                      target_cells=${TARGET_CELLS}
+...                                 throughput=${DEFAUT_THROUGHPUT}         testModeValue=csi_report_override
+...                                 period_ms=${None}                       size=${None}
+
+&{UE_SIMPLE_Cell1_UL}               ue=1                                    profile=None        type=${None}
+...                                 pdu=1                                   qfi=1
+...                                 bearer=${None}                          testMode=False
+...                                 trf_id=2                                burst=${None}
+...                                 target_gnb=${None}                      target_cells=${TARGET_CELLS}
+...                                 throughput=${DEFAUT_THROUGHPUT}         testModeValue=csi_report_override
+...                                 period_ms=${None}                       size=${None}
+
+
+&{UE_SIMPLE_Cell3_DL}               ue=13                                   profile=1
+...                                 bearer=2                                testMode=False
+...                                 trf_id=11                                burst=${None}
+...                                 trf_dl_id=6                             trf_ul_id=3
+...                                 target_gnb=2                            target_cells=3
+...                                 pdu=${None}                             qfi=${None}
+...                                 testModeValue=csi_report_override       type=l3
+...                                 throughput=${DEFAUT_THROUGHPUT}         period_ms=${None}
+...                                 throughput_dl=${DEFAUT_THROUGHPUT}      throughput_ul=${DEFAUT_THROUGHPUT}
+
+&{UE_SIMPLE_Cell3_UL}               ue=13                                   profile=1
+...                                 bearer=2                                testMode=False
+...                                 trf_id=12                                burst=${None}
+...                                 trf_dl_id=6                             trf_ul_id=3
+...                                 target_gnb=2                            target_cells=3
+...                                 pdu=${None}                             qfi=${None}
+...                                 testModeValue=csi_report_override       type=l3
+...                                 throughput=${DEFAUT_THROUGHPUT}         period_ms=${None}
+...                                 throughput_dl=${DEFAUT_THROUGHPUT}      throughput_ul=${DEFAUT_THROUGHPUT}
+
+# Define the UE List:
+@{UE_SIMPLE_LIST_DL}                ${UE_SIMPLE_Cell1_DL}
+...                                 ${UE_SIMPLE_Cell3_DL}
+@{UE_SIMPLE_LIST_UL}                ${UE_SIMPLE_Cell1_UL}
+...                                 ${UE_SIMPLE_Cell3_UL}
+
+
+#	http://5gtables.eecloud.dynamic.nsn-net.net/?code=KCSBBhmnekACXQIEKtN3pAAQAAAAAAD21ghJQDFwA5JCAQBAAAAAACYABAABkQQAA
+#   FwAAAAJAAxKJRKJAkgAAAAAAAAAAAAAAAAAAABAgAAAABAATQARjAAAgAAAAAAAAAAAYBAEwJAAAAIBAAAAAA
+
+${consTraceColor}            Evaluate                    "${CYAN}"
+${defColor}                  Evaluate                    "${NORMAL}"
+
+
+*** Test Cases ***
+
+[1][1.0] CB007487_U_29_Concurrent_L3_Calls_5G_FDD_CPRI_and_5G_TDD_eCPRI
+    [Tags]    CLOUD_5G_I_BOO_AP_KLLL_SANSA_L1B_ECPRI_CMWV_TDD    SBTS00
+    CB007487_SA_NSA_call    ${FDD_TDD_CONCURENT}
+
+
+*** Keywords ***
+
+CB007487_SA_NSA_call
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+    Step             Update IPHY Xml
+    Step             Update gNB Scf
+    Restart TL
+    Critical Step    WTS Setup    nbUe=16    nbSaUe=10    shouldSaveBasicCfg=${True}    shouldUseLua=${False}
+    step             SA_NSA_Call                    ${param}
+    step             WAIT_and_Check_Trafic          ${param}
+    step             SA_NSA_Call_Clean
+    Clean Simu Basic Files
+
+SA_NSA_Call
+    [Documentation]                 setup SA call and NSA call and start DL/UL trafic 
+    [Arguments]                     ${param}
+    Critical Step                   UE Cell Setup Check                                                  depends=WTS Setup
+    #SA CALL SETUP FDD
+    Critical Step                   CallSetup.UE Register                                                depends=CallSetup.Setup Wtsemu SA
+#    Critical Step                   CallSetup.UE Attach Check                                            depends=CallSetup.UE Register
+    Critical Step                   CallSetup.Launch PDU Session                                         depends=CallSetup.UE Attach Check
+    #NSA CALL SETUP TDD
+    Critical Step                   CallSetup.SgNB Addition to ENB    ueSetting=${UE_SIMPLE_Cell3_DL}    depends=UE Cell Setup Check
+#    Critical Step                   UE Attach Check                                                      depends=SgNB Addition to ENB
+    #SA TRAFFIC DL 
+   Traffic UE DL     ueSetting=${UE_SIMPLE_Cell1_DL}    throughput=${param.Downlink_throughputFDD}   duration=1    deviation=${param.Deviation}
+    ...               shouldBeStop=False    shouldBeCheck=${False}
+    #SA TRAFFIC UL 
+    Traffic UE UL    ueSetting=${UE_SIMPLE_Cell1_UL}    throughput=${param.Uplink_throughputFDD}    duration=1    deviation=${param.Deviation}
+    ...               shouldBeStop=False    shouldBeCheck=${False}
+    #NSA TRAFFIC DL 
+   Traffic UE DL     ueSetting=${UE_SIMPLE_Cell3_DL}    throughput=${param.Downlink_throughputTDD}   duration=1    deviation=${param.Deviation}
+    ...               shouldBeStop=False    shouldBeCheck=${False}
+    #NSA TRAFFIC UL 
+    Traffic UE UL    ueSetting=${UE_SIMPLE_Cell3_UL}    throughput=${param.Uplink_throughputTDD}    duration=1    deviation=${param.Deviation}
+    ...               shouldBeStop=False    shouldBeCheck=${False}
+
+WAIT_and_Check_Trafic
+    [Documentation]                 ???????????????????????????????????? 
+    [Arguments]                     ${param}
+    Dated Log   Pause ${param.Timer_Wait_trafic} seconds for trafic
+    sleep   ${param.Timer_Wait_trafic}
+    Dated Log   Check SA FDD DL Trafic
+    ${Ue_Avg_PDSCH_Tput}=    run Keyword if      '${param.Downlink_throughputFDD}'!='0'    Get PDSCH ue_stats_nr  ue_id=1    scell_idx=0
+    ...  ELSE                set variable   0
+    ${trig}=                 Evaluate            ${param.Downlink_throughputFDD} - ( ${param.Downlink_throughputFDD} * ${param.Deviation} / 100 )
+    ${value}                 Set Variable if     ${Ue_Avg_PDSCH_Tput} > 0           ${Ue_Avg_PDSCH_Tput}    0
+    ${DOD1}                  Set Variable if     ${value} >= ${trig}          True                    False          
+    Dated log                ** => ** DL SA FDD Traffic ${value} Mbps, DOD ${DOD1}
+    Dated Log   Check SA FDD UL Trafic
+    ${Ue_Avg_PUSCH_Tput}=    run Keyword if      '${param.Uplink_throughputFDD}'!='0'    Get PUSCH ue_stats_nr   ue_id=1    scell_idx=0
+    ...  ELSE                set variable   0
+    ${trig}=                 Evaluate            ${param.Uplink_throughputFDD} - ( ${param.Uplink_throughputFDD} * ${param.Deviation} / 100 )
+    ${value}                 Set Variable if     ${Ue_Avg_PUSCH_Tput} > 0           ${Ue_Avg_PUSCH_Tput}    0
+    ${DOD2}                  Set Variable if     ${value} >= ${trig}          True                    False          
+    Dated log                ** => ** UL SA FDD Traffic ${value} Mbps, DOD ${DOD2}
+    Dated Log   Check NSA TDD DL Trafic
+    ${Ue_Avg_PDSCH_Tput}=    run Keyword if      '${param.Downlink_throughputTDD}'!='0'    Get PDSCH ue_stats_nr   ue_id=13    scell_idx=8
+    ...  ELSE                set variable   0
+    ${trig}=                 Evaluate            ${param.Downlink_throughputTDD} - ( ${param.Downlink_throughputTDD} * ${param.Deviation} / 100 )
+    ${value}                 Set Variable if     ${Ue_Avg_PDSCH_Tput} > 0           ${Ue_Avg_PDSCH_Tput}    0
+    ${DOD3}                  Set Variable if     ${value} >= ${trig}          True                    False          
+    Dated log                ** => ** DL NSA TDD Traffic ${value} Mbps, DOD ${DOD3}
+    Dated Log   Check NSA TDD UL Trafic
+    ${Ue_Avg_PUSCH_Tput}=    run Keyword if      '${param.Uplink_throughputTDD}'!='0'    Get PUSCH ue_stats_nr   ue_id=13    scell_idx=8
+    ...  ELSE                set variable   0
+    ${trig}=                 Evaluate            ${param.Uplink_throughputTDD} - ( ${param.Uplink_throughputTDD} * ${param.Deviation} / 100 )
+    ${value}                 Set Variable if     ${Ue_Avg_PUSCH_Tput} > 0           ${Ue_Avg_PUSCH_Tput}    0
+    ${DOD4}                  Set Variable if     ${value} >= ${trig}          True                    False          
+    Dated log                ** => ** UL NSA TDD Traffic ${value} Mbps, DOD ${DOD4}
+    Should Be True           '${DOD1}' == 'True'
+    Should Be True           '${DOD2}' == 'True'
+    Should Be True           '${DOD3}' == 'True'
+    Should Be True           '${DOD4}' == 'True'
+
+SA_NSA_Call_Clean
+    [Documentation]                 stop DL/UL trafic and CALL RELEASE SA and NSA
+    [Arguments]
+    Traffic.Traffic Stop UEs    ${UE_SIMPLE_LIST_DL}    dir=dl
+    Traffic.Traffic Stop UEs    ${UE_SIMPLE_LIST_UL}    dir=ul
+    UE Deregister
+    UE Detach Enb    ueSetting=${UE_SIMPLE_Cell3_DL}
+
+Update IPHY Xml
+    Dated log                           Update iphy.xml
+    WtsXmlConfig.startSession           file=iphy
+    WtsXmlConfig.setTextUsingIndex      //physicalId    3.9    3
+    WtsXmlConfig.setTextUsingIndex      //physicalId    2.9    4
+    WtsXmlConfig.stopSession            file=iphy
+
+Update gNB Scf
+    Dated log            Update gNB scf
+    Copy File            ${SCF_SETUP_PATH}     ${SCF_SETUP_PATH}.FddTddAbip1
+    ${newSCF}            Set Variable          ${SCF_SETUP_PATH}.FddTddAbip1
+    Dated log            ${newSCF}    S
+    SCF StartSession     scf_file=${newSCF}
+    SCF Set element      dist_name=MRBTS-1/EQM-1/HWTOP-1/CABLINK-4
+    ...                  element_name=iqCompression   
+    ...                  element_value=eCPRI IQ9_E7 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=MRBTS-1/EQM-1/HWTOP-1/CABLINK-4
+    ...                  element_name=linkSpeed   
+    ...                  element_value=eCpri25 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}   
+    SCF Set element      dist_name=MRBTS-1/EQM-1/HWTOP-1/CABLINK-4
+    ...                  element_name=radioProtocolType   
+    ...                  element_value=eCPRI 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}    
+    SCF Set element      dist_name=MRBTS-1/EQM-1/HWTOP-1/CABLINK-4
+    ...                  element_name=secondEndpointDN   
+    ...                  element_value=MRBTS-1/EQM-1/APEQM-1/RMOD-3 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}    
+    SCF Set element      dist_name=MRBTS-1/EQM-1/HWTOP-1/CABLINK-5
+    ...                  element_name=firstEndpointDN   
+    ...                  element_value=MRBTS-1/EQM-1/APEQM-1/CABINET-1/BBMOD-1 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}    
+    SCF Set element      dist_name=MRBTS-1/EQM-1/HWTOP-1/CABLINK-5
+    ...                  element_name=firstEndpointPortId   
+    ...                  element_value=8 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=MRBTS-1/EQM-1/HWTOP-1/CABLINK-5
+    ...                  element_name=secondEndpointPortId   
+    ...                  element_value=2 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}    
+    SCF Set element      dist_name=MRBTS-1/EQM-1/HWTOP-1/CABLINK-8
+    ...                  element_name=firstEndpointPortId   
+    ...                  element_value=1 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}    
+    SCF Set element      dist_name=MRBTS-1/EQM-1/HWTOP-1/CABLINK-8
+    ...                  element_name=iqCompression   
+    ...                  element_value=none 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=MRBTS-1/EQM-1/HWTOP-1/CABLINK-8
+    ...                  element_name=linkSpeed   
+    ...                  element_value=Cpri7 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=MRBTS-1/EQM-1/HWTOP-1/CABLINK-8
+    ...                  element_name=radioProtocolType   
+    ...                  element_value=CPRI 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=MRBTS-1/EQM-1/HWTOP-1/CABLINK-8
+    ...                  element_name=secondEndpointDN   
+    ...                  element_value=MRBTS-1/EQM-1/APEQM-1/RMOD-2 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=MRBTS-1/EQM-1/HWTOP-1/CABLINK-8
+    ...                  element_name=secondEndpointPortId   
+    ...                  element_value=1 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=MRBTS-1/TNLSVC-1/TNL-2/ETHSVC-1/ETHLK-1
+    ...                  element_name=connectorLabel   
+    ...                  element_value=S-RF7 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=MRBTS-1/TNLSVC-1/TNL-2/ETHSVC-1/ETHLK-1
+    ...                  element_name=modDN   
+    ...                  element_value=MRBTS-1/EQM-1/APEQM-1/CABINET-1/BBMOD-1 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=MRBTS-1/TNLSVC-1/TNL-2/ETHSVC-1/ETHLK-2
+    ...                  element_name=connectorLabel   
+    ...                  element_value=S-RF8 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True}
+    SCF Set element      dist_name=MRBTS-1/TNLSVC-1/TNL-2/ETHSVC-1/ETHLK-2
+    ...                  element_name=modDN   
+    ...                  element_value=MRBTS-1/EQM-1/APEQM-1/CABINET-1/BBMOD-1 
+    ...                  aicListEntity=Vdu       scope=Both       bestEffort=${True} 
+    SCF StopSession    ${newSCF}
+    Dated Log    ----> Modifications completed. in ${newSCF} \n
+    Oam.OAM Perform Full Commissioning          scf_file=${newSCF}

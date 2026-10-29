@@ -1,0 +1,2 @@
+#!/bin/bash
+(google-chrome $(sed -n '/_pdu_lte_sm =/{n;p;}' /home/ute/1_16_*/__init__.py | grep -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}') 192.168.255.1 192.168.255.129 --ignore-certificate-errors &> /dev/null &)

@@ -1,0 +1,88 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for 5GC000679 feature tests cases
+
+Resource                            FDM_Keywords_Generic.robot
+Library                             ../python/5GC000679_UeCapabilities.py
+
+*** Variables ***
+# Table describing list of field we want to collect for each packet
+
+@{FIELDS_PDSCHSendReq_UECapabilities}        rat0Bitmap        rbgSize         numOfPrb
+...                                          dlPtrsFlag      dlPtrsFrequencyDensity      dlPtrsTimeDensity
+@{FIELDS_PDSCHSendReq_UECapabilities_UL}     rat0Bitmap        rbgSize         numOfPrb
+...                                          ulPtrsFlag      ulPtrsFrequencyDensity      ulPtrsTimeDensity
+#${frequencyDensityThresNrb1}          100
+#${frequencyDensityThresNrb0}          1
+${dlPtrsFreqDensityThresNrb1}          100
+${dlPtrsFreqDensityThresNrb0}          1
+${ulPtrsFreqDensityThresNrb1}          100
+${ulPtrsFreqDensityThresNrb0}          1
+*** Keywords ***
+
+Set FDD Freq
+    [Arguments]                     ${apSwconfig}=1
+    ${freqParam}=                   create dictionary                  field=0x70671           value=${apSwconfig}
+    ${swconfig_ap}=                 Create List                             ${freqParam}
+    Set Fields in swconfig DU       param_list=${swconfig_ap}          host=${AP_DU.entryCard[0]}
+
+Check UeCapabilities
+    [Arguments]          ${pdmlFile}
+    ...                  ${dirTraffic}
+    ${listMessageParam}=     Set Variable if               '${dirTraffic}'=='dl'             ${FIELDS_PDSCHSendReq_UECapabilities}
+    ...                  ${FIELDS_PDSCHSendReq_UECapabilities_UL}
+    ${listMessageTraffic}         Check NumOfPrb       pdmlFile=${pdmlFile}     dirTraffic=${dirTraffic}     maxNumOfPrb=${TDD_PRB_MAX}
+    ...                  listMessageParam=${listMessageParam}
+    ${lenMessageTraffic}                  get length                          ${listMessageTraffic}
+    Dated log                       NB of dldata_pdschsendreq or uldata_puschreceivereq:${lenMessageTraffic}
+    Check PtrsFlag       ${listMessageTraffic}             ${lenMessageTraffic}         ${dirTraffic}
+    Check PtrsFrequencyDensity      ${listMessageTraffic}    ${lenMessageTraffic}     ${dirTraffic}
+    Check PtrsTimeDensity      ${listMessageTraffic}    ${lenMessageTraffic}     ${dirTraffic}
+
+Check PtrsFlag
+    [Arguments]        ${listMessageTraffic}              ${lenMessageTraffic}           ${dirTraffic}
+    ${fieldPtrsFlag}=    Set Variable if       '${dirTraffic}'=='dl'      dlPtrsFlag      ulPtrsFlag
+    ${flagOK}=         Set Variable             0
+    FOR    ${packet}    IN        @{listMessageTraffic}
+            ${ptrsFlag}                  Get Value In Packet Match
+            ...                     packetMatch=${packet}
+            ...                     field=${fieldPtrsFlag}
+            ${flagOK}              ptrsFlagCheck        flagPtrs=${ptrsFlag}       flagOK=${flagOK}
+    END
+    ${result}            checkPercentage    totalOK=${flagOK}        totalMessages=${lenMessageTraffic}
+    ${resultOK}                      Fetch From Left                    ${result}         :
+    ${resultNOK}                     Fetch From Right                   ${result}         :
+    Dated Log          dlPtrsFlagOK/ulPtrsFlagOK:${resultOK}% dlPtrsFlagNOK/ulPtrsFlagNOK:${resultNOK}%
+
+Check PtrsFrequencyDensity
+    [Arguments]        ${listMessageTraffic}             ${lenMessageTraffic}            ${dirTraffic}
+    ${fieldPtrsFreqDensity}=    Set Variable if       '${dirTraffic}'=='dl'      dlPtrsFrequencyDensity      ulPtrsFrequencyDensity
+    ${flagOK}=         Set Variable             0
+    FOR    ${packet}    IN        @{listMessageTraffic}
+            ${ptrsFreqDens}                  Get Value In Packet Match
+            ...                                packetMatch=${packet}
+            ...                                field=${fieldPtrsFreqDensity}
+            ${numOfPrb}            Get Value In Packet Match
+            ...                    packetMatch=${packet}
+            ...                    field=numOfPrb
+            ${flagOK}              ptrsFrequencyDensityCheck        flagPtrsFrequencyDensity=${ptrsFreqDens}       flagOK=${flagOK}
+            ...                    numOfPrb=${numOfPrb}             threshold=${dlPtrsFreqDensityThresNrb1}
+    END
+    ${result}            checkPercentage    totalOK=${flagOK}        totalMessages=${lenMessageTraffic}
+    ${resultOK}                      Fetch From Left                    ${result}         :
+    ${resultNOK}                     Fetch From Right                   ${result}         :
+    Dated Log          dlPtrsFrequencyDensityOK/ulPtrsFrequencyDensity:${resultOK}% dlPtrsFrequencyDensityNOK/dlPtrsFrequencyDensityNOK:${resultNOK}%
+
+Check PtrsTimeDensity
+    [Arguments]        ${listMessageTraffic}                ${lenMessageTraffic}             ${dirTraffic}
+    ${fieldPtrsTimeDensity}=    Set Variable if       '${dirTraffic}'=='dl'      dlPtrsTimeDensity      ulPtrsTimeDensity
+    ${flagOK}=         Set Variable             0
+    FOR    ${packet}    IN        @{listMessageTraffic}
+            ${ptrsTimeDens}                  Get Value In Packet Match
+            ...                                packetMatch=${packet}
+            ...                                field=${fieldPtrsTimeDensity}
+            ${flagOK}              ptrsTimeDensityCheck        flagPtrsTimeDensity=${ptrsTimeDens}       flagOK=${flagOK}
+    END
+    ${result}            checkPercentage    totalOK=${flagOK}        totalMessages=${lenMessageTraffic}
+    ${resultOK}                      Fetch From Left                    ${result}         :
+    ${resultNOK}                     Fetch From Right                   ${result}         :
+    Dated Log          dlPtrsTimeDensityOK/ulPtrsTimeDensityOK:${resultOK}% dlPtrsTimeDensityNOK/ulPtrsTimeDensityNOK:${resultNOK}%

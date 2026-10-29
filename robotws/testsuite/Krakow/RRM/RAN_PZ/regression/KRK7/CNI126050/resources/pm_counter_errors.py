@@ -1,0 +1,2 @@
+class PmCounterComparisonError(Exception):
+    pass

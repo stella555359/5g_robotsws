@@ -1,0 +1,117 @@
+﻿/**MB*************************************************************************/
+/*                                                                           */
+/*TEST-CASE    : Raise Default Dearer Only                                   */
+/*                                                                           */
+/*PURPOSE      : Raise Default Dearer Only                                   */
+/*               IMSIs are defind in the _include.h                          */
+/*                                                                           */
+/*DEPARTMENT   : MN 5G&SC Pz 5G I&V 5 ULM 2 SG                               */
+/*AUTHOR       : Joerg                                                       */
+/*                                                                           */
+/*****************************************************************************/
+/*<<<DESCRIPTION>>>*/
+/*<<<SCRIPT>>>*/
+
+/* Generated with DIA01 */
+IpslVersion 2.0;
+Script CCA_server;
+Activated By Message(CCR);
+
+#include "_include.h"
+
+Var
+  msg           : String;
+  msg1          : String;
+  RequestType   : Integer;
+  RequestNumber : Integer;
+  SUT_REALM     : String;
+  SUT_HOST      : String;
+  IMSI          : String;
+  Fail          : Integer;
+  Bearer        : String;
+
+BeginScript
+  RequestType   := GetPar(CCRequestType);
+  RequestNumber := GetPar(CCRequestNumber);
+  SUT_REALM     := GetPar(OriginRealm);
+  SUT_HOST      := GetPar(OriginHost);
+  IMSI          := GetPar(SubscriptionIdData);
+  If RequestType = 2  Then
+     Fail       := GetPar(RuleFailureCode(Last));
+     Bearer     := GetPar(ChargingRuleName);
+  EndIf;
+  PRINT("Begin CCR script.");
+// default AVPs
+  // |---- CCA (common--->|
+  msg := Modify(Pool("CCA", MSG_Universal))
+          OriginHost := ORIGIN_HOST;
+          OriginRealm := ORIGIN_REALM;
+          Insert c_P_ResultCode;
+          ResultCode := 2001;
+          AuthApplicationId := 16777238;
+          CCRequestType := RequestType;
+          CCRequestNumber := RequestNumber;
+          Insert c_P_OriginStateId;
+          OriginStateId := 26;
+  EndModify;
+
+//  CCR Initial request
+  If  RequestType = 1  Then
+      PRINT ("Incoming Request From: " & IMSI);
+      // |---- CCA  Initial --->|
+        If MATCH_STRING(IMSI,IMSI1) or MATCH_STRING(IMSI,IMSI2) Then
+           PRINT ("MATCH Attach Request from: " & IMSI );
+           // Modification of msg Header; Here QCI modification of Default Bearer
+           // |---- CCA  Initial --->|
+           msg1 := Modify(msg, MSG_Universal, CCA)
+              Insert c_P_DefaultEPSBearerQoS;
+              Insert DefaultEPSBearerQoS.c_P_QoSClassIdentifier;
+              // Now the QoSClassIdentifier is to the Default QCI.
+              QoSClassIdentifier := 9;
+              Insert DefaultEPSBearerQoS.c_P_AllocationRetentionPriority;
+              Insert AllocationRetentionPriority.c_P_PreemptionCapability;
+              // 0 = PRE-EMPTION_CAPABILITY_ENABLED
+              PreemptionCapability := 0;
+              Insert AllocationRetentionPriority.c_P_PreemptionVulnerability;
+              // 0 = PRE-EMPTION_VULNERAB_ENABLED
+              PreemptionVulnerability := 0;
+              PriorityLevel := 9;
+            EndModify;
+           Put(msg1);
+           Send;
+           PRINT ("DefaultBearerSetup for: " & IMSI);
+        Else
+            PRINT ("### Not Match IMSI.   ###");
+            PRINT ("### Only Default QCI for this: " & IMSI);
+            PRINT ("### Or use APN ulmnsa.");
+            msg := Modify(msg, MSG_Universal, CCA)
+              Insert c_P_QoSInformation;
+              Insert QoSInformation.c_P_QoSClassIdentifier;
+              QoSClassIdentifier := 9;
+              Insert QoSInformation.c_P_AllocationRetentionPriority;
+              Insert AllocationRetentionPriority.c_P_PreemptionCapability;
+              // 0 = PRE-EMPTION_CAPABILITY_ENABLED
+              PreemptionCapability := 0;
+              Insert AllocationRetentionPriority.c_P_PreemptionVulnerability;
+              // 0 = PRE-EMPTION_VULNERAB_ENABLED
+              PreemptionVulnerability := 0;
+              PriorityLevel := 9;
+            EndModify;
+            Put(msg);
+            Send;
+        EndIf;
+  EndIf;
+
+//  CCR Update request
+  If RequestType = 2 Then
+    Put(msg);
+    Send;
+  EndIf;
+
+//  CCA Termination request
+  If RequestType = 3 Then
+    PRINT (IMSI & " Detached.");
+    Put(msg);
+    Send;
+  EndIf;
+EndScript;

@@ -1,0 +1,305 @@
+*** Settings ***
+Documentation     Keywords related to collection of TTI Traces
+...  author: Srihari Janardhan, 5G SW&SC Ulm Sqd66
+...  contact: srihari.janardhan@nokia.com
+...  Description: Resources to collect TTI Traces in Streaming mode
+...  following variables need to be assigned:
+...  ${gnb_id}  gnb number from which the TTI trace should be captured, id = 0 if only 1 gnb is configured
+...             refer to the __init__.py configuration of the testline
+...  ${du_id}   DU id if several DUs are connected to the gNB. If only 1 DU is configured du_id = 0.
+...             refer to the __init__.py configuration of the testline
+...  ${common_unit_id}   ASIK id if several ASIKs are connected to the DU. If only 1 ASIK is configured
+...             By default all above values are configured as 0
+...             refer to the __init__.py configuration of the testline
+
+Resource   ./testline.robot
+Resource   ./gnb.robot
+Resource   ./connect.robot
+Resource   ./tcpdump.robot
+Library    ./python/ttitrace.py  WITH NAME  tti_streammode
+Library    ./python/tti_analyzer_framework/tti_extractor_framework.py  WITH NAME  tti_trace_analyzer
+
+Library    taf.collectors.tcpdump    WITH NAME    tcpdump
+Library    taf.collectors.l2stream3    WITH NAME    l2stream3
+Library    taf.collectors.core    WITH NAME    core
+Library    taf.converters.eventdecoder  WITH NAME    tce
+
+*** Variables ***
+#Tagged for further improvement -> to capture the values from SCF
+${fronthaul_ip_oam}  192.168.2.112
+${P_console}        ${True}           # output to console can be enabled via "Set Console Output" from testline.robot
+@{default_cell_dist_id}  /MRBTS-1/RAT-1/RUNTIME_VIEW-1/MRBTS_R-1/NRBTS_R-1/NRCELL_R-1
+
+*** Keywords ***
+Collect TTI Traces in Streaming mode
+    [Documentation]  :Author: Srihari Janardhan | This keyword detects the type of 5g bts and collects TTI traces
+    ...  for a defined period of time.
+    ...  PS: Works only for Classical TL. Work in progress for cloud coam TLs
+    ...    :param tti_trace_path:     Directory where TTI Trace is placed     default - Test Case Log directory
+    ...    :param tti_trace_filename: Name of tti trace file                  default - ttitrace_streaming.pcap
+    ...    :param tti_trace_duration: Length of trace capture in seconds      [1.. ]  default 10
+    ...    :param gnb_id:             Id of gNB                               [0.. ]  default 0
+    ...    :param du_id:              Id of DU                                [0..16] default 0
+    ...    :param comu_id:            Id of Common Unit                       [0...1] default 0
+    ...    :param capu_id:            Id of Capcity Unit                      [1...3] default 0
+    ...    :param filter_bitmap1:     Filter bitmap1 for TTI Trace filtering  [0x...] default 0xFFFFFFFF
+    ...    :param filter_bitmap2:     Filter bitmap2 for TTI Trace filtering  [0x...] default 0xFFFFFFFF
+    ...    :param trace_ip:           Destination IP where TTI Trace is captured      default x2c Network address on Test PC
+    ...    :param cell_distid:        DistName id of the cell                 [List of cell distnames]
+    ...    default  All Cells
+    ...
+    [Arguments]  ${tti_trace_path}=None
+    ...  ${tti_trace_duration}=10
+    ...  ${gnb_id}=${0}
+    ...  ${du_id}=${0}
+    ...  ${comu_id}=${0}
+    ...  ${capu_id}=${0}
+    ...  ${filter_bitmap1}=0xFFFFFFFF
+    ...  ${filter_bitmap2}=0xFFFFFFFF
+    ...  ${tti_trace_filename}=ttitrace_streaming
+    ...  ${trace_ip}=${EMPTY}
+    ...  ${cell_distid}=${P_INTERNAL_CELL_DIST_ID}
+
+    #fix robocop
+    ${capu_id}=    Set Variable    ${capu_id}
+
+    Set SW Config On Common Module  rad_param=0x580115  rad_param_value=${filter_bitmap1}  gnb_id=${gnb_id}
+    ...  du_id=${du_id}  comu_id=${comu_id}
+    Set SW Config On Common Module  rad_param=0x580116  rad_param_value=${filter_bitmap2}  gnb_id=${gnb_id}
+    ...  du_id=${du_id}  comu_id=${comu_id}
+    ${bts_type}=  Get gNB type  gnb_id=${gnb_id}
+    BuiltIn.Log  BTS Type Identified : ${bts_type}
+    ${dest_ip}=  Identify Destination IP for tti trace capture  ${bts_type}  ${trace_ip}
+    BuiltIn.Log  TTI Traces are forwarded to IP: ${dest_ip}
+    ${dir_tti_trace}=  run keyword if  '${tti_trace_path}'=='None'  Get testcase log directory
+    ...  ELSE  Set Variable  ${tti_trace_path}
+    ${collector}=   Identify TTI Trace Capture Location and start TCPDump
+    ...  bts_type=${bts_type}  gnb_id=${gnb_id}  tti_trace_filename=${tti_trace_filename}
+    Start Generation of TTI Trace Using TAF Lib  gnb_id=${gnb_id}  du_id=${du_id}  comu_id=${comu_id}
+    ...  dest_ip=${dest_ip}  collector=${collector}  cell_dist_id=${cell_distid}  bts_type=${bts_type}
+    Sleep  ${tti_trace_duration}s
+    Stop Generation of TTI Trace Using TAF Lib  desired_storage_directory=${dir_tti_trace}  desired_file_name=${tti_trace_filename}
+    ...  collector=${collector}
+
+
+Start TTI Traces in Streaming mode
+    [Documentation]  :Author: Srihari Janardhan | This keyword detects the type of 5g bts and starts TTI traces.
+    ...  PS: Works only for Classical TL. Work in progress for cloud coam TLs
+    ...    :param gnb_id:             Id of gNB                               [0.. ]  default 0
+    ...    :param du_id:              Id of DU                                [0..16] default 0
+    ...    :param comu_id:            Id of Common Unit                       [0...1] default 0
+    ...    :param capu_id:            Id of Capcity Unit                      [1...3] default 0
+    ...    :param filter_bitmap1:     Filter bitmap1 for TTI Trace filtering  [0x...] default 0xFFFFFFFF
+    ...    :param filter_bitmap2:     Filter bitmap2 for TTI Trace filtering  [0x...] default 0xFFFFFFFF
+    ...    :param trace_ip:           Destination IP where TTI Trace is captured      default x2c Network address on Test PC
+    ...    :param cell_distid:        DistName id of the cell                 [List of cell distnames]
+    ...    default  All Cells
+    ...
+    [Arguments]
+    ...  ${gnb_id}=${0}
+    ...  ${du_id}=${0}
+    ...  ${comu_id}=${0}
+    ...  ${capu_id}=${0}
+    ...  ${filter_bitmap1}=0xFFFFFFFF
+    ...  ${filter_bitmap2}=0xFFFFFFFF
+    ...  ${trace_ip}=${EMPTY}
+    ...  ${cell_distid}=${P_INTERNAL_CELL_DIST_ID}
+
+    #fix robocop
+    ${capu_id}=    Set Variable    ${capu_id}
+
+    Set SW Config On Common Module  rad_param=0x580115  rad_param_value=${filter_bitmap1}  gnb_id=${gnb_id}
+    ...  du_id=${du_id}  comu_id=${comu_id}
+    Set SW Config On Common Module  rad_param=0x580116  rad_param_value=${filter_bitmap2}  gnb_id=${gnb_id}
+    ...  du_id=${du_id}  comu_id=${comu_id}
+    ${bts_type}=  Get gNB type  gnb_id=${gnb_id}
+    BuiltIn.Log  BTS Type Identified : ${bts_type}
+    ${dest_ip}=  Identify Destination IP for tti trace capture  ${bts_type}  ${trace_ip}
+    BuiltIn.Log  TTI Traces are forwarded to IP: ${dest_ip}
+    ${collector_tti_trace_pcap}=   Identify TTI Trace Capture Location and start TCPDump
+    ...  bts_type=${bts_type}  gnb_id=${gnb_id}  tti_trace_filename=ttitrace_streaming
+    Start Generation of TTI Trace Using TAF Lib  gnb_id=${gnb_id}  du_id=${du_id}  comu_id=${comu_id}
+    ...  dest_ip=${dest_ip}  collector=${collector_tti_trace_pcap}  cell_dist_id=${cell_distid}  bts_type=${bts_type}
+    Set Suite Variable  ${collector_tti_trace_pcap}
+
+Stop TTI Traces in Streaming mode
+    [Documentation]  :Author: Srihari Janardhan | Stops TTI traces and stores the .pcap in the output directory by default
+    ...  with the filename ttitrace_streaming.pcap. The output directory and file can be specified using the name parameters
+    ...  tti_trace_path and tti_trace_filename respectively.
+    ...  PS: Works only for Classical TL. Work in progress for cloud coam TLs
+    [Arguments]  ${tti_trace_path}=${EMPTY}  ${tti_trace_filename}=ttitrace_streaming
+    ${dir_tti_trace}=  run keyword if  '${tti_trace_path}'=='${EMPTY}'  Get testcase log directory
+    ...  ELSE  Set Variable  ${tti_trace_path}
+    Stop Generation of TTI Trace Using TAF Lib  desired_storage_directory=${dir_tti_trace}  desired_file_name=${tti_trace_filename}
+    ...  collector=${collector_tti_trace_pcap}
+    [Return]  ${dir_tti_trace}/${tti_trace_filename}.pcap
+
+Convert pcap to udp
+    [Documentation]  Author : Srihari Janardhan
+    ...  This keyword strips tcp header and converts a pcap to a udp
+    ...  The keyword accepts source and target as mandatory arguments.
+    ...  :param source is the path to the pcap file
+    ...  :param target is the path to the destination udp file
+    ...  :param connection is the alias of the connection to a machine on which the conversion operates
+    [Arguments]  ${source}   ${target}  ${connection}
+    ssh.send_command
+    ...  tshark -r ${source} --disable-protocol swe -T fields -e data | perl -0ne's/\n//g;print pack"H*",$_' > ${target}
+    ...  connection=${connection}
+    ssh.await execution end  connection=${connection}  timeout=30min
+
+Convert TTI trace from pcap to excelCsv
+    [Documentation]  Author : Valentin Hirzel
+    ...  This keyword convertes TTi traces to CSV and requires the Library taf.converters.eventdecoder
+    ...  :param input_file_path  -> Path to the input file (full Path with Filename) Example ${targed_Dir}/ttitraceStreaming.pcap
+    ...  The creatd files will be saved at the Test Bese Directory. The name of the File is <folder Name>_{up/dl} for the uplink and downlink files.
+    ...  Example: if the input is ttitrace_streaming.pcap, the Output Files will be in the same directory and called ttitrace_streaming_dl_and_ul.csv
+    ...  and ttitrace_streming.pcap.up.csv
+
+    [Arguments]  ${input_file_path}=${EMPTY}  ${output_file_path}=${EMPTY}  ${options}=-d combineDlAndUl
+    ${input_file_path}=  tti_streammode.add File ending if missing  file_path=${input_file_path}  file_ending=.pcap
+    ${output_file_path}=  Determine Output File Path  input_file_path=${input_file_path}  output_file_path=${output_file_path}
+    tce.Create eventDecoder Converter
+    ...  name=converter
+    ...  input_file_path=${input_file_path}
+    ...  output_file_format=excelCsv
+    ...  output_file_path=${output_file_path}
+    ...  excel_csv_options=${options}
+    tce.Convert
+    ...  name=converter
+
+
+#------------------------------------------------------------------------------------------------------------------------------------[150 characters]
+# Private keywords --> must not used outside of this file!
+#------------------------------------------------------------------------------------------------------------------------------------[150 characters]
+
+Identify Destination IP for tti trace capture
+    [Documentation]     [PRIVATE]
+    ...  :Author: Srihari Janardhan
+    [Arguments]  ${bts_type}  ${trace_ip}
+    ${backhaul_ip}=  Set Variable if  '${bts_type}'=='classical' and '${trace_ip}'=='${EMPTY}'  ${tl.gnbs[${0}].cu.x2c.v4}  ${trace_ip}
+    Set Test Variable  ${backhaul_ip}
+    ${dest_ip}=  set variable if  '${bts_type}'=='classical'  ${backhaul_ip}  ${fronthaul_ip_oam}
+    [Return]  ${dest_ip}
+
+
+Identify TTI Trace Capture Location and start TCPDump
+    [Documentation]     [PRIVATE]
+    ...  :Author: Srihari Janardhan
+    [Arguments]  ${bts_type}  ${tti_trace_filename}=${EMPTY}  ${gnb_id}=0
+    ${collector}=   run keyword if  '${bts_type}'=="classical"  Connect to test pc and start TCPDump on backhaul interface
+    ...  backhaul_ip=${backhaul_ip}  tcpdump_name=${tti_trace_filename}
+    ...  ELSE  Connect to CPIF and Start TCP Dump on fronthaul  gnb_id=${gnb_id}  tti_trace_filename=${tti_trace_filename}
+    [Return]    ${collector}
+
+Connect to test pc and start TCPDump on backhaul interface
+    [Documentation]     [PRIVATE]
+    ...  :Author: Srihari Janardhan
+    [Arguments]  ${backhaul_ip}=192.168.4.1  ${tcpdump_name}=${EMPTY}
+    ${connection}=  connect.Connect to TestPC
+    ${interface_name}=  Identify Interface with IP  ip=${backhaul_ip}  connection=${connection}
+    BuiltIn.Log  Identifed interface on for TCP Dump on Test PC is : ${interface_name}   console=${P_console}
+    ${collector}=    tcpdump.Start Tcpdump on TestPc     interface=${interface_name}  option=port 5678
+    ...  collector=${tcpdump_name}
+    [Return]    ${collector}
+    [Teardown]  ssh.disconnect  connection=${connection}
+
+
+Connect to CPIF and Start TCP Dump on fronthaul
+    [Documentation]     [PRIVATE]
+    ...  :Author: Srihari Janardhan
+    [Arguments]  ${gnb_id}=0  ${tti_trace_filename}=${EMPTY}
+    ${collector}=   tcpdump.Start TCPdump on gNB VM    vm_name=cpif    gnb_id=${gnb_id}    interface=fronthaul    option=port 5678
+    ...  collector=${tti_trace_filename}
+    [Return]    ${collector}
+
+
+Start Generation of TTI Trace Using TAF Lib
+    [Documentation]     [PRIVATE]
+    ...  :Author: Srihari Janardhan
+    [Arguments]  ${dest_ip}  ${collector}  ${cell_dist_id}  ${bts_type}
+    ...  ${gnb_id}=${0}  ${du_id}=${0}  ${comu_id}=${0}
+    ${_collector_name}=  Set variable  l2stream3
+    ${executor}=  Run Keyword if  '${bts_type}'=='classical'  Get OAM Webservice connection for Classical gNB  gnb_id=${gnb_id}
+    ...  ELSE  Get OAM Webservice connection for Cloud gNB  gnb_id=${gnb_id}  du_id=${du_id}
+    ${l2_stream_config_1}=  Create Dictionary
+    ...  nr_cell_dns=${cell_dist_id}
+    @{l2_stream_configuration}    Create List    ${l2_stream_config_1}
+    ${source_ip_addr}=  Get source IP address  gnb_id=${gnb_id}  du_id=${du_id}  comu_id=${comu_id}
+    l2stream3.create_sbts_l2stream_collector
+    ...  name=${_collector_name}
+    ...  webservice=${executor}
+    ...  source_ip_addr=${source_ip_addr}
+    ...  destination_ip_addr=${dest_ip}
+    ...  dscp=15
+    ...  collector=${collector}
+    ...  l2_stream_configuration=${l2_stream_configuration}
+    ...  start_timeout=20
+    core.setup_collectors    names=${_collector_name}
+    core.start_collectors    names=${_collector_name}
+    core.Set Suite Alias     ${_collector_name}
+
+
+Stop Generation of TTI Trace Using TAF Lib
+    [Documentation]     [PRIVATE]
+    ...  :Author: Srihari Janardhan
+    [Arguments]  ${desired_storage_directory}=${EMPTY}  ${desired_file_name}=ttitrace_streaming  ${collector}=${EMPTY}
+    core.stop_collectors    names=l2stream3
+    core.collect_collectors    names=l2stream3  target_dir=${desired_storage_directory}
+    core.teardown_collectors    names=l2stream3
+    Move Trace File to Desired Directory  desired_storage_directory=${desired_storage_directory}  desired_file_name=${desired_file_name}
+    ...  collector=${collector}
+
+Move Trace File to Desired Directory
+    [Documentation]     [PRIVATE]
+    ...  :Author: Srihari Janardhan
+    [Arguments]  ${desired_storage_directory}  ${desired_file_name}  ${collector}
+    Move file  ${desired_storage_directory}/l2stream3/${collector}/${collector}.pcap
+    ...  ${desired_storage_directory}/${desired_file_name}.pcap
+    Remove Directory  ${desired_storage_directory}/l2stream3/  recursive=True
+
+Get OAM Webservice connection for Classical gNB
+    [Documentation]     [PRIVATE]
+    ...  :Author: Srihari Janardhan
+    [Arguments]  ${gnb_id}
+    ${executor_classical}=  Create Dictionary
+    ...  host=${tl.gnbs[${gnb_id}].cu.oam_http_connection_details.addr}
+    ...  user=${tl.gnbs[${gnb_id}].cu.oam_http_connection_details.username}
+    ...  password=${tl.gnbs[${gnb_id}].cu.oam_http_connection_details.password}
+    ...  port=443
+    [Return]  ${executor_classical}
+
+Get OAM Webservice connection for Cloud gNB
+    [Documentation]     [PRIVATE]
+    ...  :Author: Srihari Janardhan
+    [Arguments]  ${gnb_id}  ${du_id}
+    ${du_host_ip}=   gnb_lib.Get GNB DU Host IP   ${tl.gnbs[${gnb_id}].dus[${du_id}]}
+    ${executor_cloud_coam}=  Create Dictionary
+    ...  host=${du_host_ip}
+    ...  user=${tl.gnbs[${gnb_id}].cu.oam_http_connection_details.username}
+    ...  password=${tl.gnbs[${gnb_id}].cu.oam_http_connection_details.password}
+    ...  port=443
+    [Return]  ${executor_cloud_coam}
+
+Get source IP address
+    [Documentation]     [PRIVATE]
+    ...  :Author: Valentin Hirzel
+    [Arguments]    ${gnb_id}=${0}  ${du_id}=${0}  ${comu_id}=${0}
+    ${asik_alias}=    connect.Connect to gNB Common Unit  gnb_id=${gnb_id}  du_id=${du_id}  comu_id=${comu_id}
+    ${raw_ip}=  ssh.execute  ip -o -4 addr show | grep [b,f][p,r][0,1]  connection=${asik_alias}
+    ${source_ip}=  tti_streammode.get source IP address  raw_ip=${raw_ip}
+    [return]  ${source_ip}
+
+Determine Output File Path
+    [Documentation]     [PRIVATE]
+    ...  :Author: Srihari Janardhan
+    [Arguments]  ${input_file_path}=${EMPTY}  ${output_file_path}=${EMPTY}
+    ${output_file_path}=  Run Keyword if   '${output_file_path}'=='${EMPTY}'  Generate default output file path  input_file_path=${input_file_path}
+    ...  ELSE  Set Variable  ${output_file_path}
+    [Return]  ${output_file_path}
+
+Generate default output file path
+    [Documentation]     [PRIVATE]
+    ...  :Author: Srihari Janardhan
+    [Arguments]  ${input_file_path}=${EMPTY}
+    ${output_file_path}=  Split Path	${input_file_path}
+    [Return]  ${output_file_path[0]}

@@ -1,0 +1,62 @@
+*** Settings ***
+Force Tags    RF50
+
+Documentation
+...   I_MN_RAN_RD_TV_OTACI_CITCRT1@internal.nsn.com
+...    UTESRAN181 with ALD.
+
+Resource    testsuite/Oulu/TrunkEng/Common/Robot/Resources/common_resources.robot
+Resource    testsuite/Oulu/TrunkEng/ALD/Robot/UTESRAN181/ald_10_alarm_RF_lock_RMOD1_ANT1.robot
+Resource    testsuite/Oulu/TrunkEng/ALD/Robot/UTESRAN181/ald_10_alarm_RF_lock_RMOD2_ANT1.robot
+Resource    testsuite/Oulu/TrunkEng/ALD/Robot/UTESRAN181/ald_10_alarm_RF_lock_RMOD2_ANT3.robot
+Resource    testsuite/Oulu/TrunkEng/ALD/Robot/UTESRAN181/ald_1869_alarm_RF_lock_RMOD1_ANT3.robot
+Resource    testsuite/Oulu/TrunkEng/ALD/Robot/UTESRAN181/ald_1870_alarm_RF_lock_RMOD1_ANT3.robot
+Resource    testsuite/Oulu/TrunkEng/ALD/Robot/UTESRAN181/ald_1870_alarm_site_reset_RMOD1_ANT3.robot
+Resource    testsuite/Oulu/TrunkEng/ALD/Robot/UTESRAN181/ald_1837_alarm_RMOD2_ANT1.robot
+Resource    testsuite/Oulu/TrunkEng/ALD/Robot/UTESRAN181/ald_1838_alarm_RMOD2_ANT1.robot
+
+Suite Setup        Common Suite Setup
+Suite Teardown     Common Suite Teardown
+
+Test Setup         Run keywords  Common Test Setup  AND
+...                Start Alarm Listener  ${ALLOWED_ALARMS_FILE}
+Test Teardown      Common Test Teardown
+
+*** Variables ***
+${ALLOWED_ALARMS_FILE}=               testsuite/Oulu/TrunkEng/ALD/allowed_alarms.txt
+${COLLECT_LOGS}=                      Always
+${TEST_LOOPS}                         1
+${SCOUT_TL_NAME}                      True
+
+*** Test Cases ***
+1_1869_RF_lock_RMOD1_ANT3_LNA2
+    [Tags]  QCD_MN_RAN  QCP_RAN_VAL  QC_14828
+    ALD 1869 Alarm With Rf Lock RMOD1 ANT3
+
+2_1870_RF_lock_RMOD1_ANT3_LNA1
+    [Tags]  QCD_MN_RAN  QCP_RAN_VAL  QC_14829
+    ALD 1870 Alarm With Rf Lock RMOD1 ANT3
+
+3_1870_Site_reset_RMOD1_ANT3_LNA1
+    [Tags]  QCD_MN_RAN  QCP_RAN_VAL  QC_14830
+    ALD 1870 Alarm With Site Reset RMOD1 ANT3
+
+4_1837_VSWR_threshold_RMOD2_ANT1
+    [Tags]  QCD_MN_RAN  QCP_RAN_VAL  QC_14827
+    ALD 1837 Alarm RMOD2 ANT1
+
+5_1838_VSWR_threshold_RMOD2_ANT1
+    [Tags]  QCD_MN_RAN  QCP_RAN_VAL  QC_14825
+    ALD 1838 Alarm RMOD2 ANT1
+
+6_10_RF_lock_RMOD1_ANT1
+    [Tags]  QCD_MN_RAN  QCP_RAN_VAL  QC_14823
+    ALD 10 Alarm With Rf Lock RMOD1 ANT1
+
+7_10_RF_lock_RMOD2_ANT1
+    [Tags]  QCD_MN_RAN  QCP_RAN_VAL  QC_14826
+    ALD 10 Alarm With Rf Lock RMOD2 ANT1
+
+8_10_RF_lock_RMOD2_ANT3
+    [Tags]  QCD_MN_RAN  QCP_RAN_VAL  QC_14824
+    ALD 10 Alarm With Rf Lock RMOD2 ANT3

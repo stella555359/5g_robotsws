@@ -1,0 +1,125 @@
+# ; value after semicolon means sleep after acton command
+# ; parameter 'o' after semicolon means, that output of the command is required
+
+# CB008126-A-B2 TNL modificaion for many PDU sessions at once with outgoing HO
+# Test verifies that:
+# - it is possible to modify UL NG-U UP TNL address for 2 PDU sessions in one NGAP:PDUSessionResourceModifyRequest
+# - when UE performs HO, modified UL NG-U UP TNL address are present in XN/NG messages
+
+# use lua SA_TDD_2c_1gNBSim.lua
+# configure HO on gnb first
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/5QI_1_2_3_4_71_72_76_128_170_212_254.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/vonr_gbr_activation.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/gNBSim.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/disable_ciphering.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/inter_gnb_ho.yaml
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/CB008126_enable.yaml
+ue_history_information_list_add_ngran id=1 gnb_id=3 cell_type=medium nrcgi=311:489|0x01 time_ue_stayed_in_cell=100
+ue_history_information_list_add_ngran id=1 gnb_id=2 cell_type=medium nrcgi=311:489|0x01 time_ue_stayed_in_cell=100
+ue_history_information_list id=1 action=commit
+ue_enb_param id=1 ue_history_list=1
+
+ue_history_information_list_add_ngran id=2 gnb_id=3 cell_type=medium nrcgi=311:489|0x01 time_ue_stayed_in_cell=100
+ue_history_information_list_add_ngran id=2 gnb_id=2 cell_type=medium nrcgi=311:489|0x01 time_ue_stayed_in_cell=100
+ue_history_information_list id=2 action=commit
+ue_enb_param id=1 ue_history_list=2
+
+# attach UE1
+qosflow_modify qos_flow=15 ue=all default=true;1
+ue_change_location id=1 enb=2 cell=1
+ue_register id=1;2
+set_pdu_param ue=1 pdu=1 trf_type=internal
+set_pdu_param ue=1 pdu=2 trf_type=internal
+ue_pdu_session_setup pdu=1 ue=1 gw=1 nwslice=1;2
+smf_param id=1 additional_qosflows_to_activate=12
+ue_pdu_session_setup pdu=2 ue=1 gw=2 nwslice=1;2
+trf_data_start ue=1 pdu=1 qfi=1 dir=dl mbps=30 trf_id=1
+trf_data_start ue=1 pdu=1 qfi=1 dir=ul mbps=10 trf_id=1
+trf_data_start ue=1 pdu=2 qfi=1 dir=dl mbps=30 trf_id=1
+trf_data_start ue=1 pdu=2 qfi=1 dir=ul mbps=10 trf_id=1
+pause
+
+# attach UE2
+ue_change_location id=2 enb=2 cell=1
+ue_register id=2;2
+set_pdu_param ue=2 pdu=1 trf_type=internal
+set_pdu_param ue=2 pdu=2 trf_type=internal
+ue_pdu_session_setup pdu=1 ue=2 gw=3 nwslice=1;2
+smf_param id=1 additional_qosflows_to_activate=12
+ue_pdu_session_setup pdu=2 ue=2 gw=4 nwslice=1;2
+trf_data_start ue=2 pdu=1 qfi=1 dir=dl mbps=30 trf_id=1
+trf_data_start ue=2 pdu=1 qfi=1 dir=ul mbps=10 trf_id=1
+trf_data_start ue=2 pdu=2 qfi=1 dir=dl mbps=30 trf_id=1
+trf_data_start ue=2 pdu=2 qfi=1 dir=ul mbps=10 trf_id=1
+pause
+
+# Verify that traffic is ongoing
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;o
+bearer_stats ue=1 pdu=2 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=2 qfi=1 dir=ul;o
+pause
+bearer_stats ue=2 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=2 pdu=1 qfi=1 dir=ul;o
+bearer_stats ue=2 pdu=2 qfi=1 dir=dl;o
+bearer_stats ue=2 pdu=2 qfi=1 dir=ul;o
+pause
+
+ue_pdu_session_modify ue=1 pdu=1 switch_ul_tunnel_endpoint=ip_teid pdu=2 switch_ul_tunnel_endpoint=ip_teid by=amf;2
+pause
+ue_pdu_session_modify ue=2 pdu=1 switch_ul_tunnel_endpoint=teid_only pdu=2 switch_ul_tunnel_endpoint=teid_only by=amf;2
+pause
+# Verify that there is no traffic drop
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;o
+bearer_stats ue=1 pdu=2 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=2 qfi=1 dir=ul;o
+pause
+bearer_stats ue=2 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=2 pdu=1 qfi=1 dir=ul;o
+bearer_stats ue=2 pdu=2 qfi=1 dir=dl;o
+bearer_stats ue=2 pdu=2 qfi=1 dir=ul;o
+pause
+
+
+# HO UE1 XN
+meas_cfg_ue_disp id=1;o
+pause
+ue_measurement_send_nr id=1 meas_id=2 event=A5 srsrp_nr=19 srsrq_nr=10 phycell_id=52 nrsrp_nr=85 nrsrq_nr=31;2
+pause
+meas_cfg_ue_disp id=1;o
+pause
+ue_measurement_send_nr id=1 meas_id=5 event=A5 srsrp_nr=18 phycell_id=50 nrsrp_nr=85;2
+pause
+# Verify that there is no traffic drop
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;o
+bearer_stats ue=1 pdu=2 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=2 qfi=1 dir=ul;o
+pause
+
+# HO UE2 NG
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/NG_handover.yaml
+pause
+gnb_param id=3 sa_ho=ng_based;1
+meas_cfg_ue_disp id=2;o
+pause
+ue_measurement_send_nr id=2 meas_id=2 event=A5 srsrp_nr=19 srsrq_nr=10 phycell_id=52 nrsrp_nr=85 nrsrq_nr=31;2
+pause
+meas_cfg_ue_disp id=2;o
+pause
+ue_measurement_send_nr id=2 meas_id=5 event=A5 srsrp_nr=18 phycell_id=50 nrsrp_nr=85;2
+pause
+# Verify that there is no traffic drop
+bearer_stats ue=2 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=2 pdu=1 qfi=1 dir=ul;o
+bearer_stats ue=2 pdu=2 qfi=1 dir=dl;o
+bearer_stats ue=2 pdu=2 qfi=1 dir=ul;o
+pause
+
+#TC cleanup
+ue_kill id=1-2;5
+gnb_param id=3 sa_ho=xn_based
+% [{'MOC': 'NRREL', 'ID': '1-1', 'handoverAllowedSA': 'allowed'}]
+smf_param id=1 reset
+exit

@@ -1,0 +1,86 @@
+*** Settings ***
+
+Documentation
+...   description: CNI-87162 TTI Trace Keywords
+
+Library     BuiltIn
+Library     String
+Library     Collections
+Library     taf.collectors.tcpdump       WITH NAME  tct
+Library     taf.collectors.l2stream3     WITH NAME  tcl
+Library     taf.collectors.core          WITH NAME  tcc
+Library     taf.converters.eventdecoder  WITH NAME  tce
+Library     ../../../resources_KRK/python/utilities.py    WITH NAME    logger
+Library     ../suite_specific_keywords.py
+
+Variables   ../variables.py
+
+*** Keywords ***
+
+Handle TTI Yaml Configuration
+    [Arguments]    ${configurations}    ${l2_stream_configuration}=${L2_STREAM_CONFIGURATION_2xCELL}
+    ${webservices}=  Set To Dictionary    ${configurations['webservices'][0]}    release=${RELEASE_NO_CONV}
+    ${configurations}=  Set To Dictionary    ${configurations}    webservices=${webservices}
+
+    ${collectors} =   Get From Dictionary    ${configurations}   collectors
+    ${l2stream3_collector} =   Get From List    ${collectors}   1
+    ${l2stream3_collector} =   Set To Dictionary    ${l2stream3_collector}   l2_stream_configuration    ${l2_stream_configuration}
+    Set List Value    ${collectors}   1    ${l2stream3_collector}
+    ${configurations} =   Set To Dictionary   ${configurations}   collectors   ${collectors}
+    [Return]    ${configurations}
+
+
+Start TTI trace collection
+    [Arguments]   ${l2_stream_configuration}=${L2_STREAM_CONFIGURATION_2xCELL}
+    ${configurations}=  tcc.Load Configurations
+    ...  ${CURDIR}/tti_trace_collectors.yaml
+
+    ${configurations} =   Handle TTI Yaml Configuration    ${configurations}    ${l2_stream_configuration}
+
+    tcc.Create Collectors
+    ...  names=l2stream3
+    ...  configurations=${configurations['collectors']}
+    tcl.Set Test Alias
+    ...  alias=l2stream3
+    tcc.Setup Collectors
+    ...  names=l2stream3
+    tcc.Start Collectors
+    ...  names=l2stream3
+    logger.Logger Console    ${\n}TTI traces collecting started
+    Set Test Variable    ${TTI_COLLECTION_IN_PROGRESS}    ${True}
+
+
+Stop TTI trace collection
+    [Arguments]    ${target_dir}=${OUTPUTDIR}/${SUITENAME}/${TESTNAME}
+    logger.Logger Console    Stopping TTI traces collecting
+    tcc.Stop Collectors
+    ...  names=l2stream3
+    tcc.Collect Collectors
+    ...  names=l2stream3
+    ...  target_dir=${target_dir}
+    tcc.Teardown Collectors
+    ...  names=l2stream3
+    Set Test Variable    ${TTI_COLLECTION_IN_PROGRESS}    ${False}
+
+
+Convert TTI trace from pcap
+    [Arguments]    ${format}    ${directory_name}    ${input_file_name}=tcpdump.pcap
+    ...    ${input_file_dir}=${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/l2stream3/tcpdump
+    ${prefix}   suite_specific_keywords.Get test prefix
+    logger.Logger Console    Converting TTI traces to ${format}
+    tce.Create eventDecoder Converter
+    ...  name=ttitrace_converter
+    ...  input_file_path=${input_file_dir}/${input_file_name}
+    ...  output_file_format=${format}
+    ...  output_file_path=${OUTPUTDIR}/${prefix}/${directory_name}/output
+    tce.Convert
+    ...  name=ttitrace_converter
+    Move Directory	${input_file_dir}  ${OUTPUTDIR}/${prefix}/${directory_name}/
+    Remove Directory  ${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/   recursive=True
+
+
+Collect TTI Traces during
+    [Arguments]     ${sec}
+    Start TTI trace collection
+    Sleep  ${sec}
+    Stop TTI trace collection

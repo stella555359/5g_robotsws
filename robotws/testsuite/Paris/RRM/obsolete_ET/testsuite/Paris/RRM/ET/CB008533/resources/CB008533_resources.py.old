@@ -1,0 +1,201 @@
+import logging
+
+import os
+import sys
+from types import ModuleType
+
+from time import sleep
+from robot.api.deco import keyword
+from robot.libraries.BuiltIn import BuiltIn
+
+from ta_egate_cmd_parser import ta_egate_cmd_parser
+from ta_messaging.message_flows import get_flow
+
+from ta5g_egate.interface import ta5g_egate
+
+
+def verify_starting_prb_for_set1_resources_are_different():
+    """
+    Verifies if two additional PF3 resources are configured for HARQ AN in resource set1,
+    each with a different starting PRB
+    """
+    flow_alias = "Established_PDU_UE1"
+    message_alias = "UEContextModificationResponse_2nd"
+    msg = get_flow(flow_alias).get_message(message_alias)
+    resources_to_add = msg.get_value_by_unique_key(key="resourceToAddModList")
+    for resource in resources_to_add:
+        if resource['pucch-ResourceId'] == 10:
+            starting_prb_resource_10 = resource['startingPRB']
+        elif resource['pucch-ResourceId'] == 11:
+            starting_prb_resource_11 = resource['startingPRB']
+    assert starting_prb_resource_10 != starting_prb_resource_11, \
+        "starting PRB for resource 10 and resource 11 are the same"
+
+
+@keyword("Verify that ${direction} throughput in SA mode for NR-UE${ue_id} is about ${traffic_rate}MBps")
+def verify_pdu_traffic(direction, ue_id, traffic_rate, margin=10):
+    """
+    Check average traffic rate on DC bearer
+    :param traffic_rate: expected average traffic rate
+    :param direction: dl|ul|bi
+    :param ue_id:
+    :return:
+    """
+    MBPS_1 = 1000000
+    qfi_id = 1
+    traffic_rate = int(traffic_rate) * MBPS_1
+    margin = traffic_rate * (float(margin)/100)
+    for i in range(6):
+        average_data_rate = _get_average_data_rate(ue_id=ue_id, qfi=qfi_id, direction=direction.lower())
+        if traffic_rate - margin < average_data_rate < traffic_rate + margin:
+            logging.info('Average data traffic rate occurred as expected - equals to {} '.format(average_data_rate))
+            return
+        sleep(5)
+    raise AssertionError('Unexpected average data traffic rate - equals to {} '.format(average_data_rate))
+
+
+def _get_average_data_rate(ue_id, qfi, direction):
+    ta_egate = ta_egate_cmd_parser()
+    cmd = ta_egate.get_command('bearer_stats')
+    bearer_stats_out = cmd(ue=ue_id, pdu=ue_id, qfi=qfi, dir=direction.lower()).execute_and_parse()
+    return int(bearer_stats_out['Average data rate']['Value'].split('(')[0])
+
+
+@keyword("Verify that DL throughput for NR-UE${ue_id} on SCell-${scell_id} is about ${expected_traffic_rate} MBps")
+def verify_traffic_on_scell_for_ue(ue_id, scell_id, expected_traffic_rate, error_margin=10):
+    """
+    :param ue_id:
+    :param scell_id:
+    :param expected_traffic_rate:
+    :param error_margin:
+    :return:
+    """
+    tr = float(expected_traffic_rate)
+
+    error_margin_percent = error_margin / 100.0
+
+    max_accepted_traffic_value = tr + (tr * error_margin_percent)
+    logging.info(max_accepted_traffic_value)
+    min_accepted_traffic_value = tr - (tr * error_margin_percent)
+    logging.info(min_accepted_traffic_value)
+
+    measured_traffic_value, measured_traffic_unit = _get_data_rates_on_scells(ue_id, scell_id)
+
+    if measured_traffic_unit == "Mbps":
+        if measured_traffic_value <= max_accepted_traffic_value:
+            if measured_traffic_value >= min_accepted_traffic_value:
+                message = ('Average data rate on SCell-{} '
+                           'for NR_UE{} has correct value of {} Mbps').format(ue_id, scell_id, measured_traffic_value)
+                logging.info(message)
+                return
+    raise AssertionError('Unexpected average data traffic rate - equals to {} '.format(measured_traffic_value))
+
+
+def _get_data_rates_on_scells(ue_id, scell_id):
+    ta_egate = ta_egate_cmd_parser()
+    cmd = ta_egate.get_command('ue_stats_nr')
+    ue_stats_out = cmd(id=ue_id, scell=scell_id, type="pdsch").execute_and_parse()
+    traffic_value = float(ue_stats_out["CellIndex-" + str(scell_id)]["Average"]["value"])
+    traffic_unit = str(ue_stats_out["CellIndex-" + str(scell_id)]["Average"]["unit"])
+    return traffic_value, traffic_unit
+
+
+@keyword("Setup on egate cell resource reservation on enb${enb_id} cell${enb_cell_id} gnb${gnb_id} cell${gnb_cell_id}")
+def setup_on_egate_cell_resource_reservation(enb_id, enb_cell_id, gnb_id, gnb_cell_id):
+    """
+    :param enb_id:
+    :param enb_cell_id:
+    :param gnb_id:
+    :param gnb_cell_id:
+    """
+    command = 'enb_crm_cell_resource_reservation enb={} cell={} tgt_enb={} tgt_cell={} ' \
+        'assigned_dl_minimum_share_to_nr=30 ' \
+        'assigned_dl_maximum_share_to_nr=100 ' \
+        'assigned_dl_minimum_share_to_lte=15 ' \
+        'assigned_dl_maximum_share_to_lte=70 ' \
+        'assigned_ul_minimum_share_to_nr=20 ' \
+        'assigned_ul_maximum_share_to_nr=70'.format(enb_id, enb_cell_id, gnb_id, gnb_cell_id)
+    ta5g_egate_interface = ta5g_egate()
+    ta5g_egate_interface._ute_wtssim_instance.execute_egate_command(cmd=command)
+    sleep(1)
+
+
+@keyword("Setup on egate dl cell resource reservation on enb${enb_id} cell${enb_cell_id}")
+def setup_on_egate_dl_cell_resource_reservation(enb_id, enb_cell_id):
+    """
+    :param enb_id:
+    :param enb_cell_id:
+    """
+    command = 'enb_dss_dl_cell_resource_reservation enb={} cell={} ' \
+        'reserved_fixed_normal_subframes=1000010001-1000010001-1000010001-1000010001-1000010001' \
+        '-1000010001-1000010001-1000010001'.format(enb_id, enb_cell_id)
+    ta5g_egate_interface = ta5g_egate()
+    ta5g_egate_interface._ute_wtssim_instance.execute_egate_command(cmd=command)
+    sleep(1)
+
+
+@keyword("Setup on egate high allocation on enb${enb_id} cell${enb_cell_id} gnb${gnb_id} cell${gnb_cell_id}")
+def setup_on_egate_enb_dss_resource_allocation_high(enb_id, enb_cell_id, gnb_id, gnb_cell_id):
+    """
+    :param enb_id:
+    :param enb_cell_id:
+    :param gnb_id:
+    :param gnb_cell_id:
+    """
+    command = 'enb_dss_resource_allocation enb={} cell={} tgt_enb={} tgt_cell={} dir=DL '\
+        'allocation_start_time=immediate ' \
+        'dl_allocated_normal_subframes=0111101110-0111101110-0111101110-0111101110-0111101110-0111101110-0111101110' \
+        '-0111101110'.format(enb_id, enb_cell_id, gnb_id, gnb_cell_id)
+    ta5g_egate_interface = ta5g_egate()
+    ta5g_egate_interface._ute_wtssim_instance.execute_egate_command(cmd=command)
+    sleep(1)
+
+
+@keyword("Setup on egate medium allocation on enb${enb_id} cell${enb_cell_id} gnb${gnb_id} cell${gnb_cell_id}")
+def setup_on_egate_enb_dss_resource_allocation_medium(enb_id, enb_cell_id, gnb_id, gnb_cell_id):
+    """
+    :param enb_id:
+    :param enb_cell_id:
+    :param gnb_id:
+    :param gnb_cell_id:
+    """
+    command = 'enb_dss_resource_allocation enb={} cell={} tgt_enb={} tgt_cell={} dir=DL '\
+        'allocation_start_time=immediate ' \
+        'dl_allocated_normal_subframes=0100101010-0100101010-0100101010-0100101010-0100101010-0100101010-0100101010' \
+        '-0100101010'.format(enb_id, enb_cell_id, gnb_id, gnb_cell_id)
+    ta5g_egate_interface = ta5g_egate()
+    ta5g_egate_interface._ute_wtssim_instance.execute_egate_command(cmd=command)
+    sleep(1)
+
+
+@keyword("Setup on egate small allocation on enb${enb_id} cell${enb_cell_id} gnb${gnb_id} cell${gnb_cell_id}")
+def setup_on_egate_enb_dss_resource_allocation_small(enb_id, enb_cell_id, gnb_id, gnb_cell_id):
+    """
+    :param enb_id:
+    :param enb_cell_id:
+    :param gnb_id:
+    :param gnb_cell_id:
+    """
+    command = 'enb_dss_resource_allocation enb={} cell={} tgt_enb={} tgt_cell={} dir=DL '\
+        'allocation_start_time=immediate ' \
+        'dl_allocated_normal_subframes=0100100000-0100100000-0100100000-0100100000-0100100000-0100100000-0100100000' \
+        '-0100100000'.format(enb_id, enb_cell_id, gnb_id, gnb_cell_id)
+    ta5g_egate_interface = ta5g_egate()
+    ta5g_egate_interface._ute_wtssim_instance.execute_egate_command(cmd=command)
+    sleep(1)
+
+
+def get_testline_name():
+    # Returns the name of the Testline. Ex: 2_16_UTE5GCLASSICAL4246
+    for module in sys.modules.copy().values():
+        if type(module) is ModuleType:
+            if "tl" in dir(module):
+                return os.path.basename(os.path.dirname(module.__file__))
+    raise Exception('No Testline Module Loaded!')
+
+
+def check_if_cm_execution():
+    # returns False if the test was launched by the CloudManager, otherwise returns True.
+    cm_execution = os.environ.get("CM_EXECUTION_ID")
+    StringTool.datedConsole(">>> SCOUT INFO : CM_EXECUTION_ID is: >{}<".format(cm_execution))
+    return False if cm_execution is not None else True

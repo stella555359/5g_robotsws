@@ -1,0 +1,502 @@
+*** Settings ***
+Documentation       Test suite for basic CSV4ALL Tests in loop
+...   Author: Daniel Cozma
+...   Contact:
+# https://wrgitlab.ext.net.nokia.com/RAN/resource-packages/taf.rfrl.csv4all/-/blob/main/taf/rfrl/csv4all/csv_example.robot?ref_type=heads
+
+Library     Collections
+Library     taf/rfrl/csv4all/CSV4AllTestCases.py
+Resource    taf/rfrl/uuf4all/uuf4all_keywords.robot
+Library     OperatingSystem
+
+Suite Setup   Run keywords
+...  Map BuildShareTimi01
+
+*** Variables ***
+${SWR}=              3
+${SBTS_RESET}=       20
+${RF_RESET}=         20
+${BBMOD_RESET}=      10
+${CELL_LOCK}=        3
+${DELTA_SCF}=        3
+
+${REPORT}                     ${True}
+${REPORT_COMMENT}=            ${None}
+@{CUSTOMERS_LIST}             ZAIN
+${QC_DOMAIN}=                 MN_RAN
+${QC_PROJECT}=                RAN_VRF
+${RP_CA}                      VRF_OAM
+${RP_LOCATION}                VRF_TSR1
+${RP_ORGANIZATION}            VRF_TSR1_T02
+#${EMAIL_RECIPIENTS}           I_COMPA_TM@internal.nsn.com
+
+
+${INITIAL_SW}               ${EMPTY}
+${TARGET_SW}                ${EMPTY}
+@{CUSTOM_ALARMS}            @{EMPTY}
+
+${ONLINE_PARAMETER_DELTA}=      /home/ute/MN/UTE/robotws/testsuite/Timisoara/SBTS/test_line_specific/SBTS1344/json/ONLINE_PARAMETER_DELTA.json
+${SITE_RESET_DELTA}=      /home/ute/MN/UTE/robotws/testsuite/Timisoara/SBTS/test_line_specific/SBTS1344/json/SITE_RESET_DELTA.json
+${NR_RAT_RESET_DELTA}=    /home/ute/MN/UTE/robotws/testsuite/Timisoara/SBTS/test_line_specific/SBTS1344/json/NR_RAT_RESET_DELTA.json
+${LTE_RAT_RESET_DELTA}=    /home/ute/MN/UTE/robotws/testsuite/Timisoara/SBTS/test_line_specific/SBTS1344/json/LTE_RAT_RESET_DELTA.json
+${WCDMA_RAT_RESET_DELTA}=    /home/ute/MN/UTE/robotws/testsuite/Timisoara/SBTS/test_line_specific/SBTS1344/json/WCDMA_RAT_RESET_DELTA.json
+${GSM_RAT_RESET_DELTA}=    /home/ute/MN/UTE/robotws/testsuite/Timisoara/SBTS/test_line_specific/SBTS1344/json/GSM_RAT_RESET_DELTA.json
+
+
+&{NODE1}                    node_alias=SBTS_344_LG
+...                         testline_object=${tl.enbs[0]}
+...                         source_sw=${INITIAL_SW}
+...                         target_sw=${TARGET_SW}
+...                         custom_allowed_alarms=${CUSTOM_ALARMS}
+...                         testline_scout_name=10_18_UTESRANCLOUD1344
+
+&{NODE2}                    node_alias=SBTS_5G
+...                         testline_object=${tl.enbs[0]}
+...                         source_sw=${INITIAL_SW}
+...                         target_sw=${TARGET_SW}
+...                         custom_allowed_alarms=${CUSTOM_ALARMS}
+...                         testline_scout_name=10_18_UTESRANCLOUD1344
+
+@{NODES}                    ${NODE1}
+#@{NODES}                    ${NODE1}     ${NODE2}
+
+
+*** Test Cases ***
+10_E2E_TL_SW_Upgrade_Rollback_with_OAM_KPI__NODES
+    [Timeout]   24h
+    Set Initial And Candidate
+    e2e_tl_sw_upgrade_rollback_with_oam_kpi
+    ...     nodes_details=${NODES}
+    ...     test_nodes_details=${NODES}
+    ...     iterations_per_node=${SWR}
+    ...     customers_list=${CUSTOMERS_LIST}
+    ...     report=${REPORT}
+    ...     restore_to_target_sw=${True}
+    ...     qc_domain=${QC_DOMAIN}
+    ...     qc_project=${QC_PROJECT}
+    ...     qc_id=${90145}
+
+11_E2E_TL_Site_Reset_without_HWF_with_OAM_KPI__NODES
+    [Timeout]   24h
+    e2e_tl_site_reset_without_hwf_with_oam_kpi
+   ...     nodes_details=${NODES}
+    ...     test_nodes_details=${NODES}
+    ...     iterations_per_node=${SWR}
+    ...     customers_list=${CUSTOMERS_LIST}
+    ...     report=${REPORT}
+    ...     qc_domain=${QC_DOMAIN}
+    ...     qc_project=${QC_PROJECT}
+    ...     qc_id=${90146}
+
+11_E2E_TL_Site_Reset_without_HWF_with_OAM_KPI__NODE1
+    [Timeout]   24h
+    e2e_tl_site_reset_without_hwf_with_oam_kpi
+   ...     nodes_details=${NODES}
+    ...     test_nodes_details=${NODE1}
+    ...     iterations_per_node=${SWR}
+    ...     customers_list=${CUSTOMERS_LIST}
+    ...     report=${REPORT}
+    ...     qc_domain=${QC_DOMAIN}
+    ...     qc_project=${QC_PROJECT}
+    ...     qc_id=${90146}
+
+12_E2E_TL_RU_Reset_with_OAM_KPI__NODES
+   [Timeout]   24h
+   e2e_tl_ru_reset_with_oam_kpi
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${RF_RESET}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90137
+
+12_E2E_TL_RU_Reset_with_OAM_KPI__NODE1
+   [Timeout]   24h
+   e2e_tl_ru_reset_with_oam_kpi
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODE1}
+    ...          iterations_per_node=${RF_RESET}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90137
+
+
+13_E2E_TL_Capacity_Module_Reset_with_OAM_KPI__NODES
+   [Timeout]   24h
+   e2e_tl_capacity_module_reset_with_oam_kpi
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${BBMOD_RESET}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90136
+
+
+13_E2E_TL_Capacity_Module_Reset_with_OAM_KPI__NODE1
+   [Timeout]   24h
+   e2e_tl_capacity_module_reset_with_oam_kpi
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODE1}
+    ...          iterations_per_node=${BBMOD_RESET}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90136
+
+14_E2E_TL_BTS_Block_Unblock__NODES
+    [Timeout]   24h
+    e2e_tl_bts_block_unblock
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${CELL_LOCK}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+#   ...          qc_id=90145
+
+
+14_E2E_TL_BTS_Block_Unblock__NODE1
+    [Timeout]   24h
+    e2e_tl_bts_block_unblock
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODE1}
+    ...          iterations_per_node=${CELL_LOCK}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+#   ...          qc_id=90145
+
+15_E2E_TL_Cell_Lock_Unlock_LTE_with_OAM_KPI__NODES
+    [Timeout]   24h
+    e2e_tl_cell_lock_unlock_lte_with_oam_kpi
+	...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${CELL_LOCK}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90140
+
+15_E2E_TL_Cell_Lock_Unlock_LTE_with_OAM_KPI__NODE1
+    [Timeout]   24h
+    e2e_tl_cell_lock_unlock_lte_with_oam_kpi
+	...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODE1}
+    ...          iterations_per_node=${CELL_LOCK}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90140
+
+16_E2E_TL_Cell_Block_Unblock_LTE_with_OAM_KPI__NODES
+    [Timeout]   24h
+    e2e_tl_cell_block_unblock_lte_with_oam_kpi
+	...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${CELL_LOCK}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90139
+
+16_E2E_TL_Cell_Block_Unblock_LTE_with_OAM_KPI__NODE1
+    [Timeout]   24h
+    e2e_tl_cell_block_unblock_lte_with_oam_kpi
+	...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODE1}
+    ...          iterations_per_node=${CELL_LOCK}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90139
+
+17_E2E_TL_Cell_Block_Unblock_NR_with_OAM_KPI__NODES
+    [Timeout]   24h
+    e2e_tl_cell_block_unblock_nr_with_oam_kpi
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${CELL_LOCK}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+#   ...          qc_id=90145
+
+17_E2E_TL_Cell_Block_Unblock_NR_with_OAM_KPI__NODE1
+    [Timeout]   24h
+    e2e_tl_cell_block_unblock_nr_with_oam_kpi
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODE1}
+    ...          iterations_per_node=${CELL_LOCK}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+#   ...          qc_id=90145
+
+18_E2E_TL_Cell_Block_Unblock_GSM_with_OAM_KPI__NODES
+    [Timeout]   24h
+    e2e_tl_cell_block_unblock_gsm_with_oam_kpi
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${CELL_LOCK}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+#   ...          qc_id=90138
+
+18_E2E_TL_Cell_Block_Unblock_GSM_with_OAM_KPI__NODE1
+    [Timeout]   24h
+    e2e_tl_cell_block_unblock_gsm_with_oam_kpi
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODE1}
+    ...          iterations_per_node=${CELL_LOCK}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+#   ...          qc_id=90138
+
+
+
+19_E2E_TL_Cell_Block_Unblock_WCDMA_with_OAM_KPI__NODES
+    [Timeout]   24h
+    e2e_tl_cell_block_unblock_wcdma_with_oam_kpi
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${CELL_LOCK}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+#   ...          qc_id=90145
+
+19_E2E_TL_Cell_Block_Unblock_WCDMA_with_OAM_KPI__NODE1
+    [Timeout]   24h
+    e2e_tl_cell_block_unblock_wcdma_with_oam_kpi
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODE1}
+    ...          iterations_per_node=${CELL_LOCK}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+#   ...          qc_id=90145
+
+20_E2E_TL_Delta_Commissioning_With_Online_Parameter_Modification__NODES
+    [Timeout]   24h
+    e2e_tl_delta_commissioning_with_online_parameter_modification
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${DELTA_SCF}
+    ...          delta=${ONLINE_PARAMETER_DELTA}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90143
+
+20_E2E_TL_Delta_Commissioning_With_Online_Parameter_Modification__NODE1
+    [Timeout]   24h
+    e2e_tl_delta_commissioning_with_online_parameter_modification
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODE1}
+    ...          iterations_per_node=${DELTA_SCF}
+    ...          delta=${ONLINE_PARAMETER_DELTA}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90143
+
+21_E2E_TL_Delta_Commissioning_With_Site_Reset_Required__NODES
+    [Timeout]   24h
+    e2e_tl_delta_commissioning_with_site_reset_required
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${DELTA_SCF}
+    ...          delta=${SITE_RESET_DELTA}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90144
+
+21_E2E_TL_Delta_Commissioning_With_Site_Reset_Required__NODE1
+    [Timeout]   24h
+    e2e_tl_delta_commissioning_with_site_reset_required
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODE1}
+    ...          iterations_per_node=${DELTA_SCF}
+    ...          delta=${SITE_RESET_DELTA}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90144
+
+22_E2E_TL_Delta_Commissioning_With_LTE_Rat_Reset__NODES
+    [Timeout]   24h
+    e2e_tl_delta_commissioning_with_lte_rat_reset
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${DELTA_SCF}
+    ...          delta=${LTE_RAT_RESET_DELTA}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90142
+
+22_E2E_TL_Delta_Commissioning_With_LTE_Rat_Reset__NODE1
+    [Timeout]   24h
+    e2e_tl_delta_commissioning_with_lte_rat_reset
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODE1}
+    ...          iterations_per_node=${DELTA_SCF}
+    ...          delta=${LTE_RAT_RESET_DELTA}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90142
+23_E2E_TL_Delta_Commissioning_With_NR_Rat_Reset__NODES
+    [Timeout]   24h
+    e2e_tl_delta_commissioning_with_nr_rat_reset
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${DELTA_SCF}
+    ...          delta=${NR_RAT_RESET_DELTA}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+#   ...          qc_id=90145
+
+23_E2E_TL_Delta_Commissioning_With_NR_Rat_Reset__NODE1
+    [Timeout]   24h
+    e2e_tl_delta_commissioning_with_nr_rat_reset
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODE1}
+    ...          iterations_per_node=${DELTA_SCF}
+    ...          delta=${NR_RAT_RESET_DELTA}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+#   ...          qc_id=90145
+
+24_E2E_TL_Delta_Commissioning_With_WCDMA_Rat_Reset__NODES
+    [Timeout]   24h
+    e2e_tl_delta_commissioning_with_wcdma_rat_reset
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${DELTA_SCF}
+    ...          delta=${WCDMA_RAT_RESET_DELTA}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+#   ...          qc_id=90145
+
+
+24_E2E_TL_Delta_Commissioning_With_WCDMA_Rat_Reset__NODE1
+    [Timeout]   24h
+    e2e_tl_delta_commissioning_with_wcdma_rat_reset
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${DELTA_SCF}
+    ...          delta=${WCDMA_RAT_RESET_DELTA}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+#   ...          qc_id=90145
+
+25_E2E_TL_Delta_Commissioning_With_GSM_Rat_Reset__NODES
+    [Timeout]   24h
+    e2e_tl_delta_commissioning_with_gsm_rat_reset
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODES}
+    ...          iterations_per_node=${DELTA_SCF}
+    ...          delta=${GSM_RAT_RESET_DELTA}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90141
+
+25_E2E_TL_Delta_Commissioning_With_GSM_Rat_Reset__NODE1
+    [Timeout]   24h
+    e2e_tl_delta_commissioning_with_gsm_rat_reset
+    ...          nodes_details=${NODES}
+    ...          test_nodes_details=${NODE1}
+    ...          iterations_per_node=${DELTA_SCF}
+    ...          delta=${GSM_RAT_RESET_DELTA}
+    ...          report=${REPORT}
+    ...          customers_list=${CUSTOMERS_LIST}
+    ...          report_comment=${REPORT_COMMENT}
+    ...          qc_project=${QC_PROJECT}
+    ...          qc_domain=${QC_DOMAIN}
+    ...          qc_id=90141
+
+*** Keywords ***
+Set Initial And Candidate
+    ${initial_sw}=    run keyword if  '${INITIAL_SW}'=='${EMPTY}'  Get Source SW
+    ...   ELSE  set variable  ${INITIAL_SW}
+    ${candidate_sw}=    run keyword if  '${TARGET_SW}'=='${EMPTY}'  Get Target SW
+    ...   ELSE  set variable  ${TARGET_SW}
+    Set to dictionary    ${NODE1}    source_sw=${initial_sw}    target_sw=${candidate_sw}
+#    Set to dictionary    ${NODE2}    source_sw=${initial_sw}    target_sw=${candidate_sw}
+
+Map BuildShareTimi01
+    Run  sudo mkdir -p /media/BuildShareTimi01
+    Run  sudo chown ute:ute /media/BuildShareTimi01
+    ${sudo_command}  Catenate  SEPARATOR=  sudo sh -c "echo //10.5.16.78/BuildShareTimi01 /media/BuildShareTimi01/ cifs _netdev,
+    ...  noperm,username=userbuild,,nosuid,noexec,password=Aikon_123456*8 0 0 >>/etc/fstab"
+    Run  ${sudo_command}
+    Run  sudo mount -a
+    Run  sudo cp -r /home/ute/testline_configuration/10_18_UTESRANCLOUD1344 /home/ute/
+
+

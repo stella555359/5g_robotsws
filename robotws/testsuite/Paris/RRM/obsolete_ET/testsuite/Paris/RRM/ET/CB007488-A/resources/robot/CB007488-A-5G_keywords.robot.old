@@ -1,0 +1,426 @@
+*** Settings ***
+Documentation
+...               CB007488-A keywords for Automation
+...
+...               Test Case Scenario author   : franck.ngoune_messi@nokia.com
+...               Creation Date               : 03-Fev-2020
+...               Modified Date               : 21-Mars-2023
+...               Last Modified by            : loic.marzin@nokia.com
+...               Last Modified by            : richard.duthu@nokia.com - 25-09-2024 - Produce Scout data + some RF50 fixes
+
+Library             OperatingSystem
+Library             Collections
+Library             DateTime
+Library             taf.transport.ssh    WITH NAME    csn
+Library             taf.config.scf       WITH NAME    scf
+Library             taf.wts.runner           WITH NAME    wtsemu
+Library             ute_wtssim
+Library             ../../../resources/python/luashark_tools.py
+Library             luashark_tools.analyzer       WITH NAME       analyzer
+Library             ../../../../../resources/SWENG/python/StringTool.py
+
+Resource            ../../../../../resources/SWENG/robot/Setup.robot
+Resource            ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource            ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource            ../../../../../resources/SWENG/robot/Tools.robot
+Resource            ../../../../../resources/SWENG/robot/Connect.robot
+Resource            ../../../../../resources/SWENG/robot/Restart.robot
+Resource            ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource            ../../../../../resources/SWENG/robot/Traffic.robot
+Resource            ../../../../../resources/SWENG/robot/Restart.robot
+Resource            ../../../../../resources/SWENG/robot/PacketSearch.robot
+Resource            ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource            ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource            ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource            ../../../resources/robot/Trigger.robot
+Resource            ../../../../../resources/SWENG/robot/Counters.robot
+#resource
+
+*** Variables ***
+
+
+&{UE_PROFILE}                       ue=1                                    profile=1
+...                                 pdu=${None}        qfi=${None}          type=13
+...                                 bearer=2                                testMode=False
+...                                 trf_id=1                                target_gnb=2
+...                                 burst=${None}                           target_cells=1
+...                                 period_ms=${None}
+
+
+${gNB_BIP_Attach}              gNB_BIP_ASIK_Slave
+${Ap_BIP_Attach}               Ap_BIP_ASIK_Slave
+${BIP_capture_Path}            ${EMPTY}
+${Traffic_Duration}            120s
+${gNB_Mplane_IP}               10.0.1.111
+${Udp_Receiver_wts_IP}         10.0.1.1
+${Destination_port}            5678
+${Sherpa_logs_local_path}
+@{UL_PDCP_PDU_MSG_ID}          L2HI_DU(0x82)    L2HI_DU(0x02)
+@{DDDS_FLOW_CONTROL_MSG_ID}    UlDl DU:FlowControl3GppF1(0x4c)
+${TMP_PATH}                    /tmp
+
+# List of fields to catch per packet
+@{MSG_FIELDS_SLOT_SFN}              slot    sfn
+@{ULDATA_PUCCH_REQ_FIELDS}          rnti$       pucchFormat$    startPrb$    numOfPrb$    nANPucch$
+...                                 numOfSymbols$    firstSymbol$       numOfBitsOfUciInformation$
+@{ULDATA_PUCCH_RESP_HARQD_FIELDS}   rnti$       pucchFormat$    startPrb$    ackNack$     dtx$         crc$
+@{ULDATA_PUCCH_RESP_PS_FIELDS}      rnti$       pucchFormat$    startPrb$    uciBits$     dtx$         crc$
+@{DLDATA_PDCCH_SEND_REQ_FIELDS}     rnti$
+@{ULDATA_PUSCH_REQ_FIELDS}          rnti$       startPrb$       numOfPrb$    numOfPuschSymbols$    startSymbol$
+@{ULDATA_PUSCH_RESP_HARQU_FIELDS}   rnti$   dtx$         crc$
+@{ULDATA_PUSCH_RESP_PS_FIELDS}      rnti$   dtx$
+
+
+# Response definition : packet name and list of fields to collect for each message
+&{ULDATA_PUCCH_REQ}                    msg=uldata_pucchreceivereq          fields=${ULDATA_PUCCH_REQ_FIELDS}
+&{ULDATA_PUCCH_RESP_HARQD}             msg=uldata_pucchreceiverespharqd    fields=${ULDATA_PUCCH_RESP_HARQD_FIELDS}
+&{ULDATA_PUCCH_RESP_PS}                msg=uldata_pucchreceiverespps       fields=${ULDATA_PUCCH_RESP_PS_FIELDS}
+&{DLDATA_PDCCH_SEND_REQ}               msg=dldata_pdcchsendreq             fields=${DLDATA_PDCCH_SEND_REQ_FIELDS}
+&{ULDATA_PUSCH_RECEIVE_Req}            msg=uldata_puschreceivereq          fields=${ULDATA_PUSCH_REQ_FIELDS}
+&{ULDATA_PUSCH_RECEIVE_RESP_HARQU}     msg=uldata_puschreceiverespharqu    fields=${ULDATA_PUSCH_RESP_HARQU_FIELDS}
+&{ULDATA_PUSCH_RECEIVE_RESP_PS}        msg=uldata_puschreceiverespps       fields=${ULDATA_PUSCH_RESP_PS_FIELDS}
+
+
+# Global response definition for UL Data Prach
+@{UlDataPrachRespDefList_PUCCH}           ${ULDATA_PUCCH_REQ}             ${ULDATA_PUCCH_RESP_HARQD}
+...                                       ${ULDATA_PUCCH_RESP_PS}
+@{UlDataPrachRespDefList_PUSCH}           ${ULDATA_PUSCH_RECEIVE_Req}     ${ULDATA_PUSCH_RECEIVE_RESP_HARQU}
+...                                       ${ULDATA_PUSCH_RECEIVE_RESP_PS}
+@{UlDataPrachReceiveIndDefList}           ${ULDATA_PUCCH_REQ}             ${ULDATA_PUSCH_RECEIVE_Req}
+
+# Global response definition for UL Data Prachs
+@{UlDataPrachRespDefList}           ${ULDATA_PUSCH_RECEIVE_Req}         ${ULDATA_PUSCH_RECEIVE_RESP_HARQU}
+...                                 ${ULDATA_PUSCH_RECEIVE_RESP_PS}
+@{DlDataScBlockSendReqDefList}      ${ULDATA_PUCCH_REQ}
+
+
+@{TrafficFilter}                    UlData_PuschReceiveReq
+...                                 UlData_PrachReceiveReq
+...                                 UlData_PuschReceiveRespHarqU
+...                                 UlData_PucchReceiveReq
+...                                 UlData_PrachReceiveReq
+...                                 UlData_PucchReceiveRespHarqD
+...                                 UlData_PucchReceiveRespPs
+...                                 UlData_PrachReceiveInd
+
+
+@{AttachFilter}                     UlData_PucchReceiveReq
+...                                 UlData_PrachReceiveReq
+...                                 UlData_PucchReceiveRespHarqD
+...                                 UlData_PucchReceiveRespPs
+...                                 UlData_PrachReceiveInd
+...                                 DlData_PdschSendReq
+...                                 DlData_PdcchSendReq
+...                                 DlData_PdschPayloadTbSendReq
+...                                 UlData_PuschReceiveReq
+...                                 UlData_PuschReceiveRespHarqU
+...                                 UlData_PuschReceiveRespPs
+...                                 UlData_PuschReceiveRespLo
+
+
+
+*** Keywords ***
+
+# Start Keyword for TCs
+
+TC_RA_PRACH_Fx_Periodicity_40_NSA_FDD_FR1_5Mhz
+    [Arguments]           ${param}
+    Set Suite Variable    ${param}
+    Init Sequence         ${param}
+    Step                  WTS cfg Preparation                                         argument=${param}
+    Step                  Set MRBTSID and NRBTSID
+    Step                  Update gNB Scf                                              argument=${param}
+    Critical Step         Restart TL
+    Step                  WTS Setup                                                   depends=Restart TL
+#    Critical Step         UE Cell Setup Check                                         depends=WTS Setup
+    Step                  UE attach NSA                                               depends=WTS Setup
+    [Teardown]            Teardown TC
+
+
+RA_PRACH_F1_P40_With_Long_PUxCH_F0_NSA_FDD_FR1_5Mhz
+    [Arguments]           ${param}
+    Set Suite Variable    ${param}
+    Init Sequence         ${param}
+    Step                  WTS cfg Preparation                                         argument=${param}
+    Step                  Set MRBTSID and NRBTSID
+    Step                  Update gNB Swconfig                                         argument=${param}
+    Step                  Update gNB Scf                                              argument=${param}
+    Critical Step         Restart TL
+    Step                  WTS Setup                                                   depends=Restart TL
+#    Step                  UE Cell Setup Check                                         depends=WTS Setup
+    Critical Step         UE attach NSA                                               depends=WTS Setup
+    Step                  Traffic UE UL NSA                                           argument=${param}
+    Step                  sleep                                                       argument=600s
+    Step                  Collect PM Counters File
+    Step                  Check CounterState
+    [Teardown]            Teardown TC
+
+
+# specific Keywords for 938-A
+
+Traffic UE UL NSA
+    [Arguments]                     ${testParam}
+    Traffic UE UL                   throughput=${testParam.seq.Ulthroughput}
+    ...                             duration=${testParam.seq.timeDuration}
+    ...                             shouldBeStop=${testParam.stopTraffic}
+    ...                             shouldBeCheck=False
+#    ...                             ueSetting=${ueProfile}
+    ...                             deviation=50
+
+# end specific Keywords for 938-A
+
+
+Teardown TC
+    Dated log              Test ending
+    Produce Scout Data
+    #Step                   Setup.Get Sos Report
+    [Teardown]             GenericTest.Display diagnosis
+
+# Update SCF
+
+Set MRBTSID and NRBTSID
+    ${dist_name} =       Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ${ch_dist_name} =    Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-0
+    ${nrcell_dist_name}  Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    set suite variable    &{FRAME_PARAMETER_TYPE}    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...                   p_name=frameStructureType
+    Set Suite Variable    ${dist_name}
+    Set Suite Variable    ${ch_dist_name}
+
+
+Update gNB Scf
+    [Arguments]                    ${testParam}
+    &{modify_param0}    Create Dictionary
+    ...    parameter=prachConfigurationIndex
+    ...    dist_name=${nrcell_dist_name}
+    ...    value=${testParam.seq.prachConfigurationIndex}
+    &{modify_param1}    Create Dictionary
+    ...    parameter=actPrachMultiplexing
+    ...    dist_name=${nrcell_dist_name}
+    ...    value=${testParam.seq.actPrachMultiplexing}
+    &{modify_param2}    Create Dictionary
+    ...    parameter=actFdmScheduling
+    ...    dist_name=${dist_name}
+    ...    value=${testParam.seq.actFdmScheduling}
+    &{modify_param3}    Create Dictionary
+    ...    parameter=actFdmEnhancedScheduling
+    ...    dist_name=${dist_name}
+    ...    value=${testParam.seq.actFdmEnhancedScheduling}
+    &{modify_param4}    Create Dictionary
+    ...    parameter=msg1FrequencyStart
+    ...    dist_name=${nrcell_dist_name}
+    ...    value=${testParam.msg1FrequencyStart}
+    &{modify_param5}    Create Dictionary
+    ...    parameter=zeroCorrelationZoneConfig
+    ...    dist_name=${nrcell_dist_name}
+    ...    value=${testParam.ZeroCorrZoneConfig}
+    @{modify_param}=            Create List                ${modify_param0}
+    ...                                                    ${modify_param1}
+    ...                                                    ${modify_param2}
+    ...                                                    ${modify_param3}
+    ...                                                    ${modify_param4}
+    ...                                                    ${modify_param5}
+
+    OAM Set Params                    ${modify_param}
+
+# swconfig update
+
+Update gNB Swconfig
+    [Arguments]               ${testParam}
+    ${590076}=                create dictionary      field=0x590076     value=${testParam.seq.RadParamL2ps1348}
+    ${580198}=                create dictionary      field=0x580198      value=${testParam.seq.RadParamCprt1348}
+    ${swconfig_gnb}=          Create List            ${590076}           ${580198}
+    Set Fields in swconfig DU       param_list=${swconfig_gnb}
+    Dated log          RadParams to modify:\n ${swconfig_gnb}
+
+
+# Update WTS Config file
+
+WTS cfg Preparation
+    [Arguments]       ${testParam}
+    WtsCfgConfig.startSession
+    #set tdd_cell =off
+    ${oldValue}          getParam           prefix=set_cell          param=tdd_cell
+    replaceValue         prefix=set_cell
+    ...                  param=tdd_cell
+    ...                  oldValue=${oldValue}
+    ...                  newValue=off
+    #set xml file name
+    # AirphoneConfig.xml is no longer present
+    #${oldValue}          getParam           prefix=set_uec          param=file
+    #replaceValue         prefix=set_uec
+    #...                  param=file
+    #...                  oldValue=${oldValue}
+    #...                  newValue=AirphoneConfig.xml
+    WtsCfgConfig.stopSession         rename=modified
+
+#Capture pcap
+
+Start Capture CPRT
+    ${CaptureCPRT}                  Capture CPRT Set Upon Config            airscale=${GNB_DU}
+    Capture Init                    ${CaptureCPRT}
+    Capture Start                   ${CaptureCPRT}
+    Set Suite Variable              ${CaptureCPRT}
+
+Stop Capture CPRT
+    Capture Stop                    ${CaptureCPRT}
+
+setup Mirroring for BIP capture
+    [Tags]    ActivateL1L2traces
+    ${Capture_BIP_GNB}                       Capture L1L2 Set Upon Config
+    ${Capture_BIP_AP}                        Capture L1L2 Set Upon Config        ${AP_DU}
+    set suite variable                       ${Capture_BIP_GNB}
+    set suite variable                       ${Capture_BIP_AP}
+
+Capture Start AP Asik Slave
+    [Tags]      CAPTURE
+	[Arguments]             ${prefix}=Ap_Attach
+    Capture Init                              ${Capture_BIP_AP}
+    ${Capture_BIP_AP.prefix}                  set Variable		        ${prefix}
+    Capture Start                             ${Capture_BIP_AP}
+
+Capture Start GNB Asik Slave
+    [Tags]      CAPTURE
+	[Arguments]            ${prefix}=gNB_Attach
+
+    ${bipMsgList}=                            Set Variable If      '${prefix}' == 'gNB_Attach'
+    ...                                       ${AttachFilter}             ${TrafficFilter}
+    Capture Init                              ${Capture_BIP_GNB}
+	${Capture_BIP_GNB.prefix}                 set Variable		           ${prefix}
+    ${Capture_BIP_GNB.filter}                 Get Filter For Particular Msgs     ${bipMsgList}
+    Capture Start                             ${Capture_BIP_GNB}
+
+Capture Stop GNB
+    [Tags]      CAPTURE
+    Capture Stop                             ${Capture_BIP_GNB}
+
+Capture Stop AP
+    [Tags]      CAPTURE
+    Capture Stop                             ${Capture_BIP_AP}
+
+
+# Attach KW
+
+#UE attach
+#    [Arguments]          ${testParam}
+#    UE attach NSA          #${testParam}
+
+UE attach NSA
+    SgNB Addition to ENB                       ${UE_PROFILE}
+    sleep    5s
+    Dated log          Verify UE Attach
+    UE Attach Check
+
+UE attach Ue id
+	[Arguments]         ${idUE}
+    ${ueProfile}       Copy Dictionary        ${UE_PROFILE}
+    Set To Dictionary    ${ueProfile}      ue       ${idUE}
+    SgNB Addition to ENB                       ueSetting=${ueProfile}
+    sleep    5s
+    Dated log          ${idUE} Verify UE Attach
+    UE Attach Check
+
+
+# checking pcap field
+
+Check prachConfigIndex on UlcellSetupreq Pcap
+    [Arguments]                     ${capture}
+    [Documentation]                 Check prachConfigIndex from CPRT -> L2PS in GNB_CPRT_NODE Pcap
+    ${pdmlFile}                     analyzer.pcap_to_pdml                  ${capture.path}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_cellsetupreq
+    ...                             path=.*prachConfigurationIndex$           #.*enDcSyncStatus$
+    ...                             value=${param.seq.prachConfigIndexCheck}
+
+Check Field In Message
+    [Arguments]                     ${pdmlFile}
+    ...                             ${msg}
+    ...                             ${field}
+    ...                             ${value}
+#    ${msg}=                         Set Variable                    itf_l2_ps_user_UserSetupReq
+    Dated log                       In message ${msg}, check ${field}=${value}         first=True
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${msg}.${field}$
+    ...                             value=${value}
+
+
+Check IE In Message
+    [Arguments]                     ${message}    ${message_ie_dictionary}    ${Bip}
+	${pdmlFile}=                    analyzer.pcap_to_pdml          ${Bip}
+    ${items}     Get Dictionary Items   ${message_ie_dictionary}
+    FOR  ${key}   IN  @{message_ie_dictionary.keys()}
+         builtin.log     The current key is: ${key}
+         analyzer.check_field                pdmlFile=${pdmlFile}
+         ...                                 packetName=${message}
+         ...                                 fieldName=${key}
+         ...                                 value=${message_ie_dictionary["${key}"]}
+    END
+
+
+Check Slot In Rach According To PrachConfigIndex
+    [Documentation]                 Check slot position in PrachReceiveReq
+    ...                             according to PrachConfigIndex
+
+    Dated log                       Pcap path : ${Capture_BIP_GNB.path}
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${Capture_BIP_GNB.path}
+    Dated log                       Pdml path: ${Capture_BIP_GNB.path}
+    # 1 - Retrieve from pdml all prachReceiveReq and check slot value
+    Check Field In Message         ${pdmlFile}
+    ...                            UlData_PrachReceiveReq
+    ...                            PrachReceiveReq.slot
+    ...                            ${param.seq.prachSlot}
+    Dated log                       End of checking Slot In Rach According To prachConfigIndex
+
+
+Check Pusch Resp HarqU Is In Rach Slot
+    [Arguments]                     ${param}
+    Check At least one Response     respName=${ULDATA_PUSCH_RECEIVE_RESP_HARQU.msg}
+
+Check Pusch Receive Req Is In Rach Slot
+    [Arguments]                     ${param}
+    Check At least one Response     respName=${ULDATA_PUSCH_RECEIVE_Req.msg}
+
+Check Pucch format2 Multiplexing with Prach
+    [Documentation]                 Check if pucchReceiveReq format2 are
+    ...                             scheduled in Prach Slots
+    [Arguments]               ${param}
+    Check At least one Response     respName=${ULDATA_PUCCH_REQ.msg}
+
+Check Pusch Multiplexing with Prach
+    [Documentation]                 Check if puschReceiveReq are scheduled in
+    ...                             Prach Slots
+    [Arguments]               ${testParam}
+    Get Triggers and responses UL Data Prach                     pcapFile=${Capture_BIP_GNB.path}
+    ...                                                          respDefList=${UlDataPrachRespDefList_PUSCH}
+    Check Pusch Receive Req Is In Rach Slot                      ${testParam}
+    Check Pusch Resp HarqU Is In Rach Slot                       ${testParam}
+
+Collect PM Counters File
+    [Documentation]                 KW to get counters and store in specific directory with day date
+
+    ${date}                          Get Current Date
+    ${date_in_dir_name}              Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                   Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+    BuiltIn.Log              The PM counters file collected from gnb will be stored under : ${log_path_pm}
+    ${pm_latest}                    Counters.Collect PM files from BTS    ${log_path_pm}
+    set Suite Variable              ${LATEST_FILE}       ${pm_latest}
+    set Suite Variable              ${log_path_pm}
+    BuiltIn.Log     Latest pm counters file : ${LATEST_FILE}
+
+Check CounterState
+    [Documentation]                 M55308C00002
+    ...                             M55308C10002   Prach slot which is used for PUSH
+    Dated Log New Line          =================================================================
+    Dated Log           PM Counter M55308C00002 and M55308C10002 analysis
+    Dated Log          =================================================================
+    ${val1}        Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                             ${LATEST_FILE}        M55308C00002        1
+    ${val2}        Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                             ${LATEST_FILE}        M55308C10002        1
+    Dated Log           Value of M55308C00002 = ${val1}
+
+    Dated Log           Value of M55308C10002 = ${val2}
+
+    should be true      ${val1} >= 1000
+    should be true      ${val2} >= 1000

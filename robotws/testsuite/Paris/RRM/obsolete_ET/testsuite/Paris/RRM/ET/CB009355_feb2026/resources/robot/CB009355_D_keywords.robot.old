@@ -1,0 +1,185 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB009355 step D
+...
+...               Test Case Scenario author   : yann.ah.herve@nokia.com / jing.tian@nokia.com
+...               Test Case Scenario contact  : yann.ah.herve@nokia.com / jing.tian@nokia.com
+...               Test Case automation author : jing.tian@nokia.com
+...               Test Case automation contact: jing.tian@nokia.com
+...               Creation Date               : 10-January-2024
+...               Last Modified by            :
+...               Modification:
+...                       10-January-2024     | Creation
+...                       03-May-2024         | Re-enable test failure on bad KPIs
+
+Library           ../python/getti_events.py
+
+Resource          ./CB009355_common_keywords.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/KPIs.robot
+Resource          ../../../resources/common/TtiTrace/ttitrace.robot
+
+
+
+*** Variables ***
+
+# DL and UL throughputs in Mbps
+${max_DL_tput_15MHz_with_blanking_cell1}        70
+${max_UL_tput_15MHz_with_blanking_cell1}        6
+${max_DL_tput_15MHz_with_blanking_cell2}        60
+${max_UL_tput_15MHz_with_blanking_cell2}        4
+
+# 2 UEs on cell1 / 2 UES on cell2
+${nb_UEs}                        4
+
+${delta_scf_D_IWK10_TC5}            testsuite/Paris/RRM/ET/CB009355/resources/config/Delta_Configuration_scf_D_IWK10_TC5.json
+${TC_D_IWK10_TC5_PM_constraints}    testsuite/Paris/RRM/ET/CB009355/resources/config/TC_D_IWK10_TC5_PM_Constraints.csv
+
+@{SA_UE_List}
+
+*** Keywords ***
+
+CB9355_D Build UE List
+    # Build UE list
+    FOR        ${ue_id}      IN RANGE        1        ${nb_UEs} + 1
+        &{ue_in_list}=                  Copy dictionary     ${BASIC_UE_SA}
+        Set To Dictionary               ${ue_in_list}       ue          ${ue_id}
+        Set To Dictionary               ${ue_in_list}       pdu         1
+        Append To List                  ${SA_UE_List}       ${ue_in_list}
+    END
+
+CB9355_D Attach_all_UEs
+    FOR        ${current_ue}            IN         @{SA_UE_List}
+        UE Register                     ue=${current_ue.ue}
+        Launch PDU Session              ue=${current_ue.ue}    pdu=${current_ue.pdu}    gw=${current_ue.ue}
+    END
+
+CB9355_D Detach_all_UEs
+    FOR        ${current_ue}            IN         @{SA_UE_List}
+        UE Deregister                   id=${current_ue.ue}
+    END
+
+Check SRS receive
+    [Documentation]     KW used to check if SRS is well handled by gNB in case of 15 MHz BW
+    ...                 It triggerd a TTI trace and looks for SRS messages inside it.
+    ...                 However, SRS is only triggered in case of RANK 1 UL transmissions
+    ...                 So, as a first test, an AP test mode is used to add UL correlation
+    ...                 and fallback to rank 1 during TTI trace capture
+
+    wtsemu.ul_mimo_switch_nr                profile_id=1
+    ...                                     pusch_tx_mix_ratio=100
+
+    # Trigger SRS reports by moving to rank1
+    wtsemu.ue_testmode_set_nr               id=1
+    ...                                     testmode=ul_mimo_switch_nr
+    ...                                     profile_id=1
+    ...                                     action=activate
+
+    # Small UL traffic to check SRS and avoid a too big TTI trace
+    Traffic UE UL       ueSetting=${BASIC_UE_SA}
+    ...                 shouldBeStop=False      shouldBeCheck=False     duration=20s
+    ...                 throughput=1
+
+    # Capture TTI trace
+    # TTI capture configuration
+    ${TTIdir}                     Get TTI Trace Path                 dir_suffix=D_IWK10_TC5
+
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+
+    Traced Sleep                  1 seconds               msg=DL traffic capture
+
+    # stop TTI capture
+    ${TTIpcap}                    Stop TTI Traces in Streaming mode
+    ...                           tti_trace_path=${TTIdir}
+    ...                           tti_trace_filename=TTITrace_D_IWK10_TC5
+
+    Dated Log New Line            === Convert TTItrace to json and csv ===
+    ${TTIjson}                    Convert TTItrace from pcap to others      input_file_path=${TTIpcap}
+    &{events_list}=               gettti_events          ${TTIjson}
+
+    ${srs_event_list}=            Set Variable       ${events_list}[ulSrsReceiveRespPsData]
+
+    # Check there are SRS reports
+    Should Not Be Empty         ${srs_event_list}
+    # Parse L2PS events and just check that SRS is received with a good SNR.
+    # The check is just intended to verify that SRS works fine in case of 15 MHz.
+    FOR     ${srs_event}    IN      @{srs_event_list}
+        Should be True               ${srs_event}[snr] > 35
+    END
+
+    Traffic Stop        ueSetting=${BASIC_UE_SA}             dir=ul
+
+    # Disable AP test mode
+    wtsemu.ue_testmode_set_nr               id=1
+    ...                                     testmode=ul_mimo_switch_nr
+    ...                                     profile_id=1
+    ...                                     action=deactivate
+
+CB009355-D_IWK-10_TC5_Interworking_with_CB009915_UL_and_DL_PRB_blanking
+
+    [Documentation]     This test aims to validate IWK with CB009915 when pdschRat0RbgConfig=config1 (RBG=4):
+    ...                 if PRB are blanked at TDD cell edge(s), the UL and DL traffic is scheduled within non-blanking area.
+    ...                 The test is done on 2 TDD Cells with different blanking areas with ASOE.
+
+
+    Init Sequence   "CB009355_D_IWK10_TC5"
+    Dated Log New Line                  ---> Starting gNB commissioning
+
+    # Update SCF file, move 2 first TDD cells to 15 MHz (change band, BW, PDCCH configuration, W...)
+    Critical Step   CB009355_Update_SCF                 ${delta_scf_D_IWK10_TC5}
+    Critical Step   CB009355_Update_iPHY_RU_model       AEHC_Cell1_D
+    Critical Step   CB009355_Update_iPHY_RU_model       AEHC_Cell2_D
+    Critical Step   CB009355_Update_Wts_config_file     WTS_CFG_MODEL_D_1      1
+    Critical Step   CB009355_Update_Wts_config_file     WTS_CFG_MODEL_D_2      2
+
+    Dated Log New Line                                  ---> Restart TL
+    Critical Step   Restart TL
+    Dated Log New Line                                  ---> WTS setup SA
+    Critical Step   WTS Setup                           shouldUseLua=${False}
+
+    Step            CB9355_D Build UE List
+    Critical Step   CB9355_D Attach_all_UEs
+
+    Step            Check SRS receive
+
+    # UEs on cell1 with 7 PRB blanked
+    ${UE_1}                 Get From List    ${SA_UE_List}  0
+    ${UE_2}                 Get From List    ${SA_UE_List}  1
+    ${UEs_cell1}            Create List      ${UE_1}    ${UE_2}
+
+    # UEs on cell2 with 13 PRB blanked
+    ${UE_3}                 Get From List    ${SA_UE_List}  2
+    ${UE_4}                 Get From List    ${SA_UE_List}  3
+    ${UEs_cell2}            Create List      ${UE_3}    ${UE_4}
+
+    # Start DL/UL traffic with different values on cell1/cell2 because of different blanking configurations
+    Step           Traffic UEs DL          ueSettingList=${UEs_cell1}
+    ...                                    duration=10s        shouldBeStop=False      shouldBeCheck=False
+    ...                                    throughput=${max_DL_tput_15MHz_with_blanking_cell1}
+
+    Traffic UEs DL                         ueSettingList=${UEs_cell2}
+    ...                                    duration=10s        shouldBeStop=False      shouldBeCheck=False
+    ...                                    throughput=${max_DL_tput_15MHz_with_blanking_cell2}
+
+
+    Step           Traffic UEs UL          ueSettingList=${UEs_cell1}
+    ...                                    duration=10s        shouldBeStop=False      shouldBeCheck=False
+    ...                                    throughput=${max_UL_tput_15MHz_with_blanking_cell1}
+
+    Traffic UEs UL                         ueSettingList=${UEs_cell2}
+    ...                                    duration=10s        shouldBeStop=False      shouldBeCheck=False
+    ...                                    throughput=${max_UL_tput_15MHz_with_blanking_cell2}
+
+    ${zoi}          ZOI Start
+    ZOI Wait End    zoi=${zoi}
+
+    Step            Traffic Stop UEs                ueSettingList=${SA_UE_List}     dir=dl
+    Step            Traffic Stop UEs                ueSettingList=${SA_UE_List}     dir=ul
+
+    Step            CB9355_D Detach_all_UEs
+
+    # KPIs and counters checks
+    ${pm_path}      Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+    KPI Evaluate    pmFile=${pm_path}
+    ...             constraintsFile=${TC_D_IWK10_TC5_PM_constraints}
+    ...             failOnError=${True}

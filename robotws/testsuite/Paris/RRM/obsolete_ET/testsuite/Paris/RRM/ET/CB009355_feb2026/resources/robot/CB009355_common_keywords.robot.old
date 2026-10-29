@@ -1,0 +1,365 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Common KW for CB009355 automated tests
+...               Test Case Scenario author   : yann.ah.herve@nokia.com
+...               Test Case Scenario contact  : yann.ah.herve@nokia.com
+...               Creation Date               : 11-January-2024
+...               Modified Date               : 6-June-2024
+...
+...               Y. herve                    Take into account iphy.xml format for ASOH
+...               Y. HERVE                    Check gNB is ready before starting commissioning
+
+
+Resource          ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/CfgFilesTools.robot
+Resource          ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+
+Library            ../../../../../resources/SWENG/python/CoamParameter.py      WITH NAME     coam_parameter
+Library            taf.sbts.oam.coam.admin           WITH NAME   sbts_coam
+Library            ute_wtssim           WITH NAME    wts
+Library            taf.wts.runner              WITH NAME       wtsemu
+Library            OperatingSystem
+Library            String
+Library            BuiltIn
+
+*** Variables ***
+
+${gnb_alias}                        gnb_under_test
+
+# RU configuration used to updated IPHY.xml file.
+# As there may be several RU withint the same time
+# and also several GSCN for the same RU (radio splitted), the simplest solution is to hardcode items
+# indexes to update inside IPHY.xml file.
+# So, indexes below (e.g.: resourceBuildKey_idx, productCode_idx,...) stands for the indexes
+# of the items inside the IPHY.xml file.
+# For GSCN, in case there is only one, putting GSCN2=0 will skip second GSCN update.
+&{AEHC_config}                      cardName=AEHC
+...                                 cardName_idx=1
+...                                 resourceBuildKey=LTX_AEHC
+...                                 resourceBuildKey_idx=1
+...                                 GSCN1=6486
+...                                 GSCN1_idx=1
+...                                 GSCN2=0
+...                                 GSCN2_idx=0
+...                                 productCode=475124A
+...                                 productCode_idx=1
+
+&{AZHL_config}                      cardName=AZHL
+...                                 cardName_idx=1
+...                                 resourceBuildKey=LTX_AZHL_E1
+...                                 resourceBuildKey_idx=1
+...                                 GSCN1=6486
+...                                 GSCN1_idx=1
+...                                 GSCN2=0
+...                                 GSCN2_idx=0
+...                                 productCode=475432A
+...                                 productCode_idx=1
+
+&{AEHC_config_CA}                   cardName=AEHC
+...                                 cardName_idx=4
+...                                 resourceBuildKey=LTX_AEHC
+...                                 resourceBuildKey_idx=4
+...                                 GSCN1=6486
+...                                 GSCN1_idx=5
+...                                 GSCN2=6624
+...                                 GSCN2_idx=6
+...                                 productCode=475124A
+...                                 productCode_idx=1
+
+&{AEHC_Cell1_D}                     cardName=AEHC
+...                                 cardName_idx=1
+...                                 resourceBuildKey=LTX_AEHC
+...                                 resourceBuildKey_idx=1
+...                                 GSCN1=6483
+...                                 GSCN1_idx=1
+...                                 GSCN2=0
+...                                 GSCN2_idx=0
+...                                 productCode=475124A
+...                                 productCode_idx=1
+
+&{AEHC_Cell2_D}                     cardName=AEHC
+...                                 cardName_idx=2
+...                                 resourceBuildKey=LTX_AEHC
+...                                 resourceBuildKey_idx=2
+...                                 GSCN1=6477
+...                                 GSCN1_idx=2
+...                                 GSCN2=0
+...                                 GSCN2_idx=0
+...                                 productCode=475124A
+...                                 productCode_idx=2
+
+###########
+
+&{RU_list}                          AEHC=${AEHC_config}
+...                                 AZHL=${AZHL_config}
+...                                 AEHC_CA=${AEHC_config_CA}
+...                                 AEHC_Cell1_D=${AEHC_Cell1_D}
+...                                 AEHC_Cell2_D=${AEHC_Cell2_D}
+
+${ue_capa_for_15MHz}                SEPARATOR=
+...                                 E1A00000074E5A031E0003832001E09306400043C2400C4034026010180E01D51B0A35
+...                                 82028680965944C2C01EB608080838778E1C830E0008193C7D5C007FC007001FF00050
+...                                 800EDC000200000001C0002000000000AA36266B04050D012CB28985803D6C10101070
+...                                 EF1C39061C00103278FAB800FF800E003FE000A1001DB8000400000003800040000000
+...                                 01546C4DD6080A1A025965130B007AD8202020E1DE38720C38002064F1F57001FF001C
+...                                 007FC00142003B7000080000000700008000000002A8D89DAC10143404B2CA261600F5
+...                                 B0404041C3BC70E418700040C9E3EAA00000A000002840076E000100000000E0001000
+...                                 00000000841C28000000002026888001C020227B09801800140E0A00E0601300380034
+...                                 1F000000000000072A68000800004B2CA801A55542400E001600000008010023162600
+...                                 020406080A0C0E10162022242632424A4C4E5094
+
+${ue_capa_for_CA_15MHz}             SEPARATOR=
+...                                 F5A03C0047D4FFBEFFFFBAF064003C170101E0935F3FFFB7C009009B3CE3FF30C7942C
+...                                 020DC0407E3808517C18FF9BCA3BC857FFFFFE5965A20B0082D996D80DF9F7FFFD7FFE
+...                                 F9F67FFFFC029FFA7FE517C41FF9BCA3BC857FFFFFE5965A20B0082D996D80DF9F7FFF
+...                                 D7FFEF9F67FFFFC029FFA7FE517C46FF9BCA210AFFFFFFCB2CB44160105B32DB01BFFE
+...                                 FFFFAFFFDF3ECFFFFF8053FF4FFCA2F851FF379443007FFFFFE5965B202C020B665B60
+...                                 37FFDFFFF5FFFBE7D9FFFFF00B7FFFFB7FFFF945F133FE6F288600FFFFFFCB2CB60058
+...                                 03D6C4B701BFFE7FFFAFFFDF3ECEFFFF86FFFFF6FFFFF0750F830001C28000E2080071
+...                                 18000003FCFFFFFFFFFA87C18000E1400070A0003898000009FE7FFFFFFFFD43E14000
+...                                 70A0003882001C4C000002FF3FFFFFFFFEA1F0A0003850001C46000E260000017F9FFF
+...                                 FFFFFF50F830001C28000E260007130000013FCFFFFFFFFFA87C18000E140007104003
+...                                 89800000DFE7FFFFFFFFD43E140007104003898001C4C000008FF3FFFFFFFFE01200C4
+...                                 041808D00A202608A016C0F1234081BFCFB71234081BFCFB71204681BFCFB70206FF3E
+...                                 DC48D0206FF3EDC48D0206FF3EDC48D0206FF3ED8341C6318C63187FFFC00026007C00
+...                                 5038280301884C00C000F07400E0A00C06000040000601200301F00EC9000000AC9000
+...                                 0022C90000042C90000060036065606D6545654D00D90000012CA4AC80000896525640
+...                                 00084B292B20000625949403503AAA07B54AAAA956D0900D801F92701E49C0792501E4
+...                                 9400010602004008080300602004008080100230100600C04018030100200404018031
+...                                 808010020200C01808030060200C018C04008010100600C04008010100600C60200C01
+...                                 8080100202010020080400814831
+
+${ue_capa_for_ULCG_15MHz}           SEPARATOR=
+...                                 E1A00000076E0140502D018F0041C290000F04983200021E16003106D00980C0301C03
+...                                 AA36146B04050D012CB289888007AD8202020E1DE38720C38002064F1F57001FF001C0
+...                                 07FC001C20003B7000080000000700008000000002A8D899AC10143404B2CA2622001E
+...                                 B608080838778E1C830E0008193C7D5C007FC007001FF000708000EDC000200000001C
+...                                 0002000000000AA3626EB04050D012CB289888007AD8202020E1DE38720C38002064F1
+...                                 F57001FF001C007FC001C20003B7000080000000700008000000002A8D89DAC1014340
+...                                 4B2CA2622001EB608080838778E1C830E0008193C7D5400001400000708000EDC00020
+...                                 0000001C00020000000000108385000000000404D1D00000E010113D88C000C000A070
+...                                 500703009801C001A0F8000000000000395340004000025965400D2ABA1E000E001600
+...                                 000008010023562600020406080A0C0E10162022242632424A4C4E509445
+
+&{default_cfg_definition}           arfcn=518766
+...                                 gscn=6486
+...                                 SA_UE_CAPABILITIES_TDD=${ue_capa_for_15MHz}
+...                                 SA_Capa_Full=no_change
+...                                 Legacy_UE_Capa=no_change
+...                                 UE_Cell_change=no_change
+
+&{CA_cfg_definition}                arfcn=518766
+...                                 gscn=6486
+...                                 SA_UE_CAPABILITIES_TDD=no_change
+...                                 SA_Capa_Full=${ue_capa_for_CA_15MHz}
+...                                 Legacy_UE_Capa=no_change
+...                                 UE_Cell_change=no_change
+
+# Because inside MP_LO basic_wts.cfg, there is no variable for defining UE Capas contrary to other topologies...
+&{ABIP_cfg_definition}              arfcn=518766
+...                                 gscn=6486
+...                                 SA_UE_CAPABILITIES_TDD=no_change
+...                                 SA_Capa_Full=no_change
+...                                 Legacy_UE_Capa=${ue_capa_for_15MHz}
+...                                 UE_Cell_change=no_change
+
+&{PRBBLK_cfg_definition_D_1}        arfcn=518766
+...                                 gscn=6483
+...                                 SA_UE_CAPABILITIES_TDD=no_change
+...                                 SA_Capa_Full=no_change
+...                                 Legacy_UE_Capa=${ue_capa_for_15MHz}
+...                                 UE_Cell_change=update_UEs_cell1
+
+&{PRBBLK_cfg_definition_D_2}        arfcn=518766
+...                                 gscn=6477
+...                                 SA_UE_CAPABILITIES_TDD=no_change
+...                                 SA_Capa_Full=no_change
+...                                 Legacy_UE_Capa=${ue_capa_for_15MHz}
+...                                 UE_Cell_change=update_UEs_cell2
+
+# Because inside O_E_AP_LOO basic_wts.cfg, there is no variable for defining UE Capas contrary to other topologies...
+&{ULCG_cfg_definition}              arfcn=518766
+...                                 gscn=6486
+...                                 SA_UE_CAPABILITIES_TDD=no_change
+...                                 SA_Capa_Full=no_change
+...                                 Legacy_UE_Capa=${ue_capa_for_ULCG_15MHz}
+...                                 UE_Cell_change=no_change
+
+&{Cfg_config_models}                WTS_CFG_MODEL1=${default_cfg_definition}
+...                                 WTS_CFG_MODEL2=${CA_cfg_definition}
+...                                 WTS_CFG_MODEL3=${ABIP_cfg_definition}
+...                                 WTS_CFG_MODEL4=${ULCG_cfg_definition}
+...                                 WTS_CFG_MODEL_D_1=${PRBBLK_cfg_definition_D_1}
+...                                 WTS_CFG_MODEL_D_2=${PRBBLK_cfg_definition_D_2}
+
+${trcColor}                         Evaluate    "${CYAN}"
+${defColor}                         Evaluate    "${NORMAL}"
+${OkColor}                          Evaluate    "${GREEN}"
+
+*** Keywords ***
+
+CB009355_Update_SCF
+    [Documentation]               Dedicated KW to apply a delta commissioning file.
+    ...                           It performs delta commissioning and waits until gNB is up again
+    ...                           (in case of RAT reset is needed for example)
+    [Arguments]                   ${delta_file}
+
+    # In some cases (CRT), gNB seems not to be ready as the error "Configuration data validation
+    # is rejected because CPlane is busy" is raised during commissioing. I don't really know why.
+    # So, I have checked gNB is ready before starting commissionning...
+    OAM wait available
+
+    # Open connection towards cOAM
+    sbts_coam.connect_to          name=${gnb_alias}
+
+    # Apply delta scf
+    coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${delta_file}
+    ...                           connection=${gnb_alias}
+    ...                           timeout=300
+    ...                           skip_parameter_relation_errors=True
+
+    OAM wait available
+
+    sbts_coam.teardown            connection=${gnb_alias}
+
+CB009355_Update_iPHY_RU_model
+    [Documentation]                 Dedicated KW to update a RU model (HW type, SW version,...).
+    ...                             It updates the RU index provided as input parameters with the values
+    ...                             retrieved from gNB TargetBD file.
+    ...                             ${RU_config_name} = Target RU configuration (e.g.: AEHC)
+    ...                             ${RU_idx} = RU index to be updated inside AP iphy.xml file
+    ...                             e.g.: CB009355_Update_iPHY_RU_model   AEHC  1
+    ...                             => Updates first RU inside iphy.xml with AEHC model
+
+    [Arguments]                     ${RU_name}
+
+    ${ru_config}                    Get From Dictionary     ${RU_list}               ${RU_name}
+
+    GnbXmlTools.Get Data From Gnb TargetBD File             card_name=${ru_config}[resourceBuildKey]
+
+    # Update IPHY GSCN to new value
+    WtsXmlConfig.startSession               file=iphy
+    WtsXmlConfig.setTextUsingIndex          path=//cardName
+    ...                                     val=${ru_config}[cardName]
+    ...                                     idx=${ru_config}[cardName_idx]
+
+    WtsXmlConfig.setTextUsingIndex          path=//resourceBuildKey
+    ...                                     val=${ru_config}[resourceBuildKey]
+    ...                                     idx=${ru_config}[resourceBuildKey_idx]
+
+    WtsXmlConfig.setTextUsingIndex          path=//productCode          val=${ru_config}[productCode]
+    ...                                     idx=${ru_config}[productCode_idx]
+
+    WtsXmlConfig.setTextUsingIndex          path=//GSCN                 val=${ru_config}[GSCN1]
+    ...                                     idx=${ru_config}[GSCN1_idx]
+
+    Run Keyword If                          ${ru_config}[GSCN2] != 0
+    ...                                     WtsXmlConfig.setTextUsingIndex
+    ...                                     path=//GSCN
+    ...                                     val=${ru_config}[GSCN2]              idx=${ru_config}[GSCN2_idx]
+
+    # update iphy.xml with swVersion and swFileKey values taken from GNB TargetBD_*.xml
+    # active and passive parts
+    ${first_sw_versions_idx}                Evaluate                ${ru_config}[resourceBuildKey_idx]*2 - 1
+    ${second_sw_versions_idx}               Evaluate                ${ru_config}[resourceBuildKey_idx]*2
+
+    WtsXmlConfig.setTextUsingIndex          //version               ${g_resource_swVersion}    idx=${first_sw_versions_idx}
+    WtsXmlConfig.setTextUsingIndex          //version               ${g_resource_swVersion}    idx=${second_sw_versions_idx}
+
+    # active and passive parts
+    WtsXmlConfig.setTextUsingIndex          ////name                ${g_resource_swFileKey}    idx=${first_sw_versions_idx}
+    WtsXmlConfig.setTextUsingIndex          ////name                ${g_resource_swFileKey}    idx=${second_sw_versions_idx}
+
+# Sep-2024: buildversion is now obsolete for all topologies: this code is no more needed
+#    # In case of ASOH board, iphy.xml no more contains buildversion tag. Only bldVersion is available.
+#    # So, check number of items available before changing it to avoid an error.
+#    ${num_buildversion_items}               countElt                //buildversion
+#    Run Keyword If                          ${num_buildversion_items} != 0
+#    ...                                     WtsXmlConfig.setTextUsingIndex
+#    ...                                     //buildversion          ${g_resource_swVersion}
+#    ...                                     idx=${ru_config}[resourceBuildKey_idx]
+
+    WtsXmlConfig.setTextUsingIndex          //bldVersion            ${g_resource_swVersion}    idx=${ru_config}[resourceBuildKey_idx]
+
+    WtsXmlConfig.stopSession                file=iphy
+
+CB009355_Update_Wts_config_file
+    [Documentation]                 Dedicated KW to update cfg file for 15 MHz BW
+    ...                             It updates cfg file according to a list of predefined models
+    ...                             put into a dictionary and including GSCN, ARFCN, UE capabilities
+    ...                             e.g.: CB009355_Update_Wts_config_file   WTS_CFG_MODEL1  1
+    ...                             => Updates WTS config file for cell 1 with parameters inside WTS_CFG_MODEL1
+
+    [Arguments]                     ${cfg_config_model}     ${cell_index}
+
+    # Retrieve values to be updated
+    ${cfg_model}                    Get From Dictionary     ${Cfg_config_models}    ${cfg_config_model}
+
+    WtsCfgConfig.startSession
+
+    #Cells string for search and replace inside basic.cfg file
+    ${cell_prefix}                      set variable    set_cell id=${cell_index} gnb
+
+    ${oldValue}                         getParam           prefix=${cell_prefix}          param=nr_arfcn
+    Log To console                      OldValue is: ${oldValue}
+    WtsCfgConfig.replaceValue           prefix=${cell_prefix}
+    ...                                 param=nr_arfcn
+    ...                                 oldValue=${oldValue}
+    ...                                 newValue=${cfg_model}[arfcn]:${cfg_model}[arfcn]
+    ...                                 occurrence=1
+    ...                                 ignore_comments=False
+
+    ${oldValue}                         getParam           prefix=${cell_prefix}          param=gscn
+    WtsCfgConfig.replaceValue           prefix=${cell_prefix}
+    ...                                 param=gscn
+    ...                                 oldValue=${oldValue}
+    ...                                 newValue=${cfg_model}[gscn]
+    ...                                 occurrence=1
+    ...                                 ignore_comments=False
+
+    # In case of -D IWK.10 test case and ASOE, we need to attach 2 UEs on cell1 and
+    # 2 UEs on cell2. However, the basdic.cfg file is provisionned with 1 UE on cell1,
+    # 1 UE on cell2, 1 UE on cell3,... So, a dedicated cfg file update is done below to suit
+    # those needs. It's a little bit harcoded and dedicated to this TCs but simpler like this...
+    Run Keyword If                      "${cfg_model}[UE_Cell_change]" == "update_UEs_cell1"    Run Keywords
+    ...                                 WtsCfgConfig.replaceValue
+    ...                                 prefix=set_ue simulated id=1
+    ...                                 param=cell
+    ...                                 oldValue=1
+    ...                                 newValue=1
+    ...                                 AND
+    ...                                 WtsCfgConfig.replaceValue
+    ...                                 prefix=set_ue simulated id=2
+    ...                                 param=cell
+    ...                                 oldValue=2
+    ...                                 newValue=1
+
+    Run Keyword If                      "${cfg_model}[UE_Cell_change]" == "update_UEs_cell2"    Run Keywords
+    ...                                 WtsCfgConfig.replaceValue
+    ...                                 prefix=set_ue simulated id=3
+    ...                                 param=cell
+    ...                                 oldValue=3
+    ...                                 newValue=2
+    ...                                 AND
+    ...                                 WtsCfgConfig.replaceValue
+    ...                                 prefix=set_ue simulated id=4
+    ...                                 param=cell
+    ...                                 oldValue=4
+    ...                                 newValue=2
+
+    WtsCfgConfig.stopSession            rename=modified
+
+    Run Keyword If                      "${cfg_model}[SA_UE_CAPABILITIES_TDD]" != "no_change"
+    ...                                 Modify Field in WtsEmu Cfg File
+    ...                                 field=SA_UE_CAPABILITIES_TDD    value=${cfg_model}[SA_UE_CAPABILITIES_TDD]
+
+    Run Keyword If                      "${cfg_model}[SA_Capa_Full]" != "no_change"
+    ...                                 Modify Field in WtsEmu Cfg File
+    ...                                 field=SA_Capa_Full    value=${cfg_model}[SA_Capa_Full]
+
+    Run Keyword If                      "${cfg_model}[Legacy_UE_Capa]" != "no_change"
+    ...                                 Modify Field in WtsEmu Cfg File
+    ...                                 field=ue_nr_capabilities    value=${cfg_model}[Legacy_UE_Capa]

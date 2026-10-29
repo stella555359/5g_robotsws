@@ -1,0 +1,1 @@
+{    "26R2.*": {        "Root\\Test_Sets\\26R2\\Regression\\VRF_TSR\\VRF_TSR_T02\\CRT\\MTNRL8 - TEF O2 DE": {            "MTNRL8 - TEF O2 DE": [                "[1][1.0] Automated_RFS_UUF_SW_UPGRADE_ROLLBACK",                "[1][2.0] Automated_RFS_SBTS_SBTS__CM__RMOD_Sync_change_CB007963",                "[1][1.0] SW_Activation_Reset_in_loops"              ]         }    }}

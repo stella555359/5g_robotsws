@@ -1,0 +1,798 @@
+import os
+import json
+import getopt
+import sys
+from enum import Enum
+
+# TAF Libraries:
+from taf.analyzer.ttitrace_eventdecoder import TtitraceReader as TtitraceReaderEvtDec
+
+
+# ====================================================================================================[120 characters]
+#   Global Variables
+# ====================================================================================================[120 characters]
+"""
+Definition of Antenna Port value accordind to the tuple (nb of DMRS CDM group Wo data, DMRS port) for DMRS type 1
+See table 7.3.1.2.2-1 "Antenna port(s) (1000 + DMRS port), dmrs-Type=1, maxLength=1" in 3GPP 38.212
+See req. 5G_UP_IF_11859, 5G_UP_IF_12733, 5G_UP_ALG_25102 and 5G_UP_ALG_25107
+"""
+antValue_DMRStype1 = {
+    (1, 32768): 0,
+    (1, 16384): 1,
+    (1, 49152): 2,
+    (2, 32768): 3,
+    (2, 16384): 4,
+    (2, 8192): 5,
+    (2, 4096): 6,
+    (2, 49152): 7,
+    (2, 24576): 8,
+    (2, 57344): 9,
+    (2, 61440): 10,
+    (2, 40960): 11}
+
+"""
+Definition of Antenna Port value accordind to the tuple (nb of DMRS CDM group Wo data, DMRS port) for DMRS type 2
+See table 7.3.1.2.2-3 "Antenna port(s) (1000 + DMRS port), dmrs-Type=2, maxLength=1" in 3GPP 38.212
+ee req. 5G_UP_IF_11859, 5G_UP_IF_12733, 5G_UP_ALG_25107
+"""
+antValue_DMRStype2 = {
+    (1, 32768): 0,
+    (1, 16384): 1,
+    (1, 49152): 2,
+    (2, 32768): 3,
+    (2, 16384): 4,
+    (2, 8192): 5,
+    (2, 4096): 6,
+    (2, 49152): 7,
+    (2, 12288): 8,
+    (2, 57344): 9,
+    (2, 61440): 10,
+    (3, 32768): 11,
+    (3, 16384): 12,
+    (3, 8192): 13,
+    (3, 4096): 14,
+    (3, 2048): 15,
+    (3, 1024): 16,
+    (3, 49152): 17,
+    (3, 12288): 18,
+    (3, 3072): 19,
+    (3, 57344): 20,
+    (3, 7168): 21,
+    (3, 61440): 22,
+    (2, 40960): 23}
+
+DCI_1_0_DL = ['DL_10_MSG2', 'DL_10_MSG4', 'DL_10_FORCE']
+
+# Reserved MCS min used in case of retransmission
+minReservedMCS64QAM = 29
+minReservedMCS256QAM = 28
+
+
+def checkAntennaPort_noDMRSFDM(jsonPathName, RntiDmrsT1List):
+    """
+    Check the antenna port value according to the DMRS type, the number of DMRS CDM group without data
+    and the DMRS port when actDlDataDmrsFdm is set to false.
+    jsonPathName: json file of the TTI trace
+    Return the number of checks passed, 0 in case of error
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    RntiDmrsT1List = list(map(int, RntiDmrsT1List))
+    nbMsg = 0
+    nbDlFdSchedData = 0
+    nbDmrsType1 = 0
+    nbDmrsType2 = 0
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if event.type == "dlFdSchedData":
+                nbDlFdSchedData = nbDlFdSchedData+1
+                SFN = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                numOfLayers = event.data["numOfLayers"]
+                antPort = event.data["antPort"]
+                dmrsType = event.data["dmrsConfigType"]
+                nbCdmGroupWoData = event.data["numCdmGroupNoData"]
+                antennaPortValue = event.data["antennaPortValue"]
+                RNTI = event.data["eventHeader"]["rnti"]
+                dciFormat = event.data["dciFormat"]
+
+                if RNTI in RntiDmrsT1List or dciFormat in DCI_1_0_DL:
+                    expectedDmrsType = "TYPE1"
+                else:
+                    expectedDmrsType = "TYPE2"
+
+                if dmrsType != expectedDmrsType:
+                    print("TTI trace ERROR: unexpected DMRS type %s for UE %s (expected %s) at SFN %s, slot %s"
+                          % (dmrsType, RNTI, expectedDmrsType, SFN, slot))
+                    return 0
+
+                if dmrsType == "TYPE1":
+                    nbDmrsType1 = nbDmrsType1+1
+                    expectedNbCDMGroupWoData = 2
+                    antValue_DMRS = antValue_DMRStype1
+                else:
+                    nbDmrsType2 = nbDmrsType2+1
+                    expectedNbCDMGroupWoData = 3
+                    antValue_DMRS = antValue_DMRStype2
+
+                if nbCdmGroupWoData != expectedNbCDMGroupWoData:
+                    print("TTI trace ERROR: nb of CDM group without data %s (expected %s) at SFN %s, slot %s"
+                          % (nbCdmGroupWoData, expectedNbCDMGroupWoData, SFN, slot))
+                    return 0
+
+                if (nbCdmGroupWoData, antPort) not in antValue_DMRS:
+                    print("TTI trace ERROR: undefined tuple (%s, %s) at SFN %s, slot %s"
+                          % (nbCdmGroupWoData, antPort, SFN, slot))
+                    return 0
+
+                expectedAntennaPortVal = antValue_DMRS[(nbCdmGroupWoData, antPort)]
+                if antennaPortValue != expectedAntennaPortVal:
+                    print("TTI trace ERROR: antennaPortValue %s (expected %s) at SFN %s, slot %s"
+                          % (antennaPortValue, expectedAntennaPortVal, SFN, slot))
+                    return 0
+
+    return nbDmrsType1+nbDmrsType2
+
+
+def checkAntennaPort_RACH_DCI10(jsonPathName):
+    """
+    Check that DMRS type 1 is used and DMRS CDM group without data is forced to 2 in case of
+    DCI 1-0 for RACH MSG2 and MSG4, and during transient phase.
+    Then check antenna port value.
+    jsonPathName: json file of the TTI trace
+    Return the number of checks passed, 0 in case of error
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    nbMsg = 0
+    nbDlFdSchedData = 0
+    nbDci10 = 0
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if event.type == "dlFdSchedData":
+                nbDlFdSchedData = nbDlFdSchedData+1
+                SFN = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                MCS = event.data["rrmDlUsedMcs"]
+                antPort = event.data["antPort"]
+                dmrsType = event.data["dmrsConfigType"]
+                nbCdmGroupWoData = event.data["numCdmGroupNoData"]
+                antennaPortValue = event.data["antennaPortValue"]
+                RNTI = event.data["eventHeader"]["rnti"]
+                dciFormat = event.data["dciFormat"]
+
+                if dciFormat in DCI_1_0_DL:
+                    nbDci10 = nbDci10+1
+                    if dmrsType != "TYPE1":
+                        print("TTI trace ERROR: unexpected DMRS type %s for UE %s (expected TYPE1) at SFN %s, slot %s"
+                              % (dmrsType, RNTI, SFN, slot))
+                        return 0
+
+                    if nbCdmGroupWoData != 2:
+                        print("TTI trace ERROR: nb of CDM group without data %s (expected 2) at SFN %s, slot %s"
+                              % (nbCdmGroupWoData, SFN, slot))
+                        return 0
+
+                    if (nbCdmGroupWoData, antPort) not in antValue_DMRStype1:
+                        print("TTI trace ERROR: undefined tuple (%s, %s) at SFN %s, slot %s"
+                              % (nbCdmGroupWoData, antPort, SFN, slot))
+                        return 0
+
+                    expectedAntennaPortVal = antValue_DMRStype1[(nbCdmGroupWoData, antPort)]
+                    if antennaPortValue != expectedAntennaPortVal:
+                        print("TTI trace ERROR: antennaPortValue %s (expected %s) at SFN %s, slot %s"
+                              % (antennaPortValue, expectedAntennaPortVal, SFN, slot))
+                        return 0
+
+    return nbDci10
+
+
+def checkAntennaPort_SUMIMO(jsonPathName, RntiDmrsT1List, McsThreshold64Qam=20, McsThreshold256Qam=20):
+    """
+    Check the antenna port value according to the DMRS type, the number of DMRS CDM group without data
+    and the DMRS port when actDlDataDmrsFdm is set to true in case of SUMIMO.
+    jsonPathName: json file of the TTI trace
+    RntiDmrsT1List: list of UE RNTIs not DMRS type 2 capable
+    McsThreshold: configured value of dlDataDmrsFdmThres256QamMcs or dlDataDmrsFdmThres64QamMcs
+    Return the number of checks passed, 0 in case of error
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    RntiDmrsT1List = list(map(int, RntiDmrsT1List))
+    McsThreshold64Qam = int(McsThreshold64Qam)
+    McsThreshold256Qam = int(McsThreshold256Qam)
+    nbMsg = 0
+    nbDlFdSchedData = 0
+    nbDmrsType1 = 0
+    nbDmrsType2 = 0
+    nbBelThresh64Qam = 0
+    nbBelThresh256Qam = 0
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if event.type == "dlFdSchedData":
+                nbDlFdSchedData = nbDlFdSchedData+1
+                SFN = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                MCS = event.data["rrmDlUsedMcs"]
+                numOfLayers = event.data["numOfLayers"]
+                antPort = event.data["antPort"]
+                dmrsType = event.data["dmrsConfigType"]
+                nbCdmGroupWoData = event.data["numCdmGroupNoData"]
+                antennaPortValue = event.data["antennaPortValue"]
+                RNTI = event.data["eventHeader"]["rnti"]
+                dciFormat = event.data["dciFormat"]
+                mcsTable = event.data["mcsTable"]
+
+                if RNTI in RntiDmrsT1List or dciFormat in DCI_1_0_DL:
+                    expectedDmrsType = "TYPE1"
+                else:
+                    expectedDmrsType = "TYPE2"
+
+                if dmrsType != expectedDmrsType:
+                    print("TTI trace ERROR: unexpected DMRS type %s for UE %s (expected %s) at SFN %s, slot %s"
+                          % (dmrsType, RNTI, expectedDmrsType, SFN, slot))
+                    return 0
+
+                if mcsTable == "QAM64":
+                    McsThreshold = McsThreshold64Qam
+                else:
+                    McsThreshold = McsThreshold256Qam
+
+                if MCS >= McsThreshold:
+                    if numOfLayers in ['RANK1', 'RANK2']:
+                        expectedNbCDMGroupWoData = 1
+                    else:
+                        expectedNbCDMGroupWoData = 2
+                else:
+                    if dmrsType == "TYPE1":
+                        expectedNbCDMGroupWoData = 2
+                    else:
+                        expectedNbCDMGroupWoData = 3
+
+                    if mcsTable == "QAM64":
+                        nbBelThresh64Qam = nbBelThresh64Qam+1
+                    else:
+                        nbBelThresh256Qam = nbBelThresh256Qam+1
+
+                if nbCdmGroupWoData != expectedNbCDMGroupWoData:
+                    print("TTI trace ERROR: nb of CDM group without data %s (expected %s) at SFN %s, slot %s"
+                          % (nbCdmGroupWoData, expectedNbCDMGroupWoData, SFN, slot))
+                    return 0
+
+                if dmrsType == "TYPE1":
+                    nbDmrsType1 = nbDmrsType1+1
+                    antValue_DMRS = antValue_DMRStype1
+                else:
+                    nbDmrsType2 = nbDmrsType2+1
+                    antValue_DMRS = antValue_DMRStype2
+
+                if (nbCdmGroupWoData, antPort) not in antValue_DMRS:
+                    print("TTI trace ERROR: undefined tuple (%s, %s) at SFN %s, slot %s"
+                          % (nbCdmGroupWoData, antPort, SFN, slot))
+                    return 0
+
+                expectedAntennaPortVal = antValue_DMRS[(nbCdmGroupWoData, antPort)]
+                if antennaPortValue != expectedAntennaPortVal:
+                    print("TTI trace ERROR: antennaPortValue %s (expected %s) at SFN %s, slot %s"
+                          % (antennaPortValue, expectedAntennaPortVal, SFN, slot))
+                    return 0
+
+    print("Nb of MCS below threshold 64QAM:  %s" % nbBelThresh64Qam)
+    print("Nb of MCS below threshold 256QAM: %s" % nbBelThresh256Qam)
+    print("Nb of DMRS type 1 checked: %s" % nbDmrsType1)
+    print("Nb of DMRS type 2 checked: %s" % nbDmrsType2)
+    return nbDmrsType1+nbDmrsType2
+
+
+def check_CB008830_B03_2xRANK2_noDMRSFDM(jsonPathName, cellId):
+    """
+    Check the antenna port value and UE pairing according to the TC CB008830-B03 configuration of the first cell.
+       jsonPathName: json file of the TTI trace
+       cellId: physical cell ID
+    Return non 0 value all ckecks are passed, 0 in case of error
+    Main configuration:
+       nrCellType    = 8DL8UL
+       dlDmrsType    = type2
+       dlDataDmrsFdm = false
+       actDl256Qam   = true
+       2 UEs DMRS type 2 capable in RANK2
+    Expected results:
+       Scrambling Code Id always equal to 0
+       Nb of CDM group Wo Data always equal to 3
+       UE pairing occur
+    State machine description (pairingState):
+       waitPairing state: Wait pairing scheduling detection (muStatus to "MUPAIR")
+       checkPairing state: state to check that both UE are well paired
+       endPairing state: Check that new scheduling is no more paired with previous UEs
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    cellId = int(cellId)
+    nbMsg = 0
+    nbDlFdSchedData = 0
+    nbCheck = 0
+    nbPairing2UEs = 0
+    pairingState = "syncSfnSlot"
+    slotPairing = -1
+
+    portsFor1stScheduledUE = 0b1100000000000000
+    portsFor2ndScheduledUE = 0b0011000000000000
+    portsUsedWhenPairing = portsFor1stScheduledUE+portsFor2ndScheduledUE
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if event.type == "dlFdSchedData":
+                nbDlFdSchedData = nbDlFdSchedData+1
+                if event.data["eventHeader"]["physCellId"] != cellId:
+                    continue
+
+                SFN = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                RNTI = event.data["eventHeader"]["rnti"]
+
+                # print("dlFdSchedData: %s (SFN/slot %d/%2d, RNTI %s)" % (nbDlFdSchedData, SFN, slot, RNTI))
+
+                # Static checks according to the test
+                dmrsType = event.data["dmrsConfigType"]
+                numOfLayers = event.data["numOfLayers"]
+                scramblingCode = event.data["nscId"]
+                nbCdmGroupWoData = event.data["numCdmGroupNoData"]
+
+                if dmrsType != "TYPE2":
+                    print("ERROR: unexpected DMRS type %s for UE %s (expected TYPE2) at SFN %s, slot %s"
+                          % (dmrsType, RNTI, SFN, slot))
+                    return 0
+
+                if nbCdmGroupWoData != 3:
+                    print("ERROR: unexpected nb of CDM Group Wo Data %s for UE %s (expected 3) at SFN %s, slot %s"
+                          % (nbCdmGroupWoData, RNTI, SFN, slot))
+                    return 0
+
+                if numOfLayers != "RANK2":
+                    print("ERROR: unexpected nb of layers %s for UE %s (expected RANK2) at SFN %s, slot %s"
+                          % (numOfLayers, RNTI, SFN, slot))
+                    return 0
+
+                if scramblingCode != 0:
+                    print("ERROR: unexpected scrambling code %s for UE %s (expected 0) at SFN %s, slot %s"
+                          % (scramblingCode, RNTI, SFN, slot))
+                    return 0
+
+                antPort = event.data["antPort"]
+                antennaPortValue = event.data["antennaPortValue"]
+                muStatus = event.data["muStatus"]
+                SFNslot = SFN*20+slot
+
+                if pairingState == "checkPairing":
+                    if SFNslot != slotPairing:
+                        print("ERROR: expected pairing at SFN %s, slot %s"
+                              % (slotPairing//20, slotPairing % 20))
+                        return 0
+                    nbUEpaired = nbUEpaired+1
+                    antPortPairing = antPortPairing+antPort
+                    if nbUEpaired == expectedNbUEpaired:
+                        if antPortPairing != portsUsedWhenPairing:
+                            print("ERROR: wrong ports used for paired UEs at SFN %s, slot %s"
+                                  % (SFN, slot))
+                            return 0
+                        pairingState = "endPairing"
+                elif pairingState == "endPairing":
+                    if SFNslot == slotPairing:
+                        print("ERROR: unexpected pairing for RNTI %s at SFN %s, slot %s"
+                              % (RNTI, SFN, slot))
+                        return 0
+                    pairingState = "waitPairing"
+                elif pairingState == "syncSfnSlot":
+                    if slotPairing == -1 or slotPairing == SFNslot:
+                        slotPairing = SFNslot
+                        continue
+                    else:
+                        pairingState = "waitPairing"
+
+                if pairingState == "waitPairing":
+                    if muStatus == "MUPAIR":
+                        expectedNbUEpaired = 2
+                        pairingState = "checkPairing"
+                        nbPairing2UEs = nbPairing2UEs+1
+                        nbUEpaired = 1
+                        antPortPairing = antPort
+                        slotPairing = SFNslot
+                    else:
+                        if antPort != portsFor1stScheduledUE:
+                            print("ERROR: wrong port %s used (expected %s) for RNTI %s at SFN %s, slot %s"
+                                  % (antPort, portsFor1stScheduledUE, RNTI, SFN, slot))
+                            return 0
+
+                if (nbCdmGroupWoData, antPort) not in antValue_DMRStype2:
+                    print("ERROR: undefined tuple (%s, %s) at SFN %s, slot %s"
+                          % (nbCdmGroupWoData, antPort, SFN, slot))
+                    return 0
+
+                expectedAntennaPortVal = antValue_DMRStype2[(nbCdmGroupWoData, antPort)]
+                if antennaPortValue != expectedAntennaPortVal:
+                    print("ERROR: antennaPortValue %s (expected %s) for RNTI %s at SFN %s, slot %s"
+                          % (antennaPortValue, expectedAntennaPortVal, RNTI, SFN, slot))
+                    return 0
+
+                nbCheck = nbCheck+1
+
+    print("Nb of checks passed       : %s" % nbCheck)
+    print("Nb of 2 UEs paired        : %s" % nbPairing2UEs)
+    return nbCheck * nbPairing2UEs
+
+
+def check_CB008830_B03_3xRANK2(jsonPathName, cellId, McsThreshold=20):
+    """
+    Check the antenna port value and UE pairing according to the TC CB008830-B03 configuration of the second cell.
+       jsonPathName: json file of the TTI trace
+       cellId: physical cell ID
+       McsThreshold: configured value of dlDataDmrsFdmThres256QamMcs
+    Return non 0 value all ckecks are passed, 0 in case of error
+    Main configuration:
+       nrCellType    = 8DL8UL
+       dlDmrsType    = type2
+       dlDataDmrsFdm = true
+       actDl256Qam   = true
+       3 UEs DMRS type 2 capable in RANK2
+    Expected results:
+       Scrambling Code Id always equal to 0
+       UE pairing occur, with two or three UEs
+       Nb of CDM group Wo Data is 3 if MCS < dlDataDmrsFdmThres256QamMcs
+       else nb of CDM group Wo Data is set according to pairing or not (see Req. 5G_UP_ALG_25267 and 5G_UP_ALG_25269)
+    State machine description (pairingState):
+       waitPairing state: Wait pairing scheduling detection (muStatus to "MUPAIR")
+                          Determine the number of UEs paired: respectively 2 and 3 UEs according to
+                          the nb of CDM group Wo Data values 2 or 3
+       checkPairing state: state to check the right number of UEs paired according to initial nb of CDM group Wo Data
+       unknownPairing state: when initial nb of CDM group Wo Data is 3 with MCS < dlDataDmrsFdmThres64QamMcs,
+                             it is not possible to determine the number of UEs paired.
+                             This state manages this special case.
+       endPairing: Check that new scheduling is no more paired with previous UEs
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    cellId = int(cellId)
+    McsThreshold = int(McsThreshold)
+    nbMsg = 0
+    nbDlFdSchedData = 0
+    nbCheck = 0
+    nbPairing2UEs = 0
+    nbPairing3UEs = 0
+    unknownPairing = 0
+    nbBelowTreshold = 0
+    pairingState = "syncSfnSlot"
+    slotPairing = -1
+
+    portsFor1stScheduledUE = 0b1100000000000000
+    portsFor2ndScheduledUE = 0b0011000000000000
+    portsFor3rdScheduledUE = 0b0000110000000000
+    portsUsedWhenPairing2UEs = portsFor1stScheduledUE+portsFor2ndScheduledUE
+    portsUsedWhenPairing3UEs = portsFor1stScheduledUE+portsFor2ndScheduledUE+portsFor3rdScheduledUE
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if event.type == "dlFdSchedData":
+                nbDlFdSchedData = nbDlFdSchedData+1
+                if event.data["eventHeader"]["physCellId"] != cellId:
+                    continue
+
+                SFN = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                RNTI = event.data["eventHeader"]["rnti"]
+
+                # print("dlFdSchedData: %s (SFN/slot %d/%2d, RNTI %s)" % (nbDlFdSchedData, SFN, slot, RNTI))
+
+                # Static checks according to the test
+                dmrsType = event.data["dmrsConfigType"]
+                numOfLayers = event.data["numOfLayers"]
+                scramblingCode = event.data["nscId"]
+                if dmrsType != "TYPE2":
+                    print("ERROR: unexpected DMRS type %s for UE %s (expected TYPE2) at SFN %s, slot %s"
+                          % (dmrsType, RNTI, SFN, slot))
+                    return 0
+
+                if numOfLayers != "RANK2":
+                    print("ERROR: unexpected nb of layers %s for UE %s (expected RANK2) at SFN %s, slot %s"
+                          % (numOfLayers, RNTI, SFN, slot))
+                    return 0
+
+                if scramblingCode != 0:
+                    print("ERROR: unexpected scrambling code %s for UE %s (expected 0) at SFN %s, slot %s"
+                          % (scramblingCode, RNTI, SFN, slot))
+                    return 0
+
+                MCS = event.data["rrmDlUsedMcs"]
+                antPort = event.data["antPort"]
+                nbCdmGroupWoData = event.data["numCdmGroupNoData"]
+                antennaPortValue = event.data["antennaPortValue"]
+                muStatus = event.data["muStatus"]
+                SFNslot = SFN*20+slot
+
+                if pairingState == "checkPairing":
+                    if SFNslot != slotPairing:
+                        print("ERROR: expected pairing at SFN %s, slot %s"
+                              % (slotPairing//20, slotPairing % 20))
+                        return 0
+                    if MCS >= McsThreshold:
+                        expectedNbCDMGroupWoData = nbCdmGroupWoDataPairing
+                    else:
+                        expectedNbCDMGroupWoData = 3
+                        nbBelowTreshold = nbBelowTreshold+1
+                    nbUEpaired = nbUEpaired+1
+                    antPortPairing = antPortPairing+antPort
+                    if nbUEpaired == expectedNbUEpaired:
+                        if ((nbUEpaired == 2 and antPortPairing != portsUsedWhenPairing2UEs)
+                                or (nbUEpaired == 3 and antPortPairing != portsUsedWhenPairing3UEs)):
+                            print("ERROR: wrong ports used for paired UEs at SFN %s, slot %s"
+                                  % (SFN, slot))
+                            return 0
+                        pairingState = "endPairing"
+                elif pairingState == "unknownPairing":
+                    if SFNslot != slotPairing:
+                        pairingState = "waitPairing"
+                    elif MCS >= McsThreshold:
+                        expectedNbCDMGroupWoData = nbCdmGroupWoDataPairing
+                    else:
+                        expectedNbCDMGroupWoData = 3
+                        nbBelowTreshold = nbBelowTreshold+1
+                elif pairingState == "endPairing":
+                    if SFNslot == slotPairing:
+                        print("ERROR: unexpected pairing at SFN %s, slot %s"
+                              % (SFN, slot))
+                        return 0
+                    pairingState = "waitPairing"
+                elif pairingState == "syncSfnSlot":
+                    if slotPairing == -1 or slotPairing == SFNslot:
+                        slotPairing = SFNslot
+                        continue
+                    else:
+                        pairingState = "waitPairing"
+
+                if pairingState == "waitPairing":
+                    if muStatus == "MUPAIR":
+                        antPortPairing = antPort
+                        if nbCdmGroupWoData == 2:
+                            expectedNbCDMGroupWoData = 2
+                            expectedNbUEpaired = 2
+                            pairingState = "checkPairing"
+                            nbPairing2UEs = nbPairing2UEs+1
+                        elif nbCdmGroupWoData == 3:
+                            if MCS >= McsThreshold and MCS < minReservedMCS256QAM:
+                                expectedNbCDMGroupWoData = 3
+                                expectedNbUEpaired = 3
+                                pairingState = "checkPairing"
+                                nbPairing3UEs = nbPairing3UEs+1
+                            else:
+                                nbBelowTreshold = nbBelowTreshold+1
+                                expectedNbCDMGroupWoData = -1
+                                pairingState = "unknownPairing"
+                                unknownPairing = unknownPairing+1
+                        else:
+                            print("ERROR: nbCdmGroupWoData %s for UE %s (expected 2 or 3) at SFN %s, slot %s"
+                                  % (nbCdmGroupWoData, RNTI, SFN, slot))
+                            return 0
+                        nbUEpaired = 1
+                        slotPairing = SFNslot
+                        nbCdmGroupWoDataPairing = expectedNbCDMGroupWoData
+                    else:
+                        if antPort != portsFor1stScheduledUE:
+                            print("ERROR: wrong port %s used (expected %s) for RNTI %s at SFN %s, slot %s"
+                                  % (antPort, portsFor1stScheduledUE, RNTI, SFN, slot))
+                            return 0
+                        if MCS < McsThreshold:
+                            expectedNbCDMGroupWoData = 3
+                            nbBelowTreshold = nbBelowTreshold+1
+                        elif MCS < minReservedMCS256QAM:
+                            expectedNbCDMGroupWoData = 1
+                        else:
+                            expectedNbCDMGroupWoData = -1
+
+                if nbCdmGroupWoData != expectedNbCDMGroupWoData and expectedNbCDMGroupWoData != -1:
+                    print("ERROR: nbCdmGroupWoData %s (expected %s) at SFN %s, slot %s"
+                          % (nbCdmGroupWoData, expectedNbCDMGroupWoData, SFN, slot))
+                    return 0
+
+                if (nbCdmGroupWoData, antPort) not in antValue_DMRStype2:
+                    print("ERROR: undefined tuple (%s, %s) at SFN %s, slot %s"
+                          % (nbCdmGroupWoData, antPort, SFN, slot))
+                    return 0
+
+                expectedAntennaPortVal = antValue_DMRStype2[(nbCdmGroupWoData, antPort)]
+                if antennaPortValue != expectedAntennaPortVal:
+                    print("ERROR: antennaPortValue %s (expected %s) at SFN %s, slot %s"
+                          % (antennaPortValue, expectedAntennaPortVal, SFN, slot))
+                    return 0
+
+                nbCheck = nbCheck+1
+
+    print("Nb of checks passed       : %s" % nbCheck)
+    print("Nb of 2 UEs paired        : %s" % nbPairing2UEs)
+    print("Nb of 3 UEs paired        : %s" % nbPairing3UEs)
+    print("Nb of unknown UEs paired  : %s" % unknownPairing)
+    print("Nb of MCS below threshold : %s" % nbBelowTreshold)
+    return nbCheck * nbPairing2UEs * nbPairing3UEs
+
+
+def check_CB008830_B03_1xRANK2_1xRANK4(jsonPathName, cellId, McsThreshold=20):
+    """
+    Check the antenna port value and UE pairing according to the TC CB008830-B03 configuration of the third cell.
+       jsonPathName: json file of the TTI trace
+       cellId: physical cell ID
+       McsThreshold: configured value of dlDataDmrsFdmThres256QamMcs
+    Return non 0 value all ckecks are passed, 0 in case of error
+    Main configuration:
+       nrCellType    = 8DL8UL
+       dlDmrsType    = type2
+       dlDataDmrsFdm = true
+       actDl256Qam   = true
+       2 UEs DMRS type 2 capable, one in RANK2 and one in RANK4
+    Expected results:
+       Scrambling Code Id always equal to 0
+       UE pairing occur
+       Nb of CDM group Wo Data is 3 in case of pairing (see Req. 5G_UP_ALG_25267 and 5G_UP_ALG_25269)
+       Nb of CDM group Wo Data is 3 if MCS < dlDataDmrsFdmThres256QamMcs when UE are not paired
+       else nb of CDM group Wo Data is set according to the rank of the UE
+    State machine description (pairingState):
+       waitPairing state: Wait pairing scheduling detection (muStatus to "MUPAIR")
+       checkPairing state: state to check that both UE are well paired
+       endPairing state: Check that new scheduling is no more paired with previous UEs
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    cellId = int(cellId)
+    McsThreshold = int(McsThreshold)
+    nbMsg = 0
+    nbDlFdSchedData = 0
+    nbCheck = 0
+    nbPairing2UEs = 0
+    nbBelowTreshold = 0
+    pairingState = "syncSfnSlot"
+    slotPairing = -1
+    nbUEpaired = 0
+
+    portsFor1stScheduledUERank2 = 0b1100000000000000
+    portsForPairedScheduledUERank2 = 0b0000110000000000
+    portsFor1stScheduledUERank4 = 0b1111000000000000
+    portsUsedWhenPairing = portsFor1stScheduledUERank4+portsForPairedScheduledUERank2
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            if event.type == "dlFdSchedData":
+                nbDlFdSchedData = nbDlFdSchedData+1
+                if event.data["eventHeader"]["physCellId"] != cellId:
+                    continue
+
+                SFN = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                RNTI = event.data["eventHeader"]["rnti"]
+
+                # print("dlFdSchedData: %s (SFN/slot %d/%2d, RNTI %s)" % (nbDlFdSchedData, SFN, slot, RNTI))
+
+                # Static checks according to the test
+                dmrsType = event.data["dmrsConfigType"]
+                numOfLayers = event.data["numOfLayers"]
+                scramblingCode = event.data["nscId"]
+                if dmrsType != "TYPE2":
+                    print("ERROR: unexpected DMRS type %s for UE %s (expected TYPE2) at SFN %s, slot %s"
+                          % (dmrsType, RNTI, SFN, slot))
+                    return 0
+
+                if scramblingCode != 0:
+                    print("ERROR: unexpected scrambling code %s for UE %s (expected 0) at SFN %s, slot %s"
+                          % (scramblingCode, RNTI, SFN, slot))
+                    return 0
+
+                MCS = event.data["rrmDlUsedMcs"]
+                antPort = event.data["antPort"]
+                nbCdmGroupWoData = event.data["numCdmGroupNoData"]
+                antennaPortValue = event.data["antennaPortValue"]
+                muStatus = event.data["muStatus"]
+                SFNslot = SFN*20+slot
+
+                if pairingState == "checkPairing":
+                    if SFNslot != slotPairing:
+                        print("ERROR: expected pairing at SFN %s, slot %s"
+                              % (slotPairing//20, slotPairing % 20))
+                        return 0
+                    expectedNbCDMGroupWoData = 3
+                    nbUEpaired = nbUEpaired+1
+                    antPortPairing = antPortPairing+antPort
+                    if nbUEpaired == expectedNbUEpaired:
+                        if antPortPairing != portsUsedWhenPairing:
+                            print("ERROR: wrong ports used for paired UEs at SFN %s, slot %s"
+                                  % (SFN, slot))
+                            return 0
+                        pairingState = "endPairing"
+                elif pairingState == "endPairing":
+                    if SFNslot == slotPairing:
+                        print("ERROR: unexpected pairing at SFN %s, slot %s"
+                              % (SFN, slot))
+                        return 0
+                    pairingState = "waitPairing"
+                elif pairingState == "syncSfnSlot":
+                    if slotPairing == -1 or slotPairing == SFNslot:
+                        slotPairing = SFNslot
+                        continue
+                    else:
+                        pairingState = "waitPairing"
+
+                if pairingState == "waitPairing":
+                    if muStatus == "MUPAIR":
+                        if nbCdmGroupWoData == 3:
+                            expectedNbCDMGroupWoData = 3
+                            antPortPairing = antPort
+                            expectedNbUEpaired = 2
+                            pairingState = "checkPairing"
+                            nbPairing2UEs = nbPairing2UEs+1
+                        else:
+                            print("ERROR: nbCdmGroupWoData %s for UE %s (expected 3) at SFN %s, slot %s"
+                                  % (nbCdmGroupWoData, RNTI, SFN, slot))
+                            return 0
+                        nbUEpaired = 1
+                        slotPairing = SFNslot
+                    else:
+                        if numOfLayers in ['RANK1', 'RANK2'] and antPort != portsFor1stScheduledUERank2:
+                            print("ERROR: wrong port %s used (expected %s) for RNTI %s at SFN %s, slot %s"
+                                  % (antPort, portsFor1stScheduledUERank2, RNTI, SFN, slot))
+                            return 0
+                        elif numOfLayers not in ['RANK1', 'RANK2'] and antPort != portsFor1stScheduledUERank4:
+                            print("ERROR: wrong port %s used (expected %s) for RNTI %s at SFN %s, slot %s"
+                                  % (antPort, portsFor1stScheduledUERank4, RNTI, SFN, slot))
+                            return 0
+                        if MCS < McsThreshold:
+                            expectedNbCDMGroupWoData = 3
+                            nbBelowTreshold = nbBelowTreshold+1
+                        elif MCS < minReservedMCS256QAM:
+                            if numOfLayers in ['RANK1', 'RANK2']:
+                                expectedNbCDMGroupWoData = 1
+                            else:
+                                expectedNbCDMGroupWoData = 2
+                        else:
+                            expectedNbCDMGroupWoData = -1
+
+                if nbCdmGroupWoData != expectedNbCDMGroupWoData and expectedNbCDMGroupWoData != -1:
+                    if nbCdmGroupWoData == 3 and numOfLayers in ['RANK3', 'RANK4'] and MCS >= McsThreshold:
+                        continue
+                    else:
+                        print("ERROR: nbCdmGroupWoData %s (expected %s) at SFN %s, slot %s"
+                              % (nbCdmGroupWoData, expectedNbCDMGroupWoData, SFN, slot))
+                        return 0
+
+                if (nbCdmGroupWoData, antPort) not in antValue_DMRStype2:
+                    print("ERROR: undefined tuple (%s, %s) at SFN %s, slot %s"
+                          % (nbCdmGroupWoData, antPort, SFN, slot))
+                    return 0
+
+                expectedAntennaPortVal = antValue_DMRStype2[(nbCdmGroupWoData, antPort)]
+                if antennaPortValue != expectedAntennaPortVal:
+                    print("ERROR: antennaPortValue %s (expected %s) at SFN %s, slot %s"
+                          % (antennaPortValue, expectedAntennaPortVal, SFN, slot))
+                    return 0
+
+                nbCheck = nbCheck+1
+
+    print("Nb of checks passed       : %s" % nbCheck)
+    print("Nb of 2 UEs paired        : %s" % nbPairing2UEs)
+    print("Nb of MCS below threshold : %s" % nbBelowTreshold)
+    return nbCheck * nbPairing2UEs

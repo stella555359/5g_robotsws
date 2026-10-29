@@ -1,0 +1,100 @@
+# ; value after semicolon means sleep after acton command
+# ; parameter 'o' after semicolon means, that output of the command is required
+
+# CB008126-A-B32-4 Rejected 5QI modification for GBR when act5qiAndUlNguTnlQosFlowModification set to false
+# USCB008126-SR-A#B7 Feature flag (NRBTS.act5qiAndUlNguTnlQosFlowMod) off reject QoS modification request
+# USCB008126-SR-A#EC5: Successfully handling PDU Session resource modify request (release/establishment/modification),
+# but fail to perform 5QI Modification for an existing non-GBR QoS Flow
+# Test verifies that:
+# - it is possible, for existing non-GBR qosflow, to reject 5QI modification (due to disabled act5qiAndUlNguTnlQosFlowModification) with simultaneous
+#   rejection of 5QI modification of another existing GBR qosflow within the same NGAP:PDUSessionResourceModify procedure
+# Test steps:
+# 1. Setup single PDU session with non-GBR (default) with 5QI-9 and second qosflow (GBR) with 5QI-3
+# 2. Disable act5qiAndUlNguTnlQosFlowModification
+# 3. Try to modify 5QI9 to 5QI8 and in the same message try to modify qosflow with 5QI-3 to 5QI-9. Modification should fail, but with different
+#    cause:
+#    CauseRadioNetwork:unspecified
+#    CauseRadioNetwork:not-supported-5QI-value
+
+# use lua SA_TDD_2c_1gNBSim.lua
+
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/GBR_5QI_1_2_3_4_71_72_76_128_170_212_254.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/vonr_gbr_activation.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/gNBSim.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/disable_ciphering.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/inter_gnb_ho.yaml
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/CB008126_enable.yaml
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/NRPMQAP_counter_profiles.yaml
+
+# Attach UE1 - setup single PDU session with nongbr (default) with 5QI-9 and second qosflow (GBR) with 5QI-3 during ICS
+ue_register id=1;2
+set_pdu_param ue=1 pdu=1 trf_type=internal
+smf_param id=1 additional_qosflows_to_activate=3;1
+ue_pdu_session_setup pdu=1 ue=1 gw=1 nwslice=1;2
+smf_param id=1 reset;1
+
+trf_data_start ue=1 pdu=1 qfi=1 dir=dl mbps=30 trf_id=1;1
+trf_data_start ue=1 pdu=1 qfi=1 dir=ul mbps=10 trf_id=1;1
+trf_data_start ue=1 pdu=1 qfi=2 dir=dl mbps=30 trf_id=1;1
+trf_data_start ue=1 pdu=1 qfi=2 dir=ul mbps=10 trf_id=1;5
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;1;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;1;o
+bearer_stats ue=1 pdu=1 qfi=2 dir=dl;1;o
+bearer_stats ue=1 pdu=1 qfi=2 dir=ul;1;o
+pause
+
+% [{'MOC': 'NRBTS', 'act5qiAndUlNguTnlQosFlowMod': 'false'}]
+# Disable act5qiAndUlNguTnlQosFlowModification flag
+pause
+
+# Try to modify 5QI9 to 5QI8 and in the same message try to modify qosflow with 5QI-3 to 5QI-9. Modification should fail, but with different cause
+# To wait for AP implementation
+# qos_flow-15 (5QI-9) -> (5QI-8)
+# qosflow_modify qos_flow=14 5qi=255;1
+# qosflow_modify qos_flow=15 5qi=8;1
+# qosflow_modify qos_flow=14 5qi=9;1
+# qos_flow-3 (5QI-3) -> (5QI-9)
+# qosflow_modify qos_flow=14 5qi=255;1
+# qosflow_modify qos_flow=3 5qi=9;1
+# qosflow_modify qos_flow=14 5qi=3;1
+ue_pdu_session_modify ue=1 pdu=1 qosflows_to_modify=3,15 by=amf;2
+# Verify that NGAP:PDUSessionResourceModifyRequest contains request for one PDU session to modify the 5QI values of the existing non-GBR QoS Flow
+# from 5QI-9 to 5QI-8 and GBR QoS flow from 5QI-3 to 5QI-9.
+# Verify that NGAP:PDUSessionResourceModifyResponse contains PDU Session Resource Fail To Modify Response List filled with PDU Session IDs
+# corresponding to the QoS Flows that were not modified, and with Cause = CauseRadioNetwork: unspecified
+
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;1;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;1;o
+# Verify that traffic remains unchanged: 30MB for DL, 10MB for UL
+pause
+
+# Teardown: Restore act5qiAndUlNguTnlQosFlowMod flag
+% [{'MOC': 'NRBTS', 'act5qiAndUlNguTnlQosFlowMod': 'true'}]
+# Enable act5qiAndUlNguTnlQosFlowModification flag
+pause
+# Restore initial 5QI values
+# qos_flow-3 (5QI-3) -> (5QI-9)
+# qosflow_modify qos_flow=14 5qi=255;1
+# qosflow_modify qos_flow=3 5qi=3;1
+# qosflow_modify qos_flow=14 5qi=9;1
+# qos_flow-15 (5QI-8) -> (5QI-9)
+# qosflow_modify qos_flow=14 5qi=255;1
+# qosflow_modify qos_flow=15 5qi=9;1
+# qosflow_modify qos_flow=14 5qi=8;1
+ue_kill id=1;2
+exit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

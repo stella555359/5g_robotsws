@@ -1,0 +1,40 @@
+*** Settings ***
+Documentation    ...
+#Suite Setup       Run Keywords    Suite Setup Update GNB    scf_file=${FULL_SCF}
+#...               AND    Suite Setup Copy WTS Config Files From Local    local_wts_dir=${LOCAL_WTS_DIR}
+#...               AND    Suite Setup Start WTS And Check OnAir
+#Suite Teardown    Common Suite Teardown
+#Test Setup        Common Test Setup
+#Test Teardown     Common Test Teardown
+#Force Tags        CLOUD_5G_I_BLLL_AP_LOO    CRT    RAN_5G    RAN_5G_FDD    FR1    Owner_zbu
+#...               SBTS00    SBTS23R1    SBTS22R4
+#Resource          ./../CUDU_L2/common_setup_teardown.robot
+#Resource          ./CB006667_B_E_Resource.robot
+#
+#*** Variables ***
+#${FULL_SCF}                SCFC_BLLL_LOO_20M.xml
+#@{LOG_NAME_LIST}           btslog    snapshot
+#${LOCAL_WTS_DIR}           ${CURDIR}/resources/wts
+#${WTS_CFG}                 BLLL_AP_LOO.cfg
+#&{UE_INFO}                 profile_id=1    gnb_id=2    cell_id=12    bearer_id=2    dl_traffic=60M    ul_traffic=20M
+#${UE_NUM}                  8
+#
+#*** Test Cases ***
+#CB006667_B008_PUSCH_Reasource_Increasing_Per_Slot_With_MaximumPuschAllocationPerSlot_SU_MIMO_2X2_20M_QPSK_NSA
+#    NSA MultiUE Attach And Do Traffic    max_ue_num=${UE_NUM}    ue_info=${UE_INFO}
+#    Capture Convert Format Ttitrace With Streaming Mode    2s    ${test_log_directory}/before_change
+#    ta_a2a.Check Log With Au2anlysis    ${CURDIR}${/}A2A${/}CB006667_A2A${/}CB006667-B08.ini
+#    ...    i    save_log_directory=${test_log_directory}/before_change
+#    Online Change MaximumPuschAllocationPerSlot Parameter    dist_name=MRBTS-1/NRBTS-1/NRCELL-12    parameter=maxNumPuschAllocationPerSlot    value=4
+#    Capture Convert Format Ttitrace With Streaming Mode    2s    ${test_log_directory}/after_change
+#    ta_a2a.Check Log With Au2anlysis    ${CURDIR}${/}A2A${/}CB006667_A2A${/}CB006667-B08_change.ini
+#    ...    i    save_log_directory=${test_log_directory}/after_change
+#
+#
+#*** Keywords ***
+#Online Change MaximumPuschAllocationPerSlot Parameter
+#    [Arguments]    ${dist_name}    ${parameter}    ${value}
+#    COAM.Setup Admin
+#    COAM.Perform Parameter Recommissioning
+#    ...    dist_name=${dist_name}    parameter=${parameter}    operation=update    value=${value}    skip_parameter_relation_errors=True
+#    [Teardown]    COAM.Teardown

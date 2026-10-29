@@ -1,0 +1,27 @@
+PARAMS_IN_SCF = [
+    "NRBTS:actPCMDReport=true",
+    "MRBTS/MNL-1/TCEADM-1",
+    "MRBTS/MNL-1/TCEADM-1/TCE-1:tceIpAddress=10.57.195.123",
+    "MRBTS/MNL-1/TCEADM-1/TCE-1:tcePortNumber=49148",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1",
+    # DU mtrace
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRMTRACEDU-1:actPCMDReporting=true",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRMTRACEDU-1:actRIReporting=true",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRMTRACEDU-1:riReportInterval=s5",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRMTRACEDU-1:nrRanTraceReference:mcc=262",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRMTRACEDU-1:nrRanTraceReference:mnc=3",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRMTRACEDU-1:nrRanTraceReference:mncLength=2",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRMTRACEDU-1:tracePCMDSetting=all",
+    # DU strace
+    "NRBTS:actSubscriberTraceReport=true",
+    "NRBTS/SERVEDAMF-1:amfIPAddress=10.110.194.134",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRSTRACEDU-1:actPCMDReporting=true",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRSTRACEDU-1:tracePCMDSetting=all",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRSTRACEDU-1:applyDefNrTceForAllSessions=true",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRSTRACEDU-1:certTypeForTlsAuth=RSA",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRSTRACEDU-1:defaultNrTceIdentifier=1",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRSTRACEDU-1:maxBufferingTime=2000",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRSTRACEDU-1:nrTcePortNumber=49151",
+    "NRBTS/NRDU-1/NRCTRLTSDU-1/NRSTRACEDU-1:tlsEnabled=false",
+]

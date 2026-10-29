@@ -1,0 +1,167 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Common keyword of 5GC001227-C feature
+...               Prerequisite :
+...               Scope : keywords for 5GC001227-C
+...
+...               Test Case Scenario author   : imen.mestiri@nokia.com
+...               Test Case Scenario contact  : imen.mestiri@nokia.com
+...               Test Case automation author : imen.mestiri@nokia.com
+...               Test Case automation contact: imen.mestiri@nokia.com
+...               Creation Date               : 11-01-2022
+...               Modified Date               : 11-01-2022
+...               Last Modified by            : imen.mestiri@nokia.com
+...               Version History   Date            Author                      Notes
+...               0.1               11-01-2022      imen.mestiri@nokia.com   Creation
+...               0.2               FB2207          ying.yw.wu@nokia.com     Refactoring : remove ratio replace with vendor file
+...               0.3               FB2209          ying.yw.wu@nokia.com     modify : test steps with SA call ue id 1 & 3
+...               0.4               FB2209          ying.yw.wu@nokia.com     modify : remove not-used KWs/variables ...
+...               0.5               FB2220          ying.yw.wu@nokia.com     fix NrCellId hexa format
+...				  0.6				FB2420			ying.yw.wu@nokia.com	 fix Robot Framework 5.0 static analysis error
+
+
+Library             ../../../resources/python/luashark_tools.py
+Resource          taf/rfrl/common_resources/robot/preconditions.robot
+
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../../../resources/SWENG/robot/Container.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+Resource          ./5GC001227-Common_keywords.robot
+Resource          ./5GC001227-A-UPD006_keywords.robot
+
+Resource          ./Config1227.robot
+
+Variables           ../../../../../resources/SWENG/python/Colors.py
+
+
+*** Variables ***
+# Variables for ue profile and traffic
+${ue_1_id}            1            # Applied only for KW SA Call of 1 UE
+${ue_1_pdu}           1            # Applied only for KW SA Call of 1 UE
+${ue_1_gw}            1            # Applied only for KW SA Call of 1 UE
+${qfi_nonGBR}         1            # Applied only for KW SA Call of 1 UE
+${dl_tput_mbps}       50           # Applied only for KW SA Call of 1 UE
+${ul_tput_mbps}       10           # Applied only for KW SA Call of 1 UE
+#${traffic_duration}   10            # Applied only for KW SA Call of 1 UE
+${CallType}           SA           # NSA or SA (for all UEs)
+${Cell}               1            # Target cell (must be index 1, 2, 3, 4, 5...)
+${TrafficDuration}    20           # Traffic Duration  (0 means no traffic)
+${DLthroughput}       50           # DL throughput in Mbps
+${ULthroughput}       10           # UL throughput in Mbps
+#Variables to Build UEs list and Setup WTS Lua
+${gNbID}              2            # Value of the Target_gnb
+${CellID}             1            # Retrieved from NRCELL_ID_LIST items [1, 2, 3, 4, 5, 6, None, None, None]
+${UEnb}               1            # Number of UEs to "attach/traffic/detach" simultaneously per cell
+#${nbSaUe}            2
+${loopIND}            1
+${LoopNb}             1            # Number of loops "attach/traffic/detach"
+
+
+
+
+#Variables for TC 1227 Cell Addition
+${Cell_UNLOCK}      UNLOCK
+${Cell_LOCK}        LOCK
+
+*** Keywords ***
+
+#####1227-C#####
+TC 1227 Cell Addition
+    [Documentation]     Verification of dynamic PRB allocation after cell Addition and cell delete using RR Algo
+
+    [Arguments]            ${params}        ${Vendor_Param}
+    Set Suite Variable     ${params}
+    Init Sequence          ${params}
+    Step                   Set RAD Params Of 1227 
+    Step                   Config1227.Vendor File Config With Specific Settings     argument=${Vendor_Param}          
+    Step                   Config1227.Update 1227 Params in OAM SCF
+    Critical Step          Restart TL
+    Step                   Multi Cells Setup SA 1227                  argument=${params.nbCell}
+    Step                   SA Call With UE Id   argument=${ue_1_id}
+    Step                   SA Call With UE Id   argument=${ue_3_id}
+    Step                   Activate Sherpa On All Cells
+    Step                   Wait In Seconds
+    Step                   Stop Sherpa Collection
+    Step                   Test Check PrbPoolingAllocationReport 3Cells
+    Step                   Cell Lock
+    Step                   Activate Sherpa On All Cells
+    Step                   Wait In Seconds
+    Step                   Stop Sherpa Collection
+    Step                   Test Check PrbPoolingAllocationReport 2Cells
+    Step                   Cell Unlock
+    Step                   Wait 10min
+    Step                   SA Call of 1 UE
+    Step                   Activate Sherpa On All Cells
+    Step                   Wait In Seconds
+    Step                   Stop Sherpa Collection
+    Step                   Test Check PrbPoolingAllocationReport 3Cells
+
+Wait 10min
+    Sleep       600s
+
+Cell Lock
+    Oam.OAM Cell Lock  cell_id=1
+    Dated Log   Current status of cell 1 is blocked
+
+Cell Unlock
+    Oam.OAM Cell Lock  state=UNLOCK     cell_id=1
+    Dated Log   Current status of cell 1 is unblocked
+
+Test Check PrbPoolingAllocationReport 3Cells
+    [Documentation]                  post-processing on micro__l1l2Trace.csv to check that event 45 is reported for
+    ...                              both Cell1, Cell3 (L1subpool 0), cell 2 (L1Subpool 1) when no cell is locked
+    [Arguments]
+    @{result}                        Check Regex Value In File Column With Prerequisite
+    ...                              file=${sherpa_output_path}/tcpdump/micro__l1l2Trace.csv
+    ...                              Column_name=MSGID
+    ...                              regex_prereq=Dl PrbPoolingAllocationReport
+    # ...                              regex_tocheck=.+;*NRCellid=1638[5-7];*
+    ...                              regex_tocheck=.+;*NRCellid=0x400[1-3];*
+    ${EVENT45_presence} =      Get From List    ${result}    0
+    should be true                   ${EVENT45_presence}==True
+    BuiltIn.Log    ${EVENT45_presence}    console=yes
+
+    ${EVENT45_list} =      Get From List    ${result}    1
+    BuiltIn.Log    ${EVENT45_list}    console=yes
+    ${check_EVENT45_presence} =     Set Variable If   ${EVENT45_presence}==True
+    ...                 Dl PrbPoolingAllocationReport(45) is present for both cell 1, 2, 3
+    ...                                               ${EVENT45_presence}==False
+    ...                 Dl PrbPoolingAllocationReport(45) check failed
+
+    Dated Log                        Analyse in sherpa traces : PrbPoolingAllocationReport for 3 Cells
+
+Test Check PrbPoolingAllocationReport 2Cells
+    [Documentation]                  post-processing on micro__l1l2Trace.csv to check that event 45 is reported for
+    ...                              Cell2 and Cell3 (NRCellid=16387) when cell 1 is locked
+    [Arguments]
+    @{result}                        Check Regex Value In File Column With Prerequisite
+    ...                              file=${sherpa_output_path}/tcpdump/micro__l1l2Trace.csv
+    ...                              Column_name=MSGID
+    ...                              regex_prereq=Dl PrbPoolingAllocationReport
+    # ...                              regex_tocheck=.+;*NRCellid=1638[6-7];*
+    ...                              regex_tocheck=.+;*NRCellid=0x400[2-3];*
+    ${EVENT45_presence} =      Get From List    ${result}    0
+    should be true                   ${EVENT45_presence}==True
+    BuiltIn.Log    ${EVENT45_presence}    console=yes
+
+    ${EVENT45_list} =      Get From List    ${result}    1
+    BuiltIn.Log    ${EVENT45_list}    console=yes
+    ${check_EVENT45_presence} =     Set Variable If   ${EVENT45_presence}==True
+    ...                 Dl PrbPoolingAllocationReport(45) is present for Cell 2, 3 only
+    ...                                               ${EVENT45_presence}==False
+    ...                 Dl PrbPoolingAllocationReport(45) check failed
+
+    Dated Log                        Analyse in sherpa traces : PrbPoolingAllocationReport for Cell 2 & 3
+
+
+

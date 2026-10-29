@@ -1,0 +1,323 @@
+heat_template_version: 2016-10-14
+description: 'v77: Template to create a network interface'
+parameters:
+  index:
+    type: number
+    description: index to fetch own parameters
+    default: 0
+  mtu:
+    type: number
+    description: MTU value for the port
+    default: 1500
+    constraints:
+    - range:
+        min: 1280
+        max: 9000
+  networks:
+    type: json
+    description: network parameters
+  pmtu:
+    type: number
+    description: Maximum MTU value supported by the port, i.e. provider network MTU
+    default: 9000
+    constraints:
+    - range:
+        min: 1280
+        max: 9000
+  fixed_ips_index:
+    type: number
+    description: index to fetch own parameters
+    default: 0
+  fixed_v6_ips_index:
+    type: number
+    description: index to fetch own parameters
+    default: 0
+  dual_stack:
+    type: string
+    description: configure single network or dual network
+    default: disabled
+    constraints:
+      - allowed_values: [disabled, enabled]
+  port_type:
+    type: string
+    description: configure port type as physical or logical
+    default: physical
+    constraints:
+      - allowed_values: [physical, logical]
+
+conditions:
+  avp:
+    equals:
+    - get_param:
+        - networks
+        - {get_param: index}
+        - vif
+    - avp
+
+resources:
+  port:
+    type: OS::Neutron::Port
+    properties:
+      network:
+        get_param:
+        - networks
+        - {get_param: index}
+        - uuid
+      fixed_ips:
+        if:
+          - or:
+            - equals:
+              - {get_param: [networks, {get_param: index}, name]}
+              - fronthaul
+            - equals:
+              - {get_param: [networks, {get_param: index}, name]}
+              - backhaul
+            - equals:
+              - {get_param: [networks, {get_param: index}, name]}
+              - x2
+          - if:
+            - or:
+              - equals:
+                - {get_param: [networks, {get_param: index}, fixed_ips]}
+                - []
+              - equals:
+                - {get_param: [networks, {get_param: index}, fixed_ips]}
+                - ~
+              - equals:
+                - {get_param: [networks, {get_param: index}, fixed_ips]}
+                - null
+              - equals:
+                - {get_param: [networks, {get_param: index}, fixed_ips]}
+                - ''
+            - if:
+              - equals:
+                - {get_param: dual_stack}
+                - disabled
+              - if:
+                - or:
+                  - equals:
+                    - {get_param: [networks, {get_param: index}, fixed_v6_ips]}
+                    - []
+                  - equals:
+                    - {get_param: [networks, {get_param: index}, fixed_v6_ips]}
+                    - ~
+                  - equals:
+                    - {get_param: [networks, {get_param: index}, fixed_v6_ips]}
+                    - null
+                  - equals:
+                    - {get_param: [networks, {get_param: index}, fixed_v6_ips]}
+                    - ''
+                - []
+                -
+                  - {get_param: [networks, {get_param: index}, fixed_v6_ips, {get_param: fixed_v6_ips_index}]}
+              - []
+            - if:
+              - equals:
+                - {get_param: dual_stack}
+                - disabled
+              -
+                - {get_param: [networks, {get_param: index}, fixed_ips, {get_param: fixed_ips_index}]}
+              -
+                - {get_param: [networks, {get_param: index}, fixed_ips, {get_param: fixed_ips_index}]}
+                - {get_param: [networks, {get_param: index}, fixed_v6_ips, {get_param: fixed_v6_ips_index}]}
+          - if:
+            - or:
+              - equals:
+                - {get_param: [networks, {get_param: index}, fixed_ips]}
+                - []
+              - equals:
+                - {get_param: [networks, {get_param: index}, fixed_ips]}
+                - ~
+              - equals:
+                - {get_param: [networks, {get_param: index}, fixed_ips]}
+                - null
+              - equals:
+                - {get_param: [networks, {get_param: index}, fixed_ips]}
+                - ''
+            - []
+            -
+              - {get_param: [networks, {get_param: index}, fixed_ips, {get_param: fixed_ips_index}]}
+
+      allowed_address_pairs:
+        if:
+          - or:
+            - equals:
+              - {get_param: [networks, {get_param: index}, name]}
+              - internal
+            - equals:
+              - {get_param: [networks, {get_param: index}, name]}
+              - internal_srv
+          - get_param:
+            - networks
+            - {get_param: index}
+            - addrpair
+          -
+            - ip_address: 0.0.0.0/0
+            - ip_address: '::/0'
+
+outputs:
+  ip_addrs:
+    description: IP addersses allocated to the port
+    value:
+    - list_join:
+      - /
+      - - get_attr: [port, fixed_ips, 0, ip_address]
+        - str_split:
+          - /
+          - get_attr: [port, subnets, 0, cidr]
+          - 1
+    - list_join:
+      - /
+      - - get_attr: [port, fixed_ips, 1, ip_address]
+        - str_split:
+          - /
+          - get_attr: [port, subnets, 1, cidr]
+          - 1
+  gw_addrs:
+    description: default GW addresses of the network
+    value:
+    - get_attr: [port, subnets, 0, gateway_ip]
+    - str_replace:
+        template: <%gw%>
+        params:
+          <%gw%>:
+            get_attr: [port, subnets, 1, gateway_ip]
+  port:
+    description: port configuration as needed for OS::Nova::Server networks property
+    value:
+      map_merge:
+      - port: {get_resource: port}
+      - if:
+        - avp
+        - {vif-model: avp}
+        - {}
+  ext-ip-config:
+    description: external ipv4 configurations in dual_network;external ipv4/v6 configurations in signal_network
+    value:
+      map_merge:
+        repeat:
+          for_each:
+            <%name%>:
+            - get_param: [networks, {get_param: index}, name]
+            <%type%>:
+            - get_param: port_type
+          template:
+            ext-ip-config-<%type%>.<%name%>:
+              if:
+              - and:
+                - equals:
+                  - {get_param: [networks, {get_param: index}, role]}
+                  - external
+                - not:
+                    equals:
+                    - {get_param: [networks, {get_param: index}, ip-roles]}
+                    - []
+              - - list_join:
+                  - /
+                  - - get_attr: [port, fixed_ips, 0, ip_address]
+                    - str_split:
+                      - /
+                      - get_attr: [port, subnets, 0, cidr]
+                      - 1
+                - get_param:
+                  - networks
+                  - {get_param: index}
+                  - ip-roles
+              - []
+  ext-ip-config-v6:
+    description: external ipv6 configurations
+    value:
+      map_merge:
+        repeat:
+          for_each:
+            <%name%>:
+            - get_param: [networks, {get_param: index}, name]
+            <%type%>:
+            - get_param: port_type
+          template:
+            ext-ip-config-<%type%>-v6.<%name%>:
+              if:
+              - and:
+                - equals:
+                  - {get_param: [networks, {get_param: index}, role]}
+                  - external
+                - not:
+                    equals:
+                    - {get_param: [networks, {get_param: index}, ip-roles]}
+                    - []
+              - - list_join:
+                  - /
+                  - - get_attr: [port, fixed_ips, 1, ip_address]
+                    - str_split:
+                      - /
+                      - get_attr: [port, subnets, 1, cidr]
+                      - 1
+                - get_param:
+                  - networks
+                  - {get_param: index}
+                  - ip-roles
+              - []
+  ip-info:
+    description: ip-info metadata parameters
+    value:
+      map_merge:
+        repeat:
+          for_each:
+            <%name%>:
+            - get_param:
+              - networks
+              - {get_param: index}
+              - name
+          template:
+            ip-info.<%name%>.mac:
+              get_attr: [port, mac_address]
+            ip-info.<%name%>.role:
+              get_param:
+              - networks
+              - {get_param: index}
+              - role
+            ip-info.<%name%>.ip_addrs:
+              if:
+              - equals:
+                - {get_param: [networks, {get_param: index}, role]}
+                - external
+              - null
+              -
+                - str_replace:
+                    template: <%ip%>/<%prefix%>
+                    params:
+                      <%ip%>:
+                        get_attr: [port, fixed_ips, 0, ip_address]
+                      <%prefix%>:
+                        str_split:
+                        - /
+                        - get_attr: [port, subnets, 0, cidr]
+                        - 1
+                - str_replace:
+                    template: <%ip%>/<%prefix%>
+                    params:
+                      <%ip%>:
+                        get_attr: [port, fixed_ips, 1, ip_address]
+                      <%prefix%>:
+                        str_split:
+                        - /
+                        - get_attr: [port, subnets, 1, cidr]
+                        - 1
+            ip-info.<%name%>.mtu:
+              str_replace:
+                template: <%mtu%>
+                params:
+                  <%mtu%>: {get_param: mtu}
+            ip-info.<%name%>.provider-network-mtu:
+              str_replace:
+                template: <%mtu%>
+                params:
+                  <%mtu%>: {get_param: pmtu}
+  fixed_ips:
+    description: port ip address configuration
+    value:
+      get_attr: [port, fixed_ips]
+  subnet:
+    description: a list of all subnet attributes for the port type list
+    value:
+      get_attr: [port, subnets]

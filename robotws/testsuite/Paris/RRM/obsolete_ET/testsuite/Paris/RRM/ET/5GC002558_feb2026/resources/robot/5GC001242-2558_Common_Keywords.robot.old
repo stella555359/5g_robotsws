@@ -1,0 +1,1303 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Common Keyword for PRB blanking testing. In the scope of 1242 and 2558.
+...             author   : Nasmoudine TOYB
+...             contact  : nasmoudine.toyb@nokia.fr
+...             Creation Date             : 26/10/2020
+...             Modified Date             : 30/08/2021
+...             Last Modified by          : loic.marzin@nokia.com
+...                  30/08/2022        Correction for MCShark of several KW
+
+Library         BuiltIn
+Library         DateTime
+Library         OperatingSystem
+Library         taf.sbts.oam.coam.admin       WITH NAME     coam
+Library         taf.ul.oam.selenium_coam      WITH NAME     selenium_coam
+Library         taf.config.scf                WITH NAME     cscf
+Library         taf.gnb.oam.commissioning     WITH NAME     commissioning
+Library         taf.collectors.pmcounters     WITH NAME     tafpmcounters
+Library         taf.epcsim
+
+Library         ../../../resources/python/luashark_tools.py
+Library         luashark_tools.analyzer       WITH NAME     analyzer
+
+Library         taf.rfrl.common_resources.python.SWConfig
+Library         ../../../../../resources/SWENG/python/OsTool.py
+Library         ../../../../../resources/SWENG/python/CfgConfig.py  WITH NAME   CfgConfig
+
+Resource        ../../../../../resources/SWENG/robot/Tools.robot
+Resource        ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource        ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource        ../../../../../resources/SWENG/robot/Connect.robot
+Resource        ../../../../../resources/SWENG/robot/Restart.robot
+Resource        ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource        ../../../../../resources/SWENG/robot/Traffic.robot
+Resource        ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource        ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource        ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource        ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource        ../../../../../resources/SWENG/robot/Oam.robot
+Resource        ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource        ../../../../../resources/SWENG/robot/Capture.robot
+Resource        ../../../../../resources/SWENG/robot/Scf.robot
+Resource        ../../../../../resources/SWENG/robot/Setup.robot
+Resource        ../../../../../resources/SWENG/robot/PacketSearch.robot
+
+Variables       ../../../../../resources/SWENG/python/ReadConfig.py
+
+*** Variables ***
+
+@{listFieldCsi}                startSymbol    startPrb    numOfPrb
+@{listFieldPdsch}              startPrb    numOfPrb
+@{listFieldPucch}              startPrb    numOfPrb
+@{listFieldSrsRcvReq}          srsBandwidthConfig    freqDomainPosition    freqDomainShift
+@{listFieldSrsRcvResp}         ulRank    ulPmiRank1Sinr    ulPmiRank2     ulPmiRank2Sinr_item.*    snr
+
+#Script for collecting journal logs
+${script_path}           ../script
+${script_journal_gnb}    get_journal_gNB.sh
+${script_journal_ap}     get_journal_AP.sh
+
+#Filter for pcap
+@{filter_L1L2_attach_gnb}     UlData_PrachReceiveReq    UlData_PrachReceiveInd     DlData_PdcchSendReq     DlData_PdschSendReq
+...                           UlData_PuschReceiveReq    UlData_PucchReceiveReq    UlData_PuschReceiveRespLo    UlData_PuschReceiveRespPs
+...                           DlData_CsiRsSendReq    UlData_PucchReceiveRespHarqD    UlData_PuschReceiveRespHarqU   DlData_PdschPayloadTbSendReq
+@{filter_L1L2_traffic_gnb}    DlData_PdcchSendReq     DlData_PdschSendReq    UlData_PuschReceiveReq    UlData_PuschReceiveRespPs
+...                           UlData_PucchReceiveRespHarqD
+${filter_L2L1_AP}             not arp and not sctp and ether[16:2]!=0x0806 and ether[24:2]!=0xf33d and ether[24:2]!=0xf1ff
+...                           and ether[24:2]!=0x9403 and ether[24:2]!=0xff02 and ether[24:2]!=0x0122 and ether[24:2]!=0xe101
+...                           and ether[24:2]!=0x9400 and ether[24:2]!=0xe103 and ether[24:2]!=0x0133 and ether[24:2]!=0x0108
+...                           and ether[24:2]!=0xe105 and ether[24:2]!=0x8014 and ether[24:2]!=0xf321 and ether[24:2]!=0xf322
+@{filter_protocol}            ARP    UDP   ICMP   TCP
+
+*** Keywords ***
+
+#************************** Keywords for saving configuration *********************
+
+Get Current Config file
+    Dated Log    ----------------- Getting current configuration files --------------------
+    # Get basic.cfg file configuration:
+    Dated Log    -----> Getting current basic.cfg config
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/basic_wts_to_be_restored.cfg
+    ...                             connection=${alias_epc}
+    # Get APConfig.xml configuration file
+    Dated Log    -----> Getting current APConfig.xml config
+    ${ap_configfile}                Get XML AirPhoneConfig Path
+    run Keyword if      '${ap_configfile}' != '${empty}'    csn.download_file     remote_path=${tl.core.dir_path}${ap_configfile}
+    ...                             local_path=${LOG_PATH}/ApOamConfig_to_be_restored.xml
+    ...                             connection=${alias_epc}
+    # Get swconfig file that will be restored during test suite teardown
+    Dated Log    -----> Getting current gNB swconfig.txt config
+    ${alias_gnb}                    SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${LOG_PATH}/gnb_swconfig_to_be_restored.txt
+    ...                             connection=${alias_gnb}
+    Dated Log New Line         Default SCF file stored to ${SCF_SETUP_PATH}\n
+    Dated Log                  Default swconfig file stored to ${LOG_PATH}/gnb_swconfig_to_be_restored.txt\n
+    Dated Log                  Default basic cfg file stored to ${LOG_PATH}/basic_wts_to_be_restored.cfg\n
+    Dated Log                  Default AP Oam Config file stored to ${LOG_PATH}/ApOamConfig_to_be_restored.xml\n
+
+Save Current Configuration
+    Dated log     \n------------------- Configuration Saving ---------------------------
+    ${original_scf_file}           Get Current SCF File            ${LOG_PATH}
+    Dated log     Current configuration is saved under ${original_scf_file}.\n
+    Set Suite Variable             ${original_scf_file}
+    Dated log     \n------------------- Configuration Saving Completed ---------------------------
+
+Restore Configuration
+    Dated log     -------------------- Configuration Restoring ---------------------------
+    OAM Perform Full Commissioning     ${original_scf_file}
+    Dated log     -------------------- Configuration Restoring completed------------------
+
+Restore Original Configuration
+    # Get swconfig file that will be restored during test suite teardown
+    ${alias_gnb}                    SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    csn.upload_file                 remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${LOG_PATH}/gnb_swconfig_to_be_restored.txt
+    ...                             connection=${alias_gnb}
+    SSH Exec                        command=crasign ${SWCONFIG_PATH}           alias=${alias_gnb}
+    Dated Log                 swconfig file has been restored to default (${LOG_PATH}/swconfig_to_be_restored.txt)
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.upload_file                 remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/basic_wts_to_be_restored.cfg
+    ...                             connection=${alias_epc}
+    Dated Log                basic cfg file has been restored to default (${LOG_PATH}/basic_wts_to_be_restored.cfg)
+    ${ap_configfile}                Get XML AirPhoneConfig Path
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    run Keyword if      '${ap_configfile}' != '${empty}'    csn.upload_file     remote_path=${tl.core.dir_path}/${ap_configfile}
+    ...                             local_path=${LOG_PATH}/ApOamConfig_to_be_restored.xml
+    ...                             connection=${alias_epc}
+    Dated Log            ApOamConfig has been restored to default (${LOG_PATH}/ApOamConfig_to_be_restored.xml)
+    OAM Perform Full Commissioning     ${SCF_SETUP_PATH}
+
+#************************** Keywords for SCF manipulations*****************************
+
+Modify NRBTSID In SCF
+    [Arguments]    ${scf_path}    ${gnbID}=NRBTS-1
+    Dated Log    [Changing NRBTSID In SCF]
+    run    command=sed -i 's|NRBTS-${NRBTS_ID}|${gnbID}|g' ${scf_path}
+    #run    command=sed -i 's|NRBTS-1|${gnbID}|g' ${scf_path}
+    Dated Log    ----> Modifications completed.\n
+
+#************************** Keywords for setting parameters in config*****************************
+
+Set Initial Bwp Profile Location
+    [Documentation]   To set the cRbStart and size of the location of the Initial BandwidthDl and BandwidthUl.
+    [Arguments]     ${crb_size_dl}=coreset0    ${crb_start_dl}=coreset0
+    Dated Log     -----> [Dynamic PDCCH: setting initial BWP profil location]
+    ${total_prb_bw}   Set Variable If      '${param.chBwDl}' == '5MHz'     25
+    ...                                    '${param.chBwDl}' == '10MHz'    52
+    ...                                    '${param.chBwDl}' == '15MHz'    79
+    ...                                    '${param.chBwDl}' == '20MHz'    106
+    Dated Log    -----> Bandwidth is ${param.chBwDl} and the number of PRB available is ${total_prb_bw}.\n
+    ${crb_size_ul}     Evaluate    ${total_prb_bw}-${param.nbrOfBlankedPRBsLowEdgeUL}-${param.nbrOfBlankedPRBsHighEdgeUL}-1
+    ${crb_start_ul}    Evaluate    ${param.nbrOfBlankedPRBsLowEdgeUL}+1
+    #For locationAndBandwidthDl
+    &{param_dl}    Create Dictionary    cRbSizeDl=${crb_size_dl}  cRbStartDl=${crb_start_dl}
+    &{framestructure_dl}    Evaluate    {'dist_name': '${bwp_initial_dist_name}','parameter': 'locationAndBandwidthDl','value':[&{param_dl}]}
+    #For locationAndBandwidthUl
+    &{param_ul}    Create Dictionary    cRbSizeUl=n${crb_size_ul}  cRbStartUl=crb${crb_start_ul}
+    &{framestructure_ul}    Evaluate    {'dist_name': '${bwp_initial_dist_name}','parameter': 'locationAndBandwidthUl','value':[&{param_ul}]}
+    @{modify_param_list}     Create List     ${framestructure_dl}    ${framestructure_ul}
+    [Return]   ${modify_param_list}
+
+#****************************** Generic Keywords for pcap ***************************************
+
+Generate Pdml From Pcap
+    [Arguments]     ${pcap_file}
+    Dated Log     PCAP to PDML ongoing....
+    ${pdml_file}=                    analyzer.pcap_to_pdml           ${pcap_file}
+    Dated Log     PDML generated.
+    [Return]    ${pdml_file}
+
+Filter Pcap
+    [Arguments]     ${pcap_file}
+    ...             ${messages}
+    ...             ${name}=filtered
+    Dated Log    PCAP filtering ongoing...
+    ${pcapFile_filtered}=      analyzer.filter_pcap
+    ...                        pcapInFile=${pcapFile}
+    ...			       filterName=${name}
+    ...			       filterExp=${messages}
+    Dated Log    PCAP filtering completed.
+    [Return]    ${pcapFile_filtered}
+
+
+#****************************** Keywords for testing steps ***************************************
+Check Attach Is Ok In APL3
+    ${output}           SSH Wait For Connect and Cmd
+	...                 command=grep 'Sm User Ue Connection' /tmp/startup_l3.log
+	...                 host=${AP_DU.sys[0].M}
+    Should Contain	    ${output}	 Sm User Ue Connection Established Ind message status OK
+
+Establish X2 Link
+    CallSetup.WTS Setup              shouldUseLua=${False}    nbCell=1
+
+SgNB Addition And 5G Attach
+    CallSetup.SgNB Addition to ENB          ueSetting=${UE_SIMPLE}
+
+Check AP Cell Setup Is Completed
+    [Documentation]              Check in AP that cell setup is OK
+    Check AP Cell Setup          host=${AP_DU.sys[0].M}            file=/tmp/startup_l3.log
+    ...                          pattern=Cell Setup completed
+
+#****************************** Keywords for capture traces***************************************
+
+Check AP Cell Setup
+    [Documentation]                 Check in AP that cell setup is OK.
+    [Arguments]                     ${host}                                 ${file}
+    ...                             ${pattern}
+    Dated log                       Check on ${host.alias}:file ${file} contain pattern [${pattern}]
+    ${alias}                        SSH Connect                             ${host}
+    ${output}                       SSH Cmd
+    ...                                 grep ${pattern} ${file}
+    ...                                 alias=${alias}
+    should contain                  ${output}                               ${pattern}
+
+Start Mirroring And Traces gNB
+    # ${capture_gnb_x2}      Capture CORE Set Upon Config
+    ${capture_gnb_l1l2}    Capture L1L2 Set Upon Config
+    # ${capture_gnb_l3l2}    Capture CPRT Set Upon Config
+
+    # ADT - add filter for capture_gnb_x2
+    # ${filter F1AP}                  Get Filter For F1AP                     ${capture_gnb_x2}
+    # ${filter X2AP}                  Get Filter For X2AP                     ${capture_gnb_x2}
+    # ${capture_gnb_x2.filter}        set variable                            ${filter F1AP} or ${filter X2AP}
+
+    # ${capture_gnb_l3l2.filter}       Get Filter To Exclude protocols    capture=${capture_gnb_l3l2}    protocolList=${filter_protocol}
+
+    # ${capture_gnb_l3l2.filter}       Get Filter To Exclude protocols    capture=${capture_gnb_l3l2}    protocolList=${filter_protocol}
+    ${capture_gnb_l1l2.filter}       Get Filter To Exclude protocols    capture=${capture_gnb_l1l2}    protocolList=${filter_protocol}
+
+    # Capture Init         ${capture_gnb_x2}        suffix=_X2_backhaul
+    Capture Init         ${capture_gnb_l1l2}      suffix=_filter_protocol
+    # Capture Init         ${capture_gnb_l3l2}      suffix=_L3L2_filter_protocol
+
+    # Set Suite Variable    ${capture_gnb_x2}
+    Set Suite Variable    ${capture_gnb_l1l2}
+    # Set Suite Variable    ${capture_gnb_l3l2}
+    # Dated Log    -----> Starting capture X2 in gNB.\n
+    # Capture Start         ${capture_gnb_x2}
+    Dated Log    -----> Starting capture L2L1 in gNB.\n
+    Capture Start         ${capture_gnb_l1l2}
+    # Dated Log    -----> Starting capture L3L2 in gNB.\n
+    # Capture Start         ${capture_gnb_l3l2}
+
+Stop Mirroring And Traces gNB
+    Dated Log    [Stopping Mirroring And Traces gNB]
+    Capture Stop    ${capture_gnb_l1l2}
+    Dated Log    -----> Traces L2L1 saved under ${capture_gnb_l1l2.path}\n
+    # Capture Stop    ${capture_gnb_x2}
+    # Dated Log    -----> Traces X2 saved under ${capture_gnb_x2.path}\n
+    # Capture Stop    ${capture_gnb_l3l2}
+    # Dated Log    -----> Traces L2L3 saved under ${capture_gnb_l3l2.path}\n
+
+Start Mirroring And Traces AP
+    Dated Log    [Starting Mirroring And Traces Airphone]
+    ${capture_ap_l1l2}    Capture L1L2 Set Upon Config    ${AP_DU}
+    ${capture_ap_l1l2.filter}      Get Filter To Exclude protocols   capture=${capture_ap_l1l2}
+    ...                                                              protocolList=${filter_protocol}
+    Capture Init         ${capture_ap_l1l2}     suffix=_filter_protocol
+    Set Suite Variable    ${capture_ap_l1l2}
+    Dated Log    -----> Starting capture L2L1 in Airphone.\n
+    Capture Start         ${capture_ap_l1l2}
+
+Stop Mirroring And Traces AP
+    Dated Log    [Stopping Mirroring And Traces Airphone]
+    Capture Stop    ${capture_ap_l1l2}
+    Dated Log    -----> Airpone L2L1 traces saved under ${capture_ap_l1l2.path}\n
+
+Get WTS logs
+    [Documentation]     Collect the WTS logs: uec, end, amf etc..
+    [Arguments]      ${local_path_logs}=${LOCAL_LOG_PATH_WTS}
+    Dated Log     [Collecting WTS logs]
+    Dated Log     ----> Connecting to WTS...
+    ${alias}      SSH Connect        host=${HOST_EPCSIM}
+    # Connect to LTEEMU    alias=lteemu_alias
+    Dated Log     ----> Downloading WTS logs..
+    csn.download_file               remote_path=${tl.core.dir_path}/uec_1.log
+    ...                             local_path=${local_path_logs}/uec_1.log
+    ...                             connection=${alias}
+    Sleep   1s
+    csn.download_file               remote_path=${tl.core.dir_path}/egate_console.log
+    ...                             local_path=${local_path_logs}/egate_console.log
+    ...                             connection=${alias}
+    Dated Log     LOGS: WTS logs saved under ${local_path_logs}.\n
+
+#****************************** Keywords for log collection ***************************************
+
+Creation Directory For Logs
+    [Documentation]       Create the directory needed to save the logs.
+    Dated Log New Line    [Creating directory for all logs]
+    #Creating directory for logs
+    ${timestamp}=    DateTime.Get Current Date    result_format=%Y-%m-%d-%H%M
+    run    command=mkdir ${LOG_PATH}/LOGS_${timestamp}
+    Set Suite Variable     ${LOCAL_LOG_PATH_gNB_AP}      ${LOG_PATH}/LOGS_${timestamp}
+    #Directory for conf files
+    Dated Log    -----> Creating directory for configuration files.
+    run    command=mkdir ${LOCAL_LOG_PATH_gNB_AP}/Conf_files
+    #Directory for WTS logs
+    Dated Log    -----> Creating directory for wts logs.
+    run    command=mkdir ${LOCAL_LOG_PATH_gNB_AP}/Logs_WTS
+    Set Suite Variable     ${LOCAL_LOG_PATH_WTS}         ${LOCAL_LOG_PATH_gNB_AP}/Logs_WTS
+    Dated Log    Directory creation completed: Logs will be saved under ${LOCAL_LOG_PATH_gNB_AP}\n
+
+Save Tested Configuration
+    [Arguments]    ${local_path_log}=${LOCAL_LOG_PATH_gNB_AP}
+    Dated Log    [Getting tested SCF config]
+    ${scf_tested}    OAM Get SCF File
+    ...              file=${local_path_log}/Conf_files/Configuration_SCF_${param.cellDepType}_${param.chBwDl}.xml
+    # Get basic.cfg file configuration:
+    Dated Log    -----> Getting tested basic.cfg config
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${local_path_log}/Conf_files/basic_wts_tested.cfg
+    ...                             connection=${alias_epc}
+
+    Dated Log    ------> Getting tested gNB swconfig
+    ${alias_gnb}                    SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${local_path_log}/Conf_files/gnb_swconfig_tested.txt
+    ...                             connection=${alias_gnb}
+    Dated Log    ------> Getting tested AP swconfig
+    ${alias_ap}                     SSH Wait For Connect                ${AP_DU.sys[0].M}
+    csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${local_path_log}/Conf_files/ap_swconfig_tested.txt
+    ...                             connection=${alias_ap}
+    Dated Log    -----> Configuration files of current testing are saved under ${local_path_log}/Conf_files/\n
+
+Get Journal gNB And AP
+    [Documentation]     Critical step: Need KW Creation Directory For Logs.
+    [Arguments]     ${path_remote}=/tmp
+    ...             ${local_path_script}=${script_path}
+    ...             ${local_path_logs}=${LOCAL_LOG_PATH_gNB_AP}
+    Dated Log     [Getting journal gNB an AP]
+    Dated Log     -----> Uploading scripts for gNB:${script_path}/${script_journal_gnb}
+    # GNB
+    ${alias_gnb}      SSH Wait For Connect      ${GNB_DU.sys[0].M}
+    SSH Upload Script           alias=${alias_gnb}
+    ...                         localPath=${CURDIR}/${local_path_script}
+    ...                         scriptFile=${script_journal_gnb}
+    ...                         remotePath=${path_remote}
+    Dated log     -----> Executing script:[sh ${path_remote}/${script_journal_gnb}]
+    ${output}                   SSH Cmd
+    ...                         command=sh ${path_remote}/${script_journal_gnb}
+    ...                         alias=${alias_gnb}
+    # Airphone
+    Dated Log     -----> Uploading scripts for AP:${script_path}/${script_journal_ap}
+    ${alias_ap}        SSH Wait For Connect       ${AP_DU.sys[0].M}
+    SSH Upload Script           alias=${alias_ap}
+    ...                         localPath=${CURDIR}/${local_path_script}
+    ...                         scriptFile=${script_journal_ap}
+    ...                         remotePath=${path_remote}
+    Dated log     -----> Executing script:[sh ${path_remote}/${script_journal_ap}]
+    ${output}                    SSH Cmd
+    ...                          command=sh ${path_remote}/${script_journal_ap}
+    ...                          alias=${alias_ap}
+    Dated log     -----> Waiting the collection of the logs...
+    sleep     15s
+    #Collect gNB logs
+    Dated log     -----> Compressing gNB logs...
+    ${output}                       SSH Cmd       command=cd /tmp/Logs_gNB;tar cvzf journal_gNB.tgz *
+    ...                             alias=${alias_gnb}
+    Sleep    5s
+    Dated log     -----> Downloading gNB logs...
+    csn.download_file               remote_path=/tmp/Logs_gNB/journal_gNB.tgz
+    ...                             local_path=${local_path_logs}/journal_gNB.tgz
+    ...                             connection=${alias_gnb}
+    #Collect AP logs
+    Dated log     -----> Compressing AP logs...
+    ${output}                       SSH Cmd       command=cd /tmp/Logs_AP;tar cvzf journal_AP.tgz *
+    ...                             alias=${alias_ap}
+    Sleep    5s
+    Dated log     -----> Downloading AP logs...
+    csn.download_file               remote_path=/tmp/Logs_AP/journal_AP.tgz
+    ...                             local_path=${local_path_logs}/journal_AP.tgz
+    ...                             connection=${alias_ap}
+    Dated log New Line    LOGS: Journal logs are saved under ${local_path_logs}\n
+
+Get GNB Snapshot
+    [Arguments]     ${local_log_path}=${LOCAL_LOG_PATH_gNB_AP}
+    Dated Log     [Collecting gNB snapshot]
+    ${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M
+    coam.connect to   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+    coam.get_snapshot     target_file_name=${local_log_path}/Snapshot_GNB_${timestamp}.zip    timeout=720    connection=coam_admin
+    Dated Log     LOGS: gNB snapshot is saved under ${local_log_path}/Snapshot_GNB_${timestamp}.zip\n
+    [Teardown]  coam.teardown    connection=coam_admin
+
+Get Robot Debug Logs
+    run    command=cp ${OUTPUT DIR}/*.log ${LOCAL_LOG_PATH_gNB_AP}/CRT_debug.log
+
+Move Pcap Into Log Folder
+    [Documentation]     Move all the pcap files of the tests into log folder
+    Dated Log    [Moving the pcap files of the test into log folder]
+    #Move pcap files into log folder
+    # run    command=mv ${capture_gnb_x2.path} ${LOCAL_LOG_PATH_gNB_AP}
+    run    command=mv ${capture_gnb_l1l2.path} ${LOCAL_LOG_PATH_gNB_AP}
+    # run    command=mv ${capture_gnb_l3l2.path} ${LOCAL_LOG_PATH_gNB_AP}
+    # run    command=mv ${capture_ap_l1l2.path} ${LOCAL_LOG_PATH_gNB_AP}
+    Dated Log    The pcap files have been moved to ${LOCAL_LOG_PATH_gNB_AP}.\n
+
+Move Sosreport Into Log Folder
+    Dated Log New Line    [Moving Sosreport in log folder]
+    run    command=mv ${LOG_PATH}/*.tgz ${LOCAL_LOG_PATH_gNB_AP}
+    Dated Log    LOGS: Sosreport has been moved to ${LOCAL_LOG_PATH_gNB_AP}\n
+
+Collect Sos Report
+    Dated Log     [Collecting SosReport]
+    Configure Sosreport Cfg UTE
+    Get Sos Report
+    Move Sosreport Into Log Folder
+
+Configure Sosreport Cfg UTE
+    [Arguments]    ${loner}=E    ${phoner}=PH7    ${l1mode}=fullstack
+    Dated Log     [Configuring Sosreport CFG]
+    ${output}                       SSH Cmd
+    ...                             sed -i 's|LONER_VERSION=X|LONER_VERSION=${loner}|g' /opt/iphy/latest/sosReport.cfg
+    ...                             alias=${HOST_EPCSIM.alias}
+	Dated Log     -----> LONER_VERSION=E configured.
+    ${output}                       SSH Cmd
+    ...                             sed -i 's|PHONER_VERSION=X|PHONER_VERSION=${phoner}|g' /opt/iphy/latest/sosReport.cfg
+    ...                             alias=${HOST_EPCSIM.alias}
+	Dated Log     -----> PHONER_VERSION=PH7 configured.
+    ${output}                       SSH Cmd
+    ...                             sed -i 's|L1_MODE=X|L1_MODE=${l1mode}|g' /opt/iphy/latest/sosReport.cfg
+    ...                             alias=${HOST_EPCSIM.alias}
+	Dated Log     -----> L1_MODE=fullstack configured.
+	Dated Log     Configuration of sosreport.cfg completed.\n
+
+#****************************** Keywords for checks in RRC Setup ***************************************
+
+#FROM 1242
+Check In RRC Setup msg1FrequencyStart
+    [Documentation]     Check in RRC setup that msg1FrequencyStart is configured outside the blanked area
+    ...                 and according to NIDD setting.
+    [Arguments]    ${pdml_file}    ${msg1_initialBWP}     ${msg1_bwpCommon}
+    Dated Log    [Checking msg1FrequencyStart in RRC setup...]
+    ${xpath_rrc_msg1}     Set Variable     nr-rrc.setup_element/nr-rrc.rach_ConfigGeneric_element/nr-rrc.msg1_FrequencyStart
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             kind=show
+    ...                             path=.*/nr-rrc.initialUplinkBWP_element/nr-rrc.rach_ConfigCommon/${xpath_rrc_msg1}
+    ...                             value=${msg1_initialBWP}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             kind=show
+    ...                             path=.*/nr-rrc.bwp_Common_element/nr-rrc.rach_ConfigCommon/${xpath_rrc_msg1}
+    ...                             test=>=
+    ...                             value=${msg1_bwpCommon}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Checks of msg1FrequencyStart completed.\n
+
+
+Check In RRC Setup AggregationLevel2
+    [Documentation]     When the size of coreset is less or equal to 24 PRB, aggregation level shall be configured at AL2.
+    [Arguments]    ${pdml_file}
+    Dated Log    [Checking AggregationLevel2 In RRC Setup...]
+    #Aggregationlevel2 is configured
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=nr-rrc.aggregationLevel2
+    ...                             kind=show
+    ...                             test=!=
+    ...                             value=0
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=nr-rrc.aggregationLevel4
+    ...                             kind=show
+    ...                             test===
+    ...                             value=0
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Checks AggregationLevel2 completed.\n
+
+Check In RRC Setup Pucch Configuration
+    [Documentation]     Check in RRC setup that PUCCH format0 and format2 are not configured inside the blanked area.
+    [Arguments]    ${pdml_file}
+    Dated Log    [Checking PUCCH format0 and format2 startingPRB configuration In RRC Setup...]
+    #startingPRB upper than Low edge blanking
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=.*/nr-rrc.resourceToAddModList/.*./nr-rrc.startingPRB
+    ...                             kind=show
+    ...                             test=>=
+    ...                             value=${rat1_start}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Checking size of PUCCH format2 in RRC Setup...
+    ${start_rb_hex}=    get_unique    pdmlFile=${pdml_file}
+    ...                               packetName=SgNBAdditionRequestAcknowledge
+    ...                               path=.*/nr-rrc.resourceToAddModList/_.4./nr-rrc.PUCCH_Resource_element/nr-rrc.startingPRB
+    ...                               kind=show
+    ...                               startPacket=${1}
+    ...                               endPacket=${1}
+    ${nr_of_prb_hex}=      get_unique    pdmlFile=${pdml_file}
+    ...        packetName=SgNBAdditionRequestAcknowledge
+    ...        path=.*/nr-rrc.resourceToAddModList/_.4./nr-rrc.PUCCH_Resource_element/nr-rrc.format/nr-rrc.format2_element/nr-rrc.nrofPRBs
+    ...        kind=show
+    ...        startPacket=${1}
+    ...        endPacket=${1}
+    ${start_rb_int}=    Convert To Integer     ${start_rb_hex}
+    ${nr_of_prb_int}=      Convert To Integer       ${nr_of_prb_hex}
+    Dated Log    -----> Checking start allocation...
+    Dated Log    -----> startingRB=${start_rb_int} and nrofRBs=${nr_of_prb_int}
+    Should Be True     ${start_rb_int} >= ${rat1_start}
+    Dated Log    -----> Checking size allocation...
+    ${check_crb_end}    Evaluate   ${start_rb_int}+${nr_of_prb_int}-1
+    Dated Log    -----> crb end location is equal to ${check_crb_end}
+    Should Be True     ${check_crb_end} <= ${rat1_end}
+    Dated Log    -----> Checks completed.\n
+
+Check In RRC Setup CSI RS Measurment Configuration
+    [Documentation]     Check that CSI RS for periodic measurment (firstOFDMSymbolInTimeDomain: 13) is not configured inside the blanked area.
+    [Arguments]    ${pdml_file}
+    Dated Log    [Checking CSI RS for measurment configuration In RRC Setup...]
+    #Item 0 only
+	${xpath_csirs}    Set Variable    nr-rrc.nzp_CSI_RS_ResourceToAddModList/_.1./nr-rrc.NZP_CSI_RS_Resource_element/nr-rrc.resourceMapping_element
+    Verification Rat0 Allocation In RRC    pdml_file_x2=${pdml_file}
+    ...      xpath_start=.*/${xpath_csirs}/nr-rrc.freqBand_element/nr-rrc.startingRB
+    ...      xpath_size=.*/${xpath_csirs}/nr-rrc.resourceMapping_element/nr-rrc.freqBand_element/nr-rrc.nrofRBs
+    Dated Log    -----> Check completed.\n
+
+Verification Rat0 Allocation In RRC
+    [Arguments]    ${pdml_file_x2}    ${xpath_start}    ${xpath_size}
+    Dated Log    -----> Checking start allocation...
+    analyzer.check_list             pdmlFile=${pdml_file_x2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=${xpath_start}
+    ...                             kind=show
+    ...                             test=>=
+    ...                             value=${rat0_start}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Checking size allocation...
+    ${starting_rb}=      get_unique    pdmlFile=${pdml_file_x2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=${xpath_start}
+    ...                             kind=show
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    ${nr_of_prb}=      get_unique    pdmlFile=${pdml_file_x2}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=${xpath_size}
+    ...                             kind=show
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> startingRB=${starting_rb} and nrofRBs=${nr_of_prb}
+    ${check_crb}    Evaluate   ${starting_rb}+${nr_of_prb}-1
+    Dated Log    -----> rat0_end location is equal to ${check_crb} and shall be less or equal than ${rat0_end}
+    Should Be True     ${check_crb} <= ${rat0_end}
+
+#FROM 2558
+Check In X2 RRC Reconfiguration Is Completed
+    [Documentation]   Check in X2 backhaul that RRC reconfiguration is completed during SgNBAddition procedure.
+    [Arguments]      ${pdml_file}
+    Dated Log    [Checking RRC reconfiguration is completed]
+    analyzer.check_exists_once     pdmlFile=${pdml_file}
+    ...                             packetName=SgNBReconfigurationComplete
+    ...                             path=.*/nr-rrc.rrcReconfigurationComplete_element$
+    ...                             kind=show
+    ...                             value=
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Check of RRC Reconfiguration completed.\n
+
+Check In RRC Setup Coreset Configuration NSA Overlapping
+    [Documentation]     In case of coreset0 is overlaped check in RRC setup that coresetO is not used
+    ...                 and new coresetID is configured outside the blanked area according to BWP profile settings.
+    [Arguments]    ${pdml_file}      ${coresetID_frequdomain}=000000000000
+    Dated Log    [Checking Coreset configuration In RRC Setup...]
+    Dated Log    -----> Checking coreset Id in bwp-Common
+    #Check coreset Id in bwp-Common commonControlResourceSet
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             kind=show
+    ...                             path=.*/nr-rrc.bwp_Common_element/.*/nr-rrc.controlResourceSetId$
+    ...                             value=0
+    ...                             test=!=
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    #Check coreset Id in bwp-Dedicated pdcch-Config
+    Dated Log    -----> Checking coreset Id in bwp-Dedicated
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             kind=show
+    ...                             path=.*/nr-rrc.bwp_Dedicated_element/.*/nr-rrc.controlResourceSetId$
+    ...                             value=0
+    ...                             test=!=
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    #Check coreset frequencyDomainResources in bwp-Common
+    Dated Log    -----> Checking frequencyDomainResources
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=.*/nr-rrc.bwp_Common_element/.*/nr-rrc.frequencyDomainResources
+    ...                             kind=value
+    ...                             value=${coresetID_frequdomain}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    #Check coreset frequencyDomainResources in bwp-Dedicated
+    #analyzer.check_list             pdmlFile=${pdml_file}
+    #...                             packetName=SgNBAdditionRequestAcknowledge
+    #...                             path=.*/nr-rrc.bwp_Dedicated_element/.*/nr-rrc.frequencyDomainResources
+    #...                             kind=value
+    #...                             value=${coresetID_frequdomain}
+    #...                             startPacket=${1}
+    #...                             endPacket=${1}
+    Dated Log    -----> Check of coreset completed.\n
+
+Check In RRC Setup Coreset Configuration NSA Not Overlapping
+    [Documentation]     Check in RRC setup the right configuration of coreset0 when it is not overlapped.
+    [Arguments]    ${pdml_file}
+    Dated Log    [Checking CoresetO configuration In RRC Setup...]
+    #Check coreset Id in bwp-Common commonControlResourceSet
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             kind=show
+    ...                             path=.*/nr-rrc.bwp_Common_element/.*/nr-rrc.controlResourceSetId$
+    ...                             value=0
+    ...                             test===
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    #Check coreset Id in bwp-Dedicated pdcch-Config
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             kind=show
+    ...                             path=.*/nr-rrc.bwp_Dedicated_element/.*/nr-rrc.controlResourceSetId$
+    ...                             value=0
+    ...                             test===
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Check of coreset O completed.\n
+
+Check In RRC Setup Pucch Allocation
+    [Documentation]     Check in RRC setup that PUCCH format0 and format2 are not configured inside the blanked area.
+    [Arguments]    ${pdml_file}
+    Dated Log    [Checking in RRC setup the allocation of pucch format 0 and 2]
+    Dated Log    StartingPRB shall greater or equal to ${param.nbrOfBlankedPRBsLowEdgeDL}
+    Dated Log    Crb end location shall be less than ${blanking_area_crb_high}
+    #checking all startingPRB of pucch. Shall be upper than Low edge blanking
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=.*/nr-rrc.resourceToAddModList/.*./nr-rrc.startingPRB
+    ...                             kind=show
+    ...                             test=>=
+    ...                             value=${rat1_start}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Check of startingPRB completed.
+    #Checking size allocation of pucch format 2
+    #To get the number of item present in pucch resources
+    Dated Log    -----> Checking size...
+    ${length}    get_unique    pdmlFile=${pdml_file}
+    ...                               packetName=SgNBAdditionRequestAcknowledge
+    ...                               path=.*/nr-rrc.pucch_Config/.*/nr-rrc.resourceToAddModList$
+    ...                               kind=show
+    ...                               startPacket=${1}
+    ...                               endPacket=${1}
+    Dated Log   Length of pucch = ${length}
+    ${range}     Evaluate    ${length}+1
+    FOR    ${item}   IN RANGE   1   ${range}
+         Dated Log    Pucch item ${item}/${length}
+         #Check if item is format2. Will be PASS if it is forma2 otherwise it will be fail.
+         ${Isformat2}    ${nrofPRB}=       Run Keyword And Ignore Error     get_unique    pdmlFile=${pdml_file}
+         ...      packetName=SgNBAdditionRequestAcknowledge
+         ...      path=.*/nr-rrc.resourceToAddModList/_.${item}./nr-rrc.PUCCH_Resource_element/nr-rrc.format/nr-rrc.format2_element/nr-rrc.nrofPRBs$
+         ...      kind=show
+         ...      startPacket=${1}
+         ...      endPacket=${1}
+         Run Keyword If    '${Isformat2}' == 'PASS'    Verify Allocation In RRC     pdml_file_x2=${pdml_file}
+         ...                          xpath_start=.*/nr-rrc.resourceToAddModList/_.${item}./.*/nr-rrc.startingPRB$
+         ...                          xpath_size=.*/nr-rrc.resourceToAddModList/_.${item}./.*/nr-rrc.nrofPRBs$
+         ...                          limit_start=${param.nbrOfBlankedPRBsLowEdgeDL}
+         ...                          limit_size=${blanking_area_crb_high}
+         ...                          packet_start=${1}
+         ...                          packet_end=${1}
+         ...    ELSE    Dated Log    -----> Pucch f0. Not needed to check size allocation.
+    END
+    Dated Log    -----> Check of pucch completd.\n
+
+Check In RRC Setup SRS configuration
+    [Documentation]   Check in RRC setup that SRS is correclty configured outside the blanked area.
+    [Arguments]    ${pdml_file}    ${value_shift}   ${value_pos}    ${value_csrs}    ${value_bsrs}    ${value_bhop}
+    Dated Log    [Checking SRS configuration in RRC Setup]
+
+    #From SPEC: freqDomainShift =  offsetPrbUl %4  = 2, offsetPrbUl = msg1FrequencyStart
+    Dated Log    -----> Check of SRS freqDomainPosition
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=.*/nr-rrc.SRS_Resource_element/nr-rrc.freqDomainPosition
+    ...                             kind=show
+    ...                             test===
+    ...                             value=${value_pos}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Check of SRS freqDomainShift
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=.*/nr-rrc.SRS_Resource_element/nr-rrc.freqDomainShift
+    ...                             kind=show
+    ...                             test=>=
+    ...                             value=${value_shift}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Check of SRS freqHopping c_SRS
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=.*/nr-rrc.SRS_Resource_element/nr-rrc.freqHopping_element/nr-rrc.c_SRS
+    ...                             kind=show
+    ...                             test===
+    ...                             value=${value_csrs}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Check of SRS freqHopping b_SRS
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=.*/nr-rrc.SRS_Resource_element/nr-rrc.freqHopping_element/nr-rrc.b_SRS
+    ...                             kind=show
+    ...                             test===
+    ...                             value=${value_bsrs}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Check of SRS freqHopping b_hop
+    analyzer.check_list             pdmlFile=${pdml_file}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=.*/nr-rrc.SRS_Resource_element/nr-rrc.freqHopping_element/nr-rrc.b_hop
+    ...                             kind=show
+    ...                             test===
+    ...                             value=${value_bhop}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Check SRS configuration completed.\n
+
+Check In RRC Setup CSI RS Measurment Allocation
+    [Documentation]     Check that CSI RS for periodic measurment (firstOFDMSymbolInTimeDomain: 13) is not configured inside the blanked area.
+    [Arguments]    ${pdml_file}
+    Dated Log    [Checking CSI RS for measurment  In RRC Setup]
+    Dated Log    StartPrb shall greater or equal to ${param.nbrOfBlankedPRBsLowEdgeDL}
+    Dated Log    crb end location shall be less than ${blanking_area_crb_high}
+    #Item 0 only (CSI RS for measurment)
+    ${xpath_csirs}    Set Variable    nr-rrc.nzp_CSI_RS_ResourceToAddModList/_.1./nr-rrc.NZP_CSI_RS_Resource_element/nr-rrc.resourceMapping_element
+
+    ${csirs_meas_size}    Set Variable If
+    ...            ${param.nbrOfBlankedPRBsHighEdgeDL} == 0    ${csi_rs_size}
+    ...            ${param.nbrOfBlankedPRBsHighEdgeDL} > 0     ${blanking_area_crb_high}
+
+    Verify Allocation In RRC     pdml_file_x2=${pdml_file}
+    ...                          xpath_start=.*/${xpath_csirs}/nr-rrc.freqBand_element/nr-rrc.startingRB
+    ...                          xpath_size=.*/${xpath_csirs}/nr-rrc.freqBand_element/nr-rrc.nrofRBs
+    ...                          limit_start=${param.nbrOfBlankedPRBsLowEdgeDL}
+    ...                          limit_size=${csirs_meas_size}
+
+    Dated Log    -----> Check completed.\n
+
+#****************************** Keywords for checks in L2L1 ***************************************
+
+#FROM 1242
+Check In L2L1 Prachprboffset And Msg1
+    [Documentation]    Check the configuration of prachprb0ffset is outside the blankedd area and msg1 is correctly received.
+    Dated Log    [Checking In L2L1 Prachprboffset And Msg1]
+    Dated Log    -----> Check in L2L1 prachPrbOffset and msg1.
+    ${pcap_filtered}         Filter Pcap     ${capture_gnb_l1l2.path}     messages=uldata_prachreceivereq or uldata_prachreceiveind
+    ...                                                                   name=prach_msg1_only
+    ${pdml_file}         Generate Pdml From Pcap          ${pcap_filtered}
+    Dated Log    -----> Checking of prachPrbOffset in uldata_prachreceivereq...
+    ${prach_prb_hex}=    get_unique    pdmlFile=${pdml_file}
+    ...                                packetName=uldata_prachreceivereq
+    ...                                path=.*/UlData_PrachReceiveReq.subcells_item_.*.prachPrbOffset$
+    ...                                kind=show
+    ...                                startPacket=${1}
+    ...                                endPacket=${1}
+    ${prach_prb_int}=    Convert To Integer     ${prach_prb_hex}
+    Dated Log    -----> Prachprboffset is equal to ${prach_prb_int}.
+    Should Be True     ${prach_prb_int} >= ${prach_prb_offset}
+    Dated Log    -----> Checking of msg1...
+    ${msg1_preamble_hex}=    get_unique    pdmlFile=${pdml_file}
+    ...                                    packetName=uldata_prachreceiveind
+    ...                                    path=.*/UlData_PrachReceiveInd.detectedPrachPreambles_item_.*.prachPreambleIndex$
+    ...                                    kind=show
+    ...                                    startPacket=${1}
+    ...                                    endPacket=${1}
+    ${msg1_preamble_int}=    Convert To Integer     ${msg1_preamble_hex}
+    Dated Log    -----> Msg1 is received and prachPreambleIndex is equal to ${msg1_preamble_int}
+    Dated Log    -----> Checks completed.\n
+
+Check In L2L1 Pucch Attach Configuration
+    Dated Log    [Checking In L2L1 Pucch Attach Configuration]
+    ${pcap_filtered}    Filter Pcap     pcap_file=${capture_gnb_l1l2.path}     messages=uldata_pucchreceivereq   name=pucch_only
+    ${pdml_pucch}=    Generate Pdml From Pcap    pcap_file=${pcap_filtered}
+    Check Pucch Rat1 Allocation In L2L1    pdml_file=${pdml_pucch}
+
+Check In L2L1 Pdsch Attach Configuration
+    Dated Log    [Checking In L2L1 Pdsch Attach Configuration]
+    ${pcap_filtered}    Filter Pcap     pcap_file=${capture_gnb_l1l2.path}    messages=dldata_pdschsendreq   name=pdsch_only
+    ${pdml_pdsch}    Generate Pdml From Pcap    pcap_file=${pcap_filtered}
+    Check Pdsch Rat1 Allocation Msg2    pdml_file=${pdml_pdsch}
+
+Check In L2L1 Pusch Attach Configuration
+    Dated Log    [Checking In L2L1 Pusch Attach Configuration]
+    ${pcap_filtered}    Filter Pcap     pcap_file=${capture_gnb_l1l2.path}     messages=uldata_puschreceivereq   name=pusch_only
+    ${pdml_pusch}    Generate Pdml From Pcap    pcap_file=${pcap_filtered}
+    Check Pusch Rat1 Allocation Msg3     pdml_file=${pdml_pusch}
+
+Check In L2L1 Reference Signal Attach Configuration
+    [Documentation]    Check the configuration of Reference Signal: CSI for measurment
+    Dated Log    [Checking In L2L1 Reference Signal Attach Configuration]
+    ${pcap_filtered}    Filter Pcap     pcap_file=${capture_gnb_l1l2.path}    messages=dldata_csirssendreq   name=csirs_only
+    ${pdml_csirs}    Generate Pdml From Pcap    pcap_file=${pcap_filtered}
+    Check In L2L1 CSI RS Measurment Allocation    pdml_file=${pdml_csirs}    start=${rat0_start}    end=${rat0_end}
+
+Check Pdsch Rat1 Allocation Msg2
+    [Arguments]    ${pdml_file}
+    ${start_rb_hex}=    get_unique    pdmlFile=${pdml_file}
+    ...                             packetName=dldata_pdschsendreq
+    ...                             path=.*/DlData_PdschSendReq.PdschSendReq.startPrb
+    ...                             kind=show
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    ${nr_of_prb_hex}=      get_unique    pdmlFile=${pdml_file}
+    ...                             packetName=dldata_pdschsendreq
+    ...                             path=.*/DlData_PdschSendReq.PdschSendReq.numOfPrb
+    ...                             kind=show
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    ${start_rb_int}=      Convert To Integer       ${start_rb_hex}
+    ${nr_of_prb_int}=      Convert To Integer       ${nr_of_prb_hex}
+    Dated Log    -----> Checking start allocation of pdsch msg2...
+    Dated Log    -----> startingRB=${start_rb_int} and nrofRBs=${nr_of_prb_int}
+    Dated Log    -----> startingRB shall greater or equal to nbrOfBlankedPRBsLowEdgeDL=${param.nbrOfBlankedPRBsLowEdgeDL}
+    Should Be True     ${start_rb_int} >= ${rat1_start}
+    Dated Log    -----> Checking size allocation of msg2...
+    ${check_crb_end}    Evaluate   ${start_rb_int}+${nr_of_prb_int}-1
+    Dated Log    -----> crb end location is equal to ${check_crb_end} and shall be less or equal than ${rat1_end}
+    Should Be True     ${check_crb_end} <= ${rat1_end}
+    Dated Log    -----> Checks completed.\n
+
+Check Pusch Rat1 Allocation Msg3
+    [Arguments]    ${pdml_file}
+    Dated Log    -----> Checking msg3 Rat1 allocation in attach procedure...
+    ${start_rb_hex}=    get_unique    pdmlFile=${pdml_file}
+    ...                             packetName=uldata_puschreceivereq
+    ...                             path=.*/UlData_PuschReceiveReq.grants_item_.*.startPrb
+    ...                             kind=show
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    ${nr_of_prb_hex}=      get_unique    pdmlFile=${pdml_file}
+    ...                             packetName=uldata_puschreceivereq
+    ...                             path=.*/UlData_PuschReceiveReq.grants_item_.*.numOfPrb
+    ...                             kind=show
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    ${start_rb_int}=    Convert To Integer     ${start_rb_hex}
+    ${nr_of_prb_int}=      Convert To Integer       ${nr_of_prb_hex}
+    Dated Log    -----> Checking start allocation of pusch msg3...
+    Dated Log    -----> startingRB shall greater or equal to nbrOfBlankedPRBsLowEdgeDL=${param.nbrOfBlankedPRBsLowEdgeDL}
+    Dated Log    -----> startingRB=${start_rb_int} and nrofRBs=${nr_of_prb_int}
+    Should Be True     ${start_rb_int} >= ${rat1_start}
+    Dated Log    -----> Checking size allocation of msg3...
+    ${check_crb_end}    Evaluate   ${start_rb_int}+${nr_of_prb_int}-1
+    Dated Log    -----> crb end of msg3 is located at ${check_crb_end} and shall be less or equal than ${rat1_end}
+    Should Be True     ${check_crb_end} <= ${rat1_end}
+    Dated Log    -----> Check completed.\n
+
+# Keyword updated to fit MCShark pdml
+Check In L2L1 CSI RS Measurment Allocation
+    [Arguments]                     ${pdml_file}    ${start}    ${end}
+    FOR    ${packet_num}            IN RANGE    1     6
+        Dated Log New Line          Checking packet ${packet_num}/5
+        ${packetsMatch}             Get Packet Match List
+        ...                             pdmlFile=${pdml_file}
+        ...                             packetName=dldata_csirssendreq
+        ...                             pathList=${listFieldCsi}
+        ...                             startPacket=${${packet_num}}
+        ...                             endPacket=${${packet_num}}
+        Verify CSI RS Allocation In L2L1
+        ...                         packetMatch=${packetsMatch[0]}
+		...                         start_limit_csi=${start}
+        ...                         size_limit_csi=${end}
+    END
+    Dated Log    Check of CSI RS for measurment allocation completed.\n
+
+# Keyword updated to fit MCShark pdml
+Verify CSI RS Allocation In L2L1
+    [Arguments]                     ${packetMatch}
+    ...                             ${start_limit_csi}    ${size_limit_csi}	
+    @{listPath}                     Get Paths matching Field
+    ...                                 packetMatch=${packetMatch}
+    ...                                 field=startSymbol
+    ${nb}                           Get length                              ${listPath}
+    ${item}                         set Variable                            ${0}
+    Dated Log                       -----> Nb CSI = ${nb}.
+    Run Keyword If                  ${nb}>1
+    ...                             Run keywords
+    ...                                 Dated Log     -----> Skipping packet (length > 1).
+    ...      AND                        Return from keyword
+    FOR    ${path}         IN      @{listPath}
+        ${value}                    set variable                            ${packetMatch.fields['${path}'].show}
+        Dated log                   \tSYMBOL=${value} PATH=${path}
+        Run Keyword If              '${value}' == '13'
+        ...                         Verification Rat0 Allocation In L2L1
+        ...                             packetMatch=${packetMatch}
+        ...                             csi_item=${item}
+        ...                             rat0_limit_start=${start_limit_csi}
+        ...                             rat0_limit_size=${size_limit_csi}
+        ...    ELSE                 Dated Log                               \t\tItem${item}:Skipping (symbol <> 13).
+        ${item}                     evaluate                                ${item} + 1
+    END
+
+# Keyword updated to fit MCShark pdml
+Verification Rat0 Allocation In L2L1
+    [Arguments]                     ${packetMatch}                          ${csi_item}
+    ...                             ${rat0_limit_start}                     ${rat0_limit_size} 	
+    Dated log                       \t\tItem${csi_item}:Verification Rat0 Allocation In L2L1
+
+    @{listPathStart}                Get Paths matching Field
+    ...                                 packetMatch=${packetMatch}          field=startPrb
+    ${path}                         set variable                            ${listPathStart[${csi_item}]}
+	${start_rb_hex}                 set variable                            ${packetMatch.fields['${path}'].show}
+    Dated log                       \t\tItem${csi_item}:startPrb=${start_rb_hex} PATH=${path}
+
+    @{listPathNum}                  Get Paths matching Field
+    ...                                 packetMatch=${packetMatch}          field=numOfPrb
+    ${path}                         set variable                            ${listPathNum[${csi_item}]}
+	${nr_of_prb_hex}                set variable                            ${packetMatch.fields['${path}'].show}	
+    Dated log                       \t\tItem${csi_item}:numOfPrb=${nr_of_prb_hex} PATH=${path}
+
+    ${start_rb_int}=    Convert To Integer      ${start_rb_hex}
+    ${nr_of_prb_int}=   Convert To Integer      ${nr_of_prb_hex}
+    ${check_crb_end}    Evaluate   ${start_rb_int}+${nr_of_prb_int}-1
+    Dated Log    -----> [startPrb:${start_rb_int} ; numOfPrb:${nr_of_prb_int} ; crb_end:${check_crb_end}]\n
+    Should Be True     ${start_rb_int} >= ${rat0_limit_start}
+    Should Be True     ${check_crb_end} <= ${rat0_limit_size}
+	
+Verification Rat1 Allocation In L2L1
+    [Arguments]  ${pdml_file}    ${packet_name}    ${xpath_start}    ${xpath_size}   ${packet_start}=1    ${packet_end}=1
+    ${start_rb_hex}=    get_unique    pdmlFile=${pdml_file}
+    ...                               packetName=${packet_name}
+    ...                               path=${xpath_start}
+    ...                               kind=show
+    ...                               startPacket=${${packet_start}}
+    ...                               endPacket=${${packet_end}}
+    ${nr_of_prb_hex}=      get_unique    pdmlFile=${pdml_file}
+    ...                                  packetName=${packet_name}
+    ...                                  path=${xpath_size}
+    ...                                  kind=show
+    ...                                  startPacket=${${packet_start}}
+    ...                                  endPacket=${${packet_end}}
+    Dated Log    -----> Checking start allocation...
+    Dated Log    -----> startingRB=${start_rb_int} and nrofRBs=${nr_of_prb_int}
+    Should Be True     ${start_rb_int} >= ${rat1_start}
+    Dated Log    -----> Checking size allocation...
+    ${check_crb_end}    Evaluate   ${start_rb_int}+${nr_of_prb_int}-1
+    Dated Log    -----> crb end location is equal to ${check_crb_end}
+    Should Be True     ${check_crb_end} <= ${rat1_end}
+
+Check Pucch Rat1 Allocation In L2L1
+    [Arguments]    ${pdml_file}
+    Dated Log    Checking Rat0 allocation of pucch...
+    ${nbr_pucch_packet}    count_path    pdmlFile=${pdml_file}
+    ...    packetName=uldata_pucchreceivereq
+    ...    path=.*/UlData_PucchReceiveReq.pucchResources_item_.*.startPrb$
+    FOR    ${packet}    IN RANGE    1    ${nbr_pucch_packet}
+         Dated Log    -----> Checking pucch packet number ${packet}/${nbr_pucch_packet}
+         ${start_rb_hex}=    get_unique    pdmlFile=${pdml_file}
+         ...                             packetName=uldata_pucchreceivereq
+         ...                             path=.*/UlData_PucchReceiveReq.pucchResources_item_.*.startPrb$
+         ...                             kind=show
+         ...                             startPacket=${${packet}}
+         ...                             endPacket=${${packet}}
+         ${nr_of_prb_hex}=      get_unique    pdmlFile=${pdml_file}
+         ...                             packetName=uldata_pucchreceivereq
+         ...                             path=.*/UlData_PucchReceiveReq.pucchResources_item_.*.numOfPrb$
+         ...                             kind=show
+         ...                             startPacket=${${packet}}
+         ...                             endPacket=${${packet}}
+         ${start_rb_int}=    Convert To Integer     ${start_rb_hex}
+         ${nr_of_prb_int}=      Convert To Integer       ${nr_of_prb_hex}
+         Dated Log    -----> startingRB=${start_rb_int} and nrofRBs=${nr_of_prb_int}
+         Should Be True     ${start_rb_int} >= ${rat1_start}
+         ${check_crb_end}    Evaluate   ${start_rb_int}+${nr_of_prb_int}-1
+         ${rat1_end}        Evaluate   ${total_prb_bw}-${param.nbrOfBlankedPRBsHighEdgeUL}
+         Should Be True     ${check_crb_end} <= ${rat1_end}
+    END
+    Dated Log    Check of Rat0 allocation for pucch completed.
+
+Check In Pdcch PdcchDciTransmitPower
+    [Documentation]     Verification In DCI that pdcchDciTransmitPower is added 3db when coreset size
+    ...                 is less or equal to 24 PRB. Value of pdcchDciTransmitPower should be equal to -250.
+    [Arguments]    ${path_pdml}     ${power_value}
+    Dated Log    -----> Checking pdcchDciTransmitPower in pdcch...
+    analyzer.check_list             pdmlFile=${path_pdml}
+    ...                             packetName=dldata_pdcchsendreq
+    ...                             kind=show
+    ...                             path=pdcchDciTransmitPower$
+    ...                             value=${power_value}
+    ...                             startPacket=${1}
+    ...                             endPacket=${2}
+    Dated Log    -----> Check completed.
+
+Check In Pdcch AggregationLevel
+    [Documentation]     Aggregation level shall be equal to AL2 when coreset size is less or equal to 24 PRB.
+    [Arguments]    ${path_pdml}     ${agg_value}
+    Dated Log    -----> Checking AggregationLevel in pdcch...
+    analyzer.check_list             pdmlFile=${path_pdml}
+    ...                             packetName=dldata_pdcchsendreq
+    ...                             kind=show
+    ...                             path=aggregationLevel$
+    ...                             value=${agg_value}
+    ...                             startPacket=${1}
+    ...                             endPacket=${2}
+    Dated Log    -----> Check completed.
+
+Check In Pdcch CoresetFreqDomain With Dss Ph1
+    [Documentation]     The bitmap of CoresetFreqDomain shall be configured outside the blanked area.
+    [Arguments]    ${path_pdml}     ${coreset1_value}=0x0000000000000000
+    Dated Log    -----> Checking initial and dedicated CoresetFreqDomain in pdcch with DSS Ph1...
+    analyzer.check_list             pdmlFile=${path_pdml}
+    ...                             packetName=dldata_pdcchsendreq
+    ...                             kind=show
+    ...                             path=coresetFreqDomain$
+    ...                             value=${coreset1_value}
+    ...                             startPacket=${1}
+    ...                             endPacket=${2}
+    Dated Log    -----> Check completed.
+
+Verfication In Msg1
+    [Arguments]    ${path_pcap}
+    ...            ${packet_to_check}
+    ...            ${field_to_check}
+    ...            ${value_to_check}
+    ${pcap_filtered}         Filter Pcap     ${path_pcap}     messages=dldata_pdcchsendreq or uldata_prachreceiveind    name=pdcch_only
+    #${pdml_file}         Generate Pdml From Pcap          ${pcapFile_filtered_pdcch}
+    #Dated Log    -----> Analyzing of PDML ongoing in ${packet_to_check} for ${field_to_check} with value ${value_to_check}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${packet_to_check}
+    ...                             kind=show
+    ...                             path=${field_to_check}
+    ...                             value=${value_to_check}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Analysis in ${packet_to_check} for ${field_to_check} completed
+
+Verification Field In DCI Msg2
+    [Arguments]    ${pdml_file_L1L2}
+    ...            ${field_to_check}
+    ...            ${value_to_check}
+    Dated Log    -----> Analyzing of PDML ongoing in dldata_pdcchsendreq msg2 for ${field_to_check} with value ${value_to_check}
+    analyzer.check_list             pdmlFile=${pdml_file_L1L2}
+    ...                             packetName=dldata_pdcchsendreq
+    ...                             kind=show
+    ...                             path=${field_to_check}
+    ...                             value=${value_to_check}
+    ...                             startPacket=${1}
+    ...                             endPacket=${1}
+    Dated Log    -----> Analysis in dldata_pdcchsendreq msg2 for ${field_to_check} completed.
+
+#FROM 2558
+Check In L2L1 Pdcch Attach Configuration NSA SA
+    Dated Log    [Checking In L2L1 Pdcch Attach Configuration]
+    ${pcap_filtered}    Filter Pcap     pcap_file=${capture_gnb_l1l2.path}     messages=dldata_pdcchsendreq   name=pdcch_only
+    ${pdml_pdcch}=     Generate Pdml From Pcap    pcap_file=${pcap_filtered}
+    Run Keyword If    '${param.cellDepType}' == 'SA'     Check In Pdcch CoresetFreqDomain SA     pdcch_pdml=${pdml_pdcch}
+    ...               coreset_0_value=${l1l2_coreset0}
+    Run Keyword If    '${param.cellDepType}' == 'NSA' and '${IsOverlapping}' == 'True'
+    ...               Check In Pdcch CoresetFreqDomain NSA    pdcch_pdml=${pdml_pdcch}
+    ...               coreset_init_value=${l1l2_coreset_overlap}    coreset_dedi_value=${l1l2_coreset_overlap}
+    Run Keyword If    '${param.cellDepType}' == 'NSA' and '${IsOverlapping}' == 'False'
+    ...               Check In Pdcch CoresetFreqDomain NSA    pdcch_pdml=${pdml_pdcch}
+    ...               coreset_init_value=${l1l2_coreset0}    coreset_dedi_value=${l1l2_coreset0}
+
+Check In L2L1 Pdsch Attach Configuration NSA
+    Dated Log    [Checking In L2L1 Pdsch Attach Configuration]
+    ${pcap_filtered}    Filter Pcap     pcap_file=${capture_gnb_l1l2.path}    messages=dldata_pdschsendreq   name=pdsch_only
+    ${pdml_pdsch}    Generate Pdml From Pcap    pcap_file=${pcap_filtered}
+    Check Msg2 Pdsch Rat1 Allocation Attach       pdsch_pdml=${pdml_pdsch}
+
+Check In L2L1 Pusch Attach Configuration NSA SA
+    Dated Log    [Checking In L2L1 Pusch configuration]
+    ${pcap_filtered}    Filter Pcap     pcap_file=${capture_gnb_l1l2.path}     messages=uldata_puschreceivereq   name=pusch_only
+    ${pdml_pusch}    Generate Pdml From Pcap    pcap_file=${pcap_filtered}
+    Check Msg3 Rat1 Allocation Attach       pusch_pdml=${pdml_pusch}
+
+Check In L2L1 Pucch Attach Configuration NSA SA
+    Dated Log    [Checking In L2L1 Pucch Attach Configuration]
+    ${pcap_filtered}    Filter Pcap     pcap_file=${capture_gnb_l1l2.path}     messages=uldata_pucchreceivereq   name=pucch_only
+    ${pdml_pucch}=    Generate Pdml From Pcap    pcap_file=${pcap_filtered}
+    Check Pucch Allocation Attach   pucch_pdml=${pdml_pucch}
+
+Check In Pdcch CoresetFreqDomain NSA
+    [Documentation]     The bitmap of CoresetFreqDomain shall be configured outside the blanked area.
+    [Arguments]    ${pdcch_pdml}     ${coreset_init_value}=0x0000000000000000    ${coreset_dedi_value}=0x0000000000000000
+    Dated Log    [Checking the configuration of initial and dedicated CoresetFreqDomain in pdcch...
+    FOR    ${item}   IN RANGE    1    ${nbr_prach}
+         #Coreset (Initial BWP)
+         Dated Log     Pdcch Packet${item}:Initial coresetFreqDomain shall be equal to ${coreset_init_value}
+         analyzer.check_list             pdmlFile=${pdcch_pdml}
+         ...                            packetName=dldata_pdcchsendreq
+         ...                            kind=show
+         ...                            path=coresetFreqDomain$
+         ...                            value=${coreset_init_value}
+         ...                            startPacket=${${item}}
+         ...                            endPacket=${${item}}
+         Run Keyword If    '${IsOverlapping}' == 'False'     analyzer.check_list    pdmlFile=${pdcch_pdml}
+         ...                                                packetName=dldata_pdcchsendreq
+         ...                                                kind=value
+         ...                                                test=>=
+         ...                                                path=coresetFreqDomainRbShift$
+         ...                                                value=${l1l2_coreset0_rb_shift}
+         ...                                                startPacket=${${item}}
+         ...                                                endPacket=${${item}}
+         #Coreset (Dedicated BWP)
+         ${item_dedi}     Evaluate     ${item}+1
+         Dated Log     Pdcch Packet${item_dedi}:Dedicated coresetFreqDomain shall be equal to ${coreset_dedi_value}
+         analyzer.check_list             pdmlFile=${pdcch_pdml}
+         ...                            packetName=dldata_pdcchsendreq
+         ...                            kind=show
+         ...                            path=coresetFreqDomain$
+         ...                            value=${coreset_dedi_value}
+         ...                            startPacket=${${item_dedi}}
+         ...                            endPacket=${${item_dedi}}
+         Run Keyword If    '${IsOverlapping}' == 'False'     analyzer.check_list    pdmlFile=${pdcch_pdml}
+         ...                                                packetName=dldata_pdcchsendreq
+         ...                                                kind=value
+         ...                                                test=>=
+         ...                                                path=coresetFreqDomainRbShift$
+         ...                                                value=${l1l2_coreset0_rb_shift}
+         ...                                                startPacket=${${item_dedi}}
+         ...                                                endPacket=${${item_dedi}}
+    END
+    Dated Log    -----> Check completed.\n
+
+Check In L2L1 Reference Signal Attach Configuration NSA SA
+    [Documentation]    Check the configuration of Reference Signal: CSI for measurment, and TRS for tracking.
+    ...                If trs muting is enabled, TRS PRB allocation shall not ocupied the whole BW.
+    Dated Log    [Checking In L2L1 Reference Signal Attach Configuration]
+    ${pcap_filtered}    Filter Pcap     pcap_file=${capture_gnb_l1l2.path}    messages=dldata_csirssendreq   name=csirs_only
+    ${pdml_csirs}     Generate Pdml From Pcap    pcap_file=${pcap_filtered}
+    Check In L2L1 CSI RS Measurment Allocation    pdml_file=${pdml_csirs}
+    ...                                           start=${param.nbrOfBlankedPRBsLowEdgeDL}
+    ...                                           end=${csi_rs_size}
+    Check In L2L1 CSI RS Tracking Allocation     pdml_file=${pdml_csirs}
+
+Check In L2L1 Traffic DL NSA SA
+    Dated Log    [Checking Traffic DL]
+    ${pcap_filtered}    Filter Pcap     pcap_file=${capture_gnb_l1l2.path}    messages=dldata_pdschsendreq   name=pdsch_only
+    ${pdml_pdsch}       Generate Pdml From Pcap    pcap_file=${pcap_filtered}
+    Check In L2L1 Rat0 Allocation Pdsch Traffic DL     ${pdml_pdsch}
+
+Check In L2L1 Rat0 Allocation Pdsch Traffic DL
+    [Documentation]    This tests check the PRB allocation of all pdsch messages. (~1h)
+    [Arguments]    ${pdsch_pdml}
+    Dated Log    [Checking In L2L1 Pdsch Attach Configuration]
+    Dated Log    -----> Starting check Rat0 PDSCH allocation (test duration is around 1 hour)...
+    Dated Log    -----> Rat0 allocation of PDSCH shall be outside blanked PRB: startPrB >= ${rat0_start} and crb_end <= ${rat0_end}
+    Dated Log    -----> 10 packets to checks. Please wait...(~15min)
+    FOR    ${packet}   IN RANGE   1000   1011
+        Verify Allocation In L2L1    pdml_file=${pdsch_pdml}
+        ...                          packet_name=dldata_pdschsendreq
+        ...                          xpath_start=.*/DlData_PdschSendReq.grants_item_.*.startPrb$
+        ...                          xpath_size=.*/DlData_PdschSendReq.grants_item_.*.numOfPrb$
+        ...                          limit_start=${rat0_start}
+        ...                          test_size=<=
+        ...                          limit_size=${rat0_end}
+        ...                          packet_start=${packet}
+        ...                          packet_end=${packet}
+
+    END
+
+Check In L2L1 Traffic UL NSA SA
+    Dated Log    [Checking Traffic UL]
+    ${pcap_filtered}    Filter Pcap     pcap_file=${capture_gnb_l1l2.path}    messages=uldata_puschreceivereq   name=pusch_only
+    ${pdml_pusch}       Generate Pdml From Pcap    pcap_file=${pcap_filtered}
+    Check In L2L1 Rat1 Allocation Pusch Traffic UL 2558-C    ${pdml_pusch}
+
+# Keyword updated to fit MCShark pdml
+Check Pucch Allocation Attach
+    [Arguments]    ${pucch_pdml}
+    Dated Log    [Checking Pucch f0 and f2 allocation in L2L1]
+    Dated Log    StartPrb shall greater or equal to ${param.nbrOfBlankedPRBsLowEdgeDL}
+    Dated Log    crb end location shall be less than ${blanking_area_crb_high}
+	${resource_item}                set Variable                           ${0}
+	
+	FOR    ${packet_num}            IN RANGE    1     16
+       Dated Log New Line           Checking packet ${packet_num}/15
+       ${packetsMatch}              Get Packet Match List
+       ...                              pdmlFile=${pucch_pdml}
+       ...                              packetName=nr_l1ul_l2ps_uldata_pucchreceivereqpucchresource_t
+       ...                              pathList=${listFieldPucch}
+       ...                              startPacket=${${packet_num}}
+       ...                              endPacket=${${packet_num}}
+	   ${packetMatch}               set variable                           ${packetsMatch[0]}
+	
+	   @{listPathStart}             Get Paths matching Field
+       ...                             packetMatch=${packetMatch}          field=startPrb
+       ${path}                      set variable                           ${listPathStart[${resource_item}]}
+	   ${startPrb}                  set variable                           ${packetMatch.fields['${path}'].show}
+       Dated log                    \t\tItem${resource_item}:startPrb=${startPrb} PATH=${path}
+
+       @{listPathNum}               Get Paths matching Field
+       ...                              packetMatch=${packetMatch}         field=numOfPrb
+       ${path}                      set variable                           ${listPathNum[${resource_item}]}
+	   ${numOfPrb}                  set variable                           ${packetMatch.fields['${path}'].show}	
+       Dated log                    \t\tItem${resource_item}:numOfPrb=${numOfPrb} PATH=${path}
+	
+       Verify Allocation In L2L1    start_rb_hex=${startPrb}
+       ...                          nr_of_prb_hex=${numOfPrb}
+       ...                          limit_start=${param.nbrOfBlankedPRBsLowEdgeDL}
+       ...                          limit_size=${blanking_area_crb_high}
+    END	   
+    Dated Log    -----> Check of Pucch allocation completed
+
+Check Msg3 Rat1 Allocation Attach
+    [Arguments]    ${pusch_pdml}
+    Dated Log    [Checking Msg3 pusch RAT1 allocation]
+    Dated Log    StartPrb shall greater or equal to ${param.nbrOfBlankedPRBsLowEdgeDL}
+    Dated Log    crb end location shall be less than ${blanking_area_crb_high}
+    ${range}      Evaluate  ${nbr_prach}+1
+    FOR    ${packet}   IN RANGE   1   ${range}
+        Verify Allocation In L2L1    pdml_file=${pusch_pdml}
+        ...                          packet_name=uldata_puschreceivereq
+        ...                          xpath_start=.*/UlData_PuschReceiveReq.grants_item_.*.startPrb$
+        ...                          xpath_size=.*/UlData_PuschReceiveReq.grants_item_.*.numOfPrb$
+        ...                          limit_start=${param.nbrOfBlankedPRBsLowEdgeDL}
+        ...                          limit_size=${blanking_area_crb_high}
+        ...                          packet_start=${packet}
+        ...                          packet_end=${packet}
+    END
+    Dated Log    Check of msg3 allocation completed.\n
+
+Check Msg2 Pdsch Rat1 Allocation Attach
+    [Arguments]    ${pdsch_pdml}
+    Dated Log    [Checking Msg2 pdsch rat1 allocation]
+    ${range}      Evaluate  ${nbr_prach}+1
+    FOR    ${packet}   IN RANGE   1   ${range}
+        Verify Allocation In L2L1    pdml_file=${pdsch_pdml}
+        ...                          packet_name=dldata_pdschsendreq
+        ...                          xpath_start=.*/DlData_PdschSendReq.grants_item_.*.startPrb$
+        ...                          xpath_size=.*/DlData_PdschSendReq.grants_item_.*.numOfPrb$
+        ...                          limit_start=${param.nbrOfBlankedPRBsLowEdgeDL}
+        ...                          limit_size=${blanking_area_crb_high}
+        ...                          packet_start=${packet}
+        ...                          packet_end=${packet}
+    END
+    Dated Log    Check of msg2 Pdsch allocation completed.\n
+
+# Keyword updated to fit MCShark pdml
+Verify Allocation In L2L1
+    [Arguments]  ${start_rb_hex}    ${nr_of_prb_hex}
+    ...          ${limit_start}    ${limit_size}    ${packet_start}=1    ${test_size}=<
+    ${start_rb_int}=       Convert To Integer       ${start_rb_hex}
+    ${nr_of_prb_int}=      Convert To Integer       ${nr_of_prb_hex}
+    ${check_crb_end}    Evaluate   ${start_rb_int}+${nr_of_prb_int}-1
+    Dated Log    -----> Packet ${packet_start}:[startPrb:${start_rb_int} ; numOfPrb:${nr_of_prb_int} ; crb_end:${check_crb_end}]
+    Should Be True     ${start_rb_int} >= ${limit_start}
+    Should Be True     ${check_crb_end} ${test_size} ${limit_size}	
+
+
+Verify Allocation In RRC
+    [Arguments]  ${pdml_file_x2}     ${xpath_start}      ${xpath_size}
+    ...          ${limit_start}    ${limit_size}    ${packet_start}=1
+    ...          ${packet_end}=1   ${test_size}=<
+    ${start_rb_int}=    get_unique    pdmlFile=${pdml_file_x2}
+    ...                               packetName=SgNBAdditionRequestAcknowledge
+    ...                               path=${xpath_start}
+    ...                               kind=show
+    ...                               startPacket=${${packet_start}}
+    ...                               endPacket=${${packet_end}}
+    ${nr_of_prb_int}=      get_unique    pdmlFile=${pdml_file_x2}
+    ...                                  packetName=SgNBAdditionRequestAcknowledge
+    ...                                  path=${xpath_size}
+    ...                                  kind=show
+    ...                                  startPacket=${${packet_start}}
+    ...                                  endPacket=${${packet_end}}
+    ${check_crb_end}    Evaluate   ${start_rb_int}+${nr_of_prb_int}-1
+    Dated Log    -----> Allocation:[startingPRB:${start_rb_int} ; nrOfPrb:${nr_of_prb_int} ; crb_end:${check_crb_end}]
+    Should Be True     ${start_rb_int} >= ${limit_start}
+    Should Be True     ${check_crb_end} ${test_size} ${limit_size}
+
+Get Number Prach Attempt In L2L1
+    Dated Log    -----> Checking in L2L1 whether there are several attempts of prach from UE
+    ${pcap_filtered}      Filter Pcap     ${capture_gnb_l1l2.path}     messages=uldata_prachreceiveind   name=msg1_only
+    ${pdml_file_msg1}     Generate Pdml From Pcap    ${pcap_filtered}
+    ${l2l1_nbr_prach}     count_path       pdmlFile=${pdml_file_msg1}
+    ...                                    packetName=uldata_prachreceiveind
+    ...                                    path=.*/UlData_PrachReceiveInd.detectedPrachPreambles_item_.*.prachPreambleIndex$
+    ...                                    startPacket=${1}
+    ...                                    endPacket=${-1}
+    Dated Log    -----> There is/are ${l2l1_nbr_prach} prach attempt(s) from UE\n
+    [Return]    ${l2l1_nbr_prach}
+
+Get Paths matching Field
+    [Arguments]                     ${packetMatch}                          ${field}
+    @{listPath}                     Get Dictionary Keys                     ${packetMatch.fields}
+    @{listPathMatching}             Create List
+    FOR    ${path}         IN      @{listPath}
+        # Run Keyword if              ${path.endswith('${field}')}
+        Run Keyword if              ${path.find('${field}')}!=${-1}
+        ...                         Append to list              ${listPathMatching}             ${path}
+    END
+    [Return]                        ${listPathMatching}

@@ -1,0 +1,52 @@
+import os
+import sys
+from types import ModuleType
+
+import logging
+from time import sleep
+from robot.api.deco import keyword
+from robot.libraries.BuiltIn import BuiltIn
+from ta_egate_cmd_parser import ta_egate_cmd_parser
+
+
+def _get_current_dl_data_rate_for_all_cells():
+    egate_parser = ta_egate_cmd_parser()
+    cmd = egate_parser.get_command('ue_stats_nr')
+    cmd_inst = cmd(id=1, type='pdsch', scell='0-6')
+    return cmd_inst.execute_and_parse()
+
+
+@keyword("Verify if dl transmission is done via SCells ${cells_id}")
+def verify_if_data_transmission_is_done_on_cells(cells_id):
+    """
+    Verify if downlink data transmission is ongoing on cells
+    :param cells_id: SCells ids to check, like 0,1,4
+    """
+    cells = cells_id.split(',')
+    all_cells_tput = _get_current_dl_data_rate_for_all_cells()
+    for cell, tput in all_cells_tput.items():
+        cell_index_id = cell[-1]
+        if cell_index_id in cells:
+            assert float(tput['Current']['value']) > 0.0
+
+
+@keyword("Verify if dl transmission is not done via SCells ${cells_id}")
+def verify_if_data_transmission_is_not_done_on_cells(cells_id):
+    """
+    Verify if there is no downlink data transmission on SCells
+    :param cells_id: SCells ids to check, like 0,1,4
+    """
+    cells = cells_id.split(',')
+    all_cells_tput = _get_current_dl_data_rate_for_all_cells()
+    for cell, tput in all_cells_tput.items():
+        cell_index_id = cell[-1]
+        if cell_index_id in cells:
+            assert int(tput['Current']['value']) == 0
+
+
+def get_testline():
+    for module in sys.modules.copy().values():
+        if type(module) is ModuleType:
+            if "tl" in dir(module):
+                return os.path.basename(os.path.dirname(module.__file__))
+    raise Exception('No Testline Module Loaded!')

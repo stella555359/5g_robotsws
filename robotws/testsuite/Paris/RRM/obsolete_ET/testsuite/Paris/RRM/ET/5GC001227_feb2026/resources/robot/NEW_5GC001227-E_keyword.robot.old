@@ -1,0 +1,369 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Keywords for 5GC001227-E
+...               Prerequisite :
+...               Scope : keywords for 5GC001227 interaction with DSS Phase III
+...
+...               Test Case Scenario author   :
+...               Test Case Scenario contact  :
+...               Test Case automation author :
+...               Test Case automation contact:
+...               Creation Date               : 11-05-2022
+...               Version History   Date            Author                          Notes
+...               0.1               11-05-2022      prenom.nom@nokia.com            Creation
+...               0.2               FB2212          ying.yw.wu@nokia.com            1227-E UE call scenario
+...               0.3               FB2212          ying.yw.wu@nokia.com            1227-E DSS counters check
+...               0.4               FB2212          ying.yw.wu@nokia.com            1227-E Pooling counters check
+...				  0.5  				FB2420          ying.yw.wu@nokia.com            adaptation EDA & L1subpool cell mapping changes
+...																					& remove sherpa & collect TTI traces
+
+Library           taf.wts.runner                WITH NAME       wtsemu
+Library           ute_wtssim                    WITH NAME       wts
+Library           taf.sbts.oam.coam.admin       WITH NAME       coam
+Library           taf.lteemu                    WITH NAME       lteemu
+
+Library            ../../../resources/python/luashark_tools.py
+Resource          taf/rfrl/common_resources/robot/preconditions.robot
+
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../../../resources/SWENG/robot/Container.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+Resource          ../../../resources/common/TtiTrace/ttitrace.robot
+
+
+Resource          ./Config1227.robot
+Resource          ./5GC001227-Common_keywords.robot
+Resource          ./5GC001227-A-UPD006_keywords.robot
+Resource          ./5GC001227-Counters_keywords.robot
+
+Variables           ../../../../../resources/SWENG/python/Colors.py
+
+
+*** Variables ***
+
+#help to see deeper DSS egate logs
+${Enable_Xp_msg_dbg}            ${False}
+&{Profile_UE_1}                 ue_id=1     pdu=1       gw=1
+...                             dl_tput=5     ul_tput=2      deviation=35
+&{Profile_UE_2}                 ue_id=2     pdu=2       gw=2
+...                             dl_tput=50     ul_tput=30      deviation=35
+&{Profile_UE_3}                 ue_id=3     pdu=3       gw=3
+...                             dl_tput=50      ul_tput=30      deviation=35
+
+${NRCELL_1_ID}                  1
+${NRCELL_2_ID}                  2
+${NRCELL_3_ID}                  3
+
+&{DSS_Counter_Expectation_1}    NRCELL_ID=1     DL_Ratio_Expected=0.95      UL_Ratio_Expected=0.66
+&{DSS_Counter_Expectation_2}    NRCELL_ID=2     DL_Ratio_Expected=0.95      UL_Ratio_Expected=0.66
+&{DSS_Counter_Expectation_3}    NRCELL_ID=3     DL_Ratio_Expected=0.95      UL_Ratio_Expected=0.66
+
+#updated Pooling Counters expected values due to PR 656245 new spec
+# &{1227E_Pooling_Counters_Expected_1}    NRCELL_ID=1    PDSCH_PRB_Expected=106    PUSCH_PRB_Expected=76
+# &{1227E_Pooling_Counters_Expected_2}    NRCELL_ID=2    PDSCH_PRB_Expected=106    PUSCH_PRB_Expected=67
+# &{1227E_Pooling_Counters_Expected_3}    NRCELL_ID=3    PDSCH_PRB_Expected=101    PUSCH_PRB_Expected=36
+
+&{1227E_Pooling_Counters_Expected_1}    NRCELL_ID=1    PDSCH_PRB_Expected=96    PUSCH_PRB_Expected=66
+&{1227E_Pooling_Counters_Expected_2}    NRCELL_ID=2    PDSCH_PRB_Expected=99    PUSCH_PRB_Expected=40
+&{1227E_Pooling_Counters_Expected_3}    NRCELL_ID=3    PDSCH_PRB_Expected=94    PUSCH_PRB_Expected=19
+
+# Now, the TestLine is configured during Suite Setup
+# Custom Config File to be used during "Suite Setup"
+${custom_config_file}       ${CURDIR}/../../../../../../../custom-config/POOLING/5GC001227/custom_config_1227-E.yaml
+
+*** Keywords ***
+
+Suite Setup 1227-E
+    [Documentation]         Not needed anymore when Suite Setup with custom config defined earlier
+    ...     Conditions:     customs configurations scf , basic setup & iphy
+    ...     Actions:        it performs the generic suite setup and backup the configurations files
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        suite setup is passed
+    [Arguments]
+    Setup.Suite Setup From Scratch    keepAllUeDataInCfgFile=${True}
+    ...                     automaticTeardown=${True}
+    ...                     yamlPathname=${custom_config_file}
+    Backup Files
+    ${scf_suite_setup_backup}         OAM Get SCF File    file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable      ${scf_suite_setup_backup}
+    Dated Log               SCF backup file = ${scf_suite_setup_backup}
+
+1227 DSS DL UL Traffic
+    [Documentation]        TC 1227 using DSS Phase 3 Cells. 3 Cells will be used
+    ...                    The purpose is to perform DSS Cellsetup on all the cells
+    # [Arguments]            ${params}        ${Vendor_Param}         ${alias}=default
+    [Arguments]            ${Param}     ${Vendor_Param}     ${alias}=default
+    Set Suite Variable     ${Param}
+    Init Sequence          ${Param}
+    Step                   Set RAD Params Of 1227
+    Step                   Config1227.Vendor File Config With Specific Settings     argument=${Vendor_Param}
+    Step                   Recommissioning
+#    Critical Step          Restart TL
+    Step                   Start WTS            argument=${alias}
+    Step                   Xp link Setup        argument=${alias}       depends=Start WTS
+    Step                   X2Ap link Setup      argument=${alias}       depends=Start WTS
+    Step                   DSS CellSetup        argument=${alias}       depends=Xp link Setup
+    Step                   sleep                argument=120s
+    Step                   Check SIB MultiCell    nbCell=${Param.nbCell}       depends=DSS CellSetup
+    #Step                   Activate Sherpa On All Cells
+    Step                   Wait In Seconds
+    Step                   SA Call With UE Profile   argument=${Profile_UE_1}
+    Step                   sleep                     argument=5s
+    Step                   SA Call With UE Profile   argument=${Profile_UE_2}
+    Step                   sleep                     argument=5s
+    Step                   SA Call With UE Profile   argument=${Profile_UE_3}
+    Step                   sleep                     argument=60s
+	Step                   Collect TTI Traces
+    #Step                   Stop Sherpa Collection
+    Step                   sleep     argument=480s
+    Step                   Collect All Current PM Counters Files
+    Step                   Set 1227 PM Counters ID Variables
+    Step                   Set 1227 E DSS Counters ID Variables
+    Step                   Verify 1227 E LoadBased DSS counters By CellID And Ratio Expected    argument=${DSS_Counter_Expectation_1}
+    Step                   Verify 1227 E LoadBased DSS counters By CellID And Ratio Expected    argument=${DSS_Counter_Expectation_2}
+    Step                   Verify 1227 E LoadBased DSS counters By CellID And Ratio Expected    argument=${DSS_Counter_Expectation_3}
+    Step                   Verify 1227 E Load Based Pooling PM counters
+    # Step                   Check BB Pooling PM Counters By CellID And Expected values           argument=${1227E_Pooling_Counters_Expected_1}
+    # Step                   Check BB Pooling PM Counters By CellID And Expected values           argument=${1227E_Pooling_Counters_Expected_2}
+    # Step                   Check BB Pooling PM Counters By CellID And Expected values           argument=${1227E_Pooling_Counters_Expected_3}
+
+
+
+
+DSS CellSetup
+    [Arguments]     ${alias}=default
+    FOR    ${cellidx}    IN RANGE    1    ${Param.nbCell}+1
+        Set Suite Variable      ${cellidx}
+        Dated Log   ---> Perform DSS CellSetup on cell index : ${cellidx}
+        DSS_CRM_Cell_Setup_Phase3        ${alias}
+    END
+
+my WTS Configure
+    [Documentation]                 Set configuration for WTS from fiole as pointed in __init__.py
+    [Arguments]                     ${ConfigFileName}=${tl.core.cfg_filename}
+    Dated Log                       \tConfiguring WtsEmu with ${tl.core.dir_path}/${ConfigFileName}
+    wtsemu.Configure                file=${tl.core.dir_path}/${ConfigFileName}
+    # Check we reach active state
+    ${pattern}                   set variable if    '${NWtype}' == 'SA+NSA'    NG link is Up      CHANGE STATE: ACTIVE - SimMode is ready now
+    Dated log    wait for ${pattern}
+    wtsemu.Read Wtsemu Output Until Re
+    ...                             expected=${pattern}
+    ...                             timeout=90
+
+my WTS Configure upon format
+    [Arguments]                     ${shouldUseLua}=${True}
+    ...                             ${luaFile}=${EMPTY}
+    Dated log     my WTS Configure upon format WITH shouldUseLua=${shouldUseLua}
+    Run Keyword if                  ${shouldUseLua}
+    ...                             my WTS Configure                           ConfigFileName=${luaFile}
+    ...   ELSE                      my WTS Configure                           ConfigFileName=${tl.core.cfg_filename}
+    ${ute_wtssim_interface}    Get Library Instance    wts
+    set suite variable     ${wtsObj}      ${ute_wtssim_interface}
+
+Setup WTS Only
+    [Documentation]                 Clean WTS (processes, logs), restart ePC simulator
+    ...                             and configure it
+    [Arguments]                     ${telnet_egate_addr}=${tl.core.default_ssh_connection_details.addr}
+    ...                             ${nbUe}=1
+    ...                             ${shouldUseLua}=${false}
+
+    Dated log     Setup WTS Only WITH shouldUseLua=${shouldUseLua}
+
+    ${alias}                        SSH Wait For Connect                    host=${HOST_EPCSIM}
+    Dated Log New Line              Starting WTS setup (WTS:IP=${HOST_EPCSIM.sshConnection.addr})
+    # WTS Clear
+    # Cloud only
+    Run Keyword If                  ${TLConfig.isGnbCloud} and not ${isAic}
+    ...                             WTS Set Backhaul IP                     ${alias}
+    # Init lua config file with nb of UE
+    ${LuaFileName}                  TxtConfig Init                          nbUe=${nbUe}
+    set global variable             ${LuaFileName_generated}                ${LuaFileName}
+    # Configure eDaemon and eGate
+    WTS Start processes             telnet_egate_addr=${telnet_egate_addr}
+    # Launching configuration
+    my WTS Configure upon format       shouldUseLua=${shouldUseLua}            luaFile=${LuaFileName}
+
+Launch WTS
+    [Arguments]                 ${egate_alias}=egate
+
+    ${msg}=     Catenate     [From Launch WTS] Connecting to: ${tl.core.default_ssh_connection_details.addr}, Port: ${tl.core.egate_port}
+    ...                       Alias: ${egate_alias}
+    BuiltIn.Log          \n${msg}     console=yes
+    wts.setup_egate         egate_port=${tl.core.egate_port}
+    ...                        host_ip=${tl.core.default_ssh_connection_details.addr}
+    ...                       tool_dir=${tl.core.dir_path}
+    ...                          alias=${egate_alias}
+    ...                       ssh_user=ute
+    ...                       ssh_pass=ute
+
+Start WTS
+   [Arguments]          ${egate_alias}=egate    ${shouldUseLua}=${False}    ${nbUe}=1
+    Dated log           Start WTS WITH shouldUseLua=${shouldUseLua}
+    Setup WTS Only      shouldUseLua=${shouldUseLua}    nbUe=${nbUe}
+    Launch WTS          egate_alias=${egate_alias}
+
+CheckCoordination
+    [documentation]    KW helping to check nessary messages in DSS Cell_setup
+
+    Empty Buffer For Egate
+    Grep and check in file          host=${HOST_EPCSIM}             file=${tl.core.dir_path}/egate_console.log
+    ...                             grep=EN DSS DL Cell             pattern=EN DSS DL Cell Resource Area Coordination success on remote NE
+    Grep and check in file          host=${HOST_EPCSIM}             file=${tl.core.dir_path}/egate_console.log
+    ...                             grep=EN DSS UL Cell             pattern=Subcarrier Resource Coordination success on remote NE
+
+Xp link Setup
+    [Arguments]                 ${alias}=EPCSIM
+    Log to console  \n***Xp link Setup [eNBId=${Param.enbid} and gNBId=${Param.gnbid}] with alias=${alias}***
+    wts.execute egate command    cmd=enb_xp_param id=${Param.enbid} ignore_xp=off xp_listening_socket=on    alias=${alias}
+    wts.execute egate command    cmd=enb_xp_param id=${Param.enbid} xp_peers=${Param.gnbid}    alias=${alias}
+    wts.execute egate command and wait for data    cmd=enb_xp_link_up enb=${Param.enbid} target=${Param.gnbid}
+    ...                                                   pass_regexp=XpAP Link .* is up   timeout=120  alias=${alias}
+    Traced sleep    10s
+    Log to console  \n***Xp link Setup completed ***
+
+X2Ap link Setup
+    [Arguments]                 ${alias}=EPCSIM
+    Log to console  \n***X2Ap link Setup [eNBId=${Param.enbid} and gNBId=${Param.gnbid}] with alias=${alias}***
+
+    wts.execute egate command and wait for data    cmd=enb_x2_link_up enb=${Param.enbid} target=${Param.gnbid}
+    ...                                                     pass_regexp=X2AP Link .* is up    timeout=60   alias=${alias}
+    Traced sleep    10s
+    Log to console  \n***X2Ap link Setup completed ***
+
+
+DSS_CRM_Cell_Setup_Phase3
+    [Arguments]                 ${alias}=default
+
+    Log to console   \n${blue}***DSS ${Param.lteNrDssMode} CRM CellSetup BW=${Param.bandwidth} with alias=${alias}*** ${normal}
+
+    wts.execute egate command    cmd=enb_dss_param id=${Param.enbid} feature_flag=on message_sets=DMS3    alias=${alias}
+    Sleep   2
+    wts.execute egate command    cmd=enb_cell_param enb=${Param.enbid} id=${cellidx} lte_nr_dss_mode=DSS_PHASE_3 antenna_ports_num=2   alias=${alias}
+    Sleep   2
+    wts.execute egate command    cmd=enb_cell_dss_feature enb=${Param.enbid} id=${cellidx} nr_dl_peak_rate_increase=on    alias=${alias}
+    Sleep   2
+    wts.execute egate command    cmd=enb_cell_dss_feature enb=${Param.enbid} id=${cellidx} superfast_allocation=off    alias=${alias}
+    Sleep   2s
+    ${cmd}    Catenate    enb_cell_dss_param enb=${Param.enbid} id=${cellidx} dl_resource_sharing_algo=dl_buffer_level_based     alias=${alias}
+    wts.execute egate command    cmd=${cmd}     alias=${alias}
+    Sleep   2s
+    ${cmd}    Catenate    enb_dss_configure_partnership enb=${Param.enbid} cell=${cellidx} dss_peer=${Param.gnbid}:${cellidx}
+    wts.execute egate command    cmd=${cmd}      alias=${alias}
+    sleep   2
+
+    ${cmd}    Catenate    enb_crm_cell_resource_reservation enb=${Param.enbid} cell=${cellidx} tgt_enb=${Param.gnbid} tgt_cell=${cellidx}
+    ...         assigned_dl_minimum_share_to_nr=15 assigned_dl_maximum_share_to_nr=70 assigned_dl_minimum_share_to_lte=15
+    ...         assigned_dl_maximum_share_to_lte=70 assigned_ul_minimum_share_to_nr=20 assigned_ul_maximum_share_to_nr=70
+
+    wts.execute egate command      cmd=${cmd}    alias=${alias}
+
+    ${cmd}    Catenate    enb_crm_param id=${Param.enbid} ul_qos_load_meas_timer=${Param.ul_qos_load_meas_timer}
+    ...                                      dl_qos_load_meas_timer=${Param.dl_qos_load_meas_timer}
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    sleep    30
+
+    ${pattern}    Set Variable    EN DSS UL Cell Subcarrier Resource Coordination success on remote NE
+    ${cmd}      Catenate       enb_dss_establish_partnership enb=${Param.enbid} cell=${cellidx} tgt_enb=${Param.gnbid} tgt_cell=${cellidx}
+    ${output}    wts.Execute Egate Command And Wait For Data    cmd=${cmd}
+    ...    pass_regexp=${pattern}    timeout=30     alias=${alias}
+    ${output}    String.Get Lines Matching Regexp    ${output}    ${pattern}    partial_match=True
+    Log To Console    \n${output}
+
+    sleep   10
+
+    Log To Console    ***\nStart reset dl resource cell reservation... with alias=${alias}
+    ${command}    Set Variable    enb_dss_cell_resource_reservation_dl enb=${Param.enbid} cell=${cellidx} reset
+    Dated Log New Line       ${command}
+    wts.Execute Egate Command    ${command}        alias=${alias}
+    Sleep    2s    reason=make sure the cmd take affect
+
+    Log To Console    ***\nStart reset ul resource cell reservation... with alias=${alias}
+    ${command}    Set Variable    enb_dss_cell_resource_reservation_ul enb=${Param.enbid} cell=${cellidx} reset
+    Dated Log New Line       ${command}
+    wts.Execute Egate Command    ${command}      alias=${alias}
+    Sleep    2s    reason=make sure the cmd take affect
+
+    ${cmd}    Catenate    enb_dss_dl_resource_cell_reservation enb=${Param.enbid} cell=${cellidx}
+    ...                                           prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    ${cmd}    Catenate    enb_dss_dl_resource_cell_reservation enb=${Param.enbid} cell=${cellidx}
+    ...                     reserved_fixed_normal_subframes=0000000000-0000000000-0000000000-0000000000-0000000000-0000000000-0000000000-0000000000
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    ${cmd}    Catenate    enb_dss_dl_resource_cell_reservation enb=${Param.enbid} cell=${cellidx} min_lte_nr_dss_ratio=30 max_lte_nr_dss_ratio=70
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    ${cmd}    Catenate    enb_dss_cell_resource_coordination enb=${Param.enbid} cell=1 tgt_enb=${Param.gnbid} tgt_cell=${cellidx} dir=DL
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    ${cmd}    Catenate    enb_dss_ul_resource_cell_reservation enb=${Param.enbid} cell=${cellidx}  minimum_prb_share=30 maximum_prb_share=70
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    ${cmd}    Catenate    enb_dss_cell_resource_coordination enb=${Param.enbid} cell=1 tgt_enb=${Param.gnbid} tgt_cell=${cellidx} dir=UL
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    Sleep    2s    reason=make sure the cmd take affect
+
+    ${output}    wts.execute egate command and wait for data      cmd=enb_crm_status enb=${Param.enbid} cell=${cellidx}     alias=${alias}
+    Log To Console    \n${output}
+
+    Sleep    2s    reason=make sure the cmd take affect
+
+    ${dl_prb_area_allocation_list}=    Catenate    SEPARATOR=    0:0,106+1:0,0+2:0,106+3:0,106+4:0,106+5:0,106+6:0,106+7:0,106+8:0,106+9:0,106+
+     ...    10:0,106+11:0,106+12:0,106+13:0,106+14:0,106+15:0,106+16:0,106+17:0,106+18:0,106+19:0,106+20:0,106+21:0,0+22:0,106+23:0,106+24:0,106+
+     ...    25:0,106+26:0,106+27:0,106+28:0,106+29:0,106+30:0,106+31:0,106+32:0,106+33:0,106+34:0,106+35:0,106+36:0,106+37:0,106+38:0,106+39:0,106+
+     ...    40:0,106+41:0,0+42:0,106+43:0,106+44:0,106+45:0,106+46:0,106+47:0,106+48:0,106+49:0,106+50:0,106+51:0,106+52:0,106+53:0,106+54:0,106+
+     ...    55:0,106+56:0,106+57:0,106+58:0,106+59:0,106+60:0,106+61:0,0+62:0,106+63:0,106+64:0,106+65:0,106+66:0,106+67:0,106+68:0,106+69:0,106+
+     ...    70:0,106+71:0,106+72:0,106+73:0,106+74:0,106+75:0,106+76:0,106+77:0,106+78:0,106+79:0,106
+
+     ${cmd}    Catenate     enb_dss_resource_allocation enb=${Param.enbid} cell=${cellidx} tgt_enb=${Param.gnbid}
+     ...                    tgt_cell=${cellidx} dir=DL allocation_start_time=immediate
+     ...                    dl_allocated_normal_subframes=1111111111-1111111110-1111111111-1111111110-1111111111-1111111110-1111111111-1111111110
+     ...                    dl_prb_area_allocation_list=${dl_prb_area_allocation_list}
+
+     wts.execute egate command      cmd=${cmd}      alias=${alias}
+     Sleep    2s
+
+    ${cmd}     Catenate     enb_dss_resource_allocation enb=${Param.enbid} cell=${cellidx} tgt_enb=${Param.gnbid}
+    ...                     tgt_cell=${cellidx}         dir=UL          allocation_start_time=immediate
+    ...                     ul_allocated_prb_list=0,3|5,70|103,3
+
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+    Sleep     2s
+
+Collect TTI Traces
+    [Documentation]                 To collect TTI traces for test
+    ${TestName}                     getFormattedName
+    ${TTIdir}                       Get TTI Trace Path                 dir_suffix=${TestName}_TTI
+    Dated Log                       ====== start TTI capture : ======
+    Start TTI Traces in Streaming mode      src_ip=10.0.1.2
+    Traced Sleep                    duration=5      msg=TTI capture during DL UL traffic
+    ${TTIpcap}                      Stop TTI Traces in Streaming mode
+    ...                             tti_trace_path=${TTIdir}
+    ...                             tti_trace_filename=TTI_Trace_DL_UL
+    Traced Sleep                    duration=5      msg=TTI capture end
+    Dated Log                       ====== Convert TTItrace : ${TTIpcap} to json and csv ======
+    ${TTIjson}                      Convert TTItrace from pcap to others
+    ...                             input_file_path=${TTIpcap}
+    ${TTIcsv}                       decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson}    num_of_events=10000
+    Dated Log                       ====== json file : ${TTIjson} csv file : ${TTIcsv}
+

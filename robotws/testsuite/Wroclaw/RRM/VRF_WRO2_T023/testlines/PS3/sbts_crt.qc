@@ -1,0 +1,13 @@
+{
+   ".*9999.*":{
+      "label":"CLOUD.*",
+      "Root\\Test_Sets\\\\Trunk\\VRF_WRO2\\VRF_WRO2_T02&T03\\CRT":{
+         "CRT__WRO__PhaseShifter":[
+            "[1]CB008322-G_Beamforming_counters_veryfication",
+            "[1]CB008322-G2_Enhancement_for_dynamic_fallback_SB_BF_CONF_REL_RANK",
+            "[1]CB008322-G2_Enhancement_for_dynamic_fallback_SB_BF_CONF_REL_SCHED_PRB",
+            "[1]CB008322-G2_Enhancement_for_dynamic_fallback_SB_BF_CONF_REL_SRS_POWER"
+         ]
+      }
+   }
+}

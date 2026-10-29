@@ -1,0 +1,305 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]
+...    This suite tests the scenario where beamforming is disabled and the path max
+...    queueing delay is not exceeded or is exceeded. It uses a configuration with 6 cells, 3CC CA and 3 UEs.
+...    The test is performed on a 5G TDD RAN with a SANSA FS CPRI CMWV FDD+ECPRI CMWV TDD AZQJ variant.
+
+Force Tags    CONFIGURED    CRT    PY39    RAN_5G    RAN_5G_TDD    SBTS00
+    ...    CLOUD_5G_I_LO_AP_LO
+    ...    VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AZQJ
+
+Library    taf.ul.hanging_resources.listener    ${False}
+Resource   ./resources/5GC002640_resources.robot
+Library    ute_wtssim
+
+Suite Setup    Run keywords    Prepare suite environment  egate_config=${lua_cfg_file}  rad_params=@{SWCONFIG_FLAGS_LIST}
+...                            ap_xml=${ap_xml}  scfc=${scfc}
+...            AND  Create aliases
+...            AND  Setup eNB Fsm Access  alias=gNB2
+
+*** Variables ***
+${lua_cfg_file}=  ${CFG_DIR}/egate_config_FDD_TDD_6Cells_SANSA_3CC_CA_3UEs.cfg
+${ap_xml}=        ${CFG_DIR}/GNB_LO_AP_LO_FDD_TDD_1AEQE_6Cells_FS_SANSA_3CC_CA/iphy_AHLOA_AHCA_AHFIB_AEQE_6Cells.xml
+${scfc}=          ${CFG_DIR}/GNB_LO_AP_LO_FDD_TDD_1AEQE_6Cells_FS_SANSA_3CC_CA/SCFC_FDD_TDD_6Cells_FS_SANSA_3CC_CA_FFT.xml
+${counters}       M55316C03002, M55316C05002
+
+*** Test Cases ***
+5GC002640-AA-B5a_Beamforming_disabled_with_path_max_queueing_delay_not_exceeded
+  [Documentation]
+  ...  1.DESCRIPTION
+  ...   This user scenario describes successful call setup with FDD – TDD FR1 DL CA for the single UE with dynamic flow control,
+  ...   data split over PCell and SCells, with blind SCells addition and blind SCells activation. Beamforming on TDD FR1 SCells is disabled.
+  ...
+  ...  2.TEST ENVIRONMENT AND SETTINGS
+  ...   This item is testing in UTE environment:
+  ...       -5G Classical SA CMWV L1Bypass cloud test line (CLOUD_5G_I_BOO_AP_KLLL_SANSA_L1B_ECPRI_CMWV_TDD) gNB (ASIB, 2xABIO, AMIA),
+  ...        UE simulator (Airphone ASIK + 3xABIL), WTS 5G core simulator (Egate)
+  ...       -gNB has configured 3CC for Carrier Aggregation: 1 Cell FDD and 2 Cells TDD (CA relations created)
+  ...       -simulated Radio (AHLOA, AHFIB, AEQE, AHCA)
+  ...   Used HW: gNB (ASIB, 2xABIO, AMIA), UE simulator (Airphone ASIK + 3xABIL)
+  ...   Simulated RRH (AHLOA) – gNB ABIO-1 RF1, AP ABIL-1: Cell-1 – FDD FR1 10MHz ( band n71 )
+  ...   Simulated RRH (AHFIB) – gNB ABIO-1 RF7, AP ABIL-2: Cell-2 – FDD FR1 10MHz ( band n66 ), Cell-5 – FDD FR1 10MHz ( band n25 )
+  ...   Simulated RRH (AEQE) – gNB ABIO-2 RF1, AP ABIL-3: Cell-3 – TDD FR1 60MHz ( band n41 ), Cell-6 – TDD FR1 60MHz ( band n77 )
+  ...   Simulated RRH (AHCA) – gNB ABIO-1 RF2, AP ABIL-1: Cell-4 – FDD FR1 10MHz ( band n5
+  ...   Both TDD Cells are configured on the same RU so they are mapped to the same L2-RT instance!
+  ...
+  ...  2.1 Testing Tools
+  ...       gNB: Nokia 5G BTS
+  ...       Airphone (AP) – UEs simulator
+  ...       WTS – ePC simulator - 5G core network simulator
+  ...       Tcpdump & Wireshark – tools for capturing messages
+  ...       BTSLog (cli) for collecting gNB & AP remote syslog
+  ...       Robot Framework and Python runtime environment to automate the testing process
+  ...       Web Element Manager
+  ...
+  ...  2.2 Test Automation
+  ...   Automation in robotframework
+  ...
+  ...  3. DEFINITIONS FROM THE TEST SET
+  ...   Test case covers: 5G_RAN_UP_44604, 5G_RAN_UP_43838, 5G_RAN_UP_44479
+  ...
+  ...  3.1 Definitions from the Test Plan
+  ...
+  ...  3.2 Required Logs
+  ...       Wireshark/TCPdump Logs (NGAP, NR-RRC, E1AP, F1AP)
+  ...       TTI Trace
+  ...       Counters
+  ...       Default gNB & AP SysLog
+  ...       BTS Snapshot
+  ...       BIP logs
+  ...       Sherpa Trace
+  ...
+  ...  4. TESTING INSTRUCTIONS
+  ...  4.1 Preconditions
+  ...    gNB configuration:
+  ...    - New L2RT architecture (CB007736) is enabled:
+  ...        NRBTS/NRDU.flexibleCAMode = 2 (ConfigurationIndependent)
+  ...    - Mobility support for mixed carrier aggregation (CB008015) is enabled:
+  ...        NRBTS/NRDU.actConnectedModeMobilityCA = True
+  ...    - All FDD cells are configured to allow SA access:
+  ...        MRBTS/NRBTS/gNbCuType = SA+NSA
+  ...        Each FDD Cell has configured MRBTS/NRBTS/NRCELL.cellDepType = SA
+  ...    - Inter-band FDD + TDD FR1 DL CA feature (5GC002640) is activated and legacy CA features are activated too:
+  ...        NRBTS/NRDU.carrierAggregationSupportList contains elements equal to 600 (ca_Fdd_Any_Sa), 200 (ca_Fdd_Fr1Tdd_Sa) and 3 (ca_Fdd_Fdd)
+  ...    - CA relations are configured for each FDD cell by NRRELs pointing to:
+  ...        1 FDD Cell: Cell-2 and TDD Cell: Cell-6
+  ...    - SCell addition method is set to blind:
+  ...        each NRREL object NRBTS/NRCELL/NRREL.sCellAdditionMethod parameter is set to 0 (blind)
+  ...    - SCell activation method is set to blind:
+  ...        NRBTS.sCellActivationMethod = 0 (blind)
+  ...    - DRX is disabled in both FDD and TDD FR1 Cells:
+  ...        NRBTS/NRCELL.actCDrx = False
+  ...    - DSS features are disabled in FDD Cells:
+  ...        NRBTS.actLteNrDss = False
+  ...    - Aperiodic CSI is disabled in all Cells:
+  ...        NRBTS.NRCELL.actAperCsi = False
+  ...    - TDD Cells are configured with subframe configuration according to 5GC001116-B (TD LTE config 2 SSF6 starting from SFN 0):
+  ...        frameStructureType = tdLte
+  ...        guardPeriodLength = 6 symbols (SSF6)
+  ...        lteToNrFrameShift = 0ms
+  ...        prachConfiguration = 97 (format A2 in subframe 7)
+  ...        ssBurstSetPeriod = 20ms
+  ...    - TDD Cells are configured without beamforming:
+  ...        NRBTS/NRCELL.actBeamforming = False
+  ...    - TDD Cells are configured without 5GC002200:
+  ...        NRBTS/NRCELL.dlMimoMode = 2x2 Open Loop Spatial Multiplexing
+  ...    - Cell 1 has NRRELs, with sCellAdditionMethod set as blind, that point to
+  ...        Cell 2: FDD (e.g. band 66),
+  ...        Cell 3: TDD (e.g. band 41, choose one NRARFCN)
+  ...        Cell 6: TDD (e.g. band 41, different non-contiguous NRARFCN with Cell 3)
+  ...    - Cell 1, Cell 2 and Cell 6 are activated and on-air. Cell 3 is inactive.
+  ...    - Long PUCCH is enabled:
+  ...        NRBTS/NRCELL.pucchModeSelect = longPucch
+  ...    - FDM scheduling is enabled:
+  ...        NRBTS/actFdmScheduling = True
+  ...        NRBTS/NRCELL.actIncreasedFdmUsersPerSlot = True
+  ...    - NR-UE1 supports FDD-TDD 3CC CA with band combinations:
+  ...        * CA_n66A-n71A-n77A (FDD n71 + FDD n66 + TDD n77),
+  ...        * CA_n41A-n71A-n77A (FDD n71 + TDD n41 + TDD n77),
+  ...        * CA_n41(2A)-n71A   (FDD n71 + TDD n41 + TDD n41),
+  ...        * CA_n41C-n71A      (FDD n71 + TDD n41 + TDD n41)
+  ...    - NRBTS/NRCELL/primaryPathMaxQueueingDelay = 10ms
+  ...    - NRBTS/NRCELL/secondaryPathMaxQueueingDelay = 10ms
+  ...
+  ...  4.2 Test Steps
+  ...    Step 1: Blind SCells activation
+  ...    Step 2: NonGBR Data transmission in both directions
+  ...  4.3 Postconditions
+  ...   UE is configured with 3CC, all SCells remain active
+  ...   UE performs periodic CSI Measurements on all carriers: PCell and SCells
+  ...   gNB accepts CSI measurements via dedicated PUCCH Format3 resource from PCell and all SCell(s) on FDD PCell from the UE
+  ...   The corresponding counters for SCell activation are updated accordingly
+  ...       -PSCELL_UE_2_ACT_SCELL_DL
+  ...       -MAX_PSCELL_UE_2_ACT_SCELL_DL
+  ...
+  ...  5.REFERENCES
+  ...   [1] CFAM for 5GC002640 - https://gates.nsn-net.net/view/00024a24#o=0
+  ...
+  ...  6.HISTORY
+  ...   v0.1 2021.07.23 Jakub Drabina – test case draft
+  ...   v0.2 2021.09.16 Lukasz Gdowski – test case update, adjustment to new template
+  ...   v0.3 2021.10.15 Lukasz Gdowski - test case update
+  ...   v0.4 2021.10.19 Lukasz Gdowski – remove default MCS verification
+  ...   v0.5 2021.11.04 Jakub Drabina – change traffic values to max possible on L1Bypass
+  ...   v1.0 2021.11.09 Lukasz Gdowski - review done: https://collab.ext.net.nokia.com/ui#review:id=844428
+
+    Log to console  Start Test Case  5GC002640-AA-B5a_Beamforming_disabled_with_path_max_queueing_delay_not_exceeded
+    Register 3CC CA capable NR-UE1 to gNB-2 Cell-1
+    Establish PDU session for NR-UE1 and wait for SCells blind activation
+
+    Start SA traffic  ue=1  dir=dl  traffic_rate=350Mbps
+    Start SA traffic  ue=1  dir=ul  traffic_rate=10Mbps
+    Wait 30s for throughput stable
+
+    Verify SA traffic  ue=1  dir=dl  expected_traffic=350Mbps
+    Verify if dl transmission is done via SCells 0,1,2
+
+    Trigger DL BLER Test Mode to achieve Target MCS
+    Collect TTI Traces during 2 seconds and save to directory 3CC_blind_act_tput
+
+    Verify if UL transmission is done via PCell only
+    Verify if MCS calculation is applied
+    Verify if Ue performs csi measurement reports on all carriers  phys_cells_ids=50,51,55
+    Verify If Csi Measurement Reports Are Done Via Dedicated Pucch Format3  pcell=50  scells=51,55
+    Verify if that counters PSCELL_UE_2_ACT_SCELL_DL, MAX_PSCELL_UE_2_ACT_SCELL_DL are updated accordingly
+
+    ${pm_counter_file}=    Get Latest Unpacked Full Pm Counters File
+    Get counters value and report to rp  counters=${counters}  filepath=${pm_counter_file}  localmoid=NRCELL-1
+
+    [Teardown]  Run keywords
+    ...         Produce Scout Data                       AND
+    ...         Deactivate and remove UE bler testmodes  AND
+    ...         Stop SA traffic  ue=1                    AND
+    ...         Release PDU session for NR-UE1           AND
+    ...         Deregister NR-UE1
+
+5GC002640-AA-B5b_Beamforming_disabled_with_path_max_queueing_delay_exceeded
+    [Tags]    RG_OPT_2023    SKIPRUN
+    [Documentation]
+    ...  *Description:*
+    ...    This user scenario describes successful call setup with FDD  TDD FR1 DL CA for the single UE with dynamic flow control,
+    ...    data split over PCell and SCells, with blind SCells addition and blind SCells activation and path delay increased.
+    ...    Beamforming on TDD FR1 SCells is disabled
+    ...
+    ...  *Preconditions:*
+    ...    Used HW: gNB (ASIB, 2xABIO, AMIA), UE simulator (Airphone ASIK + 3xABIL)
+    ...    Simulated RRH (AHLOA) - gNB ABIO-1 RF1, AP ABIL-1:  Cell-1 - FDD FR1 10MHz ( band n71 )
+    ...    Simulated RRH (AHFIB) - gNB ABIO-1 RF7, AP ABIL-2:  Cell-2 - FDD FR1 10MHz ( band n66 ), Cell-5 - FDD FR1 10MHz ( band n25 )
+    ...    Simulated RRH (AEQE)  - gNB ABIO-2 RF1, AP ABIL-3:  Cell-3 - TDD FR1 60MHz ( band n41 ), Cell-6 - TDD FR1 60MHz ( band n77 )
+    ...    Simulated RRH (AHCA)  - gNB ABIO-1 RF2, AP ABIL-1:  Cell-4 - FDD FR1 10MHz ( band n5 )
+    ...
+    ...    Both TDD Cells are configured on the same RU so they are mapped to the same L2-RT instance!
+    ...
+    ...    gNB configuration:
+    ...    - New L2RT architecture (CB007736) is enabled:
+    ...        NRBTS/NRDU.flexibleCAMode = 2 (ConfigurationIndependent)
+    ...    - Mobility support for mixed carrier aggregation (CB008015) is enabled:
+    ...        NRBTS/NRDU.actConnectedModeMobilityCA = True
+    ...    - All FDD cells are configured to allow SA access:
+    ...        MRBTS/NRBTS/gNbCuType = SA+NSA
+    ...        Each FDD Cell has configured MRBTS/NRBTS/NRCELL.cellDepType = SA
+    ...    - Inter-band FDD + TDD FR1 DL CA feature (5GC002640) is activated and legacy CA features are activated too:
+    ...        NRBTS/NRDU.carrierAggregationSupportList contains elements equal to 600 (ca_Fdd_Any_Sa), 200 (ca_Fdd_Fr1Tdd_Sa) and 3 (ca_Fdd_Fdd)
+    ...    - CA relations are configured for each FDD cell by NRRELs pointing to:
+    ...        1 FDD Cell: Cell-2 and TDD Cell: Cell-6
+    ...    - SCell addition method is set to blind:
+    ...        each NRREL object NRBTS/NRCELL/NRREL.sCellAdditionMethod parameter is set to 0 (blind)
+    ...    - SCell activation method is set to blind:
+    ...        NRBTS.sCellActivationMethod = 0 (blind)
+    ...    - DRX is disabled in both FDD and TDD FR1 Cells:
+    ...        NRBTS/NRCELL.actCDrx = False
+    ...    - DSS features are disabled in FDD Cells:
+    ...        NRBTS.actLteNrDss = False
+    ...    - Aperiodic CSI is disabled in all Cells:
+    ...        NRBTS.NRCELL.actAperCsi = False
+    ...    - TDD Cells are configured with subframe configuration according to 5GC001116-B (TD LTE config 2 SSF6 starting from SFN 0):
+    ...        frameStructureType = tdLte
+    ...        guardPeriodLength = 6 symbols (SSF6)
+    ...        lteToNrFrameShift = 0ms
+    ...        prachConfiguration = 97 (format A2 in subframe 7)
+    ...        ssBurstSetPeriod = 20ms
+    ...    - TDD Cells are configured without beamforming:
+    ...        NRBTS/NRCELL.actBeamforming = False
+    ...    - TDD Cells are configured without 5GC002200:
+    ...        NRBTS/NRCELL.dlMimoMode = 2x2 Open Loop Spatial Multiplexing
+    ...    - Cell 1 has NRRELs, with sCellAdditionMethod set as blind, that point to
+    ...        Cell 2: FDD (e.g. band 66),
+    ...        Cell 3: TDD (e.g. band 41, choose one NRARFCN)
+    ...        Cell 6: TDD (e.g. band 41, different non-contiguous NRARFCN with Cell 3)
+    ...    - Cell 1, Cell 2 and Cell 6 are activated and on-air. Cell 3 is inactive.
+    ...    - Long PUCCH is enabled:
+    ...        NRBTS/NRCELL.pucchModeSelect = longPucch
+    ...    - FDM scheduling is enabled:
+    ...        NRBTS/actFdmScheduling = True
+    ...        NRBTS/NRCELL.actIncreasedFdmUsersPerSlot = True
+    ...    - NR-UE1 supports FDD-TDD 3CC CA with band combinations:
+    ...        * CA_n66A-n71A-n77A (FDD n71 + FDD n66 + TDD n77),
+    ...        * CA_n41A-n71A-n77A (FDD n71 + TDD n41 + TDD n77),
+    ...        * CA_n41(2A)-n71A   (FDD n71 + TDD n41 + TDD n41),
+    ...        * CA_n41C-n71A      (FDD n71 + TDD n41 + TDD n41)
+    ...    - NRBTS/NRCELL/primaryPathMaxQueueingDelay = 10ms
+    ...    - NRBTS/NRCELL/secondaryPathMaxQueueingDelay = 10ms
+
+    ...  *Test Steps:*
+    ...    Step 1: Blind SCells activation
+    ...    Step 2: NonGBR Data transmission in both directions
+    ...    Step 3: Decreasing maximum queueing delay for primary path
+    ...    Step 4: Decreasing maximum queueing delay for secondary paths
+    ...
+    ...  *Postconditions:*
+    ...    UE is configured with 3CC, all SCells remain active
+    ...    UE performs periodic CSI Measurements on all carriers: PCell and SCells
+    ...    gNB accepts CSI measurements via dedicated PUCCH Format3 resource from PCell and all SCell(s) on FDD PCell from the UE
+    ...
+    ...  *References:*
+    ...    [1] CFAM for 5GC002640 - https://gates.nsn-net.net/view/00024a24#o=0
+    ...
+    ...  *History:*
+    ...    v0.1 2021.07.23 Jakub Drabina – test case draft
+    ...    v0.2 2021.09.16 Jakub Drabina – test case update, adjustment to new template
+    ...    v0.3 2021.10.15 Jakub Drabina - test case update
+    ...    v0.4 2021.10.19 Jakub Drabina – remove default MCS verification
+    ...    v0.5 2021.11.04 Jakub Drabina – change traffic values to max possible on L1Bypass
+    ...    v1.0 2021.11.09 Jakub Drabina - review done: https://collab.ext.net.nokia.com/ui#review:id=844428
+
+    Register 3CC CA capable NR-UE1 to gNB-2 Cell-1
+    Establish PDU session for NR-UE1 and wait for SCells blind activation
+
+    Start SA traffic  ue=1  dir=dl  traffic_rate=350Mbps
+    Start SA traffic  ue=1  dir=ul  traffic_rate=10Mbps
+    Collect TTI Traces during 2 seconds and save to directory 3CC_blind_act_tput
+    Wait 60s for throughput stable
+    Verify if DL transmission is done via all 3 carriers
+    Verify if UL transmission is done via PCell only
+    Verify SA traffic  ue=1  dir=dl  expected_traffic=350Mbps
+    Verify SA traffic  ue=1  dir=ul  expected_traffic=10Mbps
+    Verify if UE performs CSI measurement reports on all carriers  phys_cells_ids=50,51,55
+    Verify if CSI measurement reports are done via dedicated PUCCH format3  pcell=50  scells=51,55
+    Verify CSI reports DTX ratio  phys_cells_ids=50,51,55  accepted_ratio=10
+
+    Stop SA traffic  ue=1
+    Release PDU session for NR-UE1
+    Deregister NR-UE1
+
+    Change to 0 maximum queueing delay for primary path on Cell-1
+    Register 3CC CA capable NR-UE1 to gNB-2 Cell-1
+    Establish PDU session for NR-UE1 and wait for SCells blind activation
+    Start SA traffic  ue=1  dir=dl  traffic_rate=350Mbps
+    Verify if DL transmission is done only via SCells
+
+    Stop SA traffic  ue=1
+    Release PDU session for NR-UE1
+    Deregister NR-UE1
+    Bring back maximum queueing delay
+
+    Change to 0 maximum queueing delay for secondary path on Cell-2
+    Register 3CC CA capable NR-UE1 to gNB-2 Cell-1
+    Establish PDU session for NR-UE1 and wait for SCells blind activation
+    Start SA traffic  ue=1  dir=dl  traffic_rate=350Mbps
+    Verify if DL transmission is done via Cell-1 and Cell-3
+
+    [Teardown]  Run keywords    Produce Scout Data                AND
+    ...                         Stop SA traffic  ue=1             AND
+    ...                         Release PDU session for NR-UE1    AND
+    ...                         Deregister NR-UE1                 AND
+    ...                         Bring back maximum queueing delay

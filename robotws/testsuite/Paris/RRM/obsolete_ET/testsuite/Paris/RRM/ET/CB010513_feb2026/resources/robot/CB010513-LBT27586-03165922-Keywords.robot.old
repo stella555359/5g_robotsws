@@ -1,0 +1,1151 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Common keyword of CB010513 feature
+...               Prerequisite :
+...               Scope : keywords for CB010513-ABIO
+...               Test execution duration     : approximately 30 minutes
+...               Test Case Scenario contact  : yann.merlin@nokia.com
+...               Test Case automation author : yann.merlin@nokia.com
+...               Test Case automation contact: yann.merlin@nokia.com
+...               Creation Date               : 14-08-2023
+...               Modified Date               : 14-08-2023
+...               Last Modified by            : yann.merlin@nokia.com
+...               Version History   Date        Author                          Notes
+...               0.1               FB2317      yann.merlin@nokia.com           Creation
+...               0.2               FB2317      yann.merlin@nokia.com           Verification of the Cell Mapping per L1SubPool
+...               0.3               FB2318      yann.merlin@nokia.com           Add verification of the PRB Demand and PRB Allocated
+...                                                                             with the enhanced PRB Pooling Algorithm
+...                                                                             update of the swconfig.txt
+...               0.4               FB2319      yann.merlin@nokia.com           KPI contrainst removed until resolution of
+...                                                                             https://jiradc.ext.net.nokia.com/browse/FIVEG_FTPS-49046
+...               0.5               FB2412      imen.mestiri@nokia.com          CNI-120470 sherpa to TTI
+...               0.6               FB2419      richard.duthu@nokia.com         Scout data + some fixes for RF50
+
+# Libraries SWENG
+
+Library           OperatingSystem
+Library           String
+Library           BuiltIn
+Library           ute_wtssim           WITH NAME    wts
+Library           ../../../../../resources/SWENG/python/PandasCsv.py
+Library           ../../../../../resources/SWENG/python/StringTool.py
+Library           ../../../resources/python/luashark_tools.py
+Library           luashark_tools.analyzer       WITH NAME       analyzer
+Library           taf.analyzer.sherpa                 WITH NAME    tafSherpaCsvReader
+Resource          taf/rfrl/common_resources/robot/preconditions.robot
+Resource          ../../../resources/common/TtiTrace/ttitrace.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../../../resources/SWENG/robot/Container.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+
+Variables           ../../../../../resources/SWENG/python/Colors.py
+
+Resource          ../../../CB008940/resources/robot/CB008940-Config.robot
+Resource          ../../../5GC001227/resources/robot/5GC001227-Common_keywords.robot
+Resource          ../../../CB008940/resources/robot/CB008940-Common-Keywords.robot
+Resource          ../../../CB008940/resources/robot/CB008940-G-Keywords.robot
+Resource          ../../../CB008940/resources/robot/CB008940-I-J-Keywords.robot
+Resource          ../../../CB008940/resources/robot/CB008940-Q-B2-Keywords.robot
+Resource          ../../../CB008940/resources/robot/CB008940-B-Keywords.robot
+Resource          ../../../CB008940/resources/robot/CB008940-F-Keywords.robot
+Resource          ../../../CB010513/resources/robot/CB010513-Common-Keywords.robot
+
+Library           ../python/check_TTItraces.py
+
+*** Variables ***
+
+${TDD_FR1_chBw_100MHz_NUM_MAX_PRB}                 273
+${TDD_FR1_chBw_100MHz_NUM_min_PRB}                 48
+# minimum of PRB that can be allocated to one C4 cell
+${NUM_MIN_PRB_DEFAULT}                                              48
+# maximum of PRB that can be allocated to one C4 cell
+${NUM_MAX_PRB_DEFAULT}                                              273
+
+${COL_NAME_SUBPOOLID}                                               SubPoolId
+${COL_NAME_NUMPRBALLOC}                                             PrbAllocated
+${COL_NAME_NumMinPrbAlloc}                                          NumMinPrbAlloc
+${COL_NAME_NumMaxPrbAlloc}                                          NumMaxPrbAlloc
+# L1 SubPool Capacity :
+${NUMAllocStreamPrb_L1SP0}                                          1200
+${NUMAllocStreamPrb_L1SP1}                                          1200
+${max_capa}                                                         2400
+${index_SP0}                                                        0
+${index_SP1}                                                        1
+
+${NRCELLID_1}                       0x4001
+${NRCELLID_2}                       0x4002
+${NRCELLID_3}                       0x4003
+
+
+${NRCELLID_1_idx}                   1
+${NRCELLID_2_idx}                   2
+${NRCELLID_3_idx}                   3
+
+${ZAB_Privileged_Value}             1
+${ZAB_No_Privileged_Value}          0
+${trf_id_1}                         1
+
+${l1l2_csv_file_name}                 micro__l1l2Trace.csv
+${DL_Pooling_Sherpa_Msg}              Dl PrbPoolingAllocationReport
+${UL_Pooling_Sherpa_Msg}              Ul PrbPoolingAllocationReport
+${DL_Pooling_Csv_Extracted}           Dl_PrbPoolingAllocationReport_45_.csv
+${UL_Pooling_Csv_Extracted}           Ul_PrbPoolingAllocationReport_45_.csv
+
+@{UL_Pooling_Report}      Ul PrbPoolingAllocationReport(45)
+@{DL_Pooling_Report}      Dl PrbPoolingAllocationReport(45)
+
+# KPI Constraint files
+# ${CONSTRAINTS_PATH}                     ${CURDIR}/config/counter/constraint
+${CONSTRAINTS_PATH}                     /home/ute/CrtRoot/robotws/testsuite/Paris/RRM/ET/CB010513/config/counter/constraint
+# /home/ute/CrtRoot/robotws/testsuite/Paris/RRM/ET/CB010513/resources/robot/config/counter/constraint/TC_CB010513_03165922_IntraL1Sp.csv
+${constraints_CB015013_03165922_IntraL1SubPool}          ${CONSTRAINTS_PATH}/TC_CB010513_03165922_IntraL1Sp.csv
+${constraints_CB015013_03165922_InterL1SubPool}          ${CONSTRAINTS_PATH}/TC_CB010513_03165922_InterL1Sp.csv
+${constraints_CB015013_C}                                ${CONSTRAINTS_PATH}/TC_CB010513_C_1_SA.csv
+
+*** Keywords ***
+
+TC 10513 Intra L1 sub-pool 8DL8UL nonGBR GBR UL and DL Traffic
+    [Documentation]
+    [Arguments]            ${param}
+    ...                    ${vendor_custom}
+    ...                    ${dict_ues}
+    ...                    ${nrCell}
+    Init Sequence          ${param}
+    ${test_name}           set variable    TC_CB010513_03165922_IntraL1Sp
+    Dated Log New Line     ${test_name}
+    Dated Log New Line     ${vendor_custom}
+    Step          Set RAD Params Of PRB Pooling Intra L1SubPool
+    Step          CB008940-Common-Keywords.Deploy Vendor File Config    vendor_param=${vendor_custom}
+    ...                    is_perform_full_commissioning=${False}
+    #  Verify nidd flag of the new enhanced PRB Pooling Algorithm
+    Dated Log New Line      Activate TDD PRB Pooling Enhanced Algorithm
+    #  Check SCF
+    ${current_scf}    String.Replace string    ${scf_suite_setup_backup}    _Suite_Setup_Backup.xml    ${EMPTY}
+    ${updated_scf}    catenate    SEPARATOR=${EMPTY}    ${current_scf}_FR1_TDD_PRB_Pooling_Enhanced_Algorithm_enabled.xml
+    ${std_output}=    Run    cp ${scf_suite_setup_backup} ${updated_scf}
+    Dated Log New Line      Update scf : ${updated_scf}
+    SCF StartSession        scf_file=${updated_scf}
+    scf.load_scf    ${updated_scf}
+    ${actBbPoolTddFr1AlgEnh}    scf.get_value_from_scf    p_name=actBbPoolTddFr1AlgEnh    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    Dated Log New Line       TDD PRB Pooling Enhanced Algorithm is set to : ${actBbPoolTddFr1AlgEnh}
+    # Definition of the objects dist_name
+    ${dist_name_mrbts}        Set Variable    MRBTS-${TMRBTS_ID[0]}
+    ${dist_name_nrbts}        Set Variable    ${dist_name_mrbts}/NRBTS-${TNRBTS_ID[0]}
+    # BtsName / update / + ${test_name}
+    SCF Set element    dist_name=${dist_name_mrbts}    element_name=btsName    element_value=${test_name}    scope=Classical
+    SCF Set element    dist_name=${dist_name_nrbts}    element_name=actBbPoolTddFr1AlgEnh    element_value=${True}    scope=Classical
+    [return]     ${actBbPoolTddFr1AlgEnh}
+    SCF StopSession                             scf_file=${updated_scf}
+    OAM Perform Full Commissioning              scf_file=${updated_scf}
+    OAM wait available
+    OAM Get SCF File                            file=SCF_Updated_PRB_Pooling_Enhanced_Algorithm_enabled.xml
+    Dated Log               SCF Update file =  ${updated_scf}
+    Dated Log New Line      Configure Ue's dynamically
+    ${initial_NbOfUe}       get length          ${dict_ues}
+    Run Keyword If    ${initial_NbOfUe} < ${param.totalNbOfUe}    CB008940-Common-Keywords.Configure New Ues    ${dict_ues}
+    ...                                                                                                         ${initial_NbOfUe}
+    ...                                                                                                         ${param.totalNbOfUe}
+    ...                                                                                                         ${dict_settings_ue_default}
+    # Configure the current setting for all the ue's
+    ${param.totalNbOfUe}    get length          ${dict_ues}
+    Dated Log New Line           Configure the setting for the ${param.totalNbOfUe} ue's
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.totalNbOfUe}
+        ${current_ue}=                Evaluate                      ${current_id} + 1
+        ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          pdu                 1
+        Set To Dictionary             ${current_ueSetting}          trf_id              ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          target_gnb          ${param.targetGnb}
+        # Dispatching each ue on the requested original cell for the call establishment
+        Set To Dictionary             ${current_ueSetting}          target_cells           ${dict_ues[${current_id}].originalCell}
+        # Set the correct requested throughput per ue
+        Set To Dictionary             ${current_ueSetting}          DL_throughput          ${dict_ues[${current_id}].DL_throughput}
+        Set To Dictionary             ${current_ueSetting}          DL_throughput_GBR      ${dict_ues[${current_id}].DL_throughput_GBR}
+        Set To Dictionary             ${current_ueSetting}          UL_throughput          ${dict_ues[${current_id}].UL_throughput}
+        Append To List                ${listOfUes}                  ${current_ueSetting}
+    END
+    Dated Log New Line                UE_List=${listOfUes}
+    CB008940-Common-Keywords.Check Multi Ues Setting In List        multiUesList=${listOfUes}
+    # Setup wtsemu SA for all the ue's
+    Dated Log New Line      Setup wtsemu SA for all the ue's
+    Critical Step           CallSetup.Setup Wtsemu SA               nbUe=${param.totalNbOfUe}
+    ...                                                             nbSaUe=${param.totalNbOfUe}
+    ...                                                             shouldUseLua=${False}
+    ###...                                                          nbCell=${param.totalNbOfCell}
+    ...                                                             list_of_UE_tobe_created=${listOfUes}
+    Traced Sleep    duration=15s    msg=setting the X2 link as WA to avoid degradation on cells
+    Step            CallSetup.WTS Set X2 Link
+    Dated Log New Line         UE's registration
+    # Register and launch PDU for all the ue's
+    FOR    ${current_elem}    IN    @{listOfUes}
+                            Critical Step       CallSetup.UE Register           ue=${current_elem.ue}
+        ...                 depends=CallSetup.Setup Wtsemu SA
+                            Critical Step       CallSetup.Launch PDU Session    ue=${current_elem.ue}
+        ...                                                                     pdu=${current_elem.pdu}
+        ...                                                                     gw=1
+        ...                 depends=CallSetup.UE Register
+    END
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        set test variable   ${current_elem}
+        ${dir}=   set Variable If    ${current_elem.DL_throughput} > ${0}    DL
+        ...                                                                  NONE
+        ${kw to run}=   Catenate   ${dir} Traffic SA Not Stopped with "${current_elem.DL_throughput}"Mbps "${param.duration}"s duration
+        ...                        and "${param.deviation}" percent deviation
+        Run Keyword If      ${current_elem.DL_throughput} > ${0}
+        ...      Critical Step     ${kw to run}       depends=CallSetup.Launch PDU Session
+
+        ${dir}=   set Variable If    ${current_elem.UL_throughput} > ${0}    UL
+        ...                                                                  NONE
+        ${kw to run}=   Catenate   ${dir} Traffic SA Not Stopped with "${current_elem.UL_throughput}"Mbps "${param.duration}"s duration
+        ...                        and "${param.deviation}" percent deviation
+        Run Keyword If      ${current_elem.UL_throughput} > ${0}
+        ...      Critical Step     ${kw to run}       depends=CallSetup.Launch PDU Session
+    END
+    # PDU session modify reserved for the ue's configured with GBR traffic
+    ${nbOfUe_traffic_GBR}=   CB008940-Q-B2-Keywords.Get Number Of Ue Configured With GBR Traffic    dict_ues=${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        CallSetup.UE PDU Session Modify       ue=${current_elem.ue}
+        ...                                   pdu=${current_elem.pdu}
+        ...                                   qfta=2
+        ...                                   by=amf
+    END
+    # Start the GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        set test variable   ${current_elem}
+        ${dir}=   set Variable If    ${current_elem.DL_throughput_GBR} > ${0}    DL
+        ...                                                                      NONE
+        ${kw to run}=   Catenate    ${dir} Traffic GBR SA Not Stopped with "${current_elem.DL_throughput_GBR}"Mbps "${param.duration}"s duration
+        ...                         and "${param.deviation}" percent deviation
+        Run Keyword If      '${current_elem.DL_throughput_GBR}' != '0'
+        ...    Critical Step   ${kw to run}    depends=CallSetup.Launch PDU Session
+    END
+    Step    Activate Sherpa On All Cells
+    Step    sleep    4s
+    Step    Stop Sherpa Collection
+    Step    CB010513-LBT27586-03165922-Keywords.TTI Trace Collection
+    Step    Calling Panda Extract Csv function
+    Step    CB008940-Common-Keywords.Verification of BB Pooling Mode within PRB Pooling Allocation Report    pool_id=10
+    Step    CB008940-Common-Keywords.Verification of Pool Id within PRB Pooling Report    pool_id=10    subpool_id=0
+    Step    CB008940-Common-Keywords.Verification of Pool Id within PRB Pooling Report    pool_id=10    subpool_id=1
+    Step    CB008940-Common-Keywords.Verification of BB Pooling cell distribution within PRB Pooling Report    nrCell_id=0x4001    subpool_id=0
+    Step    CB008940-Common-Keywords.Verification of BB Pooling cell distribution within PRB Pooling Report    nrCell_id=0x4002    subpool_id=1
+    Step    CB008940-Common-Keywords.Verification of BB Pooling cell distribution within PRB Pooling Report    nrCell_id=0x4003    subpool_id=0
+    Step    CB010513 IntraL1SubPool Verification of NumMinPrbAlloc NumMaxPrbAlloc
+    Step    CB008940-Common-Keywords.Verification of Stream PRB Information within PRB Pooling Report    stream_prb_capa=1200
+    ...                                                                                                  alloc_stream_prb=1200
+    ...                                                                                                  subpool_id=0
+    Step    CB008940-Common-Keywords.Verification of Stream PRB Information within PRB Pooling Report    stream_prb_capa=1200
+    ...                                                                                                  alloc_stream_prb=1092
+    ...                                                                                                  subpool_id=1
+    Step    Verify noZAB Eligible Cells IntraL1Sp
+    Step    CB010513 IntraL1SubPool Verification of DL PRB Demand
+    Step    CB010513 IntraL1SubPool Verification of DL PRB Allocation
+#   SWENG 3.15.53 KPIs.robot AttributeError NoneType Object issue preventing belows KPI https://jiradc.ext.net.nokia.com/browse/FIVEG_FTPS-49046
+#    FOR    ${iteration_pm}    IN RANGE    0    2
+#            Sleep Until PM Availability
+#            ${pm_path}    Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+#            KPIs.KPI Evaluate    pmFile=${pm_path}
+#            ...     constraintsFile=${constraints_CB015013_03165922_IntraL1SubPool}
+#            ...     localKpiFile=None
+#            ...     failOnError=False
+#    END
+    # Unregister all the ue's
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Run Keyword If      ${current_elem.target_cells} != ${nrCell}
+        ...                 Step      CallSetup.UE Deregister       id=${current_elem.ue}
+        ###...                                                      ue_deregister_type=switch_off
+        ###...                                                      by=ue
+        ...                                                         depends=CallSetup.UE Register
+    END
+
+Check Counter And KPI Constraints
+    [Documentation]
+    ...    Parse a PM file and evaluate all constraints embedded in a Constraint file, to check they are respected (inside thresholds).
+    ...    If some errors appear during constraint file parsing, constraints are put in drop list with a particular status:
+    ...    CSV_ERROR (error in CSV file), NO_KPI (kpi not found), OUT_OF_SCOPE (constraint scope not in line with current branch of TL),
+    ...    NOT_GENERIC_FORMAT (constraint name ends with a version char).
+    ...    After evaluation, each kept constraint is display with a status, that can be :
+    ...     - NOT_CHECKED : No occurence of (oam object id/PM) found matching this constraint.
+    ...     - PASSED : PM inside threshold.
+    ...     - FAILED : PM outside threshold.
+    ...     - KEY_ERROR : kpi/counter not found in PM file.
+    ...    If some errors occur and ${failOnError} flag is set to ${True}, Test will fail.
+
+    [Arguments]            ${pm_path}    ${test_name}
+    Dated Log       Starts PRB Pooling Counter and KPI analysis according to constraints file
+    Dated Log       The PM counters file collected from gnb will be stored under ${pm_path}
+    ${test_name}            set variable    TC_CB010513_03165922_IntraL1Sp
+    KPIs.KPI Evaluate    pmFile=${pm_path}
+#   ...    constraintsFile=/home/ute/CrtRoot/robotws/testsuite/Paris/RRM/ET/CB010513/config/counter/constraint/TC_CB010513_03165922_IntraL1Sp.csv
+#   ...    constraintsFile=${constraints_CB015013_03165922_IntraL1SubPool}
+    ...    constraintsFile=${CURDIR}/../../config/counter/constraint/${test_name}.csv
+    ...    localKpiFile=${None}
+    ...    failOnError=${True}
+    Dated Log       ===> check counter and KPI constraints is ended
+
+TTI TC 10513 Inter L1 sub-pool 8DL8UL nonGBR GBR UL and DL Traffic
+    [Documentation]
+    [Arguments]            ${param}
+    ...                    ${vendor_custom}
+    ...                    ${dict_ues}
+    ...                    ${nrCell}
+    Init Sequence          ${param}
+    ${test_name}           set variable    TC_CB010513_03165922_InterL1Sp
+    Dated Log New Line     ${test_name}
+    Dated Log New Line     ${vendor_custom}
+    Dated Log New Line     ${nrCell}
+    Step          Set RAD Params Of PRB Pooling Inter L1SubPool
+    Step          CB008940-Common-Keywords.Deploy Vendor File Config    vendor_param=${vendor_custom}
+    ...                    is_perform_full_commissioning=${False}
+    #  Verify nidd flag of the new enhanced PRB Pooling Algorithm
+    Dated Log New Line      Activate TDD PRB Pooling Enhanced Algorithm
+    #  Check SCF
+    ${current_scf}    String.Replace string    ${scf_suite_setup_backup}    _Suite_Setup_Backup.xml    ${EMPTY}
+    ${updated_scf}    catenate    SEPARATOR=${EMPTY}    ${current_scf}_FR1_TDD_PRB_Pooling_Enhanced_Algorithm_enabled.xml
+    ${std_output}=    Run    cp ${scf_suite_setup_backup} ${updated_scf}
+    Dated Log New Line      Update scf : ${updated_scf}
+    SCF StartSession        scf_file=${updated_scf}
+    scf.load_scf    ${updated_scf}
+    ${actBbPoolTddFr1AlgEnh}    scf.get_value_from_scf    p_name=actBbPoolTddFr1AlgEnh    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    Dated Log New Line       TDD PRB Pooling Enhanced Algorithm is set to : ${actBbPoolTddFr1AlgEnh}
+    # Definition of the objects dist_name
+    ${dist_name_mrbts}        Set Variable    MRBTS-${TMRBTS_ID[0]}
+    Dated Log New Line        dist_name_mrbts is ${dist_name_mrbts}
+    ${dist_name_nrbts}        Set Variable    ${dist_name_mrbts}/NRBTS-${TNRBTS_ID[0]}
+    Dated Log New Line        dist_name_nrbts is ${dist_name_nrbts}
+    # BtsName / update / + ${test_name}
+    SCF Set element    dist_name=${dist_name_mrbts}    element_name=btsName    element_value=${test_name}    scope=Classical
+    SCF Set element    dist_name=${dist_name_nrbts}    element_name=actBbPoolTddFr1AlgEnh    element_value=${True}    scope=Classical
+    [return]     ${actBbPoolTddFr1AlgEnh}
+    SCF StopSession                             scf_file=${updated_scf}
+    OAM Perform Full Commissioning              scf_file=${updated_scf}
+    OAM wait available
+    OAM Get SCF File                            file=SCF_Updated_PRB_Pooling_Enhanced_Algorithm_enabled.xml
+    Dated Log               SCF Update file =  ${updated_scf}
+    Dated Log New Line      Configure Ue's dynamically
+    ${initial_NbOfUe}       get length          ${dict_ues}
+    Run Keyword If    ${initial_NbOfUe} < ${param.totalNbOfUe}    CB008940-Common-Keywords.Configure New Ues    ${dict_ues}
+    ...                                                                                                         ${initial_NbOfUe}
+    ...                                                                                                         ${param.totalNbOfUe}
+    ...                                                                                                         ${dict_settings_ue_default}
+    # Configure the current setting for all the ue's
+    ${param.totalNbOfUe}    get length          ${dict_ues}
+    Dated Log New Line           Configure the setting for the ${param.totalNbOfUe} ue's
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.totalNbOfUe}
+        ${current_ue}=                Evaluate                      ${current_id} + 1
+        ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          pdu                 1
+        Set To Dictionary             ${current_ueSetting}          trf_id              ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          target_gnb          ${param.targetGnb}
+       # Dispatching each ue on the requested original cell for the call establishment
+        Set To Dictionary             ${current_ueSetting}          target_cells           ${dict_ues[${current_id}].originalCell}
+       # Set the correct requested throughput per ue
+        Set To Dictionary             ${current_ueSetting}          DL_throughput          ${dict_ues[${current_id}].DL_throughput}
+        Set To Dictionary             ${current_ueSetting}          DL_throughput_GBR      ${dict_ues[${current_id}].DL_throughput_GBR}
+        Set To Dictionary             ${current_ueSetting}          UL_throughput          ${dict_ues[${current_id}].UL_throughput}
+        Append To List                ${listOfUes}                  ${current_ueSetting}
+    END
+    Dated Log New Line                UE_List=${listOfUes}
+    CB008940-Common-Keywords.Check Multi Ues Setting In List        multiUesList=${listOfUes}
+    # Setup wtsemu SA for all the ue's
+    Dated Log New Line      Setup wtsemu SA for all the ue's
+    Critical Step           CallSetup.Setup Wtsemu SA               nbUe=${param.totalNbOfUe}
+    ...                                                             nbSaUe=${param.totalNbOfUe}
+    ...                                                             shouldUseLua=${False}
+    ###...                                                          nbCell=${param.totalNbOfCell}
+    ...                                                             list_of_UE_tobe_created=${listOfUes}
+    Traced Sleep    duration=15s    msg=setting the X2 link as WA to avoid degradation on cells
+    Step            CallSetup.WTS Set X2 Link
+    Dated Log New Line         UE's registration
+    # Register and launch PDU for all the ue's
+    FOR    ${current_elem}    IN    @{listOfUes}
+                            Critical Step       CallSetup.UE Register
+        ...                                                         ue=${current_elem.ue}
+        ...                 depends=CallSetup.Setup Wtsemu SA
+                            Critical Step       CallSetup.Launch PDU Session
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         gw=${current_elem.ue}
+        ...                 depends=CallSetup.UE Register
+    END
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        set test variable   ${current_elem}
+        ${dir}=   set Variable If    ${current_elem.DL_throughput} > ${0}    DL
+        ...                                                                  NONE
+        ${kw to run}=   Catenate   ${dir} Traffic SA Not Stopped with "${current_elem.DL_throughput}"Mbps "${param.duration}"s duration
+        ...                        and "${param.deviation}" percent deviation
+        Run Keyword If      ${current_elem.DL_throughput} > ${0}
+        ...      Critical Step     ${kw to run}       depends=CallSetup.Launch PDU Session
+
+        ${dir}=   set Variable If    ${current_elem.UL_throughput} > ${0}    UL
+        ...                                                                  NONE
+        ${kw to run}=   Catenate   ${dir} Traffic SA Not Stopped with "${current_elem.UL_throughput}"Mbps "${param.duration}"s duration
+        ...                        and "${param.deviation}" percent deviation
+        Run Keyword If      ${current_elem.UL_throughput} > ${0}
+        ...      Critical Step     ${kw to run}       depends=CallSetup.Launch PDU Session
+    END
+    # PDU session modify reserved for the ue's configured with GBR traffic
+    ${nbOfUe_traffic_GBR}=   CB008940-Q-B2-Keywords.Get Number Of Ue Configured With GBR Traffic    dict_ues=${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        CallSetup.UE PDU Session Modify       ue=${current_elem.ue}
+        ...                                   pdu=${current_elem.pdu}
+        ...                                   qfta=2
+        ...                                   by=amf
+    END
+    # Start the GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        set test variable   ${current_elem}
+        ${dir}=   set Variable If    ${current_elem.DL_throughput_GBR} > ${0}    DL
+        ...                                                                      NONE
+        ${kw to run}=   Catenate    ${dir} Traffic GBR SA Not Stopped with "${current_elem.DL_throughput_GBR}"Mbps "${param.duration}"s duration
+        ...                         and "${param.deviation}" percent deviation
+        Run Keyword If      '${current_elem.DL_throughput_GBR}' != '0'
+        ...    Critical Step   ${kw to run}    depends=CallSetup.Launch PDU Session
+    END
+    Step    CB010513-LBT27586-03165922-Keywords.TTI Trace Collection
+    ${jsonPathName}          Set Variable                       ${TTIjson}
+    Step    TTI Verification of Pool Id for given Subpool Id        json_file=${jsonPathName}
+    ...                                                             pool_id=9
+    ...                                                             subpool_id=0
+    Step    TTI Verification of Pool Id for given Subpool Id        pool_id=9         subpool_id=1       json_file=${jsonPathName}
+    Step    TTI Verify ZAB Eligible Cell InterL1Sp                  NRCellId=16385    expected_ZAB_value=0     json_file=${jsonPathName}
+    Step    TTI Verify ZAB Eligible Cell InterL1Sp                  NRCellId=16386    expected_ZAB_value=0     json_file=${jsonPathName}
+    Step    TTI Verify ZAB Eligible Cell InterL1Sp                  NRCellId=16387    expected_ZAB_value=1     json_file=${jsonPathName}
+    Step    TTI Verification of DL PRB Allocation Consistency       pool_id=9         pool_max_num_stream_prb=2400        json_file=${jsonPathName}
+    Step    TTI Verification of DL PRB Allocation within a range of min and max values      NRCellId=16385
+    ...                                                                                     min_prb_value=180
+    ...                                                                                     max_prb_value=214
+    ...                                                                                     json_file=${jsonPathName}
+    Step    TTI Verification of DL PRB Allocation within a range of min and max values      NRCellId=16386
+    ...                                                                                     min_prb_value=122
+    ...                                                                                     max_prb_value=148
+    ...                                                                                     json_file=${jsonPathName}
+    Step    TTI Verification of DL PRB Allocation within a range of min and max values      NRCellId=16387
+    ...                                                                                     min_prb_value=240
+    ...                                                                                     max_prb_value=273
+    ...                                                                                     json_file=${jsonPathName}
+
+#   SWENG 3.15.53 KPIs.robot AttributeError NoneType Object issue preventing belows KPI https://jiradc.ext.net.nokia.com/browse/FIVEG_FTPS-49046
+#    FOR    ${iteration_pm}    IN RANGE    0    2
+#            Sleep Until PM Availability
+#            ${pm_path}    Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+#            KPIs.KPI Evaluate    pmFile=${pm_path}
+#            ...     constraintsFile=${constraints_CB015013_03165922_IntraL1SubPool}
+#            ...     localKpiFile=None
+#            ...     failOnError=False
+#    END
+#    FOR    ${current_elem}    IN    @{listOfUes}
+#        Run Keyword If      ${current_elem.target_cells} != ${nrCell}
+#        ...                 Step      CallSetup.UE Deregister       id=${current_elem.ue}
+#        ...                                                         depends=CallSetup.UE Register
+#    END
+
+#===== checks TTI KWs start =====
+
+TTI Verification of Pool Id for given Subpool Id
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${pool_id} ${subpool_id} ${json_file}
+    ...     Actions:        it verifies the pool id of the recommended sub pool id
+    ...     Checks:         it checks the values within ul and dl InterL1SubpoolReconfData
+    ...     Verdict:        pool id value is as expected
+    [Arguments]             ${json_file}
+    ...                     ${pool_id}
+    ...                     ${subpool_id}
+    Dated Log New Line     ===> Check if l1PoolId = ${pool_id} for subPoolId= ${subpool_id}
+    ${result_check}        checkPoolId       ${json_file}     ${pool_id}     ${subpool_id}
+    Should Be True         ${result_check}
+
+TTI Verify ZAB Eligible Cell InterL1Sp
+    [Documentation]         To check the zab previleged cell
+    [Arguments]             ${NRCellId}
+    ...                     ${expected_ZAB_value}
+    ...                     ${json_file}
+
+    Dated Log New Line    ===> check that NRCellID ${NRCellId} has ${expected_ZAB_value} ZAB priviledge
+
+    ${ZAB_check}           checkZABPrivilege       ${NRCellId}     ${expected_ZAB_value}        ${json_file}
+    Should Be True         ${ZAB_check}
+
+TTI Verification of DL PRB Allocation Consistency
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${pool_id} ${pool_max_num_stream_prb}
+    ...     Actions:        it verifies consistency of PRB allocation
+    ...     Checks:         it checks the values within ul and dl InterL1SubpoolReconfData
+    ...     Verdict:        poolMaxNumStreamPrb value is as expected && StreamPrbCapacityPerSp is consistent
+    [Arguments]             ${pool_id}
+    ...                     ${pool_max_num_stream_prb}
+    ...                     ${json_file}
+    Dated Log New Line    ===> check that l1SubPoolStreamPrbCapacity value is consistent
+    ${result_check}        check_l1SubPoolStreamPrbCapacity_consistency    ${pool_id}    ${pool_max_num_stream_prb}    ${json_file}
+    Should Be True         ${result_check}
+
+TTI Verification of DL PRB Allocation within a range of min and max values
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${NRCellId} ${min_prb_value} ${max_prb_value}
+    ...     Actions:        it verifies PRB Allocated within a range of min and max values
+    ...     Checks:         it checks the values within dl InterL1SubpoolReconfData
+    ...     Verdict:        numAllocCellPrbDl values are as expected
+    [Arguments]             ${NRCellId}
+    ...                     ${min_prb_value}
+    ...                     ${max_prb_value}
+    ...                     ${json_file}
+    Dated Log New Line    ===> check numAllocCellPrbDl values for nrCellIdentity=${NRCellId}
+    ${result_check}        check_numAllocCellPrbDl_within_a_range    ${NRCellId}    ${min_prb_value}    ${max_prb_value}    ${json_file}
+    Should Be True         ${result_check}
+
+#===== checks TTI KWs end =====
+
+TC 10513 Inter L1 sub-pool 8DL8UL nonGBR GBR UL and DL Traffic
+    [Documentation]
+    [Arguments]            ${param}
+    ...                    ${vendor_custom}
+    ...                    ${dict_ues}
+    ...                    ${nrCell}
+    Init Sequence          ${param}
+    ${test_name}           set variable    TC_CB010513_03165922_InterL1Sp
+    Dated Log New Line     ${test_name}
+    Dated Log New Line     ${vendor_custom}
+    Step          Set RAD Params Of PRB Pooling Inter L1SubPool
+    Step          CB008940-Common-Keywords.Deploy Vendor File Config    vendor_param=${vendor_custom}
+    ...                    is_perform_full_commissioning=${False}
+    #  Verify nidd flag of the new enhanced PRB Pooling Algorithm
+    Dated Log New Line      Activate TDD PRB Pooling Enhanced Algorithm
+    #  Check SCF
+    ${current_scf}    String.Replace string    ${scf_suite_setup_backup}    _Suite_Setup_Backup.xml    ${EMPTY}
+    ${updated_scf}    catenate    SEPARATOR=${EMPTY}    ${current_scf}_FR1_TDD_PRB_Pooling_Enhanced_Algorithm_enabled.xml
+    ${std_output}=    Run    cp ${scf_suite_setup_backup} ${updated_scf}
+    Dated Log New Line      Update scf : ${updated_scf}
+    SCF StartSession        scf_file=${updated_scf}
+    scf.load_scf    ${updated_scf}
+    ${actBbPoolTddFr1AlgEnh}    scf.get_value_from_scf    p_name=actBbPoolTddFr1AlgEnh    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    Dated Log New Line       TDD PRB Pooling Enhanced Algorithm is set to : ${actBbPoolTddFr1AlgEnh}
+    # Definition of the objects dist_name
+    ${dist_name_mrbts}        Set Variable    MRBTS-${TMRBTS_ID[0]}
+    Dated Log New Line        dist_name_mrbts is ${dist_name_mrbts}
+    ${dist_name_nrbts}        Set Variable    ${dist_name_mrbts}/NRBTS-${TNRBTS_ID[0]}
+    Dated Log New Line        dist_name_nrbts is ${dist_name_nrbts}
+    # BtsName / update / + ${test_name}
+    SCF Set element    dist_name=${dist_name_mrbts}    element_name=btsName    element_value=${test_name}    scope=Classical
+    SCF Set element    dist_name=${dist_name_nrbts}    element_name=actBbPoolTddFr1AlgEnh    element_value=${True}    scope=Classical
+    [return]     ${actBbPoolTddFr1AlgEnh}
+    SCF StopSession                             scf_file=${updated_scf}
+    OAM Perform Full Commissioning              scf_file=${updated_scf}
+    OAM wait available
+    OAM Get SCF File                            file=SCF_Updated_PRB_Pooling_Enhanced_Algorithm_enabled.xml
+    Dated Log               SCF Update file =  ${updated_scf}
+    Dated Log New Line     Configure Ue's dynamically
+    ${initial_NbOfUe}       get length          ${dict_ues}
+    Run Keyword If    ${initial_NbOfUe} < ${param.totalNbOfUe}    CB008940-Common-Keywords.Configure New Ues    ${dict_ues}
+    ...                                                                                                         ${initial_NbOfUe}
+    ...                                                                                                         ${param.totalNbOfUe}
+    ...                                                                                                         ${dict_settings_ue_default}
+    # Configure the current setting for all the ue's
+    ${param.totalNbOfUe}    get length          ${dict_ues}
+    Dated Log New Line           Configure the setting for the ${param.totalNbOfUe} ue's
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.totalNbOfUe}
+        ${current_ue}=                Evaluate                      ${current_id} + 1
+        ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          pdu                 1
+        Set To Dictionary             ${current_ueSetting}          trf_id              ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          target_gnb          ${param.targetGnb}
+        # Dispatching each ue on the requested original cell for the call establishment
+        Set To Dictionary             ${current_ueSetting}          target_cells           ${dict_ues[${current_id}].originalCell}
+        # Set the correct requested throughput per ue
+        Set To Dictionary             ${current_ueSetting}          DL_throughput          ${dict_ues[${current_id}].DL_throughput}
+        Set To Dictionary             ${current_ueSetting}          DL_throughput_GBR      ${dict_ues[${current_id}].DL_throughput_GBR}
+        Set To Dictionary             ${current_ueSetting}          UL_throughput          ${dict_ues[${current_id}].UL_throughput}
+        Append To List                ${listOfUes}                  ${current_ueSetting}
+    END
+    Dated Log New Line                UE_List=${listOfUes}
+    CB008940-Common-Keywords.Check Multi Ues Setting In List        multiUesList=${listOfUes}
+    # Setup wtsemu SA for all the ue's
+    Dated Log New Line      Setup wtsemu SA for all the ue's
+    Critical Step           CallSetup.Setup Wtsemu SA               nbUe=${param.totalNbOfUe}
+    ...                                                             nbSaUe=${param.totalNbOfUe}
+    ...                                                             shouldUseLua=${False}
+    ###...                                                          nbCell=${param.totalNbOfCell}
+    ...                                                             list_of_UE_tobe_created=${listOfUes}
+    Traced Sleep    duration=15s    msg=setting the X2 link as WA to avoid degradation on cells
+    Step            CallSetup.WTS Set X2 Link
+    Dated Log New Line         UE's registration
+    # Register and launch PDU for all the ue's
+    FOR    ${current_elem}    IN    @{listOfUes}
+                            Critical Step       CallSetup.UE Register
+        ...                                                         ue=${current_elem.ue}
+        ...                 depends=CallSetup.Setup Wtsemu SA
+                            Critical Step       CallSetup.Launch PDU Session
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         gw=${current_elem.ue}
+        ...                 depends=CallSetup.UE Register
+    END
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        set test variable   ${current_elem}
+        ${dir}=   set Variable If    ${current_elem.DL_throughput} > ${0}    DL
+        ...                                                                  NONE
+        ${kw to run}=   Catenate   ${dir} Traffic SA Not Stopped with "${current_elem.DL_throughput}"Mbps "${param.duration}"s duration
+        ...                        and "${param.deviation}" percent deviation
+        Run Keyword If      ${current_elem.DL_throughput} > ${0}
+        ...      Critical Step     ${kw to run}       depends=CallSetup.Launch PDU Session
+
+        ${dir}=   set Variable If    ${current_elem.UL_throughput} > ${0}    UL
+        ...                                                                  NONE
+        ${kw to run}=   Catenate   ${dir} Traffic SA Not Stopped with "${current_elem.UL_throughput}"Mbps "${param.duration}"s duration
+        ...                        and "${param.deviation}" percent deviation
+        Run Keyword If      ${current_elem.UL_throughput} > ${0}
+        ...      Critical Step     ${kw to run}       depends=CallSetup.Launch PDU Session
+    END
+    # PDU session modify reserved for the ue's configured with GBR traffic
+    ${nbOfUe_traffic_GBR}=   CB008940-Q-B2-Keywords.Get Number Of Ue Configured With GBR Traffic    dict_ues=${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        CallSetup.UE PDU Session Modify       ue=${current_elem.ue}
+        ...                                   pdu=${current_elem.pdu}
+        ...                                   qfta=2
+        ...                                   by=amf
+    END
+    # Start the GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        set test variable   ${current_elem}
+        ${dir}=   set Variable If    ${current_elem.DL_throughput_GBR} > ${0}    DL
+        ...                                                                      NONE
+        ${kw to run}=   Catenate    ${dir} Traffic GBR SA Not Stopped with "${current_elem.DL_throughput_GBR}"Mbps "${param.duration}"s duration
+        ...                         and "${param.deviation}" percent deviation
+        Run Keyword If      '${current_elem.DL_throughput_GBR}' != '0'
+        ...    Critical Step   ${kw to run}    depends=CallSetup.Launch PDU Session
+    END
+    Step    Activate Sherpa On All Cells
+    Step    sleep    10s
+    Step    Stop Sherpa Collection
+    Step    CB010513-LBT27586-03165922-Keywords.TTI Trace Collection
+    Step    Calling Panda Extract Csv function
+    Step    CB008940-Common-Keywords.Verification of BB Pooling Mode within PRB Pooling Allocation Report    pool_id=10
+    Step    CB008940-Common-Keywords.Verification of Pool Id within PRB Pooling Report    pool_id=10    subpool_id=0
+    Step    CB008940-Common-Keywords.Verification of Pool Id within PRB Pooling Report    pool_id=10    subpool_id=1
+    Step    CB008940-Common-Keywords.Verification of BB Pooling cell distribution within PRB Pooling Report    nrCell_id=0x4001    subpool_id=0
+    Step    CB008940-Common-Keywords.Verification of BB Pooling cell distribution within PRB Pooling Report    nrCell_id=0x4002    subpool_id=1
+    Step    CB008940-Common-Keywords.Verification of BB Pooling cell distribution within PRB Pooling Report    nrCell_id=0x4003    subpool_id=0
+    Step    CB010513 InterL1SubPool Verification of NumMinPrbAlloc NumMaxPrbAlloc
+    Step    CB010513-Common-Keywords.Verification of Stream PRB Information within PRB Pooling Report    stream_prb_capa=1800
+    ...                                                                                                  alloc_stream_prb=1800
+    ...                                                                                                  subpool_id=0
+    ...                                                                                                  check_operator=>
+    Step    CB010513-Common-Keywords.Verification of Stream PRB Information within PRB Pooling Report    stream_prb_capa=500
+    ...                                                                                                  alloc_stream_prb=500
+    ...                                                                                                  subpool_id=1
+    ...                                                                                                  check_operator=>
+    Step    Verify ZAB Eligible Cells InterL1Sp
+    Step    CB010513 InterL1SubPool Verification of DL PRB Demand
+    Step    CB010513 InterL1SubPool Verification of DL PRB Allocation
+
+#   SWENG 3.15.53 KPIs.robot AttributeError NoneType Object issue preventing belows KPI https://jiradc.ext.net.nokia.com/browse/FIVEG_FTPS-49046
+#    FOR    ${iteration_pm}    IN RANGE    0    2
+#            Sleep Until PM Availability
+#            ${pm_path}    Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+#            KPIs.KPI Evaluate    pmFile=${pm_path}
+#            ...     constraintsFile=${constraints_CB015013_03165922_IntraL1SubPool}
+#            ...     localKpiFile=None
+#            ...     failOnError=False
+#    END
+
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Run Keyword If      ${current_elem.target_cells} != ${nrCell}
+        ...                 Step      CallSetup.UE Deregister       id=${current_elem.ue}
+        ...                                                         depends=CallSetup.UE Register
+    END
+
+Suite Setup CB010513-ABIO
+    [Documentation]
+    ...     Conditions:     customs configurations scf et basic setup
+    ...     Actions:        it performs the generic suite setup and backup the configurations files
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        suite setup is passed
+    [Arguments]             ${scfPath}=${EMPTY}
+    ...                     ${basiccfgPath}=${EMPTY}
+    Setup.Suite Setup From Scratch
+    ...                     keepAllUeDataInCfgFile=${True}
+    ...                     automaticTeardown=${True}
+    ...                     scfcPathname=${scfPath}
+    ...                     basicPathname=${basiccfgPath}
+    Backup Files
+    ${scf_suite_setup_backup}         OAM Get SCF File    file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable      ${scf_suite_setup_backup}
+    Dated Log               SCF backup file = ${scf_suite_setup_backup}
+
+Set RAD Params Of PRB Pooling Intra L1SubPool
+   [Documentation]      Add the RAD params to enable the new PRB Pooling Enhancement
+    ...                 will be replaced in 24R1 by NIDD param actBbPoolTddFr1AlgEnh
+    ...                 0x580787=1 : actBbPoolTddFr1AlgEnh=True - 0 : Disabled - 1 : Enabled
+    ...                 0x580117=1 : CSI-RS Event Sherpa
+    ...                 0x58066a=1 : InterL1SubPool    - 0 : Disabled(IntraL1SubPool) - 1 : Enabled(InterL1SubPool)
+    ...                 0x580690=0 : ZAB Disabled
+    ...                 0x420080=0 : rdTddSubCellDeactivation  CB09890 BB pooling Subcell deactivation
+    Dated Log New Line   Set RAD Params Of PRB Pooling enhancement and Disable Inter L1SubPool ......
+    ${rad_param_1}=      create dictionary       field=0x580117    value=1
+    ${rad_param_2}=      create dictionary       field=0x580787    value=1
+    ${rad_param_3}=      create dictionary       field=0x58066a    value=0
+    ${rad_param_4}=      create dictionary       field=0x420080    value=0
+    ${rad_param_5}=      create dictionary       field=0x580690    value=0
+    ${rad_param_list}=       Create List         ${rad_param_1}
+#   ...                                          ${rad_param_2}  actBbPoolTddFr1AlgEnh enabled via Nidd
+    ...                                          ${rad_param_3}
+#   ...                                          ${rad_param_4}
+    ...                                          ${rad_param_5}
+    Dated Log New Line    RAD params:  ${rad_param_list}
+    SetConfig.Set Fields in swconfig DU       param_list=${rad_param_list}
+    Dated Log New Line   RAD params of the new 24R1 PRB Pooling enhancement completed
+
+Set RAD Params Of PRB Pooling Inter L1SubPool
+   [Documentation]      Add RAD params to force new PRB Pooling Enhancement Algoritm until 24R1 release
+    ...                 will be replaced in 24R1 by NIDD param actBbPoolTddFr1AlgEnh
+    ...                 0x580117=1 : CSI-RS Event Sherpa
+    ...                 0x580787=1 : actBbPoolTddFr1AlgEnh=True - 0 : Disabled - 1 : Enabled
+    ...                 0x58066a=1 : InterL1SubPool    - 0 : IntraL1SubPool - 1 : InterL1SubPool
+    ...                 0x420080=0 : rdTddSubCellDeactivation
+    ...                 0x580690=1 : ZAB enabled
+    Dated Log New Line   Set RAD Params Of PRB Pooling enhancement and Disable Inter L1SubPool ......
+    ${rad_param_1}=      create dictionary       field=0x580117    value=1
+    ${rad_param_2}=      create dictionary       field=0x580787    value=1
+    ${rad_param_3}=      create dictionary       field=0x58066a    value=1
+    ${rad_param_4}=      create dictionary       field=0x420080    value=0
+    ${rad_param_5}=      create dictionary       field=0x580690    value=1
+    ${rad_param_list}=       Create List         ${rad_param_1}
+#   ...                                          ${rad_param_2}
+    ...                                          ${rad_param_3}
+#   ...                                          ${rad_param_4}
+    ...                                          ${rad_param_5}
+    Dated Log New Line    RAD params:  ${rad_param_list}
+    SetConfig.Set Fields in swconfig DU       param_list=${rad_param_list}
+    Dated Log New Line   RAD params of the new 24R1 PRB Pooling enhancement completed
+
+Configure Multi UE Dynamically
+    [Arguments]             ${dict_ues}
+    ${initial_NbOfUe}       get length            ${dict_ues}
+    CB008940-Common-Keywords.Configure New Ues    ${dict_ues}
+    ...                                           ${initial_NbOfUe}
+    ...                                           ${param.totalNbOfUe}
+    ...                                           ${dict_settings_ue_default}
+    # Configure the current setting for all the ue's
+    ${param.totalNbOfUe}    get length          ${dict_ues}
+    Step                    Dated Log           Configure the setting for the ${param.totalNbOfUe} ue's
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.totalNbOfUe}
+        ${current_ue}=                Evaluate                      ${current_id} + 1
+        ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          pdu                 1
+        Set To Dictionary             ${current_ueSetting}          trf_id              ${current_ue}
+        Set To Dictionary             ${current_ueSetting}          target_gnb          ${param.targetGnb}
+        # Dispatching each ue on the requested original cell for the call establishment
+        Set To Dictionary             ${current_ueSetting}          target_cells           ${dict_ues[${current_id}].originalCell}
+        # Set the correct requested throughput per ue
+        Set To Dictionary             ${current_ueSetting}          DL_throughput          ${dict_ues[${current_id}].DL_throughput}
+        Set To Dictionary             ${current_ueSetting}          DL_throughput_GBR      ${dict_ues[${current_id}].DL_throughput_GBR}
+        Set To Dictionary             ${current_ueSetting}          UL_throughput          ${dict_ues[${current_id}].UL_throughput}
+        Append To List                ${listOfUes}                  ${current_ueSetting}
+    END
+    Dated Log New Line                UE_List=${listOfUes}
+    CB008940-Common-Keywords.Check Multi Ues Setting In List        multiUesList=${listOfUes}
+
+Multi Cells Setup
+    [Arguments]       ${nbCell}
+    ${msgStr}=    Catenate  Test ${nbCell} Cells Setup
+    Dated Log   ${msgStr}
+    # Setup wtsemu SA for all the ue's
+    Traced Sleep            duration=60s         msg=before setup Wtsemu SA to give radio modules time to start
+    Critical Step           CallSetup.Setup Wtsemu SA               nbUe=${param.totalNbOfUe}
+    ...                                                             nbSaUe=${param.totalNbOfUe}
+    ...                                                             shouldUseLua=${True}
+    ###...                                                          nbCell=${totalNbOfCell}
+    ...                                                             list_of_UE_tobe_created=${listOfUes}
+    WTS Set X2 Link
+    sleep    5s
+    # WTS Testmode Decode PDSCH On SSB Slot
+
+UE Registration and PDU Session establishment
+    # Register and launch PDU for all the ue's
+    FOR    ${current_elem}    IN    @{listOfUes}
+                            Critical Step       CallSetup.UE Register
+        ...                                                         ue=${current_elem.ue}
+        ###...                                                      nwslice=1
+        ###...                                                      timeout=30
+        ...                 depends=CallSetup.Setup Wtsemu SA
+                            Critical Step       CallSetup.Launch PDU Session
+        ...                                                         ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         gw=${current_elem.ue}
+        ###...                                                      nwslice=1
+        ...                 depends=CallSetup.UE Register
+    END
+
+Launch UL DL nonGBR Traffic
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        set test variable   ${current_elem}
+        ${dir}=   set Variable If    ${current_elem.DL_throughput} > ${0}    DL
+        ...                                                                  NONE
+        ${kw to run}=   Catenate   ${dir} Traffic SA Not Stopped with "${current_elem.DL_throughput}"Mbps "${param.duration}"s duration
+        ...                        and "${param.deviation}" percent deviation
+        Run Keyword If      ${current_elem.DL_throughput} > ${0}
+        ...      Critical Step     ${kw to run}       depends=CallSetup.Launch PDU Session
+
+        ${dir}=   set Variable If    ${current_elem.UL_throughput} > ${0}    UL
+        ...                                                                  NONE
+        ${kw to run}=   Catenate   ${dir} Traffic SA Not Stopped with "${current_elem.UL_throughput}"Mbps "${param.duration}"s duration
+        ...                        and "${param.deviation}" percent deviation
+        Run Keyword If      ${current_elem.UL_throughput} > ${0}
+        ...      Critical Step     ${kw to run}       depends=CallSetup.Launch PDU Session
+    END
+
+Launch UL DL GBR Traffic
+    # PDU session modify reserved for the ue's configured with GBR traffic
+    ${nbOfUe_traffic_GBR}=   CB008940-Q-B2-Keywords.Get Number Of Ue Configured With GBR Traffic    dict_ues=${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        CallSetup.UE PDU Session Modify       ue=${current_elem.ue}
+        ...                                   pdu=${current_elem.pdu}
+        ...                                   qfta=2
+        ...                                   by=amf
+    END
+    # Start the GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{listOfUes}
+        set test variable   ${current_elem}
+        ${dir}=   set Variable If    ${current_elem.DL_throughput_GBR} > ${0}    DL
+        ...                                                                      NONE
+        ${kw to run}=   Catenate    ${dir} Traffic GBR SA Not Stopped with "${current_elem.DL_throughput_GBR}"Mbps "${param.duration}"s duration
+        ...                         and "${param.deviation}" percent deviation
+        Run Keyword If      '${current_elem.DL_throughput_GBR}' != '0'
+        ...    Critical Step   ${kw to run}    depends=CallSetup.Launch PDU Session
+    END
+
+WTS Testmode Decode PDSCH On SSB Slot
+    wtsemu.ue_testmode_decode_muxphychan    decode_mux_phy_chan=decode_PDSCH
+    sleep    2s
+
+Recommissioning
+    Oam.OAM Perform Full Commissioning       scf_file=${SCF_SETUP_PATH}
+    WA Airscale Wait For Ready               ${GNB_DU}
+
+Verify noZAB Eligible Cells IntraL1Sp
+    CB008940-I-J-Keywords.Check Zab Privileged Cell In Sherpa Pooling Report      ${DL_Pooling_Sherpa_Msg}
+    ...                                                                           ${DL_Pooling_Csv_Extracted}
+    ...                                                                           ${ZAB_No_Privileged_Value}
+    ...                                                                           ${NRCELLID_1}
+    CB008940-I-J-Keywords.Check Zab Privileged Cell In Sherpa Pooling Report      ${DL_Pooling_Sherpa_Msg}
+    ...                                                                           ${DL_Pooling_Csv_Extracted}
+    ...                                                                           ${ZAB_No_Privileged_Value}
+    ...                                                                           ${NRCELLID_2}
+    CB008940-I-J-Keywords.Check Zab Privileged Cell In Sherpa Pooling Report      ${DL_Pooling_Sherpa_Msg}
+    ...                                                                           ${DL_Pooling_Csv_Extracted}
+    ...                                                                           ${ZAB_No_Privileged_Value}
+    ...                                                                           ${NRCELLID_3}
+
+Verify ZAB Eligible Cells InterL1Sp
+    CB008940-I-J-Keywords.Check Zab Privileged Cell In Sherpa Pooling Report      ${DL_Pooling_Sherpa_Msg}
+    ...                                                                           ${DL_Pooling_Csv_Extracted}
+    ...                                                                           ${ZAB_No_Privileged_Value}
+    ...                                                                           ${NRCELLID_1}
+    CB008940-I-J-Keywords.Check Zab Privileged Cell In Sherpa Pooling Report      ${DL_Pooling_Sherpa_Msg}
+    ...                                                                           ${DL_Pooling_Csv_Extracted}
+    ...                                                                           ${ZAB_No_Privileged_Value}
+    ...                                                                           ${NRCELLID_2}
+    CB008940-I-J-Keywords.Check Zab Privileged Cell In Sherpa Pooling Report      ${DL_Pooling_Sherpa_Msg}
+    ...                                                                           ${DL_Pooling_Csv_Extracted}
+    ...                                                                           ${ZAB_Privileged_Value}
+    ...                                                                           ${NRCELLID_3}
+
+CB010513 IntraL1SubPool Verification of NumMinPrbAlloc NumMaxPrbAlloc
+    [Documentation]
+    [Arguments]
+    Verify NumMinPrbAlloc and NumMaxPrbAlloc values
+        ...                                                         nrCell_id=0x4001
+        ...                                                         direction=Dl
+        ...                                                         NumMinPrbAlloc_value=48
+        ...                                                         NumMaxPrbAlloc_value=273
+    Verify NumMinPrbAlloc and NumMaxPrbAlloc values
+        ...                                                         nrCell_id=0x4002
+        ...                                                         direction=Dl
+        ...                                                         NumMinPrbAlloc_value=48
+        ...                                                         NumMaxPrbAlloc_value=273
+    Verify NumMinPrbAlloc and NumMaxPrbAlloc values
+        ...                                                         nrCell_id=0x4003
+        ...                                                         direction=Dl
+        ...                                                         NumMinPrbAlloc_value=48
+        ...                                                         NumMaxPrbAlloc_value=273
+
+CB010513 InterL1SubPool Verification of NumMinPrbAlloc NumMaxPrbAlloc
+    [Documentation]
+    [Arguments]
+    Verify NumMinPrbAlloc and NumMaxPrbAlloc values
+        ...                                                         nrCell_id=0x4001
+        ...                                                         direction=Dl
+        ...                                                         NumMinPrbAlloc_value=48
+        ...                                                         NumMaxPrbAlloc_value=273
+    Verify NumMinPrbAlloc and NumMaxPrbAlloc values
+        ...                                                         nrCell_id=0x4002
+        ...                                                         direction=Dl
+        ...                                                         NumMinPrbAlloc_value=48
+        ...                                                         NumMaxPrbAlloc_value=273
+    Verify NumMinPrbAlloc and NumMaxPrbAlloc values
+        ...                                                         nrCell_id=0x4003
+        ...                                                         direction=Dl
+        ...                                                         NumMinPrbAlloc_value=48
+        ...                                                         NumMaxPrbAlloc_value=273
+
+CB010513 IntraL1SubPool Verification of DL PRB Allocation
+    [Documentation]
+    [Arguments]
+    Verify PRB Allocated is within a range of min and max values
+        ...                                                         nrCell_id=0x4001
+        ...                                                         direction=Dl
+        ...                                                         min_prb_value=105
+        ...                                                         max_prb_value=140
+    Verify PRB Allocated is within a range of min and max values
+        ...                                                         nrCell_id=0x4002
+        ...                                                         direction=Dl
+        ...                                                         min_prb_value=273
+        ...                                                         max_prb_value=273
+    Verify PRB Allocated is within a range of min and max values
+        ...                                                         nrCell_id=0x4003
+        ...                                                         direction=Dl
+        ...                                                         min_prb_value=150
+        ...                                                         max_prb_value=180
+
+CB010513 InterL1SubPool Verification of DL PRB Allocation
+    [Documentation]
+    [Arguments]
+    Verify PRB Allocated is within a range of min and max values
+        ...                                                         nrCell_id=0x4001
+        ...                                                         direction=Dl
+        ...                                                         min_prb_value=180
+        ...                                                         max_prb_value=212
+    Verify PRB Allocated is within a range of min and max values
+        ...                                                         nrCell_id=0x4002
+        ...                                                         direction=Dl
+        ...                                                         min_prb_value=122
+        ...                                                         max_prb_value=146
+    Verify PRB Allocated is within a range of min and max values
+        ...                                                         nrCell_id=0x4003
+        ...                                                         direction=Dl
+        ...                                                         min_prb_value=251
+        ...                                                         max_prb_value=273
+
+CB010513 IntraL1SubPool Verification of DL PRB Demand
+    Dated Log New Line    Verification of DL PRB Demand for each cell
+    Step    CB008940-Q-B2-Keywords.Verify PRB Demand is within a range of min and max values
+    ...                                                         nrCell_id=0x4001
+    ...                                                         direction=Dl
+    ...                                                         traffictype=${COL_NAME_NOGBRPRBREQUEST}
+    ...                                                         min_prb_value=15
+    ...                                                         max_prb_value=30
+    Step    CB008940-Q-B2-Keywords.Verify PRB Demand is within a range of min and max values
+    ...                                                         nrCell_id=0x4001
+    ...                                                         direction=Dl
+    ...                                                         traffictype=${COL_NAME_GBRPRBREQUEST}
+    ...                                                         min_prb_value=15
+    ...                                                         max_prb_value=30
+    Step    CB008940-Q-B2-Keywords.Verify PRB Demand is within a range of min and max values
+    ...                                                         nrCell_id=0x4002
+    ...                                                         direction=Dl
+    ...                                                         traffictype=${COL_NAME_NOGBRPRBREQUEST}
+    ...                                                         min_prb_value=10
+    ...                                                         max_prb_value=30
+    Step    CB008940-Q-B2-Keywords.Verify PRB Demand is within a range of min and max values
+    ...                                                         nrCell_id=0x4002
+    ...                                                         direction=Dl
+    ...                                                         traffictype=${COL_NAME_GBRPRBREQUEST}
+    ...                                                         min_prb_value=10
+    ...                                                         max_prb_value=30
+    Step    CB008940-Q-B2-Keywords.Verify PRB Demand is within a range of min and max values
+    ...                                                         nrCell_id=0x4003
+    ...                                                         direction=Dl
+    ...                                                         traffictype=${COL_NAME_NOGBRPRBREQUEST}
+    ...                                                         min_prb_value=30
+    ...                                                         max_prb_value=65
+    Step    CB008940-Q-B2-Keywords.Verify PRB Demand is within a range of min and max values
+    ...                                                         nrCell_id=0x4003
+    ...                                                         direction=Dl
+    ...                                                         traffictype=${COL_NAME_GBRPRBREQUEST}
+    ...                                                         min_prb_value=30
+    ...                                                         max_prb_value=40
+
+CB010513 InterL1SubPool Verification of DL PRB Demand
+    Dated Log New Line    Verification of DL PRB Demand for each cell
+    Step    CB008940-Q-B2-Keywords.Verify PRB Demand is within a range of min and max values
+    ...                                                         nrCell_id=0x4001
+    ...                                                         direction=Dl
+    ...                                                         traffictype=${COL_NAME_NOGBRPRBREQUEST}
+    ...                                                         min_prb_value=50
+    ...                                                         max_prb_value=70
+    Step    CB008940-Q-B2-Keywords.Verify PRB Demand is within a range of min and max values
+    ...                                                         nrCell_id=0x4001
+    ...                                                         direction=Dl
+    ...                                                         traffictype=${COL_NAME_GBRPRBREQUEST}
+    ...                                                         min_prb_value=10
+    ...                                                         max_prb_value=20
+    Step    CB008940-Q-B2-Keywords.Verify PRB Demand is within a range of min and max values
+    ...                                                         nrCell_id=0x4002
+    ...                                                         direction=Dl
+    ...                                                         traffictype=${COL_NAME_NOGBRPRBREQUEST}
+    ...                                                         min_prb_value=15
+    ...                                                         max_prb_value=25
+    Step    CB008940-Q-B2-Keywords.Verify PRB Demand is within a range of min and max values
+    ...                                                         nrCell_id=0x4002
+    ...                                                         direction=Dl
+    ...                                                         traffictype=${COL_NAME_GBRPRBREQUEST}
+    ...                                                         min_prb_value=15
+    ...                                                         max_prb_value=20
+    Step    CB008940-Q-B2-Keywords.Verify PRB Demand is within a range of min and max values
+    ...                                                         nrCell_id=0x4003
+    ...                                                         direction=Dl
+    ...                                                         traffictype=${COL_NAME_NOGBRPRBREQUEST}
+    ...                                                         min_prb_value=80
+    ...                                                         max_prb_value=100
+    Step    CB008940-Q-B2-Keywords.Verify PRB Demand is within a range of min and max values
+    ...                                                         nrCell_id=0x4003
+    ...                                                         direction=Dl
+    ...                                                         traffictype=${COL_NAME_GBRPRBREQUEST}
+    ...                                                         min_prb_value=30
+    ...                                                         max_prb_value=40
+
+Verification of L1SUBPOOL Stream PRB Capacity within PRB Pooling Report
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${stream_prb_capa} ${alloc_stream_prb} ${subpool_id}
+    ...     Actions:        it verifies all the l1SubPoolStreamPrbCapacity and numAllocStreamPRB values of the recommended sub pool id
+    ...     Checks:         it checks the values within PRB Pooling Allocation SubPool Report
+    ...     Verdict:        l1SubPoolStreamPrbCapacity and numAllocStreamPRB values are as expected
+    [Arguments]             ${stream_prb_capa}
+    ...                     ${subpool_id}=0
+
+    ${file_path_report}     Set Variable        Dl_PrbPoolingAllocationSubpool_45_.csv
+    # l1SubPoolStreamPrbCapacity
+    Dated Log New Line      Check if ${COL_NAME_L1SUBPOOLSTREAMPRBCAPACITY}>=${stream_prb_capa} for ${COL_NAME_SUBPOOLID}=${subpool_id}
+    Dated Log               ${file_path_report}
+    ${L1Sp_Stream_Prb_capacity_result}          Sherpa.Verify value with operator in csv Files with Prerequisite
+    ...                                                    CsvName=${file_path_report}
+    ...                                                    Column_name=${COL_NAME_L1SUBPOOLSTREAMPRBCAPACITY}
+    ...                                                    valuetocheck=${stream_prb_capa}
+    ...                                                    check_operator=>
+    ...                                                    directory=${sherpa_output_path}
+    ...                                                    colum_prereq=${COL_NAME_SUBPOOLID}
+    ...                                                    regex_prereq=${subpool_id}
+    Run Keyword If    ${L1Sp_Stream_Prb_capacity_result} == True
+    ...               Dated Log    DL L1 SubPool stream PRB capacity is equal to ${stream_prb_capa} for ${COL_NAME_SUBPOOLID}=${subpool_id}
+    ...    ELSE       Dated Log    DL L1 SubPool stream PRB capacity IS NOT EQUAL TO ${stream_prb_capa} for ${COL_NAME_SUBPOOLID}=${subpool_id}
+    should be true    ${verif_result} == True
+    # numAllocStreamPRB
+
+Verify PRB Allocated is within a range of min and max values
+    [Documentation]
+    [Arguments]             ${nrCell_id}
+    ...                     ${direction}
+    ...                     ${min_prb_value}
+    ...                     ${max_prb_value}
+    ...                     ${result_req}=True
+    ${sherpa_file_name}     Set Variable        PrbPoolingAllocationReport_45_.csv
+    ${file_path_report}=    Catenate    ${direction}_${sherpa_file_name}
+    Dated Log   ${file_path_report}
+    Dated Log New Line      ${file_path_report}
+    Dated Log New Line      Verify the number of PRB allocated ${direction} by BBRM to NRCELLID=${nrCell_id}
+    ${min_result}           Verify value with operator in csv Files with Prerequisite
+    ...                                         CsvName=${file_path_report}
+    ...                                         ColumnName=${COL_NAME_NUMPRBALLOC}
+    ...                                         valuetocheck=${min_prb_value}
+    ...                                         check_operator=<=
+    ...                                         directory=${sherpa_output_path}
+    ...                                         colum_prereq=${COL_NAME_NRCELLID}
+    ...                                         regex_prereq=${nrCell_id}
+    ${max_result}           Verify value with operator in csv Files with Prerequisite
+    ...                                         CsvName=${file_path_report}
+    ...                                         ColumnName=${COL_NAME_NUMPRBALLOC}
+    ...                                         valuetocheck=${max_prb_value}
+    ...                                         check_operator=>=
+    ...                                         directory=${sherpa_output_path}
+    ...                                         colum_prereq=${COL_NAME_NRCELLID}
+    ...                                         regex_prereq=${nrCell_id}
+    Run Keyword If          ${min_result} == True and ${max_result} == True
+    ...    Dated Log New Line    PRB Allocated to the NRCell:${nrCell_id} in ${direction} is between:${min_prb_value} & ${max_prb_value}
+    ...    ELSE
+    ...    Dated Log New Line    PRB Allocated to the NRCell:${nrCell_id} in ${direction} is outside range:${min_prb_value} & ${max_prb_value}
+    should be true          ${min_result} == ${result_req}
+    should be true          ${max_result} == ${result_req}
+
+Verify NumMinPrbAlloc and NumMaxPrbAlloc values
+    [Documentation]
+    [Arguments]             ${nrCell_id}
+    ...                     ${direction}
+    ...                     ${NumMinPrbAlloc_value}
+    ...                     ${NumMaxPrbAlloc_value}
+    ...                     ${result_req}=True
+    ${sherpa_file_name}     Set Variable        PrbPoolingAllocationReport_45_.csv
+    ${file_path_report}=    Catenate    ${direction}_${sherpa_file_name}
+    Dated Log New Line      Verify the NumMaxPrbAlloc in ${direction} by BBRM to NRCELLID=${nrCell_id}
+    ${min_result}           Verify value with operator in csv Files with Prerequisite
+    ...                                         CsvName=${file_path_report}
+    ...                                         ColumnName=${COL_NAME_NumMinPrbAlloc}
+    ...                                         valuetocheck=${NumMinPrbAlloc_value}
+    ...                                         check_operator=<=
+    ...                                         directory=${sherpa_output_path}
+    ...                                         colum_prereq=${COL_NAME_NRCELLID}
+    ...                                         regex_prereq=${nrCell_id}
+    ${max_result}           Verify value with operator in csv Files with Prerequisite
+    ...                                         CsvName=${file_path_report}
+    ...                                         ColumnName=${COL_NAME_NumMaxPrbAlloc}
+    ...                                         valuetocheck=${NumMaxPrbAlloc_value}
+    ...                                         check_operator=>=
+    ...                                         directory=${sherpa_output_path}
+    ...                                         colum_prereq=${COL_NAME_NRCELLID}
+    ...                                         regex_prereq=${nrCell_id}
+    Run Keyword If          ${min_result} == True
+    ...    Dated Log New Line    NumMinPrbAllocated to the NRCell:${nrCell_id} in ${direction} is equal to : ${NumMinPrbAlloc_value}
+    ...    ELSE
+    ...    Dated Log New Line    NumMinPrbAlloc to the NRCell:${nrCell_id} in ${direction} is not equal : ${NumMinPrbAlloc_value}
+    Run Keyword If          ${max_result} == True
+    ...    Dated Log New Line    NumMaxPrbAllocated to the NRCell:${nrCell_id} in ${direction} is equal to : ${NumMaxPrbAlloc_value}
+    ...    ELSE
+    ...    Dated Log New Line    NumMaxPrbAllocated to the NRCell:${nrCell_id} in ${direction} is equal to :${NumMaxPrbAlloc_value}
+    should be true          ${min_result} == ${result_req}
+    should be true          ${max_result} == ${result_req}
+
+
+TTI Trace Collection
+    ${TTIdir}               Get TTI Trace Path                      dir_suffix=CB010513-EnhancedPRBPooling
+    Dated Log New Line      Start TTI traces capture
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+    Traced Sleep            2 seconds    msg=TTI capture
+    ${TTIpcap}              Stop TTI Traces in Streaming mode       tti_trace_path=${TTIdir}
+    ...                                                             tti_trace_filename=TTiTrace_CB010513
+    Dated Log New Line      Convert TTItrace to json and csv
+    ${TTIjson}              Convert TTItrace from pcap to others    input_file_path=${TTIpcap}
+    ${TTIcsv}               ttitrace_tools.decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson}
+    ...                           num_of_events=10000
+    set Suite Variable     ${TTIjson}
+
+End Of TC Teardown
+   [Documentation]        At the end of each TC :
+   ...                      - show the Diagnosis of the TC steps
+   ...                      - collect the gnb Snapshot
+   ...                      - if TC failed, collect also AP sosReport
+
+   Dated Log              End Of TC : start
+   Produce Scout Data
+   Oam.OAM Get Snapshot
+   Run Keyword If Test Failed     Setup.Get Sos Report
+   GenericTest.Display Diagnosis
+   Dated Log              End of TC : end

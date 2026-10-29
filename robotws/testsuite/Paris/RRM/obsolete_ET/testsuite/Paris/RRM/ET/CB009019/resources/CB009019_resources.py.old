@@ -1,0 +1,65 @@
+from robot.api import logger
+import subprocess
+
+import os
+import sys
+from types import ModuleType
+
+
+def start_iperf_traffic(server='10.0.2.1', client='1.2.4.2', port='7070', throughput='10M', duration='10',
+                        packet_size='1400', ip_version='IPv4', protocol='tcp'):
+    """
+    Start iperf traffic
+    +------------------+-------+------------+------------+
+    |     Example                                        |
+    +==================+=======+============+============+
+    | Start iperf traffic                                |
+    | ...  server=10.0.2.1                               |
+    | ...  client=1.2.4.2                                |
+    | ...  port=7070                                     |
+    | ...  throughput=10M                                |
+    | ...  duration=10                                   |
+    | ...  packet_size=1400                              |
+    | ...  ip_version=ipv4                               |
+    | ...  protocol=tcp                                  |
+    +------------------+-------+------------+------------+
+    :param server:      server ip taken from dl_nat_gw/ul_nat_gw(10.0.2.1) in file basic_config.cfg
+                        set_pdu_gateway id=1 ue_nat_ip=72.23.0.1 dl_nat_gw=10.0.2.1 ul_nat_gw=10.0.2.1
+    :param client:      client ip taken from UPF_ADDR in basic_config.cfg for DL
+                        and from ue_nat_ip(72.23.0.1) in file file basic_config.cfg for UL
+    :param port:        port on which server is listening messages
+    :param throughput:  number of packets per second
+    :param duration:    time in seconds to transmit for
+    :param packet_size: length of buffer in bytes to read or write
+    :param ip_version:  ip version
+    :param protocol:    protocol used for transmission
+    :return:
+    """
+    iperf_server_cmd = ['iperf', '-s', '-p', port, '-i', '1', '-B', server,  '-t', duration]
+    iperf_client_cmd = \
+        ['iperf', '-c', client, '-p', port, '-l', packet_size, '-b', throughput, '-i', '1',  '-t', duration,
+         '-B', server]
+    if ip_version.lower() == 'ipv6':
+        iperf_server_cmd.append('-V')
+        iperf_client_cmd.append('-V')
+    if protocol.lower() == 'udp':
+        iperf_server_cmd.append('-u')
+        iperf_client_cmd.append('-u')
+    logger.info("Executing {} ...".format(" ".join(iperf_server_cmd)), also_console=True)
+    subprocess.Popen(iperf_server_cmd, stdout=subprocess.PIPE, universal_newlines=True)
+    logger.info("Executing {} ...".format(" ".join(iperf_client_cmd)), also_console=True)
+    subprocess.Popen(iperf_client_cmd)
+
+
+def get_testline_name():
+    # Returns the name of the Testline. Ex: 2_16_UTE5GCLASSICAL4246
+    for module in sys.modules.copy().values():
+        if type(module) is ModuleType:
+            if "tl" in dir(module):
+                return os.path.basename(os.path.dirname(module.__file__))
+    raise Exception('No Testline Module Loaded!')
+
+
+def check_if_cm_execution():
+    # returns False if the test was launched by the CloudManager, otherwise returns True.
+    return False if os.environ.get("CM_EXECUTION_ID") is None else True

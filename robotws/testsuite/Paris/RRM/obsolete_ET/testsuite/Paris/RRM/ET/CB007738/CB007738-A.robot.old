@@ -1,0 +1,293 @@
+*** Settings ***
+
+Documentation     [SUITE PURPOSE]  tests for DSS feature 7738-A CellSetup / Ue call and Traffic for 10Mhz
+...               Test Case Scenario author   : franck.ngoune_ngoune@nokia.com
+...               Test Case Scenario contact  : franck.ngoune_messi@nokia.com
+...               Test Case automation author :
+...               Test Case automation contact:
+...               Creation Date               : June 07 2021
+...               Modified Date               : June 29 2021
+...               Last Modified by            : Franck.ngoune_messi@nokia.com
+#-------------------------------------------------------------------------------------------------------[150 characters]
+
+Library           taf.sbts.oam.coam.admin            WITH NAME               coam
+Library           ute_wtssim                        WITH NAME               wts
+Library           ../resources/python/luashark_tools.py
+Library           ../../../resources/SWENG/python/StringTool.py
+Library           ../resources/common/TtiTrace/python/ttitrace.py   WITH NAME    nps_ttitraces_tools
+Library           resources/python/Constants.py                     WITH NAME    MyConstants
+Library           ../resources/DSS/python/dss_tools.py              WITH NAME    nps_dss_tools
+Library           resources/python/tools.py                         WITH NAME    nps_7738_tools
+Library           ../resources/DSS/python/robot_extension.py        WITH NAME    robot_extension
+
+# SWENG resources
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+
+# ttitrace ET resources
+Resource          ../resources/common/TtiTrace/ttitrace.robot
+
+# DSS common
+Resource          ../resources/DSS/robot/btslog.robot
+Resource          ../resources/DSS/robot/common_Dss_Keywords.robot
+Resource          ../resources/DSS/robot/common_Dss_command.robot
+Resource          ../resources/DSS/robot/common_Dss_SA_NSA.robot
+
+# 7738 specific
+Resource            resources/robot/CB007738_Kw_TestSetup.robot
+Resource            resources/robot/CB007738_keywords.robot
+
+Variables           resources/python/Constants.py
+
+
+# Tags for QC mapping
+Force Tags                          CA_5G_SW_FR-Villarceaux   RRM
+...                                 PY36
+...                                 master_classicalbts_all
+...                                 CONFIGURED    5G_RAN    RAN_5G
+
+
+Suite Setup         Run keywords      MyConstants.hello
+...                 AND               set global variable         ${WITH_MCSHARK}       1
+...                 AND               set global variable         ${SharkTool}          MC_SHARK
+...                 AND               Test Suite Setup for 7738
+...                 AND               Get gNB cell 5g On air
+...                 AND               Prepare TL for TTITraces
+Suite Teardown      Test suite teardown for 7738
+
+
+
+*** Variables ***
+
+${PATTERN_DL_70_SA_OK}      0011100010-0111101110-0011100010-0111101110-0011100010-0111101110-0011100010-0111101110
+${PATTERN_DL_100_SA_OK}      1011110011-1111111111-1011110011-1111111111-1011110011-1111111111-1011110011-1111111111
+${PATTERN_DL_100_SA_OK_SSBPos6}      1111110011-1111111111-1111110011-1111111111-1111110011-1111111111-1111110011-1111111111
+
+#.................................
+
+*** Test Cases ***
+
+TestLine_preparation
+    [Tags]    FULL_RUN    Cellsetup     10MHZ
+    ...       CRT
+    CB007738_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_7738_A1}
+
+TestLine_7738_Test_setup
+    [Tags]    FULL_RUN    Cellsetup   FULL_CALL  10MHZ
+    ...       CRT
+    [Setup]   Run Keywords    set Suite Variable    ${testCaseDir}    None      AND
+    ...                       common_Dss_Keywords.Get testcase log directory
+    CB007738_Kw_TestSetup.Test Setup 7738    ${TestDSS10Mhz_7738_A1}
+
+# TC covered under New feature
+# [1]CB007738_5G_A_TC_10_Check_DL_Resource_Allocation_And_UL_grant_Collision_Avoidance
+[1][1.0] CB007738_5G_A_TC_10_Check_DL_Resource_Fast_Allocation
+   [Tags]    FULL_RUN     10MHZ    7738   7738_A3     TC10
+   ...       CIT
+   [Documentation]     Cellsetup Dss phase 3, BW= 10MHz, DL RATIO = 100%, Fast DL Allocation, NSA 5g Call , DL/UL Tput
+   [Setup]   Run Keywords    set Suite Variable    ${testCaseDir}    None                                 AND
+   ...       CB007738_keywords.Clean Up Env                                                               AND
+   ...       update Get Mem Usage Variable                                                                AND
+   ...       set Suite Variable    ${dl_expect_tput_value}           90                                   AND
+   ...       set Suite Variable    ${ul_expect_tput_value}           30                                   AND
+   #         as each 20ms Prb used  is flickering from 35 to 20, the check need to be done using following ul TP value
+   #...       set Suite Variable    ${dl_expect_tput_value_for_TC10}  59                                   AND
+   #          New target Tput with No Additionnal DMRS DL and PDSCH DMRS FDM activated
+   ...       set Suite Variable    ${dl_expect_tput_value_for_TC10}  62                                   AND
+   ...       set Suite Variable    ${dl_expect_tput_value_for_TC10_w_PRB_Pooling}  58                     AND
+   #         deviation need to take into account crm ul settings
+   ...       set Suite Variable    ${deviation}                       5                                   AND
+   ...       common_Dss_Keywords.Get testcase log directory                                               AND
+   ...       common_Dss_Keywords.Prepare Test Name                                                        AND
+   ...       common_Dss_Keywords.Start Tcpdump on TestPc    interface=eth3    option=-s0 sctp or icmp     AND
+   ...       Set global variable    ${CELLSETUP_SHOULD_BE_CHECK}   0                                      AND
+   ...       depends   TestLine_7738_Test_setup
+
+   Get Mem Usage for 7738    period=before
+
+   ${tc_name}    Set variable    TestLine_preparation
+   ${tc_status}    getTcStatusByName    name=${tc_name}
+   Run keyword if    '${tc_status}'!='PASS'
+   ...                          CB007738_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_7738_A3}
+   ${tc_name}    Set variable    TestLine_7738_Test_setup
+   ${tc_status}    getTcStatusByName    name=${tc_name}
+   Run keyword if    '${tc_status}'!='PASS'
+   ...           CB007738_Kw_TestSetup.Test Setup 7738    ${TestDSS10Mhz_7738_A3}
+
+   ${actSlowPrbPooling}=   Get actSlowPrbPooling for NRBTS "${NRBTS_ID}"
+
+   # Update nrCellType into Context for CellId=1
+   Update nrCellType into "${TestDSS10Mhz_7738_A3}" for cellID "1"
+
+   # depend on SHOULD_UPDATE_DEBUG_L2PS_RAD variable
+   ${l2ps_debug_swconfig_gnb}=      Set DSS L2PS Debug Specific RAD    ${TestDSS10Mhz_7738_A3}
+   Update gNB Swconfig     ${l2ps_debug_swconfig_gnb}
+
+   # modification DL Ratio into the test param Ctx
+   Update DSS DL pattern with     ${TestDSS10Mhz_7738_A3}     ${PATTERN_DL_100_SA_OK}
+   Dated log       DL pattern into TestParam is ${TestDSS10Mhz_7738_A3.seq.dl_allocated_normal_subframes}
+   # Update DSS qos load meas timer with     ${TestDSS10Mhz_7738_A3}    ${dl_qos_load_meas_timer}=10    ${ul_qos_load_meas_timer}=30
+   Update DSS dl qos load meas timer "${10}" ms and ul qos load meas timer "${30}" ms into "${TestDSS10Mhz_7738_A3}"
+   Dated log       DL qos_load_meas_timer into TestParam is ${TestDSS10Mhz_7738_A3.seq.dl_qos_load_meas_timer} ms
+   Dated log       UL qos_load_meas_timer into TestParam is ${TestDSS10Mhz_7738_A3.seq.ul_qos_load_meas_timer} ms
+
+   btslog.Start Btslog
+   CB007738_keywords.TC DSS Phase3 CellSetup         ${TestDSS10Mhz_7738_A3}    egate_TC10
+   # add here the DL Pattern list to add to CRMSim and active it ....
+   DSS_5g_Periodic_DL_Fast_Allocation           ${TestDSS10Mhz_7738_A3}    egate_TC10
+   Get Mem Usage for 7738    period=after_DSS_Phase3_CellSetup
+   TC 7738-5g SA Call                           ${TestDSS10Mhz_7738_A3}    egate_TC10
+
+   Get Mem Usage for 7738    period=after_7738-5g_SA_Call
+
+   common_Dss_SA_NSA.DSS_5g_SA_UL_DL_Traffic      ${TestDSS10Mhz_7738_A3}
+   ...                                             ul_rate=${ul_expect_tput_value}
+   ...                                             dl_rate=${dl_expect_tput_value}
+   ...                                             alias=egate_TC10
+
+   Traced Sleep    5s      msg=Waiting for UL/DL Tput
+
+   Start capture Backhaul XP for DSS   prefix=DSS_5g_SA_UL_DL_Traffic.1sTput.wXP
+   Traced Sleep    1s      msg=Waiting for Xp pcap traces
+   Dated log             Point AF_PATH and ENB_BUILD to local luashark XP package
+   Point AF_PATH to local luashark XP package
+   Point ENB_BUILD to local luashark XP package
+   ${XpPdmlFile}    Stop capture Backhaul XP for DSS
+
+   Run Keyword And Ignore Error   Get TTI traces   suffix=DSS_5g_SA_UL_DL_Traffic
+   ...                                             time=1s
+   ...                                             w_convert_pcap_to_excelCsv=False
+
+   Get Mem Usage for 7738    period=after_DSS_5g_SA_UL_DL_Traffic
+
+   Dated log             Point AF_PATH and ENB_BUILD to local luashark XP package
+   Point AF_PATH to local luashark XP package
+   Point ENB_BUILD to local luashark XP package
+   Dated log     =========> Check UL and DL Qos Load Indication MeasuredNgbrNnbrLoad ...
+   ${status}     ${avg_ul_MeasuredNgbrNnbrLoad}=  Run Keyword and Ignore Error  common_Dss_Keywords.Check UL Qos Load Indication MeasuredNgbrNnbrLoad
+   ...                                                                                              ${XpPdmlFile}
+   ...                                                                                              value=64
+   ...                                                                                              with_verdict=False
+   Run Keyword and Ignore Error      common_Dss_Keywords.Check DL Qos Load Indication MeasuredNgbrNnbrLoad       ${XpPdmlFile}
+
+   Dated log     =========> get dl and ul throughput for ue (0x${TestDSS10Mhz_7738_A3.Context.UeId1})
+   ${ul_throughput_for_ue1}=  nps_dss_tools.get_bearer_stats_SA   ue=${TestDSS10Mhz_7738_A3.Context.UeId1}
+   ...                                                             pdu=1   qfi=1    direction=ul  alias=egate_TC10
+   dated log     ul throughput for ue1 is ${ul_throughput_for_ue1} Mbps
+   ${dl_throughput_for_ue1}=  nps_dss_tools.get_bearer_stats_SA   ue=${TestDSS10Mhz_7738_A3.Context.UeId1}
+   ...                                                             pdu=1   qfi=1    direction=dl  alias=egate_TC10
+   dated log     dl throughput for ue1 is ${dl_throughput_for_ue1} Mbps
+
+   ${dl_expect_tput_value_to_check}=   set Variable if   '${actSlowPrbPooling}' == 'True'  ${dl_expect_tput_value_for_TC10_w_PRB_Pooling}
+   ...                                                                                     ${dl_expect_tput_value_for_TC10}
+   Dated log     =========> Test if Expected dl throughput is reached [expected=${dl_expect_tput_value_to_check}Mbps]
+   ${dl_target_tput}=         Evaluate    float(${dl_expect_tput_value_to_check})
+   ${DL_tput_ok}              Verify xL tput     dir=DL    tput_value=${dl_throughput_for_ue1}
+   ...                                           expect_tput_value=${dl_target_tput}    tput_deviation=${deviation}
+   # following tested is moved from the KW to be sure if failed it is really reported
+   should be true    '${DL_tput_ok}'=='True'    Tput is not as expected!
+
+   [Teardown]     Run Keywords       common_Dss_Keywords.Stop Tcpdump on TestPc    interface=eth3    target_dir=${testCaseDir}     AND
+   ...                               robot_extension.Run Keyword And Warn On Failure    btslog.Stop Btslog    target_dir=${testCaseDir}      AND
+   ...                               robot_extension.Run Keyword And Warn On Failure    Get Mem Usage for 7738  period=Teardown    AND
+   ...                               Teardown 7738     alias=egate_TC10           AND
+   ...                               set Suite Variable  ${testCaseDir}  None
+
+*** Keywords ***
+
+TC 7738-5g SA Call
+   [Documentation]                Test purpose is to test 5g DSS SA Call
+   [Arguments]                    ${param}    ${alias}=default   ${w_force_ue_capa}=True
+   Init Sequence                  ${param}
+   Dated log      =======> TC 7738-5g SA Call with param=${param} alias=${alias} w_force_ue_capa=${w_force_ue_capa}
+   Step           Start capture Bip and Xp for 7738    argument=TC_7738-5g_SA_Call.wL1L2Bip.wXP
+   Step           common_Dss_SA_NSA.DSS_5g_Call_SA           argument=${alias}
+   # 12/15/2022 : tempory WA for CB008325 (ABIP)
+   # run Keyword if   '${GNB_DU.bb[0].M.boardType}'=='ABIP'  Step    common_Dss_SA_NSA.DSS_5g_Call_SA    alias=${alias}  w_ue_capa=${w_force_ue_capa}
+   # ...              ELSE                                   Step    common_Dss_SA_NSA.DSS_5g_Call_SA    argument=${alias}
+   Step           Stop capture Bip and Xp for 7738           depends=Start capture Bip and Xp for 7738
+   [Teardown]                      GenericTest.Display diagnosis
+
+DSS_5g_Periodic_DL_Fast_Allocation
+   [Arguments]         ${param}     ${alias}=default
+   Init Sequence       ${param}
+   Step      common_Dss_CellSetup.Periodic DL Fast Allocation      argument=${alias}
+
+DSS_5g_Periodic_DL_Fast_Allocation_SSBSlot6
+   [Arguments]         ${param}     ${alias}=default
+   Init Sequence       ${param}
+   Step      common_Dss_CellSetup.Periodic DL Fast Allocation SSBSlot6      argument=${alias}
+
+DSS_5g_Periodic_UL_Fast_Allocation
+   [Arguments]         ${param}     ${alias}=default
+   Init Sequence       ${param}
+   Step      common_Dss_CellSetup.Periodic UL Fast Allocation      argument=${alias}
+
+Prepare TL for TTITraces
+    [Documentation]    :
+    ...    This keyword helps to download and install MULTI packages needed for TTITraces
+    ...
+    nps_ttitraces_tools.install_multidynamic_if_needed
+
+Update DSS DL pattern with
+   [Arguments]                    ${testParam}     ${dl_allocated_normal_subframes}
+
+   ${testParam_dss}                 Tools.Dictionary Get              ${testParam}
+   ${testParam_dss.seq.dl_allocated_normal_subframes}      set Variable     ${dl_allocated_normal_subframes}
+   set suite variable    ${testParam_dss}
+   [Return]      ${testParam_dss}
+
+Update DSS qos load meas timer with
+   [Arguments]                    ${testParam}     ${dl_qos_load_meas_timer}=200    ${ul_qos_load_meas_timer}=200
+
+   ${testParam_dss}                 Tools.Dictionary Get              ${testParam}
+   ${testParam_dss.seq.dl_qos_load_meas_timer}      set Variable     ${dl_qos_load_meas_timer}
+   ${testParam_dss.seq.ul_qos_load_meas_timer}      set Variable     ${ul_qos_load_meas_timer}
+   set suite variable    ${testParam_dss}
+   [Return]      ${testParam_dss}
+
+#  Keyword with embedded arguments
+Update DSS dl qos load meas timer "${dl_qos_load_meas_timer}" ms and ul qos load meas timer "${ul_qos_load_meas_timer}" ms into "${testParam}"
+   ${testParam_dss}                 Tools.Dictionary Get              ${testParam}
+   ${testParam_dss.seq.dl_qos_load_meas_timer}      set Variable     ${dl_qos_load_meas_timer}
+   ${testParam_dss.seq.ul_qos_load_meas_timer}      set Variable     ${ul_qos_load_meas_timer}
+   set suite variable    ${testParam_dss}
+   [Return]      ${testParam_dss}
+
+Get Mem Usage for 7738
+  [Documentation]     Get Mem Usage for 7738
+  ...                 w_Get_Mem_Usage is a global variable
+  [Arguments]         ${period}=before
+  return from Keyword if     '${w_Get_Mem_Usage}' == 'False'
+  dated log    Get Mem Usage during period=${period}
+  ${aliasGNB_2}=   common_Dss_Keywords.Connect to gNB Common Unit     gnb_id=0    du_id=0     comu_id=0
+  set Test Variable       ${aliasGNB_2}
+  robot_extension.Run Keyword And Warn On Failure     common_Dss_Keywords.Get Mem Usage      board_id=1
+  ...                                                                                        period=${period}
+  ...                                                                                        connection=${aliasGNB_2}
+  robot_extension.Run Keyword And Warn On Failure     ssh.disconnect      connection=${aliasGNB_2}
+
+Get TTI traces
+    [Arguments]     ${suffix}=${EMPTY}   ${time}=1s    ${event_nr_max}=30000   ${w_convert_pcap_to_excelCsv}=True
+    ${tm}    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}    .
+    Dated Log         Start TTI Traces in Streaming Mode
+    ttitrace.Start TTI Traces in Streaming Mode      filter_bitmap2=0x0
+    Traced Sleep    ${time}      msg=Waiting for TTI Traces
+    Dated log         Stop TTI Traces in Streaming Mode...
+    ${ttiTraceSubDir}   set Variable    TtiTrace-${time}-${tm}
+    ${ttiTraceSubDir}   set Variable if    '${suffix}'!='${EMPTY}'     ${ttiTraceSubDir}-${suffix}
+    ...                                                                ${ttiTraceSubDir}
+    ${tti_trace_path}=     ttitrace.Stop TTI Traces in Streaming Mode    tti_trace_path=${testCaseDir}/${ttiTraceSubDir}
+    Dated log         Decode TTI Traces...
+    nps_ttitraces_tools.decode_tti_traces_using_TtitraceReaderEvtDec       desired_storage_directory=${testCaseDir}/${ttiTraceSubDir}
+    ...                                                                    num_of_events=${event_nr_max}
+    run keyword if   '${w_convert_pcap_to_excelCsv}'=='True'    run keywords
+    ...               Dated log    Convert TTI trace from pcap to excelCsv...    AND
+    ...               Run keyword and continue on failure     ttitrace.Convert TTI trace from pcap to excelCsv     input_file_path=${tti_trace_path}
+    ...                                                                    output_file_path=${testCaseDir}/${ttiTraceSubDir}
+    [return]     ${testCaseDir}/${ttiTraceSubDir}
+
+
+
+
+

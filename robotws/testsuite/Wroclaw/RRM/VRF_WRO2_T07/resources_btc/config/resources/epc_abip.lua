@@ -1,0 +1,111 @@
+exec("set_enb id=1 plmn=244:08 s1=10.0.1.2 enb_id_macro=0x00001  daemon=:10000")
+exec("set_cell id=1 enb=1 tac=123 eci=0x0000101 pci=0:1")
+exec("set_cell id=2 enb=1 tac=123 eci=0x0000102 pci=0:2")
+exec("set_cell id=3 enb=1 tac=123 eci=0x0000103 pci=1:0")
+exec("set_cell id=4 enb=1 tac=123 eci=0x0000104 pci=1:1")
+exec("set_cell id=5 enb=1 tac=123 eci=0x0000105 pci=1:2")
+exec("set_cell id=6 enb=1 tac=123 eci=0x0000106 pci=2:0")
+exec("set_cell id=7 enb=1 tac=123 eci=0x0000107 pci=2:1")
+exec("set_cell id=8 enb=1 tac=123 eci=0x0000108 pci=2:2")
+exec("set_cell id=9 enb=1 tac=123 eci=0x0000109 pci=3:0")
+exec("set_cell id=10 enb=1 tac=123 eci=0x000010A pci=3:1")
+exec("set_cell id=11 enb=1 tac=123 eci=0x000010B pci=3:2")
+exec("set_cell id=12 enb=1 tac=123 eci=0x000010C pci=4:0")
+exec("set_mme id=1 ip=:10000 s1=10.0.1.1:36412 mmegi=1 mmec=3 supported_plmn=244:08 supported_plmn=666:14 supported_plmn=555:12")
+exec("set_sgw id=1 ip=:10000 s1u=10.0.1.1:2152 s11=10.0.1.1:2153")
+exec("set_pgw id=1 ip=:10000 apn=nokia1.net devtype=tun devname=tunPGW_1 addr=30.61.255.254/16")
+exec("set_pgw id=2 ip=:10000 apn=nokia2.net devtype=tun devname=tunPGW_2 addr=30.62.255.254/16")
+exec("set_uec dev_sim_type=external id=1 ip=127.0.0.1:10000 pdn=1 devtype=tun devname=uec1 addr=11.7.255.254/16 peer=127.0.0.1:2152 retries=unlimited")
+--exec("set_uec id=2 ip=127.0.0.1:10001 gtpu=on pdn=1 addr=12.7.255.254/16 peer=127.0.0.1:2152 retries=unlimited")
+exec("set_qci qci=100 gbr=yes priority=15 delay=80")
+exec("set_qci qci=128 gbr=yes priority=15 delay=80")
+exec("set_qci qci=129 gbr=yes priority=15 delay=80")
+exec("set_qci qci=130 gbr=yes priority=15 delay=80")
+exec("set_qci qci=131 gbr=yes priority=15 delay=80")
+exec("set_qci qci=135 gbr=yes priority=15 delay=80")
+exec("set_qci qci=136 gbr=yes priority=15 delay=80")
+exec("set_qci qci=160 gbr=yes priority=15 delay=80")
+exec("set_qci qci=161 gbr=no priority=15 delay=80")
+exec("set_qci qci=200 gbr=no priority=15 delay=80")
+exec("set_qci qci=253 gbr=yes priority=15 delay=80")
+exec("set_qci qci=254 gbr=yes priority=15 delay=80")
+exec("set_param SEC_OP_KEY=01020304050607080910111213141516")
+---------------------------------------------------------------------------
+local UTRAN_ENB_ID = 2
+local UTRAN_CELL_ID = 13
+local edaemon_port = '10000'
+--exec("set_enb type=simulated".." id="..UTRAN_ENB_ID.." plmn="..plmn[1].." enb_id_macro="..enb_id[i].." s1="..enb_s1_ip[i].." daemon="..edaemon_ip..":"..edaemon_port)
+exec('set_enb id='..UTRAN_ENB_ID..' type=simulated s1=10.0.1.3 plmn=244:08 enb_id_macro=0x00002 daemon=:'..edaemon_port)
+--exec('enb_param id=4 mlbSupportedRelease=r9 mlb_feature_flag=on')
+exec('set_cell id=13 enb='..UTRAN_ENB_ID..' tac=123 pci=4:1 proxy=:2154 earfcn=2800:20800 eci=0x000020D')
+
+
+--exec('set_gnb id=3 type=simulated s1=10.0.1.4 plmn=244:08 enb_id_macro=0x00003 daemon=:'..edaemon_port)
+exec('set_gnb id=3 gnb_id=0x00003 type=simulated s1u=10.0.1.4 ng_multihome_ip=10.0.1.5 plmn=244:08 daemon=:'..edaemon_port)
+--exec('set_cell id=1 gnb=3 tac=123 pci=0:1 proxy=:2155 eci=0x0000301') -- jaki arfcn dla 5G eNB?
+exec('set_cell id=14 gnb=3 tac=123 pci=4:2 proxy=:2155 nrci=0x0301 earfcn=2000:20000 nr_arfcn=514000:524000')
+exec("mme_param id=1 s1_hb_interval=120")
+exec("enb_timer T_ShutdownNoX2TrafficTimer=none")
+--================================================================================
+-- UEs section
+--================================================================================
+local mcc = 244
+local mnc = 8
+local mnc_length = 2
+local msin = 8723000001
+local ip_1 = 30
+local ip_2 = 61
+local ip_3 = 0
+local ip_4 = 1
+for ue_id=1,110 do
+    if ue_id < 99 then
+        exec("set_ue lmts id="..ue_id.." sec_key=000102030405060708090a0b0c0d0e0f imsi="..mcc..":"..string.format('%0'..mnc_length..'d', mnc)..":"..msin.." eea=aes eia=aes release=15")
+    elseif ue_id >= 99 and ue_id < 102 then
+        exec("set_ue id="..ue_id.." sec_key=000102030405060708090a0b0c0d0e0f imsi="..mcc..":"..string.format('%0'..mnc_length..'d', mnc)..":"..msin.." eea=aes eia=aes release=15")
+    elseif ue_id >= 102 and ue_id < 105 then
+        exec("set_ue cus id="..ue_id.." sec_key=000102030405060708090a0b0c0d0e0f imsi="..mcc..":"..string.format('%0'..mnc_length..'d', mnc)..":"..msin.." eea=aes eia=aes release=15")
+    elseif ue_id >= 105 and ue_id < 108 then
+        exec("set_ue cus id="..ue_id.." rohc=16 sec_key=000102030405060708090a0b0c0d0e0f imsi="..mcc..":"..string.format('%0'..mnc_length..'d', mnc)..":"..msin.." release=15")
+    else
+        exec("set_ue id="..ue_id.." rohc=16 sec_key=000102030405060708090a0b0c0d0e0f imsi="..mcc..":"..string.format('%0'..mnc_length..'d', mnc)..":"..msin.." release=15")
+    end
+	exec("ue_param id="..ue_id.." supported_bands=all");
+    exec("set_bearer id=1 ue="..ue_id.." default=on qci=9 ip="..ip_1.."."..ip_2.."."..ip_3.."."..ip_4.." trf_type=external")
+    exec("set_bearer id=2 ue="..ue_id.." default=off qci=1 gbr_ul=64 gbr_dl=64 mbr_ul=64 mbr_dl=64")
+    exec("set_bearer id=3 ue="..ue_id.." default=off qci=4 gbr_ul=64 gbr_dl=64 mbr_ul=64 mbr_dl=64")
+    exec("set_bearer id=4 ue="..ue_id.." default=off qci=5")
+    exec("set_bearer id=5 ue="..ue_id.." default=off qci=6")
+    exec("set_bearer id=6 ue="..ue_id.." default=off qci=7")
+    exec("set_bearer id=7 ue="..ue_id.." default=off qci=100 gbr_ul=64 gbr_dl=64 mbr_ul=64 mbr_dl=64")
+    exec("set_bearer id=8 ue="..ue_id.." default=off qci=128 gbr_ul=64 gbr_dl=64 mbr_ul=64 mbr_dl=64")
+    exec("set_bearer id=9 ue="..ue_id.." default=off qci=129 gbr_ul=64 gbr_dl=64 mbr_ul=64 mbr_dl=64")
+    exec("set_bearer id=10 ue="..ue_id.." default=off qci=130 gbr_ul=64 gbr_dl=64 mbr_ul=64 mbr_dl=64")
+    exec("set_bearer id=11 ue="..ue_id.." default=off qci=131 gbr_ul=64 gbr_dl=64 mbr_ul=64 mbr_dl=64")
+    exec("set_bearer id=12 ue="..ue_id.." default=off qci=135 gbr_ul=64 gbr_dl=64 mbr_ul=64 mbr_dl=64")
+    exec("set_bearer id=13 ue="..ue_id.." default=off qci=136 gbr_ul=64 gbr_dl=64 mbr_ul=64 mbr_dl=64")
+    exec("set_bearer id=14 ue="..ue_id.." default=off qci=254 gbr_ul=64 gbr_dl=64 mbr_ul=64 mbr_dl=64")
+    exec("set_bearer id=15 ue="..ue_id.." default=off qci=200")
+    msin = msin + 1
+    ip_4 = ip_4 + 1
+    if ip_4 >= 256 then
+        ip_3 = ip_3 + 1
+        ip_4 = 0
+    end
+    if ip_3 >= 256 then
+        ip_2 = ip_2 + 1
+        ip_3 = 0
+    end
+    if ip_2 >= 256 then
+        ip_1 = ip_1 + 1
+        ip_2 = 0
+    end
+end
+--================================================================================
+--exec("trace protocol=nas mme=1 on")
+--exec("trace protocol=s1 mme=1 on")
+exec("set_cnode")
+exec("debug_log level=2")
+exec("set_log log_to_file=on")
+exec("pgw_lmts_param bearer_activation_by_trf=on")
+exec("link_ctrl_param hb_period=180 hb_retries=10 app_type=mme")
+exec("cfg_end")

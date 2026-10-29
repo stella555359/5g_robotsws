@@ -1,0 +1,1167 @@
+#!/bin/bash
+
+# "v0.1 PATH=stored_python_path:$PATH -> PATH=$stored_python_path:$PATH"
+# "v0.2 add version print"
+# "v0.3 add 'end bs_remove_python_path PATH=$PATH'"
+# "v0.4 delete stored_python_path after adding to path"
+# "v0.5 which python and python --version, temporary remove of delete $config_file"
+# "v0.6 remove debug prints"
+# "v1.0 add cat file"
+# "v1.01 incorporate review comments, no modification on script flow"
+# "v1.1 add espo2 repo, remove ulm1, do ping trial 1st on repo's"
+# "v1.2 remove ulm1, pypi, espoo1 repo, add hz1 repo, use dependencies.py*.lock instead of requirements.cfg"
+# "v2.0 use pyenv to switch between python versions, support dependencies.py39.lock"
+# "v2.1 support python 3.10.12 by default, older versions than 3.10 were not supported any more, rm .python-version"
+echo "bootstrap v2.1"
+echo "-002-"
+
+# the bootstrap script creates and activates a virtual environment for different python versions,
+# selected by the user. As next step all neccessary python packages were downloaded from available
+# artifactory and installed into activated virtual environment, which are neccessary to run 
+# all robot based taf keyword test cases, like robot framework, taf, wts, ute and others
+
+# the bootstrap_test.sh script can be found in following directory:
+# testsuite/Ulm/resources/Common/bash/bootstrap
+
+# valid parameter combinations
+# from 3.10.12 -> 3.10.12 
+# source ./bootstrap                                # install packages                      # --no-deps
+
+# from system -> 3.10.12
+# source ./bootstrap -l -p 3.10.12 -x __NO_PIP_INSTALL__                                        # --no-deps
+# source ./bootstrap -l -p 3.10.12 -s                   # install packages                      # --no-deps
+# source ./bootstrap -l -p 3.10.12 -f                   # install packages                      # --no-deps
+# source ./bootstrap -l -p 3.10.12 -l -x __NO_PIP_INSTALL__                                     # --no-deps
+# source ./bootstrap -l -p 3.10.12 -l                   # install packages                      # --no-deps
+# source ./bootstrap -l -p 3.10.12 -m                   # install packages                      # --no-deps
+
+# source ./bootstrap -l -p 3.11.9 -n ve -x __NO_PIP_INSTALL__                                  # --no-deps
+# source ./bootstrap -l -p 3.11.9 -n ve -x __NO_PIP_INSTALL__                                  # --no-deps
+# source ./bootstrap -l -p 3.11.9 -l -x __NO_PIP_INSTALL__                                     # --no-deps
+# source ./bootstrap -l -p 3.11.9 -l                   # install packages                      # --no-deps
+# source ./bootstrap -l -p 3.11.9 -m                   # install packages                      # --no-deps
+
+# from venv_3.10.12 -> 3.11.9
+# source ./bootstrap -l -p 3.11.9                      # install packages                      # --no-deps
+
+# from X to 3.Y.Z according Matrix column 'NO -p X'
+# source ./bootstrap -l -x __NO_PIP_INSTALL__                                                  # --no-deps
+
+# from X to 3.10.12 according Matrix column '-p 3'
+# source ./bootstrap -l -p 3  -x __NO_PIP_INSTALL__                                            # --no-deps
+# source ./bootstrap -l -p 3.10 -x __NO_PIP_INSTALL__                                          # --no-deps
+# source ./bootstrap -l -p 3.12  -x __NO_PIP_INSTALL__                                         # --no-deps
+
+# from X to 3.11.9 according Matrix column '-p 3.11'
+# source ./bootstrap -l -p 3.11 -x __NO_PIP_INSTALL__                                          # --no-deps
+# source ./bootstrap -l -p 3.11.9 -x __NO_PIP_INSTALL__                                        # --no-deps
+
+# from venv_3.11.9 -> 3.10.12
+# source ./bootstrap -l -p 3.10.12 -d dependencies.py310-rf50.lock -x __NO_PIP_INSTALL__       # --no-deps
+
+# from venv_3.10.12
+# source ./bootstrap -l -p 3.11.9 -d ../../hallo/dependencies.py311.lock -x __NO_PIP_INSTALL__  # --no-deps
+# source ./bootstrap -l -p 3.11.9 -d ../../hallo/xdependencies.py311.lock -x __NO_PIP_INSTALL__ # --no-deps
+# source ./bootstrap -l -p 3.11.9 -d ../../dependencies/dependencies.py311.lock -x __NO_PIP_INSTALL__ # --no-deps
+
+# from venv_3.10.12 -> 3.11.9
+# source ./bootstrap -l -p 3.11.9 -d dependencies.py311.lock -x __NO_PIP_INSTALL__             # --no-deps
+# source ./bootstrap -l -p 3.11.9 -d dependencies.py311.loc -x __NO_PIP_INSTALL__              # ---------
+
+# from venv_3.11.9
+# source ./bootstrap -l -p 3.10.12 -d ../../hallo/dependencies.py310-rf50.lock -x __NO_PIP_INSTALL__  # --no-deps
+# source ./bootstrap -l -p 3.10.12 -d ../../hallo/xdependencies.py310-rf50.lock -x __NO_PIP_INSTALL__ # --no-deps
+
+# from venv_3.11.9
+# source ./bootstrap -l -d requirements.cfg            # install packages                      # ---------            
+# source ./bootstrap -l -d dependencies.lock  -x __NO_PIP_INSTALL__                            # --no-deps
+# source ./bootstrap -l -d dependencies.lock -e NO_INSTALL_DEPENDENCIES -x __NO_PIP_INSTALL__  # --no-deps
+# source ./bootstrap -l -d dependencies.py310-rf50.lock -e INSTALL_DEPENDENCIES -x __NO_PIP_INSTALL__  # --------- 
+# source ./bootstrap -l -d ../../hallo/dependencies.py310-rf50.lock -e INSTALL_DEPENDENCIES -x __NO_PIP_INSTALL__  # --------- 
+
+# to skip package installation use option -x __NO_PIP_INSTALL__
+
+# (*) test with different initial pyenv versions, see Matrix
+
+# Matrix which venv gets activated
+# Initial pyenv     NO -p X         -p 3             -p 3.11
+# version          installed venv  installed venv   installed venv
+# system         -> venv_3.10.12    venv_3.10.12   -> venv_3.11.9trafo
+# 2.7.17         -> venv_3.10.12    venv_3.10.12   -> venv_3.11.9
+# 3.10.12        -> venv_3.10.12    venv_3.10.12   -> venv_3.11.9
+# 3.11.9         -> venv_3.11.9  -> venv_3.10.12      venv_3.11.9
+# venv_3.10.12   -> venv_3.10.12    venv_3.10.12   -> venv_3.11.9
+# venv_3.11.9    -> venv_3.11.9  -> venv_3.10.12      venv_3.11.9
+
+# verified bootstrap executions, final test DRYRUN PASSED of
+# robot --dryrun -V dummy_config.py testsuite/Ulm/ET/
+# robot --dryrun -V dummy_config.py testsuite/Ulm/ET/CNI96186/
+# with following parameter combinations
+# source ./bootstrap -l -p 3    # .from 2.7.17 .venv installed with python 3.10.12 DRYRUN PASSED
+# source ./bootstrap -l -p 3.10 # .from 2.7.17 .venv installed with python 3.10.12 DRYRUN PASSED
+# source ./bootstrap -g -n ve01 -p 3.11 # from 3.10.12 ve01_3.11.9 installed with python 3.11.9 DRYRUN PASSED
+# source ./bootstrap -g -n ve02 # from 3.11.9 ve02_3.11.9 installed with python 3.11.9 DRYRUN PASSED
+# source ./bootstrap -g -n ve03 # from 2.7.17 ve03_3.10.12 installed with python 3.10.12 DRYRUN PASSED
+# source ./bootstrap -g -n .venv04 # from 2.7.17 ve03_3.10.12 installed with python 3.10.12 DRYRUN PASSED
+
+
+# invalid parameter combinations, leads to error message and script abortion
+# tested once with bootstrap v2.0
+# source ./bootstrap -l -p 3.6.0    # python version not available in pyenv
+# source ./bootstrap -l -p 0        # python version invalid
+# source ./bootstrap -l -p 0.1      # python version invalid
+# source ./bootstrap -l -p 0.0.1    # python version invalid
+# source ./bootstrap -l -p 1        # python version invalid
+# source ./bootstrap -l -p 1.1      # python version invalid
+# source ./bootstrap -l -p 1.0.0    # python version invalid
+# source ./bootstrap -l -p 2        # python version invalid
+# source ./bootstrap -l -p 2.7      # python version invalid
+# source ./bootstrap -l -p 2.7.17   # python version invalid
+# source ./bootstrap -l -p 3.       # python version invalid
+# source ./bootstrap -l -p 3.0      # python version invalid
+# source ./bootstrap -l -p 3.0.1    # python version invalid
+# source ./bootstrap -l -p 3.1      # python version invalid
+# source ./bootstrap -l -p 3.1.1    # python version invalid
+# source ./bootstrap -l -p 3.2      # python version invalid
+# source ./bootstrap -l -p 3.2.1    # python version invalid
+# source ./bootstrap -l -p 3.3      # python version invalid
+# source ./bootstrap -l -p 3.3.1    # python version invalid
+# source ./bootstrap -l -p 3.4      # python version invalid
+# source ./bootstrap -l -p 3.4.0    # python version invalid
+# source ./bootstrap -l -p 3.5      # python version invalid
+# source ./bootstrap -l -p 3.5.0    # python version invalid
+# source ./bootstrap -l -p 3.6.     # python version invalid
+# source ./bootstrap -l -p 3.6.0    # python version invalid <-- new, verified
+# source ./bootstrap -g -p 3.6.10   # python version invalid <-- new, verified
+# source ./bootstrap -l -p 3.6.10.  # python version invalid
+# source ./bootstrap -l -p 3.6.10.0 # python version invalid
+
+# source ./bootstrap -l -p 3.7      # python version invalid
+# source ./bootstrap -l -p 3.7.0    # python version invalid
+# source ./bootstrap -l -p 3.8      # python version invalid
+# source ./bootstrap -l -p 3.8.1    # python version invalid
+# source ./bootstrap -l -p 3.9      # python version invalid <- new, verified
+# source ./bootstrap -g -p 3.9.14   # python version invalid <- new, verified
+
+# source ./bootstrap -l -p 3.10.0   # python version not available in pyenv
+# source ./bootstrap -l -p 3.10.0.  # python version invalid
+
+# source ./bootstrap -l -p 4        # python version invalid
+# source ./bootstrap -l -p 4.0      # python version invalid
+# source ./bootstrap -l -p 4.0.0    # python version not available in pyenv
+# source ./bootstrap -l -p 4.0.0.   # python version invalid
+# source ./bootstrap -l -p 1 -d requirements.cfg    # python version invalid
+
+# source ./bootstrap -l -p         # wrong parametrisation
+# source ./bootstrap -l xxx
+# source ./bootstrap -l -d
+# source ./bootstrap -l -e
+# source ./bootstrap -l -d #
+# source ./bootstrap -l -p 3.10.12 -d
+# source ./bootstrap -l -p -d requirements.cfg
+# source ./bootstrap -l -p -d
+# source ./bootstrap -l -p 4 -d requirements.cfg
+# source ./bootstrap -l -p 3.10.12 -d #
+# source ./bootstrap -l -p -3.10.12
+# source ./bootstrap -l -p 3.10.-12
+# source ./bootstrap -l -p 3.10.12-
+
+venv_base_name="robotws"  # NOTE: in case of .venv the .venv is not shown by pyenv virtualenvs command
+local_venv_name=".venv"
+home_ute="/home/ute"
+pyenv_root_dir="$home_ute/.pyenv"
+pyenv_shims_dir="shims"
+pyenvdir="$pyenv_root_dir/versions"
+ute_pyenvdir="$home_ute/.pyenv/versions"
+envsdir="envs"
+debug=""
+global_venv_name=""
+
+# check if sript is sourced
+if [[ $BASH_SOURCE = "$0" || $ZSH_EVAL_CONTEXT = "toplevel" ]] ; then # https://stackoverflow.com/a/23009039 , https://unix.stackexchange.com/a/171404
+    echo "don't run '$0', source it (source '$0')" >&2
+    exit 1
+fi
+
+bs_heading1() {
+    echo "================================================================================"
+    for line in "$@" ; do echo "# $line" ; done
+    echo "================================================================================"
+}
+
+bs_heading2() {
+    echo "--------------------------------------------------------------------------------"
+    for line in "$@" ; do echo "| $line" ; done
+    echo "--------------------------------------------------------------------------------"
+}
+
+bs_info() {
+    echo "................................ INFO .........................................."
+    for line in "$@" ; do echo ". $line" ; done
+    echo "................................................................................"
+}
+
+bs_cat() {
+    echo "................................ CAT FILE $1 BEGIN ............................."
+    cat $1
+    echo "<EOF>"
+    echo "................................ CAT FILE $1 END ..............................."
+}
+
+bs_error() {
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ERROR !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" >&2
+    for line in "$@" ; do echo "! $line"  >&2 ; done
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" >&2
+}
+
+bs_help_info() {
+    bs_info "IMPORTANT NOTE: If existing virtual environment should be reused and installed libs should be just updated, bootstrap"\
+            "                MUST be called from this existing virtual enironment with exact same options from '-g','-l' or '-m' and '-p X.Y.Z'"\
+            "                as bootstrap was called to create this existing virtual environment. Bootstrap operates in 2 modes: "\
+            "    GLOBAL using pyenv to create and activate virtual environments: option '-g'"\
+            "    in global common directory /home/ute/.pyenv/versions."\
+            "    LOCAL virtual environment in local folder '.venv' with option '-l' or in folder .venv_X.Y.Z. with option '-m'."\
+            "    If the options are switched by user from '-g', '-l', '-m' to '-l', '-m', '-g' or vice versa or"\
+            "    the python version is switched from one call to the next call of bootstrap in an active environment,"\
+            "    the virtual environment and all lib packages were installed new."\
+            "    If no new virtual environemnt should be installed with next bootstrap call, when virtual environment is active,"\
+            "    please call bootstrap with same options from from '-g','-l' or '-m' and '-p X.Y.Z'. X.Y.Z is desired python version."\
+            "    If no virtual environment is active when calling bootstrap, bootstrap will install virtaul environment and lib packages in any case."\
+            ""\
+            "usage: source ./bootstrap [options]" "supported options:"\
+            "<empty>     : a valid current python version or if current python not valid python 3.10.12 will be choosen by default"\
+            "-p 3        : python 3.10.12 and dependencies.py310-rf50.lock will be choosen by default"\
+            "-p 3.10     : python 3.10.12 and dependencies.py310-rf50.lock will be choosen by default"\
+            "-p 3.11     : python 3.11.9  and dependencies.py311.lock will be choosen by default"\
+            "-p 3.10.X   : python 3.10.X  and dependencies.py310-rf50.lock will be choosen by default, python version must be available in pyenv"\
+            "-p 3.11.X   : python 3.11.X  and dependencies.py311.lock will be choosen by default, python version must be available in pyenv"\
+            "-p 3.Y.X    : python 3.Y.X , Y>9 and dependencies.py310-rf50.lock will be choosen by default, python version must be available in pyenv"\
+            "              valid python version are 3.10.X, 3.11.X or higher, choose for parameter -p one of the valid python versions"\
+            "-d <dependencies file>     : pip install uses specified dependecies file, e.g. dependencies.py3.lock, requirements.cfg"\
+            "-e INSTALL_DEPENDENCIES    : dependend packages were installed, pip does NOT ignore dependencies in any dependencies file"\
+            "   NO_INSTALL_DEPENDENCIES : no dependend package installed, pip option '--no-deps' ignores dependencies in any dependencies file"\
+            "   DEFAULT_NO_INSTALL_DEPENDENCIES_PY_LOCK : is default, pip option '--no-deps' ignores dependencies in *dependencies*.lock files"\
+            "                *dependencies*.lock file should contain resolved dependencies"\
+            "-f          : option without argument forces bootstrap to reinstall existing global virtual environment incl. all TA packages, when"\
+            "              'bootstrap -f' is started NOT from an active virtual environment with same name and same desired python version."\
+            "              When 'bootstrap -f' is started from an active virtual environment with same name and same desired python version"\
+            "              TA packages will be updated only, without reinstalling global virtual environment."\
+            "              A local virtual environment, which is installed in local directory will be updated or overwritten in any case,"\
+            "              with or without option '-f'. Is set always, if '-l' or '-m' option is set, resp. on local virtual environments."\
+            "-g          : triggers bootstrap to install or reuse a global pyenv virtual environment in common global '/home/ute/.pyenv/versions'"\
+            "              directory. For activation and deactivation enter 'pyenv activate virtual_env_name' resp. 'pyenv deactivate',"\
+            "              see chapter activation and deactivation of virtuel environments below."\
+            "              NOTE : exact one of the options '-g', '-l', '-m' must be set."\
+            "-l          : triggers bootstrap to install or reuse a local virtual environment in local '.venv' directory where bootstrap script"\
+            "              is located and uses pyenv just for switching python version."\
+            "              To activate virtual environment from bootstrap script directory please enter 'source .venv/bin/activate'"\
+            "              To deactivate virtual environment just enter 'deactivate'"\
+            "              NOTE : exact one of the options '-g', '-l', '-m' must be set."\
+            "-m          : same as -l, but creates virtual environment directory name extended with python version '.venv_3.X.Y'"\
+            "              NOTE : exact one of the options '-g', '-l', '-m' must be set."\
+            "-n <name>   : given virtual environment name which is extended by the python version to e.g. 'my_ve_3.X.Y'"\
+            "              by default virtual environment name is set to 'robotws_3.X.Y'."\
+            "              Has no effect, when '-l' or '-m' option is set, resp. on local virtual environments."\
+            "-s          : option without argument installs packages for sanity checks. e.g. ci-pipeline-steps"\
+            "-h          : displays this text"\
+            "-x __NO_PIP_INSTALL__ : debug mode: installation of any software package from repository is skipped"\
+            ""\
+            "Activation and deactivation of virtual environments can be done by the following commands:"\
+            "GLOBAL pyenv virtual environment: 'pyenv activate virtual_env_name', 'pyenv deactivate'"\
+            "   use 'pyenv versions' : to show available virtual environments, shown with '-->' pointing to virtual environment directory"\
+            "   use 'pyenv' to get help for pyenv"\
+            "LOCAL, legacy virtual environment: 'source /virtual_environment_path/bin/activate', 'deactivate'"\
+            "   An active GLOBAL or LOCAL virtual environemnt is shown by the environment variables:"\
+            "   \$VIRTUAL_ENV and \$PYENV_VIRTUAL_ENV. If both are set, a GLOBAL pyenv virtual environment is active"\
+            "   \$VIRTUAL_ENV is set and \$PYENV_VIRTUAL_ENV is empty, a LOCAL virtual environment is active"\
+            "   If both \$VIRTUAL_ENV and \$PYENV_VIRTUAL_ENV are empty, no virtual environment is set."\
+            ""\
+            "WARNING:    With option '-g' bootstrap uses now the same virutual environment creation and activation procedure as cloud TLs,"\
+            "            which use the pyenv utility, which store all by pyenv created virtual environments in one common directory in fixed location"\
+            "            '/home/ute/.pyenv/versions' under the default name 'robotws_X.Y.Z'. (X.Y.Z is the desired python version)"\
+            "            This could lead to overwrite a virtual environment with same name and python version when bootstrap is called multiple "\
+            "            on one and the same UTE VM under user ute."\
+            "            This problem cannot (!) be solved by using fake-user script: source /mnt/etfiles/users/bin/setuser your-nsn-intra-user,"\
+            "            because pyenv still uses '/home/ute.pyenv/versions' for storing virtual environments."\
+            ""\
+            "            By choosing an own individual virtual environment name, which is not in use, by 'bootstrap -n unique_name' option,"\
+            "            overwriting could be avoided. But the choosen name must be unique and not used by others."\
+            ""\
+            "            Instead of choosing individual name 'bootstrap -l' resp. '-m' option can be used to create local virtual environment not using pyenv"\
+            "            based procedure as on cloud TLs. In this case the virtual environment is created in a local folder '.venv' resp. '.venv_X.Y.Z'"\
+            "            inside the local robotws directory, where the bootstrap script is started."\
+            ""
+}
+
+bs_getPythonVersionFromToolOutput2() {
+    
+    local -n _version=$1
+    local -n _sub_version=$2
+    local pattern="\s(([0-9]+)\.([0-9]+)\.([0-9]+))"
+    
+    _version=$(python -V 2>&1)
+
+    if [[ $_version =~ $pattern ]]; then
+        _version=${BASH_REMATCH[1]}
+        _sub_version[0]=${BASH_REMATCH[2]}
+        _sub_version[1]=${BASH_REMATCH[3]}
+        _sub_version[2]=${BASH_REMATCH[4]}
+    else
+        _version="INVALID"
+        _sub_version[0]="INVALID"
+        _sub_version[1]="INVALID"
+        _sub_version[2]="INVALID"
+    fi
+}
+
+bs_getPythonVersionFromToolOutput() {
+    local -n _version=$1
+    local -n _sub_version=$2
+    read -a _version <<< $(python -V 2>&1 | cut -d\  -f2)
+    IFS=. read -a _sub_version <<< $(python -V 2>&1 | cut -d\  -f2)
+
+    local pattern="^([0-9]+)\.([0-9]+)\.([0-9]+)"
+    if [[ ! $_version =~ $pattern ]]; then
+        _version="INVALID"
+        _sub_version[0]="INVALID"
+        _sub_version[1]="INVALID"
+        _sub_version[2]="INVALID"
+    fi
+}
+
+bs_getPythonVersion() {
+    local version_string=$1
+    local -n _python_version=$2
+    # Modify Python Version: 3 or 3.10
+    if [[ $version_string =~ ^3(\.10)?$ ]] ; then
+        _python_version="3.10.12"
+    # Modify Python Version: 3.11
+    elif [[ $version_string =~ ^3\.11$ ]] ; then 
+        _python_version="3.11.9"
+    # Modify Python Version: regex for allowed patterns
+    elif [[ ! $version_string =~ ^3\.([1-9][0-9]+)\.([0-9]|[1-9][0-9]+)$ ]] ; then
+        _python_version="INVALID"
+    else
+        _python_version=$version_string
+    fi
+}
+
+bs_checkDependenciesOption() {
+    local dependencies_options=$1
+ 
+    if [[ $dependencies_options != "" ]] ; then
+        user_defined_dependencies_options=$dependencies_options
+        bs_info "user defined dependencies options set to: $dependencies_options"
+    else
+        user_defined_dependencies_options="#"
+        bs_error "user defined dependencies options is INVALID"
+    fi
+}
+
+bs_set_pip_options() {
+    local primary_server
+    local primary_url
+    local secondary_server
+    local secondary_url
+    
+    local -n _pip_options=$1
+    _pip_options=(
+        --isolated                   # ignore ~/.pip/pip.conf and environment variables for pip
+        )
+    local -n _chosen_pip_options=$2
+
+    bs_get_artifactory_name primary primary_server primary_url
+    bs_get_artifactory_name secondary secondary_server secondary_url
+    
+    if ping -c 4 -w 10 $primary_server ; then
+        _pip_options+=(            
+            --timeout 20 --retries 5
+            -i $primary_url
+            )
+        _chosen_pip_options="primary"
+    elif ping -c 10 -w 30 $secondary_server ; then
+        _pip_options+=(
+            --timeout 60 --retries 10
+            -i $secondary_url
+            )
+        _chosen_pip_options="secondary"
+    else
+        bs_error "terminate job: server's containing test automation repository are not pingable"
+        _pip_options=()
+        _chosen_pip_options="NONE"
+        return
+    fi
+    bs_info "pip_options: ${_pip_options[*]}"
+}
+     
+bs_get_artifactory_name() {
+    local -n _servername=$2
+    local -n _url=$3
+    local token="$(cat /etc/token/ca_ute_artifactory_readonly)"
+
+
+    if [[ $1 = "secondary" ]]; then
+        _servername="artifactory-hz1.int.net.nokia.com"
+        _url="https://ca_ute_artifactory_readonly:${token}@artifactory-hz1.int.net.nokia.com/artifactory/api/pypi/ute-pypi-virtual/simple/"
+    else
+        _servername="artifactory-espoo2.int.net.nokia.com"
+        _url="https://ca_ute_artifactory_readonly:${token}@artifactory-espoo2.int.net.nokia.com/artifactory/api/pypi/ute-pypi-virtual/simple/"
+    fi
+}
+                                    
+bs_get_dependencies_options() {
+    local python_version=$1
+    local -n _dependencies_options=$2
+    local user_dependencies_file=$3
+    local install_dependencies=$4
+    local -n _no_deps=$5
+    
+    if [[ $user_dependencies_file != "" ]]; then
+        _dependencies_options=$user_dependencies_file
+        if [[ $user_dependencies_file =~ .*dependencies[^/]*lock$ ]]; then
+            _no_deps="--no-deps"
+            bs_info "-1- Dependencies file from user given: $_dependencies_options"\
+                    "All dependencies will be ignored by default for $_dependencies_options file"
+        else
+            _no_deps=""
+            bs_info "-2- Dependencies file from user given: $_dependencies_options"\
+                    "Dependend packages will be installed by default for $_dependencies_options"
+        fi
+		
+    # Modify Phython Version: depencies file selection
+    elif [[ $python_version = 3.10.* ]] ; then
+        _dependencies_options="dependencies.py310-rf50.lock"
+        _no_deps="--no-deps"
+        bs_info "-3- Dependencies file for python 3.10 choosen: $_dependencies_options"\
+                "Dependencies will be ignored by default for $_dependencies_options"
+    else
+        _dependencies_options="dependencies.py311-rf50.lock"
+        _no_deps="--no-deps"
+        bs_info "-4- Dependencies file for python 3.11 choosen: $_dependencies_options"\
+                "Dependencies will be ignored by default for $_dependencies_options"
+    fi
+
+    if [[ $install_dependencies = NO_INSTALL_DEPENDENCIES ]]; then
+        _no_deps="--no-deps"
+        bs_info "-5- User has decided to ignore all dependencies for dependencies file: $_dependencies_options"
+
+    elif [[ $install_dependencies = INSTALL_DEPENDENCIES ]]; then
+        _no_deps=""
+        bs_info "-6- User has decided to install all dependend packages for dependencies file: $_dependencies_options"
+    fi
+    echo "user_dependencies_file=$user_dependencies_file"
+    echo "_no_deps=$_no_deps"
+}
+
+bs_init_pyenv() {
+    local -n _status=$1
+
+    export PYENV_ROOT="$pyenv_root_dir"
+
+    which pyenv > /dev/null || export PATH="$PYENV_ROOT/bin:$PATH"
+    which pyenv > /dev/null # test again if pyenv is there
+    if [[ $? != "0" ]]; then
+        _status="NO_PYENV"
+        return
+    fi
+
+    eval "$(pyenv init -)"
+    
+}
+
+bs_deactivate_virtual_environment() {
+
+    echo ----pyenv versions BEFORE deactivate--------
+    pyenv versions
+    echo ----ENV VARs BEFORE deactivate--------------
+    echo PATH=$PATH
+    echo VIRTUAL_ENV=$VIRTUAL_ENV
+    echo PYENV_VIRTUAL_ENV=$PYENV_VIRTUAL_ENV
+    echo "which python : $(which python)"
+    echo --------------------------------------------
+    # if legacy .venv was activated try to deactivate, else try pyenv deactivate
+    if [[ -n $PYENV_VIRTUAL_ENV ]] && [[ -n $VIRTUAL_ENV ]] ; then
+        echo "--> pyenv deactivate"
+        pyenv deactivate
+    elif [[ -z $PYENV_VIRTUAL_ENV ]] && [[ -n $VIRTUAL_ENV ]] ; then
+        echo "--> deactivate"
+        deactivate
+    else
+        echo "--> no virtual environment active, nothing to deactivate"
+    fi
+    echo ----pyenv versions AFTER deactivate----------
+    pyenv versions
+    echo ----ENV VARs AFTER deactivate----------------
+    echo PATH=$PATH
+    echo VIRTUAL_ENV=$VIRTUAL_ENV
+    echo PYENV_VIRTUAL_ENV=$PYENV_VIRTUAL_ENV
+    echo "which python : $(which python)"
+    echo ---------------------------------------------
+}
+
+bs_main() {
+    local extended_local_venv_name=$1
+    local local_venv=$2
+    local install_sanity_check_packages=$3
+    local force_venv_update=$4
+    local install_dependencies=$5
+    local desired_python_version=$6
+    local desired_dependencies_options=$7
+
+    bs_heading1 "---- BS_MAIN -$1- -$2- -$3- -$4- -$5- -$6- -$7- -$8- -$9- ----"
+
+    bs_info "VIRTUAL_ENV        : $VIRTUAL_ENV"\
+            "PYENV_VIRTUAL_ENV  : $PYENV_VIRTUAL_ENV"\
+            "which python       : $(which python)"\
+            "pyenv which python : $(pyenv which python)"\
+            "pyenv version-name : $(pyenv version-name)"\
+            "python --version   : $(python -V 2>&1)"\
+            "which pyenv        : $(which pyenv)"\
+            "pyenv --version    : $(pyenv --version)"\
+            "pyenv version      : $(pyenv version)"\
+            "PYENV_ROOT         : $PYENV_ROOT"\
+            "PATH               : $PATH"
+    echo ----pyenv versions---------
+    pyenv versions
+    echo ---------------------------
+
+    # check current python version
+    local raw_current_python_version=$(python -c 'import sys; print(sys.version)')
+
+    bs_getPythonVersionFromToolOutput current_python_version current_python_sub_version
+
+    local valid_current_python_version=""
+    bs_getPythonVersion "$current_python_version" valid_current_python_version
+
+    # pyenv python version 
+    local pyenv_version="$(pyenv version)"
+    bs_info "current_python_version: '$current_python_version'"\
+            "current  major version: '${current_python_sub_version[0]}'  minor version: '${current_python_sub_version[1]}'  patch version: '${current_python_sub_version[2]}'"\
+            "from pyenv set version        : '$pyenv_version'"\
+            "raw_current_python_version    : '$raw_current_python_version'"\
+            "valid_current_python_version  : '$valid_current_python_version'"
+    #!!! default
+    if [[ $desired_python_version = NONE ]]; then
+        if [[ $valid_current_python_version = INVALID ]]; then
+            desired_python_version="3.10.12" #!#! default version
+            bs_info "python version will be set to: '$desired_python_version' (if possible)"
+        else
+            desired_python_version="$valid_current_python_version"
+            bs_info "use current python version: '$desired_python_version'"
+        fi
+    else
+        local valid_desired_python_version=""
+        bs_getPythonVersion "$desired_python_version" valid_desired_python_version
+        bs_info "user desired python version: '$valid_desired_python_version'"
+        if [[ $valid_desired_python_version = INVALID ]]; then
+            bs_error "terminate job: requested python version: '$desired_python_version' is INVALID ! please choose a valid python version and try again"
+            bs_help_info
+            return
+        else
+            desired_python_version="$valid_desired_python_version"
+        fi
+    fi
+
+    # get pip options
+    local pip_options
+    local which_pip_options
+    bs_set_pip_options pip_options which_pip_options
+    echo length of pip_options: ${#pip_options[@]}
+    if [[ ${#pip_options[@]} = 0 ]]; then
+        bs_error "terminate job: no pip options available"
+        return
+    fi
+    
+    # directory of this script:
+    # - contains "requirements.cfg" resp. dependencies.pyXX.lock
+    # - virtual environement will be in subdirectory ".venv"
+    local script_dir=$(readlink -f $(dirname ${BASH_SOURCE:-${(%):-%x}})) # https://stackoverflow.com/a/54755784
+
+    # log proxies, user, path and hostname
+    local proxies=($(env | egrep -i proxy))
+    bs_info "proxies    :"\
+            "${proxies[@]}" \
+            "user       : $USER" \
+            "HOME       : $HOME" \
+            "PYENV_ROOT : $PYENV_ROOT" \
+            "PATH       : $PATH" \
+            "hostname   : $(hostname)" \
+            "host       : $(hostname -I)"
+
+    local no_deps=""
+    bs_get_dependencies_options "$desired_python_version" dependencies_options "$desired_dependencies_options" "$install_dependencies" no_deps
+    
+    # python libraries used for installing other python libraries:
+    # - setuptools dropped support for Python 2 in version 45, ute-installer requires <=44
+    # - pip activates stricter dependency resolver in 20.3, which rejects version conflicts in Python 3, therefore pip<20.3
+    # - these versions have to be added to each "pip install" command to keep them despite of
+    #   "--upgrade-strategy eager" for other packages
+    local ci_pipeline_steps_installers=("setuptools<=44,>=20") #  "urllib3~=1.25" "urllib3>=1.25,==1.*"
+
+    #########################################################################################################################
+    # step 1: create and activate virtual environment
+    #########################################################################################################################
+
+    venv_reinstallation=NO
+    local venv_name="${venv_base_name}_${desired_python_version}"
+    # absolute pathname of virtual environment (in directory /home/ute/.pyenv/versions/X.Y.Z/envs/venv_X.Y.Z)
+    #/home/ute/.pyenv/versions/--------X.Y.Z----------/--envs--/venv_X.Y.Z   
+    local venv_dir="$pyenvdir/$desired_python_version/$envsdir/$venv_name"
+    
+    if [[ $local_venv = YES ]] ; then
+        if [[ $extended_local_venv_name = YES ]] ; then
+            venv_name="${local_venv_name}_${desired_python_version}"
+            venv_dir="${script_dir}/${local_venv_name}_${desired_python_version}"
+
+        else
+            venv_name="$local_venv_name"
+            venv_dir="$script_dir/$local_venv_name"
+            # the local .venv can have different python versions installed, need to check current python version too in case of virt env is active
+            if [[ $venv_name = $local_venv_name ]] && [[ $VIRTUAL_ENV = $venv_dir ]] ; then
+
+                bs_getPythonVersionFromToolOutput current_python_version current_python_sub_version
+                bs_info "The virtual environment '.venv' is active, in case of current python version: '${current_python_version}'"\
+                        " differs from user desired python version: '${desired_python_version}' virtual environment reinstallation is neccessary."
+                if [[ $current_python_version != $desired_python_version ]] ; then
+                    echo "--> force virtual environment reinstallation"
+                    venv_reinstallation=YES
+                else
+                    echo "virtual environment reinstallation not needed"
+                fi
+            fi
+        fi
+    else
+        # if the virtual environment already exists, the venv update must be forced, could possibly be used by other user
+        if [[ -d $venv_dir ]] && [[ $force_venv_update != YES ]] ; then
+            bs_error "Desired global virtual environment '$venv_name' exists already in '$venv_dir'."\
+                     "It might probably be used by others!"\
+                     "If you do not want to overwrite it, choose a unique name for virtual environement and restart with 'bootstrap -g -f -n unique_venv_name',"\
+                     "OR install a local virtual environment in local directory with 'bootstrap -l' or 'bootstrap -m' option, see help 'bootstrap -h'."\
+                     ""\
+                     "If you want to overwrite or update installed global virtual environment, please restart with 'bootstrap -g -f' option."\
+                     "In case of starting 'bootstrap -g -f' from an active virtual environment, which has desired python version '${desired_python_version}'"\
+                     "installed, TA packages were updated only. To force a reinstalltion of a global virtual environment in any case,"\
+                     "start 'bootstrap -g -f' from a NOT active virtual environment."
+            return
+        elif [[ ! -d $venv_dir ]] ; then
+            bs_info "Desired global virtual environment '$venv_name' will be created new in '$venv_dir'."
+        else
+            bs_info "Existing global virtual environment '$venv_name' in '$venv_dir' is forced to be overwritten on users request."
+        fi
+    fi
+    
+    bs_info "If requested virtual environment or python version differ from current, virtual environment needs to be reinstalled:"\
+            "requested virtual environment           : ${venv_name}"\
+            "requested virtual environment directory : ${venv_dir}"\
+            "current                     VIRTUAL_ENV : ${VIRTUAL_ENV}"\
+            "current               PYENV_VIRTUAL_ENV : ${PYENV_VIRTUAL_ENV}"\
+            "requested / desired python version      : ${desired_python_version}"\
+            "current python version                  : ${current_python_version}"\
+            
+    if [[ $VIRTUAL_ENV != $venv_dir ]] || [[ $venv_reinstallation = YES ]] ; then
+
+        bs_heading1 "STEP 1: init pyenv, create and activate virtual environment"\
+                    "pyenv switches to python version: '$desired_python_version', creates and activates virtualenv: '$venv_name'"\
+                    "for robotws in directory '$venv_dir'"\
+                    "and creates in directoty '$script_dir' the link"\
+                    "${venv_name} -> ${venv_dir} pointing to virtual enviroment directory"
+
+        bs_heading1 "check if pyenv is installed and initialize pyenv"
+        local status=""
+        bs_init_pyenv status
+        if [[ $status = NO_PYENV ]]; then
+            bs_error "terminate job: don't run bootstrap with these options without pyenv installed, install pyenv first"
+            return
+        fi
+
+        echo "creating now virtual enviroment for robotws in '$venv_dir'"
+        if [[ $local_venv != YES ]] ; then
+            echo "by the following steps 1-A through 1-F in case of no local installation............."
+        else
+            echo "by the following steps 1-a through 1-d in case of local installation............."
+        fi
+        if [[ $local_venv != YES ]] ; then
+            echo ---- list of pyenv virtualenvs ---------
+            pyenv virtualenvs
+            echo "        VIRTUAL_ENV : ${VIRTUAL_ENV}"
+            echo "  PYENV_VIRTUAL_ENV : ${PYENV_VIRTUAL_ENV}"
+            echo ----------------------------------------
+
+            bs_heading1 "check if directory with desired python version '${desired_python_version}' is available in pyenv directory '${pyenvdir}'"
+            echo "--> if '${pyenvdir}/${desired_python_version}' exists, desired python is avaiable"
+            echo ---- contents of $pyenvdir -------------
+            ls $pyenvdir
+            echo ----------------------------------------
+            if [[ ! -d ${pyenvdir}/${desired_python_version} ]] ; then
+                bs_error "terminate job: python version '$desired_python_version' not installed in pyenv, please choose another:"
+                echo ----pyenv versions----------------------
+                pyenv versions
+                echo " "
+                echo "        VIRTUAL_ENV : ${VIRTUAL_ENV}"
+                echo "  PYENV_VIRTUAL_ENV : ${PYENV_VIRTUAL_ENV}"
+                echo ----------------------------------------
+                return
+            else
+                bs_info "desired python version is available: '${pyenvdir}/${desired_python_version}'"
+            fi
+
+            # link to absolute pathname of virtual environment (link is in same directory as this script)
+            bs_heading1 "1-A: delete virtual environment link or directory '${venv_name}', if present"
+            echo "--> rm -rf $script_dir/${venv_name}"
+            rm -rf $script_dir/${venv_name}
+        
+            bs_heading1 "1-B: deactivate any active virtual environment"
+            bs_deactivate_virtual_environment
+            
+            echo "        VIRTUAL_ENV : ${VIRTUAL_ENV}"
+            echo "  PYENV_VIRTUAL_ENV : ${PYENV_VIRTUAL_ENV}"
+            echo " "
+            echo "contents of pyenv versions directory:"
+            ls "$pyenvdir"
+            echo ---------------------------------------------
+
+            bs_heading1 "1-C: delete existing virtualenv $venv_name, if present"
+            echo "--> pyenv virtualenv-delete --force $venv_name"
+            pyenv virtualenv-delete --force $venv_name
+            echo ----pyenv versions----------------------
+            pyenv versions
+            echo "        VIRTUAL_ENV : ${VIRTUAL_ENV}"
+            echo "  PYENV_VIRTUAL_ENV : ${PYENV_VIRTUAL_ENV}"
+            echo " "
+            echo "contents of pyenv versions directory after virtualenv-delete:"
+            ls "$pyenvdir"
+            echo ----------------------------------------
+
+            bs_heading1 "1-D: delete existing dir '$venv_dir'"\
+                        "     and link $pyenvdir/$venv_name, if present"
+            echo "--> rm -rf $venv_dir; rm -rf $pyenvdir/$venv_name"
+            rm -rf "$venv_dir"
+            rm -rf "$pyenvdir/$venv_name"
+            echo "        VIRTUAL_ENV : ${VIRTUAL_ENV}"
+            echo "  PYENV_VIRTUAL_ENV : ${PYENV_VIRTUAL_ENV}"
+            echo " "
+            echo "contens of pyenv versions directory after deletion of virtualenv links:"
+            ls "$pyenvdir"
+
+            bs_heading1 "1-E: creating virtual environment '$venv_name' in dir"\
+                        "     '$venv_dir' for Python '$desired_python_version'"
+            echo "--> pyenv virtualenv --force $desired_python_version $venv_name"
+            pyenv virtualenv --force $desired_python_version $venv_name
+            if [[ $? != "0" ]]; then
+                bs_error "terminate job: virtual environment cannot be created"\
+                         "probably desired python version '$desired_python_version' not installed in pyenv, please choose another:"
+                return
+            fi
+            echo ----pyenv versions----------------------
+            pyenv versions
+            echo ----------------------------------------
+
+            bs_heading1 "1-F: activating new virtual environment '$venv_name' in"\
+                        "     '$venv_dir'"
+            echo "--> pyenv activate $venv_name"
+            pyenv activate $venv_name
+            echo ----pyenv versions----------------------
+            pyenv versions
+            echo ----------------------------------------
+            echo ---- list of pyenv virtualenvs ---------
+            pyenv virtualenvs
+            echo ----------------------------------------
+
+            if [[ $VIRTUAL_ENV != $venv_dir ]] || [[ $PYENV_VIRTUAL_ENV != $venv_dir ]] || [[ $venv_name != $(pyenv version-name) ]] ; then
+                bs_error "terminate job: VIRTUAL_ENV path                        :'$VIRTUAL_ENV'"\
+                         "     and PYENV_VIRTUAL_ENV path                        :'$PYENV_VIRTUAL_ENV'"\
+                         "must be identical to requested virtual_env path        :'$venv_dir'"\
+                         "             pyenv version-name                        :'$(pyenv version-name)'"\
+                         "must be identical to requested virtual environment name:'$venv_name'"\
+                         "virtual environment probably not activated or not activated correctly."
+                return
+            fi
+            # link to absolute pathname of virtual environment (link is in same directory as this script)
+            bs_heading1 "1-G: create venv link ${venv_name} -> $venv_dir"\
+                        "     pointing to virtual enviroment directory in '$script_dir'"
+            rm -rf $script_dir/${venv_name}
+            ln -s $VIRTUAL_ENV $script_dir/${venv_name}
+            ls -las $script_dir | egrep ${venv_name}
+            bs_heading1 "VIRTUAL ENVIRONMENT '$venv_name' ACTIVATED NOW"\
+                        "VIRTUAL_ENV       : '$VIRTUAL_ENV'"\
+                        "PYENV_VIRTUAL_ENV : '$PYENV_VIRTUAL_ENV'"\
+                        "${venv_name}            -> '$venv_dir'"
+        else
+            bs_heading1 "check if directory with desired python version '${desired_python_version}' is available in pyenv directory '${pyenvdir}'"
+            echo "--> if '${pyenvdir}/${desired_python_version}' exists, desired python is avaiable"
+            echo ---- contents of $pyenvdir -------------
+            ls $pyenvdir
+            echo ----------------------------------------    
+            if [[ ! -d ${pyenvdir}/${desired_python_version} ]] ; then
+                bs_error "terminate job: python version '$desired_python_version' not installed in pyenv, please choose another:"
+                return
+            else
+                bs_info "desired python version is available: '${pyenvdir}/${desired_python_version}'"
+            fi
+
+            bs_heading1 "1-a: deactivate and delete venv directory '${venv_name}', if active and/or present"
+            echo "        VIRTUAL_ENV : ${VIRTUAL_ENV}"
+            echo "  PYENV_VIRTUAL_ENV : ${PYENV_VIRTUAL_ENV}"
+            echo " "
+            bs_deactivate_virtual_environment
+            echo "        VIRTUAL_ENV : ${VIRTUAL_ENV}"
+            echo "  PYENV_VIRTUAL_ENV : ${PYENV_VIRTUAL_ENV}"
+            echo " "
+
+            echo "--> rm -rf $script_dir/${venv_name}"
+            rm -rf $script_dir/${venv_name}
+
+            bs_heading1 "1-b: switch python version to desired one '$desired_python_version', if neccessary"
+
+            echo "switch python version to '$desired_python_version'"
+            echo "--> pyenv local $desired_python_version"
+            pyenv local $desired_python_version
+
+            pyenv versions
+            echo " "
+            echo "        VIRTUAL_ENV : ${VIRTUAL_ENV}"
+            echo "  PYENV_VIRTUAL_ENV : ${PYENV_VIRTUAL_ENV}"
+            echo ----------------------------------------
+        
+            bs_heading1 "1-c: creating virtual environment '$venv_dir' in '$script_dir'"
+            echo "--> python -m venv $venv_dir"
+            python -m venv "$venv_dir"
+
+            bs_heading1 "1-d: activating virtual environment '$venv_dir' in '$script_dir'"           
+            echo "--> source $venv_dir/bin/activate"
+            source "$venv_dir/bin/activate"
+
+            echo "--> remove .python-version"
+            rm .python-version
+
+            pyenv versions
+            echo " "
+            echo "        VIRTUAL_ENV : ${VIRTUAL_ENV}"
+            echo "  PYENV_VIRTUAL_ENV : ${PYENV_VIRTUAL_ENV}"
+            echo ----------------------------------------
+            
+            if [[ -n $PYENV_VIRTUAL_ENV ]] || [[ -z ${VIRTUAL_ENV} ]] || [[ ${venv_dir}/bin/python != $(which python) ]] ; then
+                bs_error "terminate job: Virtual environment '$venv_dir' in '$script_dir' not activated successfully"\
+                         "PYENV_VIRTUAL_ENV=$PYENV_VIRTUAL_ENV must be empty, or"\
+                         "VIRTUAL_ENV=$VIRTUAL_ENV must not be empty, or"\
+                         "Requested path to python:  '${venv_dir}/bin/python'   is not equal"\
+                         "to current path to python: '$(which python)'"
+                return
+            fi
+        
+        fi
+    else
+        bs_heading1 "Using current installed and activated virtual environment $VIRTUAL_ENV"\
+                    "just installing all python packages anew."
+        bs_info "HINT: Due to python packages from previous bootstrap run are still installed in current reused virtual environment"\
+                "the reinstallation of the packages might cause pip error messages like this one:"\
+                ""\
+                "'ERROR: pip's dependency resolver does not currently take into account all the packages that are installed.'"\
+                "'This behavior is the source of the following dependency conflicts.'"\
+                "'ci-pipeline-steps 0.64.0 requires pip<21.3, but you have pip 21.3.1 which is incompatible.'"\
+                ""\
+                "This might be caused by the previous bootstrap run. pip installed a package and down- or "\
+                "upgraded dependent packages to which this package version is temporarily incompatible."\
+                "During the following package installation these temporarily installed, incompatible packages will be removed again"\
+                "So in this example, when during later installation phase the correct package is installed again, like this:"\
+                ""\
+                "'Successfully installed pip-21.2.4'"\
+                ""\
+                "the above pip error message can be ignored."
+
+        if [[ $PYENV_VIRTUAL_ENV = $venv_dir ]] ; then
+            echo ---- list of pyenv virtualenvs ---------
+            pyenv virtualenvs
+            echo ---- pyenv versions --------------------
+            pyenv versions
+            echo PATH=$PATH
+            echo VIRTUAL_ENV=$VIRTUAL_ENV
+            echo PYENV_VIRTUAL_ENV=$PYENV_VIRTUAL_ENV
+            echo ----------------------------------------
+        
+            if [[ $local_venv = YES ]] ; then
+                bs_error "terminate job: cannot reuse a global virtual environment as local virtual environment"
+                return
+            fi
+        elif [[ $PYENV_VIRTUAL_ENV != $VIRTUAL_ENV ]] && [[ -n $PYENV_VIRTUAL_ENV ]] ; then
+                bs_error "terminate job: inconsistant situation: it connot be both virtual environments at the same time active:"\
+                         "local virtual environment  : VIRTUAL_ENV        : '$VIRTUAL_ENV' and"\
+                         "global virtual environment : PYENV_VIRTUAL_ENV  : '$PYENV_VIRTUAL_ENV'"
+                return
+        elif [[ -z $PYENV_VIRTUAL_ENV ]] ; then
+            if [[ $local_venv != YES ]] ; then
+                bs_error "terminate job: cannot reuse a local virtual environment as global virtual environment"
+                return
+            fi
+            echo ---- ENV VARIABLES ---------------------
+            echo PATH=$PATH
+            echo "VIRTUAL_ENV       : $VIRTUAL_ENV"
+            echo "which python      : $(which python) --> must be located in '$VIRTUAL_ENV'"
+            echo "PYENV_VIRTUAL_ENV : $PYENV_VIRTUAL_ENV"
+            echo ----------------------------------------
+            if [[ $(which python) != ${VIRTUAL_ENV}* ]] ; then
+                bs_error "which python      : '$(which python)'"\
+                         "NOT located in    : '$VIRTUAL_ENV'"\
+                         "cannot activate local virtual environment correctly"
+                return
+            fi
+            
+        fi 
+    fi
+
+    #########################################################################################################################
+    # step 2: install software packages from artifactory
+    #########################################################################################################################
+
+    bs_heading1 "STEP 2: Install software packages from artifactory, steps 2-B, 2-C / 2-D (optional)"
+
+    bs_heading1 "2-B: install main packages using '$dependencies_options' "
+    bs_info "python -m pip install $no_deps \"${pip_options[@]}\" -r \"$script_dir/$dependencies_options\" "
+    if ! [[ $debug == *__NO_PIP_INSTALL__* ]]; then
+        python -m pip install $no_deps "${pip_options[@]}" -r "$script_dir/$dependencies_options"
+    fi
+
+    if [[ $install_sanity_check_packages = YES ]]; then
+        bs_heading1 "2-C: install tools for sanity checks"
+        bs_info "python -m pip install \"${pip_options[@]}\" \"${ci_pipeline_steps_installers[@]}\" ci_pipeline_steps smmap2==2.0.5"
+        # smmap2: see requirements.cfg resp dependencies.pyXX.lock , newer versions of this library break importing git
+        if ! [[ $debug == *__NO_PIP_INSTALL__* ]]; then
+            python -m pip install "${pip_options[@]}" "${ci_pipeline_steps_installers[@]}" ci_pipeline_steps smmap2==2.0.5   # ci_pipeline_steps_installers
+        fi
+    else
+        bs_heading1 "2-C skipped: tools for sanity checks not installed"
+    fi
+    if [[ $local_venv != YES ]] ; then
+        bs_heading1  "2-D trigger pyenv reorganisation after installation of executables"
+        echo "--> pyenv rehash"
+        pyenv rehash
+        robot_shims_location=$(which robot)
+        robot_location=$(pyenv which robot)
+        if [[ $robot_shims_location != ${pyenv_root_dir}/${pyenv_shims_dir}/robot ]] ; then
+            bs_error "Robot shims script is not found in ${pyenv_root_dir}/${pyenv_shims_dir} directory, even after pyenv rehash not."\
+                     "That means robot executable from robot framework is not installed in the activated virtual envronment '$venv_name' in"\
+                     "directory '${venv_dir}/bin'. Another robot from location $robot_shims_location might be used or robot will not be found at all"\
+                     "for executing robot test cases. Probably other executables were also not found or taken from other location which is in"\
+                     "PATH=$PATH"\
+                     "by accident"\
+                     "ROBOT_SHIMS_LOCATION : $robot_shims_location"\
+                     "ROBOT_LOCATION       : $robot_location"
+        else
+            bs_info "robot shims script taken from correct location ${pyenv_root_dir}/${pyenv_shims_dir}"\
+                    "ROBOT_SHIMS_LOCATION : $robot_shims_location"\
+                    "ROBOT_LOCATION       : $robot_location"
+        fi
+        
+        bs_heading1 "VIRTUAL_ENV       : '$VIRTUAL_ENV'"\
+                    "PYENV_VIRTUAL_ENV : '$PYENV_VIRTUAL_ENV'"\
+                    "${venv_name}            -> '$venv_dir'"
+    else
+        robot_location=$(which robot)
+        if [[ $robot_location != ${venv_dir}/bin/robot ]] ; then
+            bs_error "Robot is not found in '${venv_dir}/bin' directory."\
+                     "That means robot executable from robot framework is not installed in the activated virtual envronment '$venv_name' in"\
+                     "directory '${venv_dir}/bin'. Another robot from location $robot_location might be used or robot will not be found at all"\
+                     "for executing robot test cases. Probably other executables were also not found or taken from other location which is in"\
+                     "PATH=$PATH"\
+                     "by accident."\
+                     "ROBOT_LOCATION       : $robot_location"
+        else
+            bs_info "robot found and taken from correct location ${venv_dir}/bin"\
+                     "ROBOT_LOCATION       : $robot_location"
+        fi
+        bs_heading1 "VIRTUAL_ENV                 : '$VIRTUAL_ENV'"\
+                    "PYENV_VIRTUAL_ENV           : '$PYENV_VIRTUAL_ENV'"\
+                    "created virtual environment : '$venv_dir'"\
+                    "enter 'source $venv_dir/bin/activate' to activate"\
+                    "      'deactivate' to deactivate"
+    
+    fi
+    python -m pip list
+    
+    global_venv_name=$venv_name
+}
+
+# print all parameter options
+bs_heading1 "check for comand line parameters"
+for cline in "$@" ; do echo " # $cline" ; done
+echo " # $@ "
+echo " # $# "
+echo "================================================================================"
+
+# store user desired python version in python_desired_ver
+terminate_session=NO
+terminate_session_help=NO
+python_desired_ver=NONE
+user_defined_dependencies_options=""
+install_dependencies="DEFAULT_NO_INSTALL_DEPENDENCIES_PY_LOCK"
+force_venv_update=NO
+global_venv=NO
+local_venv=NO
+extended_local_venv_name=NO
+option_glm_counter=0
+user_venv_base_name=""
+install_sanity_check_packages=NO
+debug=NO
+
+while getopts "p:d:e:fglmn:sx:h" opt ; do
+    echo "--> opt=$opt, optarg=$OPTARG <--"
+    case "$opt" in
+        p  )   # python version
+            python_desired_ver=$OPTARG
+            echo "           DESIRED_PYTHON_VERSION=$python_desired_ver"
+            ;;
+        d  )   # dependcies options
+            bs_checkDependenciesOption $OPTARG
+            echo "           DESIRED_DEPENDENCIES_OPTIONS=$user_defined_dependencies_options"
+            ;;
+        e  )   # install package dependencies on user desire
+            install_dependencies=$OPTARG
+            echo "           pip options no-deps: INSTALL_DEPENDENCIES=$install_dependencies"
+            ;;
+        f  )   # force reinstalltion of virtual environment
+            force_venv_update=YES
+            echo "           FORCE_VENV_UPDATE=$force_venv_update"
+            ;;
+        g  )   # install global pyenv robotws_X.Y.Z
+            global_venv=YES
+            ((option_glm_counter++))
+            echo "           GLOBAL_VENV=$global_venv"
+            ;;
+
+        l  )   # install local .venv
+            local_venv=YES
+            extended_local_venv_name=NO
+            ((option_glm_counter++))
+            echo "           LOCAL_VENV=$local_venv"
+            echo "           EXTENDED_LOCAL_VENV_NAME=$extended_local_venv_name"
+            ;;
+        m  )   # install local .venv_3.X.Y
+            local_venv=YES
+            extended_local_venv_name=YES
+            ((option_glm_counter++))
+            echo "           LOCAL_VENV=$local_venv"
+            echo "           EXTENDED_LOCAL_VENV_NAME=$extended_local_venv_name"
+            ;;
+        n  )   # base name of virtual environment on user's desire
+            venv_base_name=$OPTARG
+            echo "           USER_VENV_BASE_NAME=$venv_base_name"
+            ;;
+        s  )   # install packages for sanity checks
+               install_sanity_check_packages=YES
+            echo "           INSTALL_SANITY_CHECK_PACKAGES=$install_sanity_check_packages"
+            ;;
+        x  )   # debug
+            debug=$OPTARG
+            echo "           DEBUG MODE ENABLED: $debug"
+            ;;
+        h  )  # help without parameter
+            echo "           INFO: help"
+            terminate_session_help=YES
+            ;;
+        \? )
+            echo "ERROR: Invalid option: -$OPTARG" >&2
+            terminate_session=YES
+            ;;
+        :  )
+            echo "ERROR: Option -$OPTARG requires an argument." >&2
+            terminate_session=YES
+            ;;
+    esac
+done
+OPTIND_SAV=$OPTIND
+OPTIND=1 # must be (re-)set to 1 for next call of bootstrap
+echo "================================================================================"
+echo "# of given arguments    : $#"
+echo "# of detected arguments : $((OPTIND_SAV - 1))"
+
+echo "==== STARTING SCRIPT with following options ============================================"
+echo "TERMINATE_SESSION=$terminate_session"
+echo "TERMINATE_SESSION_HELP=$terminate_session_help"
+echo "user DESIRED_PYTHON_VERSION=$python_desired_ver"
+echo "user dependencies file USER_DEFINED_DEPENDENCIES_OPTIONS=$user_defined_dependencies_options"
+echo "INSTALL_DEPENDENCIES=$install_dependencies, if set to"
+echo "                     DEFAULT_NO_INSTALL_DEPENDENCIES_PY_LOCK pip option '--no-deps' is set for dependencies.pyXXXX.lock"
+echo "                     NO_INSTALL_DEPENDENCIES                 pip option '--no-deps' is set for any dependencies file"
+echo "                     INSTALL_DEPENDENCIES                    pip option '--no-deps' is  NOT set for any dependencies file"
+echo "FORCE_VENV_UPDATE=$force_venv_update"
+echo "GLOBAL_VENV=$global_venv"
+echo "LOCAL_VENV=$local_venv"
+echo "EXTENDED_LOCAL_VENV_NAME=$extended_local_venv_name"
+echo "OPTION_GLM_COUNTER=$option_glm_counter"
+echo "VENV_BASE_NAME=$venv_base_name"
+echo "INSTALL_SANITY_CHECK_PACKAGES=$install_sanity_check_packages"
+echo "enabled debug mode=$debug (NO is default)"
+echo "========================================================================================"
+
+if [[ $((OPTIND_SAV - 1)) != $# ]]; then
+    bs_help_info
+    bs_error "bootstrap terminated due to too many or wrong/unknown arguments"
+elif [[ $terminate_session_help == YES ]]; then
+    bs_help_info
+elif [[ $terminate_session == YES ]]; then
+    bs_help_info
+    bs_error "bootstrap terminated due to wrong/unknown parametrization"
+elif [[ "$option_glm_counter" -lt 1 ]]; then
+    bs_help_info
+    bs_error "bootstrap terminated due to missing argument: exactly one of the options '-g', '-l', or '-m' must be given"
+elif [[ "$option_glm_counter" -gt 1 ]]; then
+    bs_help_info
+    bs_error "bootstrap terminated due to too many arguments: exactly one of the options '-g', '-l' or '-m' must be given"
+elif [[ $# = 0 ]]; then
+    echo "--> bs_main $extended_local_venv_name $local_venv $install_sanity_check_packages $force_venv_update $install_dependencies NONE"
+    bs_main $extended_local_venv_name $local_venv $install_sanity_check_packages $force_venv_update $install_dependencies NONE
+elif [[ $python_desired_ver == INVALID ]] || [[ $user_defined_dependencies_options == "#" ]]; then
+    bs_help_info
+    bs_error "bootstrap terminated due to other wrong/unknown parametrization"
+else
+    echo "--> bs_main $extended_local_venv_name $local_venv $install_sanity_check_packages $force_venv_update $install_dependencies $python_desired_ver $user_defined_dependencies_options"
+    bs_main $extended_local_venv_name $local_venv $install_sanity_check_packages $force_venv_update $install_dependencies $python_desired_ver $user_defined_dependencies_options
+fi
+
+echo ----pyenv versions----------------------------------------------------------------------------------------
+pyenv versions
+echo "HINT:"
+echo "pyenv-virtualenv: prompt changing will be removed from future release."
+echo "use: export PS1='(\$(pyenv version-name)) '\$PS1 for getting prompt back"
+echo ----------------------------------------------------------------------------------------------------------
+bs_info "VIRTUAL_ENV        : $VIRTUAL_ENV"\
+        "PYENV_VIRTUAL_ENV  : $PYENV_VIRTUAL_ENV"\
+        "which python       : $(which python)"\
+        "pyenv which python : $(pyenv which python)"\
+        "pyenv version-name : $(pyenv version-name)"\
+        "python --version   : $(python -V 2>&1)"\
+        "which pyenv        : $(which pyenv)"\
+        "pyenv --version    : $(pyenv --version)"\
+        "pyenv version      : $(pyenv version)"\
+        "PYENV_ROOT         : $PYENV_ROOT"\
+        "PATH               : $PATH"
+
+if [[ -n ${VIRTUAL_ENV} ]] && [[ -n ${PYENV_VIRTUAL_ENV} ]] ; then
+    bs_info "GLOBAL pyenv virtual environment is acitive now, environment variables \$PYENV_VIRTUAL_ENV and \$VIRTUAL_ENV set to"\
+            "'${PYENV_VIRTUAL_ENV}'"\
+            "use 'pyenv deactivate' to deactivate GLOBAL pyenv virtual environment"\
+            "use 'pyenv activate ${global_venv_name}' to activate GLOBAL pyenv virtual environment"\
+            "use 'pyenv versions' to get list of GLOBAL pyenv virtual environments"\
+            "    available virtual environments shown with '-->' pointing to virtual environment directory"\
+            "use 'pyenv' to get help for pyenv"\
+            ""\
+            "NOTE: If existing virtual environment should be reused and installed libs should be just updated, bootstrap"\
+            "      MUST be called from this existing virtual enironment with exact same options from '-g','-l','-m' and '-p X.Y.Z'"\
+            "      as bootstrap was called to create this existing virtual environment, see bootstrap -h (help)"
+
+elif [[ -n ${VIRTUAL_ENV} ]] && [[ -z ${PYENV_VIRTUAL_ENV} ]] ; then
+    bs_info "LOCAL virtual environment is acitive now, environment variable \$VIRTUAL_ENV set to"\
+            "'${VIRTUAL_ENV}' only, and \$PYENV_VIRTUAL_ENV environment variable"\
+            "is empty. Empty \$PYENV_VIRTUAL_ENV shows that no GLOBAL pyenv virtual environment is active"\
+            "use 'deactivate' to deactivate LOCAL virtual environment"\
+            "use 'source ${VIRTUAL_ENV}/bin/activate' to activate LOCAL virtual environment"\
+            ""\
+            "NOTE: If existing virtual environment should be reused and installed libs should be just updated, bootstrap"\
+            "      MUST be called from this existing virtual enironment with exact same options from '-g','-l','-m' and '-p X.Y.Z'"\
+            "      as bootstrap was called to create this existing virtual environment, see bootstrap -h (help)"
+else
+    bs_info "No virtual environment active please call bootstrap -h for help on how to activate/deactivate virtual environment."\
+            ""\
+            "NOTE: If bootstrap is called again from non active virtual environment the virtual environment is created"\
+            "      in any case new and libs were installed new also, and old virtual environment will be deleted."
+fi

@@ -1,0 +1,426 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]
+...                  == CB09836-A Test suite ==
+...                  - Requested topology : CLOUD_5G_I_LO_AP_LO     VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AEQE
+...                  == Prerequisite ==
+...                  - gNB configured with 4 Cells & RU detected. Physical cells id are 50, 51, etc.
+...                  - CB008941 (UL Fragmentaion) is activated
+...                  - cellBwpList used for BW 100MHz
+...                    - cellBwpId: '0'
+...                      bwpDN: 'MRBTS-1/NRBTS-1/BWP_PROFILE-2'     initial BWP - 100HZ, BWP#0
+...                    - cellBwpId: '1'
+...                      bwpDN: 'MRBTS-1/NRBTS-1/BWP_PROFILE-22'    default dedicated BWP - 100HZ, BWP#1
+...                  - cellBwpList used for BW 60MHz
+...                    - cellBwpId: '0'
+...                      bwpDN: 'MRBTS-1/NRBTS-1/BWP_PROFILE-5'     initial BWP - 60MHZ, BWP#0
+...                    - cellBwpId: '1'
+...                      bwpDN: 'MRBTS-1/NRBTS-1/BWP_PROFILE-55'    default dedicated BWP - 60MHZ, BWP#1
+...                  - cellBwpList used for BW 80MHz
+...                    - cellBwpId: '0'
+...                      bwpDN: 'MRBTS-1/NRBTS-1/BWP_PROFILE-4'     initial BWP - 80MHZ, BWP#0
+...                    - cellBwpId: '1'
+...                      bwpDN: 'MRBTS-1/NRBTS-1/BWP_PROFILE-44'    default dedicated BWP - 80MHZ, BWP#1
+...                  == Scope ==
+...                  - call setup - nGBR traffic several Ues
+...                  - Check Cell Specific CSI-RS Enhancement in CB009836
+...                  == Info ==
+...                  - Test Case Scenario author   : christophe.samson@nokia.com
+...                  - Creation Date               : 03-01-2024
+...                  - Modified Date               : 03-01-2024
+...                  - Last Modified by            : christophe.samson@nokia.com
+...                  - Version   Date                      Author                                   Notes
+...                  - 0.1       08-28-2024[mm-dd-yyyy]    christophe.samson@nokia.com              Test Creation
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Libraries
+Library      taf.transport.ssh                                   WITH NAME          ssh
+Library      taf.sbts.oam.coam.admin.interface
+Library      taf.sbts.oam.coam.admin                             WITH NAME          coam
+Library      taf.collectors.tcpdump                              WITH NAME          tcpdump
+Library      taf.collectors.core                                 WITH NAME          core
+Library      ute_wtssim
+Library      taf.config.wts                                      WITH NAME          wts
+
+# Libraries SWENG
+Library      ../../../resources/SWENG/python/StringTool.py
+
+# Libraries CB007491
+Library      resources/python/Constants-CB007491.py              WITH NAME          MyConstants
+Library      resources/python/tools.py                           WITH NAME          nps_7491_tools
+
+# Resources taf
+Resource      taf/ul/ettf/main.robot
+
+# Resources CB007491
+Resource     ./resources/robot/apUDPlog.robot
+Resource     ./resources/robot/CB007491-Common-Keywords.robot
+Resource     ./resources/robot/CB007491-Test-Suite-Setup-Resources.robot
+Resource     ./resources/robot/CB007491-Keywords.robot
+Resource     ./resources/robot/CB007491-TL-Preparation-Keywords.robot
+Resource     ./resources/robot/CB007491-Test-Template-Keywords.robot
+Resource     ./resources/robot/CB007491-G-Config-tests-Keywords.robot
+
+# Variables taf
+Variables     taf/ul/ettf/logging/policies.py
+Variables     taf/ul/ettf/log_analysis/policies.py
+
+# Variables CB009836
+Variables    ./resources/python/Constants-CB007491.py
+Variables    ./resources/python/logging_policy.py
+
+# Suites and Tests setup and teardown
+Suite Setup       Suite Setup CB007491-Common      test_dictParam=${dictParam}
+Suite Teardown    Suite Teardown CB007491-Common
+Test Setup        Test Setup for CB007491-Common
+Test Teardown     Test Teardown for CB007491-Common
+
+*** Variables ***
+
+# from /home/ute/.pyenv/versions/3.9.14/lib/python3.9/site-packages/taf/ul/ettf/logging/policies.py
+# NO_LOGS_POLICY
+# LOGS_POLICY - with snapshot
+# NO_TRAFFIC_LOGS_POLICY
+# NO_TRAFFIC_NO_SNAPSHOT_NO_INFOMODEL_LOGS_POLICY
+# LOGS_POLICY_CRT
+# ${LOGGING_POLICY} is initialized by "Init Variables" Kw
+${LOGGING_POLICY}=           NO_TRAFFIC_NO_SNAPSHOT_NO_INFOMODEL_LOGS_POLICY     # replace with LOGS_POLICY_CRT for CRT !!!
+# ${LOGS_COMPRESSION} is initialized by "Init Variables" Kw
+# ${LOGS_COMPRESSION}=         ${False}
+
+${relative_json_path}                                               ${CURDIR}/CB007491_G_data_tests.json
+
+${TestSharkTool}                                                    MC_SHARK
+
+&{dictParam}                                                        w_Basic_Call_to_Setup_Wtsemu=${True}
+...                                                                 w_enable_sherpa_Traces=False
+...                                                                 w_check_9890_using_sherpa=False
+...                                                                 w_GetTtiTrace=True
+...                                                                 w_convert_TtiPcap_to_excelCsv=False
+...                                                                 w_GetL1L2Bip=False
+...                                                                 w_generic_capture=True
+...                                                                 w_CaptureCORE=${False}
+...                                                                 w_CaptureL1L2=${False}
+...                                                                 w_CaptureCPRT=${True}
+...                                                                 w_ue_detach=False
+...                                                                 w_GetBtsLog=True
+...                                                                 w_DISPLAY_ue_stats_nr_15min=False
+
+# capture Time setting
+&{CAPTURE}                                                          GetTtiTraceTime=1s
+...                                                                 Getl1l2TraceTime=1s
+...                                                                 GetSherpaTraceTime=1s
+...                                                                 GetTtiTraceNumOfEvent=5000
+
+&{dictExpectedValues}                                               expected_avg_total_prbs_spool1=546
+...                                                                 expected_avg_total_prbs_spool2=78
+...                                                                 expected_avg_total_prbsstream_spool1=2100
+...                                                                 expected_avg_total_prbsstream_spool2=300
+
+# tests settings
+&{C_Cell}                                                           dir=DL
+...                                                                 totalNbOfUe=6                 # total number of ue's to configure
+...                                                                 totalNbOfCell=3               # total number of cell used for ue's dispatching
+...                                                                 targetGnb=2                   # gnb target id
+...                                                                 captureDuration=0             # capture duration during traffic starting phase
+...                                                                 duration=3                    # traffic duration during declaration phase
+...                                                                 deviation=10                  # allowed deviation for throughput
+
+# ue's settings
+&{dict_settings_ue_1}                                               originalCell=1                # original cell for call establishment
+...                                                                 DL_throughput=150             # throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 DL_throughput_GBR=10          # throughput GBR is not supported
+...                                                                 UL_throughput=0               # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 protocol=udp
+...                                                                 packet_size=1350
+...                                                                 cqi=15
+...                                                                 ri=3
+...                                                                 ue_p_delay_initial=0
+...                                                                 ue_capa=None
+
+&{dict_settings_ue_2}                                               originalCell=2
+...                                                                 DL_throughput=100
+...                                                                 DL_throughput_GBR=10
+...                                                                 UL_throughput=0               # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 protocol=udp
+...                                                                 packet_size=1350
+...                                                                 cqi=15
+...                                                                 ri=3
+...                                                                 ue_p_delay_initial=0
+...                                                                 ue_capa=None
+
+&{dict_settings_ue_3}                                               originalCell=3
+...                                                                 DL_throughput=100
+...                                                                 DL_throughput_GBR=10
+...                                                                 UL_throughput=0               # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 protocol=udp
+...                                                                 packet_size=1350
+...                                                                 cqi=15
+...                                                                 ri=3
+...                                                                 ue_p_delay_initial=0
+...                                                                 ue_capa=None
+
+&{dict_settings_ue_4}                                               originalCell=1                # original cell for call establishment
+...                                                                 DL_throughput=150             # throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 DL_throughput_GBR=10          # throughput GBR is not supported
+...                                                                 UL_throughput=0               # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 protocol=udp
+...                                                                 packet_size=1350
+...                                                                 cqi=15
+...                                                                 ri=3
+...                                                                 ue_p_delay_initial=0
+...                                                                 ue_capa=None
+
+&{dict_settings_ue_5}                                               originalCell=2
+...                                                                 DL_throughput=100
+...                                                                 DL_throughput_GBR=10
+...                                                                 UL_throughput=0               # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 protocol=udp
+...                                                                 packet_size=1350
+...                                                                 cqi=15
+...                                                                 ri=3
+...                                                                 ue_p_delay_initial=0
+...                                                                 ue_capa=None
+
+&{dict_settings_ue_6}                                               originalCell=3
+...                                                                 DL_throughput=100
+...                                                                 DL_throughput_GBR=10
+...                                                                 UL_throughput=0               # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 protocol=udp
+...                                                                 packet_size=1350
+...                                                                 cqi=15
+...                                                                 ri=3
+...                                                                 ue_p_delay_initial=0
+...                                                                 ue_capa=None
+
+&{dict_settings_ue_default}                                         originalCell=1
+...                                                                 DL_throughput=900
+...                                                                 DL_throughput_GBR=0           # throughput GBR is not supported
+...                                                                 UL_throughput=0
+...                                                                 protocol=udp
+...                                                                 packet_size=1350
+...                                                                 cqi=15
+...                                                                 ri=3
+...                                                                 ue_p_delay_initial=0
+...                                                                 ue_capa=None
+
+
+@{dict_settings_3_ues}                                              ${dict_settings_ue_1}
+...                                                                 ${dict_settings_ue_2}
+...                                                                 ${dict_settings_ue_3}
+
+@{dict_settings_all_ues}                                            ${dict_settings_ue_1}
+...                                                                 ${dict_settings_ue_2}
+...                                                                 ${dict_settings_ue_3}
+...                                                                 ${dict_settings_ue_4}
+...                                                                 ${dict_settings_ue_5}
+...                                                                 ${dict_settings_ue_6}
+
+&{dict_settings_cell_1}                                             Cell=1
+...                                                                 nbrOfBlankedPRBsLowEdgeDL=0
+...                                                                 nbrOfBlankedPRBsLowEdgeUL=0
+...                                                                 nbrOfBlankedPRBsHighEdgeDL=0
+...                                                                 nbrOfBlankedPRBsHighEdgeUL=0
+
+&{dict_settings_cell_2}                                             Cell=2
+...                                                                 nbrOfBlankedPRBsLowEdgeDL=0
+...                                                                 nbrOfBlankedPRBsLowEdgeUL=0
+...                                                                 nbrOfBlankedPRBsHighEdgeDL=0
+...                                                                 nbrOfBlankedPRBsHighEdgeUL=0
+
+&{dict_settings_cell_3}                                             Cell=3
+...                                                                 nbrOfBlankedPRBsLowEdgeDL=0
+...                                                                 nbrOfBlankedPRBsLowEdgeUL=0
+...                                                                 nbrOfBlankedPRBsHighEdgeDL=0
+...                                                                 nbrOfBlankedPRBsHighEdgeUL=0
+
+&{dict_settings_cell_4}                                             Cell=4
+...                                                                 nbrOfBlankedPRBsLowEdgeDL=0
+...                                                                 nbrOfBlankedPRBsLowEdgeUL=0
+...                                                                 nbrOfBlankedPRBsHighEdgeDL=0
+...                                                                 nbrOfBlankedPRBsHighEdgeUL=0
+
+&{dict_settings_cell_5}                                             Cell=5
+...                                                                 nbrOfBlankedPRBsLowEdgeDL=0
+...                                                                 nbrOfBlankedPRBsLowEdgeUL=0
+...                                                                 nbrOfBlankedPRBsHighEdgeDL=0
+...                                                                 nbrOfBlankedPRBsHighEdgeUL=0
+
+&{dict_settings_cell_6}                                             Cell=6
+...                                                                 nbrOfBlankedPRBsLowEdgeDL=0
+...                                                                 nbrOfBlankedPRBsLowEdgeUL=0
+...                                                                 nbrOfBlankedPRBsHighEdgeDL=0
+...                                                                 nbrOfBlankedPRBsHighEdgeUL=0
+
+@{dict_settings_all_cells}                                          ${dict_settings_cell_1}
+...                                                                 ${dict_settings_cell_2}
+...                                                                 ${dict_settings_cell_3}
+...                                                                 ${dict_settings_cell_4}
+...                                                                 ${dict_settings_cell_5}
+...                                                                 ${dict_settings_cell_6}
+
+# vendor's setting
+
+# BB pool mode : Load-metric based
+# bbL1SpPrbInitCapacity settings :
+#	        <item>
+#	          <p name="bbHwVariant">ABIO</p>
+#	          <p name="csSize">48</p>
+#	          <p name="direction">DL</p>
+#	          <p name="l1PoolType">NR_L1_Loki_TDD_FR1_eCPRI_IQF_Asymm</p>
+#	          <p name="maxNumLayerPrbL1Sp">1200</p>
+#	          <p name="maxNumStreamPrbL1Sp">1200</p>
+#	          <p name="maxNumWbStreamPrbL1Sp">600</p>
+#	        </item>
+
+&{Vendor_IWK_CB8940-L_CB7113}                                       bbHwVariant=ABIO
+...                                                                 maxNumLayerPrbL1Sp=1200
+...                                                                 maxNumStreamPrbL1Sp=1200
+...                                                                 maxNumWbStreamPrbL1Sp=600
+...                                                                 maxNumScheUePdschL1Pool=None
+...                                                                 maxNumScheUePdschL1Sp=None
+...                                                                 maxNumDlSubcellL1Pool=6
+...                                                                 maxNumDlSubcellL1Sp=4
+...                                                                 maxNumUlSubcellL1Pool=6
+...                                                                 maxNumUlSubcellL1Sp=4
+...                                                                 ul_maxNumLayerPrbL1Sp_csSize32=410
+...                                                                 ul_maxNumStreamPrbL1Sp_csSize32=820
+...                                                                 ul_maxNumWbStreamPrbL1Sp_csSize32=None
+...                                                                 ul_maxNumLayerPrbL1Sp_csSize48=None
+...                                                                 ul_maxNumStreamPrbL1Sp_csSize48=None
+...                                                                 ul_maxNumWbStreamPrbL1Sp_csSize48=None
+...                                                                 ul_maxNumLayerPrbL1Sp_csSize64=820
+...                                                                 ul_maxNumStreamPrbL1Sp_csSize64=1640
+...                                                                 ul_maxNumWbStreamPrbL1Sp_csSize64=None
+
+*** Test Cases ***
+### SA
+
+[1]CB007491_G_template_test
+    [Documentation]
+    ...     Conditions:     it is based on the configuration ${C_Cell}
+    ...     Actions:        to complete...
+    ...
+    ...     Checks:
+    ...     Verdict:        calls for multi ues and PRB pooling are passed
+    [Tags]  CLOUD_5G_I_LO_AP_LO     VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AEQE   CB007491-G
+    Set To Dictionary       ${C_Cell}    totalNbOfUe       4
+    Set test Variable       ${LuaFileToUsed_path}          ${LuaFileToUsed_path_ABIO}
+    TC CB007491 4 Cells   ${C_Cell}    ${dictParam}    ${Vendor_IWK_CB8940-L_CB7113}    ${dict_settings_all_ues}    nrCell=4
+    ...       Kw TestLine Preparation=TL_Preparation_CB007491_2Cells_CFG1_8DL_8UL
+    ...       kw Set RAD Params=Set RAD Params Of 7491 ASOE
+    ...       kw NIDD Set=Set CB007491 NIDD PARAMETERS with ulMUMIMO
+    ...       kw NIDD Check=Check CB007491 NIDD PARAMETERS with ulMUMIMO
+    ...       kw Active Config=${EMPTY}
+    # ...       kw Active Config=10_CB009836_A01_01_BW_100_80_60_100_5GC001116_3_Canada_8ssb_mix_csiReportPeriodicity_ASOE
+    ...       kw Specific Set TestMode After Attach=Set UE CSI profile And SRS Beam Position for muMIMO UE pairing for all ${C_Cell.totalNbOfUe} Ues
+    ...       NIDD_9836_PARAMS=${NIDD_7491_UL_MIMO_w_CB008940_CB007113_PARAMS_ABIO_2CELLS}
+    ...       Json test configuration=${relative_json_path}
+    ...       FrameStructure=5GC001208
+
+[1]CB007491_G_MP_template_test
+    [Documentation]
+    ...     Conditions:     it is based on the configuration ${C_Cell}
+    ...     Actions:        CLOUD_5G_I_MP_AP_LOOO has 6Cells
+    ...                     last 4 Cells are locked to work with only 2 Cells
+    ...     Checks:
+    ...     Verdict:        calls for multi ues and PRB pooling are passed
+    [Tags]  CLOUD_5G_I_MP_AP_LOOO     SANSA_FS_ECPRI_CMWV_TDD     CB007491-G
+    Set To Dictionary       ${C_Cell}    totalNbOfUe       4
+    Set test Variable       ${LuaFileToUsed_path}          ${LuaFileToUsed_path_ABIP}
+    Set test Variable       ${iphy_file_to_Used}           ${iphy_file_6Cells}
+    Set test Variable       ${CsiRsGrp_forTest}            2    # 2 cells enabled
+    Set test Variable       ${num_of_cells_forTest}        2
+    TC CB007491 6 Cells   ${C_Cell}    ${dictParam}    ${Vendor_IWK_CB8940-L_CB7113}    ${dict_settings_all_ues}    nrCell=6
+    ...       Kw TestLine Preparation=TL_Preparation_CB007491_6Cells_8DL_8UL
+    ...       kw Set RAD Params=Set RAD Params Of 7491 ASOE
+    ...       kw NIDD Set=Set CB007491 NIDD PARAMETERS with ulMUMIMO
+    ...       kw NIDD Check=Check CB007491 NIDD PARAMETERS with ulMUMIMO
+    ...       kw Active Config=${EMPTY}
+    # ...       kw Active Config=1_CB007491_B01_01_BW_100_100_100_100_2ssb_mix_FS_ABIP_6Cells
+    ...       kw Specific Set TestMode Before Attach=Override and Activate Ta profile for all ${C_Cell.totalNbOfUe} Ues
+    ...       kw Specific Set TestMode After Attach=Set UE CSI profile And SRS Beam Position for muMIMO UE pairing for all ${C_Cell.totalNbOfUe} Ues
+    ...       NIDD_9836_PARAMS=${NIDD_9836_UL_MIMO_w_CB008940_CB007113_PARAMS_ABIP}
+    ...       Json test configuration=${relative_json_path}
+    ...       FrameStructure=5GC001208
+
+[1]CB007491_G_LO_template_test
+    [Documentation]
+    ...     Conditions:     it is based on the configuration ${C_Cell}
+    ...     Actions:        to complete...
+    ...
+    ...     Checks:
+    ...     Verdict:        calls for multi ues and PRB pooling are passed
+    [Tags]  CLOUD_5G_I_LO_AP_LOOO     SANSA_FS_ECPRI_CMWV_TDD     CB007491-G
+    Set To Dictionary       ${C_Cell}    totalNbOfUe       4
+    Set test Variable       ${LuaFileToUsed_path}          ${LuaFileToUsed_path_ABIO}
+    Set test Variable       ${iphy_file_to_Used}           ${iphy_file_3Cells}
+    Set test Variable       ${CsiRsGrp_forTest}            3
+    ${num_of_cells_forTest}=    Get Cell Number
+    set test Variable       ${num_of_cells_forTest}
+    TC CB007491 6 Cells   ${C_Cell}    ${dictParam}    ${Vendor_IWK_CB8940-L_CB7113}    ${dict_settings_all_ues}    nrCell=6
+    ...       Kw TestLine Preparation=TL_Preparation_CB007491_3Cells_8DL_8UL
+    ...       kw Set RAD Params=Set RAD Params Of 7491 ASOE
+    ...       kw NIDD Set=Set CB007491 NIDD PARAMETERS with ulMUMIMO
+    ...       kw NIDD Check=Check CB007491 NIDD PARAMETERS with ulMUMIMO
+    ...       kw Active Config=${EMPTY}
+    # ...       kw Active Config=2_CB007491_B01_01_BW_100_100_100_100_2ssb_mix_FS_ABIO_3Cells
+    ...       kw Specific Set TestMode Before Attach=Override and Activate Ta profile for all ${C_Cell.totalNbOfUe} Ues
+    ...       kw Specific Set TestMode After Attach=Set UE CSI profile And SRS Beam Position for muMIMO UE pairing for all ${C_Cell.totalNbOfUe} Ues
+    ...       NIDD_9836_PARAMS=${NIDD_9836_UL_MIMO_w_CB008940_CB007113_PARAMS_ABIO}
+    ...       Json test configuration=${relative_json_path}
+    ...       FrameStructure=5GC001208
+
+*** Keywords ***
+
+Set CB007491 NIDD PARAMETERS with ulMUMIMO
+    [Arguments]    ${list}=${NIDD_9890_B_w_CB008940_CB007113_PARAMS_ASOE}
+    ${kw_setOnLine_ListParam}=  Set Variable If   '${W_OnlineChange_deltaComm}'=='1'    Set_NIDD_OnlineChange_ListParam
+    ...                                                                                 Set_NIDD_modification_ListParam
+    ${KwOnlineParamChange}=      Set Variable If  '${W_OnlineChange_deltaComm}'=='1'    OnlineParamChange
+    ...                                                                                 Update gNB OAM List Param
+    Set NIDD PARAMETERS VERSION 4     ${list}
+    ...                               kw_setOnLine_ListParam=${kw_setOnLine_ListParam}
+    ...                               KwOnlineParamChange=${KwOnlineParamChange}
+    # improvement : COAM Get SCF Kw is more fast than OAM Get SCF File kw!!!
+    # ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    ${test_scf_file}               COAM Get SCF            local_dir_path=${LOG_PATH}      file=SCF.xml      alias=coam_gnb
+    Set Suite Variable           ${test_scf_file}
+
+Set CB009836 NIDD PARAMETERS
+    [Arguments]    ${list}=${NIDD_9890_B_w_CB008940_CB007113_PARAMS_ASOE}
+    ${kw_setOnLine_ListParam}=  Set Variable If   '${W_OnlineChange_deltaComm}'=='1'    Set_NIDD_OnlineChange_ListParam
+    ...                                                                                 Set_NIDD_modification_ListParam
+    ${KwOnlineParamChange}=      Set Variable If  '${W_OnlineChange_deltaComm}'=='1'    OnlineParamChange
+    ...                                                                                 Update gNB OAM List Param
+    Set NIDD PARAMETERS VERSION 4     ${list}
+    ...                               kw_setOnLine_ListParam=${kw_setOnLine_ListParam}
+    ...                               KwOnlineParamChange=${KwOnlineParamChange}
+    # improvement : COAM Get SCF Kw is more fast than OAM Get SCF File kw!!!
+    # ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    ${test_scf_file}               COAM Get SCF            local_dir_path=${LOG_PATH}      file=SCF.xml      alias=coam_gnb
+    Set Suite Variable           ${test_scf_file}
+
+
+Check CB007491 NIDD PARAMETERS with ulMUMIMO
+   [Arguments]    ${list}=${NIDD_9890_B_w_CB008940_CB007113_PARAMS}
+   Check CB009836 NIDD PARAMETERS VERSION 3     ${list}
+
+
+Set CB007491 NIDD PARAMETERS with dlMUMIMO
+    [Arguments]    ${list}=${NIDD_9890_B_w_CB008940_CB007113_PARAMS_ASOE}
+    ${kw_setOnLine_ListParam}=  Set Variable If   '${W_OnlineChange_deltaComm}'=='1'    Set_NIDD_OnlineChange_ListParam
+    ...                                                                                 Set_NIDD_modification_ListParam
+    ${KwOnlineParamChange}=      Set Variable If  '${W_OnlineChange_deltaComm}'=='1'    OnlineParamChange
+    ...                                                                                 Update gNB OAM List Param
+    Set NIDD PARAMETERS VERSION 4     ${list}
+    ...                               kw_setOnLine_ListParam=${kw_setOnLine_ListParam}
+    ...                               KwOnlineParamChange=${KwOnlineParamChange}
+    ${test_scf_file}               COAM Get SCF            local_dir_path=${LOG_PATH}      file=SCF.xml      alias=coam_gnb
+    Set Suite Variable           ${test_scf_file}
+
+
+Check CB007491 NIDD PARAMETERS with dlMUMIMO
+   [Arguments]    ${list}=${NIDD_9890_w_CB008940_CB007113_PARAMS}
+   Check CB009836 NIDD PARAMETERS VERSION 3     ${list}

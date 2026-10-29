@@ -1,0 +1,276 @@
+*** Settings ***
+Documentation    :copyright       : Nokia
+                 ...              :author       : Shivalingesh
+                 ...              :contact      : Shivalingesh Sheelavantar
+                 ...              :Description  : This file contains
+                 ...                              Variables related to CB007880 only
+                 ...              :history change, <date>,<who>,<what and how>
+                 ...              :Drafted,24.10.2025, Shivalingesh
+
+*** Variables ***
+#Single_UE_Normal_cell_config
+${CFG_GNB_SCF_DELTA_JSON}          CB007880_gNB_basic_SCF_A.xml
+${CFG_AP_IPHY}                     ${CURDIR}/../../config/ap/CB007880_Basic_iphy.xml
+${CFG_WTS_CFG}                     ${CURDIR}/../../config/wts/CB007880_A_Basic_WTS.cfg
+#2_Normal_cell_config
+${CB007880_G_INTER_GNB_HO_SCF}                     CB007880-G_Inter_gNb_ho_Config_SCF.xml
+${CB007880_G_INTER_GNB_HO_AP_IPHY}                ${CURDIR}/../../config/ap/CB007880-G_Inter_Ho_iphy.xml
+${CB007880_G_INTER_GNB_HO_WTS_CFG}                ${CURDIR}/../../config/wts/CB007880-G_Inter_gNb_ho_WTS.cfg
+#2_Super_cell_config
+${CB007880_SUPER_CELL_2_SCF}                      SUPER_2_CELL_SCF_gNB.xml
+${CB007880_SUPER_CELL_2_AP_IPHY}                  ${CURDIR}/../../config/ap/CB007880_Super_2_cell_iphy.xml
+${CB007880_SUPER_CELL_2_WTS_CFG}                  ${CURDIR}/../../config/wts/CB007880_2_Super_cell_100_working.cfg
+#CA_2_cells
+${CB007880_CA_CELL_gNB_SCF}                       CB007880_CA_G_BASIC_SCF_gNb.xml
+${CB007880_CA_CELL_AP_IPHY}                       ${CURDIR}/../../config/ap/CB007880_CA_G_BASIC_AP_IPHY.xml
+${CB007880_CA_CELL_WTS_CFG}                       ${CURDIR}/../../config/wts/CB007880_CA_G_BASIC_WTS.xml
+#3 RIM Rs SCF
+${CB007880_C_RIM_RS_SCF}                       RIM_SCF_Updated_working_CB007880-C_feature.xml
+${Log_Path}                        /home/ute/logs
+
+#CB007880 D NR UL-TDoA in RU SRS
+#4 NR POS Normal cell
+${CB007880_D_NRPOS-CELL_gNB_SCF}                       CB007880_D_NR_POS_gNB_SCF.xml
+${CB007880_D_NRPOS-CELL_AP_IPHY}                       ${CURDIR}/../../config/ap/CB007880_D_NR_POS_cell_iphy.xml
+${CB007880_D_NRPOS-CELL_WTS_CFG}                       ${CURDIR}/../../config/wts/CB007880_D_NRPOS_Multicell.cfg
+
+#Basic UE1 register traffic deregister
+${CM_UE1_DTYPE_INTERNAL}           set_pdu_param ue=1 pdu=1 trf_type=internal
+${CM_UE_1_REGISTER}                ue_register id=1
+${CM_UE_1_PDU_SESSION}             ue_pdu_session_setup pdu=1 ue=1 nwslice=1 gw=1
+${CM_UE_1_UL_2_MBPS_DATA}                  trf_data_start ue=1 pdu=1 qfi=1 dir=ul mbps=2 trf_id=1
+${CM_UE_1_DL_2_MBPS_DATA}                  trf_data_start ue=1 pdu=1 qfi=1 dir=dl mbps=2 trf_id=1
+${CM_UE_1_DEREG}                   ue_deregister id=1 ue_deregister_type=switch_off
+#Basic UE2 register traffic deregister
+${CM_UE2_DTYPE_INTERNAL}           set_pdu_param ue=2 pdu=1 trf_type=internal
+${CM_UE_2_REGISTER}                ue_register id=2
+${CM_UE_2_PDU_SESSION}             ue_pdu_session_setup pdu=1 ue=2 nwslice=1 gw=1
+${CM_UE_2_UL_2_MBPS_DATA}                  trf_data_start ue=2 pdu=1 qfi=1 dir=ul mbps=2 trf_id=1
+${CM_UE_2_DL_2_MBPS_DATA}                  trf_data_start ue=2 pdu=1 qfi=1 dir=dl mbps=2 trf_id=1
+${CM_UE_2_DEREG}                   ue_deregister id=2 ue_deregister_type=switch_off
+#Basic UE3 register traffic deregister
+${CM_UE3_DTYPE_INTERNAL}           set_pdu_param ue=3 pdu=1 trf_type=internal
+${CM_UE_3_REGISTER}                ue_register id=3
+${CM_UE_3_PDU_SESSION}             ue_pdu_session_setup pdu=1 ue=3 nwslice=1 gw=1
+${CM_UE_3_UL_2_MBPS_DATA}                  trf_data_start ue=3 pdu=1 qfi=1 dir=ul mbps=2 trf_id=1
+${CM_UE_3_DL_2_MBPS_DATA}                  trf_data_start ue=3 pdu=1 qfi=1 dir=dl mbps=2 trf_id=1
+${CM_UE_3_DEREG}                   ue_deregister id=3 ue_deregister_type=switch_off
+#Basic UE4 register traffic deregister
+${CM_UE4_DTYPE_INTERNAL}           set_pdu_param ue=4 pdu=1 trf_type=internal
+${CM_UE_4_REGISTER}                ue_register id=4
+${CM_UE_4_PDU_SESSION}             ue_pdu_session_setup pdu=1 ue=4 nwslice=1 gw=1
+${CM_UE_4_UL_2_MBPS_DATA}                  trf_data_start ue=4 pdu=1 qfi=1 dir=ul mbps=2 trf_id=1
+${CM_UE_4_DL_2_MBPS_DATA}                  trf_data_start ue=4 pdu=1 qfi=1 dir=dl mbps=2 trf_id=1
+${CM_UE_4_DEREG}                   ue_deregister id=4 ue_deregister_type=switch_off
+#LMF cmds for TRP positioning information scenario
+${LMF_CMD_TRP_SRS_TRANS_UE1}          lmf_srs_trans_char_cfg object_id=1 resource_type=periodic num_periodic_transmissions=0
+${LMF_CMD_TRP_SEND_POS_INFO_UE1}        lmf_ue_send_pos_info_req id=1 ue=1 nrppa_transaction_id=2 req_srs_obj_id=1
+${LMF_CMD_TRP_MEAS_REQ_OBJ_UE1}          lmf_set_trp_meas_req_item object_id=1 trp_id=1 expected_propagation_delay=400 delay_uncertainty=246
+...                   plmn_identity=311:489 nr_cell_identity=000000000000000000000100000000000011
+${LMF_CMD_TRP_MEAS_QTY_ITEM_OBJ_UE1}         lmf_set_trp_meas_qty_item object_id=1 trp_measurement_type=UL-RTOA
+...           timing_reporting_granularity_factor=0
+${LMF_CMD_TRP_SRS_RES_CONFIG_OBJ_UE1}           lmf_set_srs_resource_set_config object_id=1 resource_set_type=Periodic periodicset=true
+...                     srs_resource_id=0  srs_resource_set_id=0
+${LMF_CMD_TRP_SRS_RES_CHECK_POS_MSG_UE_1}          lmf_set_srs_resource_config object_id=1 number_of_ports=ports2
+...         transmission_comb=comb_two comb_offset_2=0
+...         cyclic_shift_2=0 start_position=0 number_of_symbols=n1 repetition_factor=r1 frequency_domain_position=0
+...         frequency_domain_shift=0 c-srs=51 b-srs=0 b-hop=0
+...         group_or_sequence_hopping=neither resource_type=Periodic periodicity_periodic=slot40 offset_periodic=3 sequence_id=50
+${LMF_CMD_TRP_SRS_POINTA_UE_1}        lmf_set_srs_carrier_config object_id=1 pointA=653392 offset_to_carrier=0
+...          offset_to_carrier_subcarrier_spacing=kHz30 carrier_bandwidth=273
+...          location_and_bandwidth=1099 location_and_bandwidth_subcarrier_spacing=kHz30 cyclic_prefix=Normal tx_direct_current_location=0
+...  srs_resource_config_obj_id_list=1 srs_resource_set_config_obj_id_list=1 nr_pci=50
+${LMF_CMD_TRP_SET_CONFIG_OBJ_CARRIER_UE_1}               lmf_set_srs_configuration object_id=1 srs_carrier_obj_id_list=1
+${LMF_CMD_TRP_SEND_MEAS_REQ_UE_1}              lmf_send_meas_req id=1 nrppa_transaction_id=3 lmf_measurement_id=1
+...       trp_meas_req_item_obj_id_list=1 trp_meas_qty_item_obj_id_list=1
+...        amf_id=1 gnb_id=2 report_characteristics=Periodic measurement_periodicity=extended measurement_periodicity_extended=1280ms
+...        sfn_initialisation_time=0000001010101010101010101010101010101010101010101010101010101010 srs_config_obj_id=1
+${UE_PRECISE_POS_TESTMODE_1}             ue_precise_positioning_testmode_nr profile_id=1 positioning_config_list=0>800:-300,1>1000:-300
+${UE_PRECISE_POS_TESTMODE_1_ACTIVATE}             ue_testmode_set_nr id=1 testmode=ue_precise_positioning profile_id=1 action=activate
+
+#CB007880-D  NRPOS CELL  UL-TDoA in RU SRS
+#1st CELL
+${LMF_CMD_D_NRPOS_TRP_SRS_TRANS_UE1}          lmf_srs_trans_char_cfg object_id=1 resource_type=periodic num_periodic_transmissions=0
+${LMF_CMD_D_NRPOS_TRP_SEND_POS_INFO_UE1}        lmf_ue_send_pos_info_req id=1 ue=1 nrppa_transaction_id=2 req_srs_obj_id=1
+${LMF_CMD_D_NRPOS_TRP_MEAS_REQ_OBJ_UE1}          lmf_set_trp_meas_req_item object_id=1 trp_id=1 expected_propagation_delay=400 delay_uncertainty=246
+...                   plmn_identity=311:489 nr_cell_identity=000000000000000000000100000000000011
+${LMF_CMD_D_NRPOS_TRP_MEAS_QTY_ITEM_OBJ_UE1}         lmf_set_trp_meas_qty_item object_id=1 trp_measurement_type=UL-RTOA
+...           timing_reporting_granularity_factor=0
+${LMF_CMD_D_NRPOS_TRP_SRS_RES_CONFIG_OBJ_UE1}           lmf_set_srs_resource_set_config object_id=1 resource_set_type=Periodic periodicset=true
+...                     srs_resource_id=0  srs_resource_set_id=0
+${LMF_CMD_D_NRPOS_TRP_SRS_RES_CHECK_POS_MSG_UE_1}          lmf_set_srs_resource_config object_id=1 number_of_ports=ports2
+...         transmission_comb=comb_two comb_offset_2=0
+...         cyclic_shift_2=0 start_position=1 number_of_symbols=n1 repetition_factor=r1 frequency_domain_position=0
+...         frequency_domain_shift=0 c-srs=51 b-srs=0 b-hop=0
+...         group_or_sequence_hopping=neither resource_type=Periodic periodicity_periodic=slot40 offset_periodic=3 sequence_id=50
+${LMF_CMD_D_NRPOS_TRP_SRS_POINTA_UE_1}        lmf_set_srs_carrier_config object_id=1 pointA=652308 offset_to_carrier=0
+...          offset_to_carrier_subcarrier_spacing=kHz30 carrier_bandwidth=273
+...          location_and_bandwidth=1099 location_and_bandwidth_subcarrier_spacing=kHz30 cyclic_prefix=Normal tx_direct_current_location=0
+...          srs_resource_config_obj_id_list=1 srs_resource_set_config_obj_id_list=1 nr_pci=50
+${LMF_CMD_D_NRPOS_TRP_SET_CONFIG_OBJ_CARRIER_UE_1}               lmf_set_srs_configuration object_id=1 srs_carrier_obj_id_list=1
+${LMF_CMD_D_NRPOS_TRP_SEND_MEAS_REQ_UE_1}              lmf_send_meas_req id=1 nrppa_transaction_id=3 lmf_measurement_id=1
+...       trp_meas_req_item_obj_id_list=1 trp_meas_qty_item_obj_id_list=1
+...        amf_id=1 gnb_id=2 report_characteristics=Periodic measurement_periodicity=extended measurement_periodicity_extended=1280ms
+...        sfn_initialisation_time=0000001010101010101010101010101010101010101010101010101010101010 srs_config_obj_id=1
+${UE_D_NRPOS_PRECISE_POS_TESTMODE_1}             ue_precise_positioning_testmode_nr profile_id=1 positioning_config_list=0>800:-300,1>1000:-300
+${UE_D_NRPOS_PRECISE_POS_TESTMODE_1_ACTIVATE}             ue_testmode_set_nr id=1 testmode=ue_precise_positioning profile_id=1 action=activate
+
+
+#CB007880-D 2nd NRPOS- CELL
+${LMF_CMD_D_NRPOS_TRP_SRS_TRANS_UE2}          lmf_srs_trans_char_cfg object_id=2 resource_type=periodic num_periodic_transmissions=0
+${LMF_CMD_D_NRPOS_TRP_SEND_POS_INFO_UE2}        lmf_ue_send_pos_info_req id=1 ue=2 nrppa_transaction_id=2 req_srs_obj_id=2
+${LMF_CMD_D_NRPOS_TRP_SEND_TRP_INFOR_REQ_UE2}              lmf_send_trp_info_req id=1 amf_id=1 gnb_id=2 nrppa_transaction_id=1
+...                              trp_id=1,2 trp_info_type=nr_arfcn,nr_pci
+
+${LMF_CMD_D_NRPOS_TRP_MEAS_REQ_OBJ_UE2}          lmf_set_trp_meas_req_item object_id=2 trp_id=2 expected_propagation_delay=400 delay_uncertainty=246
+...                   plmn_identity=311:489 nr_cell_identity=000000000000000000000100000000000011
+${LMF_CMD_D_NRPOS_TRP_MEAS_QTY_ITEM_OBJ_UE2}         lmf_set_trp_meas_qty_item object_id=2 trp_measurement_type=UL-RTOA
+...           timing_reporting_granularity_factor=0
+${LMF_CMD_D_NRPOS_TRP_SRS_RES_CONFIG_OBJ_UE2}           lmf_set_srs_resource_set_config object_id=2 resource_set_type=Periodic periodicset=true
+...                     srs_resource_id=0  srs_resource_set_id=1
+${LMF_CMD_D_NRPOS_TRP_SRS_RES_CHECK_POS_MSG_UE_2}          lmf_set_srs_resource_config object_id=2 number_of_ports=ports2
+...         transmission_comb=comb_two comb_offset_2=1
+...         cyclic_shift_2=1 start_position=0 number_of_symbols=n1 repetition_factor=r1 frequency_domain_position=0
+...         frequency_domain_shift=0 c-srs=51 b-srs=0 b-hop=0
+...         group_or_sequence_hopping=neither resource_type=Periodic periodicity_periodic=slot40 offset_periodic=3 sequence_id=51
+${LMF_CMD_D_NRPOS_TRP_SRS_POINTA_UE_2}        lmf_set_srs_carrier_config object_id=2 pointA=650014 offset_to_carrier=0
+...          offset_to_carrier_subcarrier_spacing=kHz30 carrier_bandwidth=273
+...          location_and_bandwidth=1099 location_and_bandwidth_subcarrier_spacing=kHz30 cyclic_prefix=Normal tx_direct_current_location=0
+...          srs_resource_config_obj_id_list=1 srs_resource_set_config_obj_id_list=1 nr_pci=51
+${LMF_CMD_D_NRPOS_TRP_SET_CONFIG_OBJ_CARRIER_UE_2}               lmf_set_srs_configuration object_id=1 srs_carrier_obj_id_list=1
+${LMF_CMD_D_NRPOS_TRP_SEND_MEAS_REQ_UE_2}              lmf_send_meas_req id=1 nrppa_transaction_id=3 lmf_measurement_id=1
+...       trp_meas_req_item_obj_id_list=1,2 trp_meas_qty_item_obj_id_list=1,2
+...        amf_id=1 gnb_id=2 report_characteristics=Periodic measurement_periodicity=extended measurement_periodicity_extended=1280ms
+...        sfn_initialisation_time=0000001010101010101010101010101010101010101010101010101010101010 srs_config_obj_id=1
+${UE_D_NRPOS_PRECISE_POS_TESTMODE_2}             ue_precise_positioning_testmode_nr profile_id=2 positioning_config_list=0>800:-300,1>1000:-300
+${UE_D_NRPOS_PRECISE_POS_TESTMODE_2_ACTIVATE}             ue_testmode_set_nr id=2 testmode=ue_precise_positioning profile_id=2 action=activate
+
+
+#CB007880-D 3rd NRPOS- CELL
+${LMF_CMD_D_NRPOS_TRP_SRS_TRANS_UE3}          lmf_srs_trans_char_cfg object_id=3 resource_type=periodic num_periodic_transmissions=0
+${LMF_CMD_D_NRPOS_TRP_SEND_POS_INFO_UE3}        lmf_ue_send_pos_info_req id=1 ue=3 nrppa_transaction_id=3 req_srs_obj_id=3
+${LMF_CMD_D_NRPOS_TRP_SEND_TRP_INFOR_REQ_UE3}              lmf_send_trp_info_req id=1 amf_id=1 gnb_id=2 nrppa_transaction_id=3
+...                              trp_id=1,2,3 trp_info_type=nr_arfcn,nr_pci
+
+${LMF_CMD_D_NRPOS_TRP_MEAS_REQ_OBJ_UE3}          lmf_set_trp_meas_req_item object_id=3 trp_id=3 expected_propagation_delay=400 delay_uncertainty=246
+...                   plmn_identity=311:489 nr_cell_identity=000000000000000000000100000000000011
+${LMF_CMD_D_NRPOS_TRP_MEAS_QTY_ITEM_OBJ_UE3}         lmf_set_trp_meas_qty_item object_id=3 trp_measurement_type=UL-RTOA
+...           timing_reporting_granularity_factor=1
+${LMF_CMD_D_NRPOS_TRP_SRS_RES_CONFIG_OBJ_UE3}           lmf_set_srs_resource_set_config object_id=1  resource_set_type=Periodic periodicset=true
+...                     srs_resource_id=0  srs_resource_set_id=1
+${LMF_CMD_D_NRPOS_TRP_SRS_RES_CHECK_POS_MSG_UE_3}          lmf_set_srs_resource_config object_id=1 number_of_ports=ports2
+...         transmission_comb=comb_two comb_offset_2=0
+...         cyclic_shift_2=0 start_position=1 number_of_symbols=n1 repetition_factor=r1 frequency_domain_position=0
+...         frequency_domain_shift=0 c-srs=51 b-srs=0 b-hop=0
+...         group_or_sequence_hopping=neither resource_type=Periodic periodicity_periodic=slot40 offset_periodic=23 sequence_id=52
+${LMF_CMD_D_NRPOS_TRP_SRS_POINTA_UE_3}        lmf_set_srs_carrier_config object_id=2 pointA=653130 offset_to_carrier=0
+...          offset_to_carrier_subcarrier_spacing=kHz30 carrier_bandwidth=273
+...          location_and_bandwidth=1099 location_and_bandwidth_subcarrier_spacing=kHz30 cyclic_prefix=Normal tx_direct_current_location=0
+...          srs_resource_config_obj_id_list=1 srs_resource_set_config_obj_id_list=1 nr_pci=52
+${LMF_CMD_D_NRPOS_TRP_SET_CONFIG_OBJ_CARRIER_UE_3}               lmf_set_srs_configuration object_id=1 srs_carrier_obj_id_list=1
+${LMF_CMD_D_NRPOS_TRP_SEND_MEAS_REQ_UE_3}              lmf_send_meas_req id=1 nrppa_transaction_id=3 lmf_measurement_id=1
+...       trp_meas_req_item_obj_id_list=1,2.3 trp_meas_qty_item_obj_id_list=1,2,3
+...        amf_id=1 gnb_id=2 report_characteristics=Periodic measurement_periodicity=extended measurement_periodicity_extended=1280ms
+...        sfn_initialisation_time=0000001010101010101010101010101010101010101010101010101010101010 srs_config_obj_id=1
+${UE_D_NRPOS_PRECISE_POS_TESTMODE_3}             ue_precise_positioning_testmode_nr profile_id=3 positioning_config_list=0>800:-300,1>1000:-300
+${UE_D_NRPOS_PRECISE_POS_TESTMODE_3_ACTIVATE}             ue_testmode_set_nr id=3 testmode=ue_precise_positioning profile_id=3 action=activate
+
+#CB007880-D 4th NRPOS- CELL
+${LMF_CMD_D_NRPOS_TRP_SRS_TRANS_UE4}          lmf_srs_trans_char_cfg object_id=3 resource_type=periodic num_periodic_transmissions=0
+${LMF_CMD_D_NRPOS_TRP_SEND_POS_INFO_UE4}        lmf_ue_send_pos_info_req id=1 ue=4 nrppa_transaction_id=4 req_srs_obj_id=4
+${LMF_CMD_D_NRPOS_TRP_SEND_TRP_INFOR_REQ_UE4}              lmf_send_trp_info_req id=1 amf_id=1 gnb_id=2 nrppa_transaction_id=4
+...                              trp_id=1,2,3,4 trp_info_type=nr_arfcn,nr_pci
+${LMF_CMD_D_NRPOS_TRP_MEAS_REQ_OBJ_UE4}          lmf_set_trp_meas_req_item object_id=4 trp_id=3 expected_propagation_delay=400 delay_uncertainty=246
+...                   plmn_identity=311:489 nr_cell_identity=000000000000000000000100000000000011
+${LMF_CMD_D_NRPOS_TRP_MEAS_QTY_ITEM_OBJ_UE4}         lmf_set_trp_meas_qty_item object_id=1 trp_measurement_type=UL-RTOA
+...           timing_reporting_granularity_factor=1
+${LMF_CMD_D_NRPOS_TRP_SRS_RES_CONFIG_OBJ_UE4}           lmf_set_srs_resource_set_config object_id=4  resource_set_type=Periodic periodicset=true
+...                     srs_resource_id=0  srs_resource_set_id=1
+${LMF_CMD_D_NRPOS_TRP_SRS_RES_CHECK_POS_MSG_UE_4}          lmf_set_srs_resource_config object_id=1 number_of_ports=ports2
+...         transmission_comb=comb_two comb_offset_2=1
+...         cyclic_shift_2=1 start_position=0 number_of_symbols=n1 repetition_factor=r1 frequency_domain_position=0
+...         frequency_domain_shift=0 c-srs=51 b-srs=0 b-hop=0
+...         group_or_sequence_hopping=neither resource_type=Periodic periodicity_periodic=slot40 offset_periodic=23 sequence_id=53
+${LMF_CMD_D_NRPOS_TRP_SRS_POINTA_UE_4}        lmf_set_srs_carrier_config object_id=2 pointA=653392 offset_to_carrier=0
+...          offset_to_carrier_subcarrier_spacing=kHz30 carrier_bandwidth=273
+...          location_and_bandwidth=1099 location_and_bandwidth_subcarrier_spacing=kHz30 cyclic_prefix=Normal tx_direct_current_location=0
+...          srs_resource_config_obj_id_list=1 srs_resource_set_config_obj_id_list=1 nr_pci=53
+${LMF_CMD_D_NRPOS_TRP_SET_CONFIG_OBJ_CARRIER_UE_4}               lmf_set_srs_configuration object_id=1 srs_carrier_obj_id_list=1
+${LMF_CMD_D_NRPOS_TRP_SEND_MEAS_REQ_UE_4}              lmf_send_meas_req id=1 nrppa_transaction_id=4 lmf_measurement_id=1
+...       trp_meas_req_item_obj_id_list=1,2.3,4 trp_meas_qty_item_obj_id_list=1,2,3,4
+...        amf_id=1 gnb_id=2 report_characteristics=Periodic measurement_periodicity=extended measurement_periodicity_extended=1280ms
+...        sfn_initialisation_time=0000001010101010101010101010101010101010101010101010101010101010 srs_config_obj_id=1
+${UE_D_NRPOS_PRECISE_POS_TESTMODE_4}             ue_precise_positioning_testmode_nr profile_id=4 positioning_config_list=0>800:-300,1>1000:-300
+${UE_D_NRPOS_PRECISE_POS_TESTMODE_4_ACTIVATE}             ue_testmode_set_nr id=4 testmode=ue_precise_positioning profile_id=4 action=activate
+
+
+
+#Inter_Ho scenario CB007880-G feature
+${CB007880_G1_INTER_HO_CMD}            ue_measurement_send_nr id=1 meas_id=1 event=A3 srsrp_nr=10 srsrq_nr=10
+...                                    phycell_id=51 nrsrp_nr=30 nrsrq_nr=20
+#Super cell cmds for 2 cells
+#1st SUPER CELL CMDS
+${LMF_CMD_SUPER_1_TRP_SRS_TRANS_1}         lmf_srs_trans_char_cfg object_id=1 resource_type=periodic num_periodic_transmissions=0
+${LMF_CMD_SUPER_1_SEND_POS_INFO_1}         lmf_ue_send_pos_info_req id=1 ue=1 nrppa_transaction_id=1 req_srs_obj_id=1
+${LMF_CMD_SUPER_1_TRP_MEAS_REQ_1}         lmf_set_trp_meas_req_item object_id=1 trp_id=1 expected_propagation_delay=400
+...       delay_uncertainty=246 plmn_identity=311:489 nr_cell_identity=000000000000000000000100000000000011
+${LMF_CMD_SUPER_1_TRP_MEAS_QTY_UL_RTOA_1}        lmf_set_trp_meas_qty_item object_id=1 trp_measurement_type=UL-RTOA
+...        timing_reporting_granularity_factor=0
+${LMF_CMD_SUPER_1_RES_CONFIG_PEAIOD_1}        lmf_set_srs_resource_set_config object_id=1 resource_set_type=Periodic
+...        periodicset=true srs_resource_id=0  srs_resource_set_id=0
+${LMF_CMD_SUPER_1_FIRST_1}        lmf_set_srs_resource_config object_id=1  number_of_ports=ports2 transmission_comb=comb_two
+...        comb_offset_2=0 cyclic_shift_2=1 start_position=1
+...            number_of_symbols=n1 repetition_factor=r1 frequency_domain_position=0 frequency_domain_shift=0
+...         c-srs=63 b-srs=0 b-hop=0 group_or_sequence_hopping=neither
+...         resource_type=Periodic periodicity_periodic=slot40 offset_periodic=8 sequence_id=50
+${LMF_CMD_SUPER_1_SECOND_1}          lmf_set_srs_carrier_config object_id=1 pointA=635412 offset_to_carrier=0
+...         offset_to_carrier_subcarrier_spacing=kHz30
+...         carrier_bandwidth=273 location_and_bandwidth=1099
+...         location_and_bandwidth_subcarrier_spacing=kHz30 cyclic_prefix=Normal tx_direct_current_location=0
+...         srs_resource_config_obj_id_list=1 srs_resource_set_config_obj_id_list=1 nr_pci=50
+${LMF_CMD_SUPER_1_SRS_CONFIG_OBJ_1}          lmf_set_srs_configuration object_id=1 srs_carrier_obj_id_list=1
+${LMF_CMD_SUPER_1_MEASREMENT_REQ_1}               lmf_send_meas_req id=1 nrppa_transaction_id=3 lmf_measurement_id=1
+...       trp_meas_req_item_obj_id_list=1
+...       trp_meas_qty_item_obj_id_list=1 amf_id=1 gnb_id=2 report_characteristics=Periodic measurement_periodicity=extended
+...       measurement_periodicity_extended=1280ms sfn_initialisation_time=0000001010101010101010101010101010101010101010101010101010101010
+...       srs_config_obj_id=1
+${LMF_CMD_SUPER_1_UE_PRECISE_POS_1}         ue_precise_positioning_testmode_nr profile_id=1 positioning_config_list=0>800:-300,1>1000:-300
+${LMF_CMD_SUPER_1_UE_TESTMODE_SET_NR_1}    ue_testmode_set_nr id=1 testmode=ue_precise_positioning profile_id=1 action=activate
+#2nd SUPER CELL CMDS
+${LMF_CMD_SUPER_2_SEND_REQ_INFO_2}           lmf_send_trp_info_req id=1 amf_id=1 gnb_id=2 nrppa_transaction_id=1
+...        trp_id=1,2 trp_info_type=nr_arfcn,nr_pci
+${LMF_CMD_SUPER_2_TRP_SRS_TRANS_2}         lmf_srs_trans_char_cfg object_id=2 resource_type=periodic num_periodic_transmissions=0
+${LMF_CMD_SUPER_2_SEND_POS_INFO_2}         lmf_ue_send_pos_info_req id=1 ue=2 nrppa_transaction_id=1 req_srs_obj_id=2
+${LMF_CMD_SUPER_2_TRP_MEAS_REQ_2}          lmf_set_trp_meas_req_item object_id=2 trp_id=2 expected_propagation_delay=400
+...           delay_uncertainty=246 plmn_identity=311:489 nr_cell_identity=000000000000000000000100000000000011
+${LMF_CMD_SUPER_2_TRP_MEAS_QTY_UL_RTOA_2}            lmf_set_trp_meas_qty_item object_id=2 trp_measurement_type=UL-RTOA
+...        timing_reporting_granularity_factor=1
+${LMF_CMD_SUPER_2_RES_CONFIG_PEAIOD_2}          lmf_set_srs_resource_set_config object_id=2 resource_set_type=Periodic periodicset=true
+...      srs_resource_id=1 srs_resource_set_id=1
+${LMF_CMD_SUPER_2_FIRST_2}         lmf_set_srs_resource_config object_id=2  number_of_ports=ports2
+...          transmission_comb=comb_two comb_offset_2=1 cyclic_shift_20
+...          start_position=0 number_of_symbols=n1 repetition_factor=r1 frequency_domain_position=0
+...          frequency_domain_shift=0 c-srs=63 b-srs=0 b-hop=0
+...          group_or_sequence_hopping=neither resource_type=Periodic periodicity_periodic=slot40 offset_periodic=8 sequence_id=51
+${LMF_CMD_SUPER_2_SECOND_2}           lmf_set_srs_carrier_config object_id=2 pointA=635412 offset_to_carrier=0
+...            offset_to_carrier_subcarrier_spacing=kHz30
+...       carrier_bandwidth=273 location_and_bandwidth=1099 location_and_bandwidth_subcarrier_spacing=kHz30 cyclic_prefix=Normal
+...      tx_direct_current_location=0  srs_resource_config_obj_id_list=1 srs_resource_set_config_obj_id_list=1 nr_pci=51
+${LMF_CMD_SUPER_2_SRS_CONFIG_OBJ_2}              lmf_set_srs_configuration object_id=2 srs_carrier_obj_id_list=2
+${LMF_CMD_SUPER_2_MEASREMENT_REQ_2}                lmf_send_meas_req id=1 nrppa_transaction_id=1 lmf_measurement_id=2
+...        trp_meas_req_item_obj_id_list=1,2 trp_meas_qty_item_obj_id_list=1,2 amf_id=1 gnb_id=2 report_characteristics=Periodic
+...        measurement_periodicity=extended measurement_periodicity_extended=1280ms
+...        sfn_initialisation_time=0000001010101010101010101010101010101010101010101010101010101010 srs_config_obj_id=1
+${LMF_CMD_SUPER_2_UE_PRECISE_POS_2}           ue_precise_positioning_testmode_nr profile_id=2 positioning_config_list=0>800:-300,1>1000:-300
+${LMF_CMD_SUPER_2_UE_TESTMODE_SET_NR_2}           ue_testmode_set_nr id=2 testmode=ue_precise_positioning profile_id=2 action=activate
+#Validation TRP single UE
+${CB007880_TRP_MR_UE1}             LMF-1: LMF Received Measurement Report
+
+${CB007880_D_NR_POS_CHECK_1}        dmrs-TypeA-Position
+#Drx validation
+${CB007880_C_Drx_VAL_1}             drx-onDurationTimer milliSeconds : ms200
+${CB007880_C_Drx_VAL_2}             drx-LongCycleStartOffset ms160 : 0
+${FILTER_B005}                     uldata_puschreceiverespps || uldata_puschreceivereq
+${BIP_CSV_NAME}                    BIP_L1L2_filter_SCN1.csv
+${MCSHARK_PLUGIN}                  /home/ute/wireshark/plugins
+${tashark_version}                 4.2

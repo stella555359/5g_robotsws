@@ -1,0 +1,434 @@
+# *** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# ---------------------------------------------------------------------------------------------------------------------
+# Documentation   CB009915
+#                 Scope : functions for sub-feature B1
+#
+#                 Test Case Scenario author   : vincent.boulet@nokia.com
+#                 Creation Date               : 2024-01-19
+#                 Modified Date               : 2024-01-24
+#
+#                 Last Modified by            : vincent.boulet@nokia.com
+#                 Version    Date      Author                                Notes
+#                 0.1        FB2402    vincent.boulet@nokia.com              Creation pyhton
+#                 1.0        FB2402    vincent.boulet@nokia.com              Set _number_packet_to_check to 25000
+#                                                                            Set _mode_debug to False by default
+#                                                                            Set _operator_value to = by default
+#                                                                            Set parameters to None by default
+
+import getopt
+import json
+import os
+import sys
+
+# from enum import Enum
+# TAF Libraries:
+from taf.analyzer.ttitrace_eventdecoder import TtitraceReader as TtitraceReaderEvtDec
+
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+def check_l1SubPoolLayerPrbCapacity(_json_path,
+                                    _event_type,
+                                    _pool_id,
+                                    _sub_pool_id,
+                                    _default_layer=None,
+                                    _current_layer=None,
+                                    _calculated_layer=None,
+                                    _mode_debug=False):
+    """
+    This function checks the layer information of a sub_pool_id into TTI trace
+    It returns 1 if the verification is passed else 0
+    _json_path: json file of the TTI trace
+    _event_type: dlInterL1SubpoolReconfData or ulInterL1SubpoolReconfData
+    _pool_id: pool identifier
+    _sub_pool_id: subpool identifier
+    _default_layer: default layer value
+    _current_layer: current layer value
+    _calculated_layer: calculated layer value
+    _mode_debug: mode debug is activated if true
+    """
+
+    result_check = False
+    print("===> TTI_INF: check_l1SubPoolLayerPrbCapacity for event=%s into json file=%s" % (_event_type, _json_path))
+    if not os.path.exists(_json_path) or os.path.getsize(_json_path) <= 24:
+        print("===> TTI_ERR: json file=%s doesn't exist or size <= 24" % _json_path)
+        return result_check
+    if _event_type != "dlInterL1SubpoolReconfData" and _event_type != "ulInterL1SubpoolReconfData":
+        print("===> TTI_ERR: _event_type=%s is not supported" % _event_type)
+        return result_check
+    number_check = 0
+    with open(_json_path, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            if event.type == _event_type:
+                number_check += 1
+                result_check = False
+                result_check = True
+    if result_check:
+        print("===> TTI_INF: %s analyzis have been done" % number_check)
+        print("===> TTI_INF: check_l1SubPoolLayerPrbCapacity is passed when subPoolId is %s" % _sub_pool_id)
+    else:
+        print("===> TTI_ERR: check_l1SubPoolLayerPrbCapacity is FAILED when subPoolId is %s" % _sub_pool_id)
+        print("===> TTI_ERR: sfn=%s slot=%s lcrId=%s rnti=%s l1PoolId=%s" % (sfn, slot, lcrId, rnti, l1PoolId))
+    return result_check
+
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+def check_l1SubPoolStreamPrb_consistency(_json_path,
+                                         _event_type,
+                                         _pool_id,
+                                         _pool_max_num_stream_prb,
+                                         _number_packet_to_check=25000,
+                                         _mode_debug=False):
+    """
+    This function checks the consistency of the streams into TTI trace
+    It returns 1 if the verification is passed else 0
+    _json_path: json file of the TTI trace
+    _event_type: dlInterL1SubpoolReconfData or ulInterL1SubpoolReconfData
+    _pool_id: pool identifier
+    _pool_max_num_stream_prb: maxi number of stream prb for the pool
+    _number_packet_to_check: number of packets to check
+    _mode_debug: mode debug is activated if true
+    """
+
+    result_check = False
+    print("===> TTI_INF: check_l1SubPoolStreamPrb_consistency for event=%s into json file=%s"
+          % (_event_type, _json_path))
+    if not os.path.exists(_json_path) or os.path.getsize(_json_path) <= 24:
+        print("===> TTI_ERR: json file=%s doesn't exist or size <= 24" % _json_path)
+        return result_check
+    if _event_type != "dlInterL1SubpoolReconfData" and _event_type != "ulInterL1SubpoolReconfData":
+        print("===> TTI_ERR: _event_type=%s is not supported" % _event_type)
+        return result_check
+    number_check = 0
+    with open(_json_path, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            if event.type == _event_type:
+                sfn = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                lcrId = event.data["eventHeader"]["lcrId"]
+                rnti = event.data["eventHeader"]["rnti"]
+                l1PoolId = event.data["l1PoolId"]
+                poolMaxNumStreamPrb = event.data["poolMaxNumStreamPrb"]
+                if _mode_debug:
+                    print("===> TTI_DBG: event type=%s lcrId=%s" % (event.type, lcrId))
+                if poolMaxNumStreamPrb != int(_pool_max_num_stream_prb):
+                    print("===> TTI_ERR: poolMaxNumStreamPrb=%s compare with %s"
+                          % (poolMaxNumStreamPrb, _pool_max_num_stream_prb))
+                    result_check = False
+                    break    # return result_check
+                if l1PoolId == int(_pool_id):
+                    if _mode_debug:
+                        print("===> TTI_DBG: sfn=%s slot=%s rnti=%s l1PoolId=%s" % (sfn, slot, rnti, l1PoolId))
+                else:
+                    print("===> TTI_ERR: l1PoolId=%s compare with %s" % (l1PoolId, _pool_id))
+                    print("===> TTI_ERR: check IS NOT PASSED for l1PoolId=%s" % _pool_id)
+                    result_check = False
+                    break    # return result_check
+                number_check += 1
+                result_check = False
+                currentStream_0 = event.data["l1SubPools"][0]["currentStreamPrbCapacityPerSp"]
+                calculatedStream_0 = event.data["l1SubPools"][0]["calculatedStreamPrbCapacityPerSp"]
+                currentStream_1 = event.data["l1SubPools"][1]["currentStreamPrbCapacityPerSp"]
+                calculatedStream_1 = event.data["l1SubPools"][1]["calculatedStreamPrbCapacityPerSp"]
+                if (int(currentStream_0) + int(currentStream_1)) != int(poolMaxNumStreamPrb):
+                    print("===> TTI_ERR: sum of currentStream=%s + %s compare with maximum=%s"
+                          % (currentStream_0, currentStream_1, poolMaxNumStreamPrb))
+                    break    # return result_check
+                if (int(calculatedStream_0) + int(calculatedStream_1)) != int(poolMaxNumStreamPrb):
+                    print("===> TTI_ERR: sum of calculatedStream=%s + %s compare with maximum=%s"
+                          % (calculatedStream_0, calculatedStream_1, poolMaxNumStreamPrb))
+                    break    # return result_check
+                result_check = True
+                if number_check >= int(_number_packet_to_check):
+                    break    # the condition on the number of packets to check is reached then exit from the loop
+    if result_check:
+        print("===> TTI_INF: %s analyzis have been done" % number_check)
+        print("===> TTI_INF: check_l1SubPoolStreamPrb_consistency is passed for l1PoolId is %s" % _pool_id)
+    else:
+        print("===> TTI_ERR: check_l1SubPoolStreamPrb_consistency is FAILED for l1PoolId is %s" % _pool_id)
+        print("===> TTI_ERR: sfn=%s slot=%s lcrId=%s rnti=%s l1PoolId=%s" % (sfn, slot, lcrId, rnti, l1PoolId))
+    return result_check
+
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+def check_l1SubPoolStreamPrbCapacity(_json_path,
+                                     _event_type,
+                                     _pool_id,
+                                     _sub_pool_id,
+                                     _pool_max_num_stream_prb,
+                                     _operator_value=0,
+                                     _default_stream=None,
+                                     _current_stream=None,
+                                     _calculated_stream=None,
+                                     _number_packet_to_check=25000,
+                                     _mode_debug=False):
+    """
+    This function checks the stream information of a sub_pool_id into TTI trace
+    It returns 1 if the verification is passed else 0
+    _json_path: json file of the TTI trace
+    _event_type: dlInterL1SubpoolReconfData or ulInterL1SubpoolReconfData
+    _pool_id: pool identifier
+    _sub_pool_id: subpool identifier
+    _pool_max_num_stream_prb: maxi number of stream prb for the pool
+    _operator_value: operator to use for checking values, 0:=, 1:>, 2:<
+    _default_stream: default stream prb capacity value
+    _current_stream: current stream prb capacity value
+    _calculated_stream: calculated stream prb capacity value
+    _number_packet_to_check: number of packets to check
+    _mode_debug: mode debug is activated if true
+    """
+
+    result_check = False
+    print("===> TTI_INF: check_l1SubPoolStreamPrbCapacity for event=%s into json file=%s" % (_event_type, _json_path))
+    if not os.path.exists(_json_path) or os.path.getsize(_json_path) <= 24:
+        print("===> TTI_ERR: json file=%s doesn't exist or size <= 24" % _json_path)
+        return result_check
+    if _event_type != "dlInterL1SubpoolReconfData" and _event_type != "ulInterL1SubpoolReconfData":
+        print("===> TTI_ERR: _event_type=%s is not supported" % _event_type)
+        return result_check
+    number_check = 0
+    with open(_json_path, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            if event.type == _event_type:
+                sfn = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                lcrId = event.data["eventHeader"]["lcrId"]
+                rnti = event.data["eventHeader"]["rnti"]
+                l1PoolId = event.data["l1PoolId"]
+                poolMaxNumStreamPrb = event.data["poolMaxNumStreamPrb"]
+                if _mode_debug:
+                    print("===> TTI_DBG: event type=%s lcrId=%s" % (event.type, lcrId))
+                if poolMaxNumStreamPrb != int(_pool_max_num_stream_prb):
+                    print("===> TTI_ERR: poolMaxNumStreamPrb=%s compare with %s"
+                          % (poolMaxNumStreamPrb, _pool_max_num_stream_prb))
+                    result_check = False
+                    break    # return result_check
+                if l1PoolId == int(_pool_id):
+                    if _mode_debug:
+                        print("===> TTI_DBG: sfn=%s slot=%s rnti=%s l1PoolId=%s" % (sfn, slot, rnti, l1PoolId))
+                else:
+                    print("===> TTI_ERR: l1PoolId=%s compare with %s" % (l1PoolId, _pool_id))
+                    print("===> TTI_ERR: check IS NOT PASSED for l1PoolId=%s" % _pool_id)
+                    result_check = False
+                    break    # return result_check
+                subPoolId = event.data["l1SubPools"][0]["subPoolId"]
+                if subPoolId == int(_sub_pool_id):
+                    indice = 0
+                else:
+                    subPoolId = event.data["l1SubPools"][1]["subPoolId"]
+                    if subPoolId == int(_sub_pool_id):
+                        indice = 1
+                    else:
+                        print("===> TTI_ERR: subPoolId=%s is NOT FOUND then check IS NOT PASSED" % _sub_pool_id)
+                        result_check = False
+                        break    # return result_check
+                if _mode_debug:
+                    print("===> TTI_DBG: event type=%s subPoolId=%s" % (event.type, subPoolId))
+                number_check += 1
+                result_check = False
+                defaultStream = event.data["l1SubPools"][indice]["defaultStreamPrbCapacityPerSp"]
+                currentStream = event.data["l1SubPools"][indice]["currentStreamPrbCapacityPerSp"]
+                calculatedStream = event.data["l1SubPools"][indice]["calculatedStreamPrbCapacityPerSp"]
+                if _mode_debug:
+                    print("===> TTI_DBG: subPoolId=%s defaultStream=%s" % (subPoolId, defaultStream))
+                    print("===> TTI_DBG: subPoolId=%s currentStream=%s" % (subPoolId, currentStream))
+                    print("===> TTI_DBG: subPoolId=%s calculatedStream=%s" % (subPoolId, calculatedStream))
+                if int(_operator_value) == 0:    # result_check is True if param == value
+                    if _default_stream is not None and defaultStream != int(_default_stream):
+                        print("===> TTI_ERR: defaultStream=%s compare with %s" % (defaultStream, _default_stream))
+                        break    # return result_check
+                    if (_current_stream is not None and currentStream != int(_current_stream)
+                            and currentStream != int(_default_stream)):
+                        print("===> TTI_ERR: currentStream=%s compare with %s" % (currentStream, _current_stream))
+                        break    # return result_check
+                    if _calculated_stream is not None and calculatedStream != int(_calculated_stream):
+                        print("===> TTI_ERR: calculatedStream=%s compare with %s"
+                              % (calculatedStream, _calculated_stream))
+                        break    # return result_check
+                elif int(_operator_value) == 1:    # result_check is True if param > value
+                    if _default_stream is not None and defaultStream != int(_default_stream):
+                        print("===> TTI_ERR: defaultStream=%s compare with %s" % (defaultStream, _default_stream))
+                        break    # return result_check
+                    if _current_stream is not None and currentStream < int(_current_stream):
+                        print("===> TTI_ERR: currentStream=%s compare with %s" % (currentStream, _current_stream))
+                        break    # return result_check
+                    if _calculated_stream is not None and calculatedStream < int(_calculated_stream):
+                        print("===> TTI_ERR: calculatedStream=%s compare with %s"
+                              % (calculatedStream, _calculated_stream))
+                        break    # return result_check
+                elif int(_operator_value) == 2:    # result_check is True if param < value
+                    if _default_stream is not None and defaultStream != int(_default_stream):
+                        print("===> TTI_ERR: defaultStream=%s compare with %s" % (defaultStream, _default_stream))
+                        break    # return result_check
+                    if _current_stream is not None and currentStream > int(_current_stream):
+                        print("===> TTI_ERR: currentStream=%s compare with %s" % (currentStream, _current_stream))
+                        break    # return result_check
+                    if _calculated_stream is not None and calculatedStream > int(_calculated_stream):
+                        print("===> TTI_ERR: calculatedStream=%s compare with %s"
+                              % (calculatedStream, _calculated_stream))
+                        break    # return result_check
+                else:
+                    print("===> TTI_ERR: operator is NOT SUPPORTED")
+                    break    # return result_check
+                result_check = True
+                if number_check >= int(_number_packet_to_check):
+                    break    # the condition on the number of packets to check is reached then exit from the loop
+    if result_check:
+        print("===> TTI_INF: %s analyzis have been done" % number_check)
+        print("===> TTI_INF: check_l1SubPoolStreamPrbCapacity is passed when subPoolId is %s" % _sub_pool_id)
+    else:
+        print("===> TTI_ERR: check_l1SubPoolStreamPrbCapacity is FAILED when subPoolId is %s" % _sub_pool_id)
+        print("===> TTI_ERR: sfn=%s slot=%s lcrId=%s rnti=%s l1PoolId=%s" % (sfn, slot, lcrId, rnti, l1PoolId))
+    return result_check
+
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+def check_number_prb_allocated(_json_path,
+                               _event_type,
+                               _phys_cell_id,
+                               _operator_value=0,
+                               _stream_prb_gbr_alloc=None,
+                               _stream_prb_non_gbr_alloc=None,
+                               _num_alloc_prb=None,
+                               _bbrm_usable_cell_prb=None,
+                               _zab_privilege=None,
+                               _number_packet_to_check=25000,
+                               _mode_debug=False):
+    """
+    This function checks the information of a cell into TTI trace
+    It returns 1 if the verification is passed else 0
+    _json_path: json file of the TTI trace
+    _event_type: dlAllocatedPooledResourcesData or ulAllocatedPooledResourcesData
+    _phys_cell_id: physical cell identifier
+    _operator_value: operator to use for checking values, 0:=, 1:>, 2:<
+    _stream_prb_gbr_alloc: number of stream prb gbr for checking allocStreamPrbGbrDl or allocStreamPrbGbrUl
+    _stream_prb_non_gbr_alloc: number of stream prb non gbr for checking allocStreamPrbNonGbrDl or _NonGbrUl
+    _num_alloc_prb: number of allocated prb for checking numAllocCellPrbDl or numAllocCellPrbUl
+    _bbrm_usable_cell_prb: for checking bbrmUsableCellPrbForDlGbrLoadReport or bbrmUsableCellPrbForUlGbrLoadReport
+    _zab_privilege: zab privilege only in case of dlAllocatedPooledResourcesData
+    _number_packet_to_check: number of packets to check
+    _mode_debug: mode debug is activated if true
+    """
+
+    result_check = False
+    print("===> TTI_INF: check_number_prb_allocated for event=%s into json file=%s" % (_event_type, _json_path))
+    if not os.path.exists(_json_path) or os.path.getsize(_json_path) <= 24:
+        print("===> TTI_ERR: json file=%s doesn't exist or size <= 24" % _json_path)
+        return result_check
+    if _event_type != "dlAllocatedPooledResourcesData" and _event_type != "ulAllocatedPooledResourcesData":
+        print("===> TTI_ERR: _event_type=%s is not supported" % _event_type)
+        return result_check
+    number_check = 0
+    with open(_json_path, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            if event.type == _event_type:
+                sfn = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                lcrId = event.data["eventHeader"]["lcrId"]
+                rnti = event.data["eventHeader"]["rnti"]
+                physCellId = event.data["eventHeader"]["physCellId"]
+                if physCellId == int(_phys_cell_id):
+                    if _mode_debug:
+                        print("===> TTI_DBG: event type=%s lcrId=%s" % (event.type, lcrId))
+                        print("===> TTI_DBG: sfn=%s slot=%s physCellId=%s" % (sfn, slot, physCellId))
+                    number_check += 1
+                    result_check = False
+                    nrCellIdentity = event.data["nrCellIdentity"]
+                    if _event_type == "dlAllocatedPooledResourcesData":
+                        allocStreamPrbGbr = event.data["allocStreamPrbGbrDl"]
+                        allocStreamPrbNonGbr = event.data["allocStreamPrbNonGbrDl"]
+                        numAllocCellPrb = event.data["numAllocCellPrbDl"]
+                        bbrmUsableCellPrbForGbrLoadReport = event.data["bbrmUsableCellPrbForDlGbrLoadReport"]
+                        hasZabPrivilege = event.data["hasZabPrivilege"]
+                    else:
+                        allocStreamPrbGbr = event.data["allocStreamPrbGbrUl"]
+                        allocStreamPrbNonGbr = event.data["allocStreamPrbNonGbrUl"]
+                        numAllocCellPrb = event.data["numAllocCellPrbUl"]
+                        bbrmUsableCellPrbForGbrLoadReport = event.data["bbrmUsableCellPrbForUlGbrLoadReport"]
+                        hasZabPrivilege = None
+                    if _mode_debug:
+                        print("===> TTI_DBG: physCellId=%s nrCellIdentity=%s" % (physCellId, nrCellIdentity))
+                        print("===> TTI_DBG: physCellId=%s allocStreamPrbGbr=%s" % (physCellId, allocStreamPrbGbr))
+                        print("===> TTI_DBG: physCellId=%s allocStreamPrbNonGbr=%s"
+                              % (physCellId, allocStreamPrbNonGbr))
+                        print("===> TTI_DBG: physCellId=%s numAllocCellPrb=%s" % (physCellId, numAllocCellPrb))
+                        print("===> TTI_DBG: physCellId=%s bbrmUsableCellPrbForGbrLoadReport=%s"
+                              % (physCellId, bbrmUsableCellPrbForGbrLoadReport))
+                        if _event_type == "dlAllocatedPooledResourcesData":
+                            print("===> TTI_DBG: physCellId=%s hasZabPrivilege=%s" % (physCellId, hasZabPrivilege))
+                    if (_bbrm_usable_cell_prb is not None
+                            and bbrmUsableCellPrbForGbrLoadReport != int(_bbrm_usable_cell_prb)):
+                        print("===> TTI_ERR: bbrmUsableCellPrbForGbrLoadReport=%s compare with %s"
+                              % (bbrmUsableCellPrbForGbrLoadReport, _bbrm_usable_cell_prb))
+                        break    # return result_check
+                    if int(_operator_value) == 0:    # result_check is True if param == value
+                        if _stream_prb_gbr_alloc is not None and allocStreamPrbGbr != int(_stream_prb_gbr_alloc):
+                            print("===> TTI_ERR: allocStreamPrbGbr=%s compare with %s"
+                                  % (allocStreamPrbGbr, _stream_prb_gbr_alloc))
+                            break    # return result_check
+                        if (_stream_prb_non_gbr_alloc is not None
+                                and allocStreamPrbNonGbr != int(_stream_prb_non_gbr_alloc)):
+                            print("===> TTI_ERR: allocStreamPrbNonGbr=%s compare with %s"
+                                  % (allocStreamPrbNonGbr, _stream_prb_non_gbr_alloc))
+                            break    # return result_check
+                        if _num_alloc_prb is not None and numAllocCellPrb != int(_num_alloc_prb):
+                            print("===> TTI_ERR: numAllocCellPrb=%s compare with %s"
+                                  % (numAllocCellPrb, _num_alloc_prb))
+                            break    # return result_check
+                        if _zab_privilege is not None and hasZabPrivilege != int(_zab_privilege):
+                            print("===> TTI_ERR: hasZabPrivilege=%s compare with %s"
+                                  % (hasZabPrivilege, _zab_privilege))
+                            break    # return result_check
+                    elif int(_operator_value) == 1:    # result_check is True if param > value
+                        if _stream_prb_gbr_alloc is not None and allocStreamPrbGbr < int(_stream_prb_gbr_alloc):
+                            print("===> TTI_ERR: allocStreamPrbGbr=%s compare with %s"
+                                  % (allocStreamPrbGbr, _stream_prb_gbr_alloc))
+                            break    # return result_check
+                        if (_stream_prb_non_gbr_alloc is not None
+                                and allocStreamPrbNonGbr < int(_stream_prb_non_gbr_alloc)):
+                            print("===> TTI_ERR: allocStreamPrbNonGbr=%s compare with %s"
+                                  % (allocStreamPrbNonGbr, _stream_prb_non_gbr_alloc))
+                            break    # return result_check
+                        if _num_alloc_prb is not None and numAllocCellPrb < int(_num_alloc_prb):
+                            print("===> TTI_ERR: numAllocCellPrb=%s compare with %s"
+                                  % (numAllocCellPrb, _num_alloc_prb))
+                            break    # return result_check
+                        if _zab_privilege is not None and hasZabPrivilege < int(_zab_privilege):
+                            print("===> TTI_ERR: hasZabPrivilege=%s compare with %s"
+                                  % (hasZabPrivilege, _zab_privilege))
+                            break    # return result_check
+                    elif int(_operator_value) == 2:    # result_check is True if param < value
+                        if _stream_prb_gbr_alloc is not None and allocStreamPrbGbr > int(_stream_prb_gbr_alloc):
+                            print("===> TTI_ERR: allocStreamPrbGbr=%s compare with %s"
+                                  % (allocStreamPrbGbr, _stream_prb_gbr_alloc))
+                            break    # return result_check
+                        if (_stream_prb_non_gbr_alloc is not None
+                                and allocStreamPrbNonGbr > int(_stream_prb_non_gbr_alloc)):
+                            print("===> TTI_ERR: allocStreamPrbNonGbr=%s compare with %s"
+                                  % (allocStreamPrbNonGbr, _stream_prb_non_gbr_alloc))
+                            break    # return result_check
+                        if _num_alloc_prb is not None and numAllocCellPrb > int(_num_alloc_prb):
+                            print("===> TTI_ERR: numAllocCellPrb=%s compare with %s"
+                                  % (numAllocCellPrb, _num_alloc_prb))
+                            break    # return result_check
+                        if _zab_privilege is not None and hasZabPrivilege > int(_zab_privilege):
+                            print("===> TTI_ERR: hasZabPrivilege=%s compare with %s"
+                                  % (hasZabPrivilege, _zab_privilege))
+                            break    # return result_check
+                    else:
+                        print("===> TTI_ERR: operator is NOT SUPPORTED")
+                        break    # return result_check
+                    result_check = True
+                    if number_check >= int(_number_packet_to_check):
+                        break    # the condition on the number of packets to check is reached then exit from the loop
+    if result_check:
+        print("===> TTI_INF: %s analyzis have been done" % number_check)
+        print("===> TTI_INF: check_number_prb_allocated is passed for physCellId is %s" % _phys_cell_id)
+    else:
+        print("===> TTI_ERR: check_number_prb_allocated is FAILED for physCellId is %s" % _phys_cell_id)
+        print("===> TTI_ERR: sfn=%s slot=%s lcrId=%s rnti=%s" % (sfn, slot, lcrId, rnti))
+    return result_check

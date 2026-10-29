@@ -1,0 +1,609 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Verification of tests for 5GC001248-J feature
+...               Test Case Scenario author   : yann.ah.herve@nokia.com
+...               Test Case Scenario contact  : yann.ah.herve@nokia.com
+...               Test Case automation author : yann.ah.herve@nokia.com
+...               Test Case automation contact: bernard.hoche@nokia.com
+...               Creation Date               : 25-February-2020
+...               Modified Date               : 17-June-2022
+...               Last Modified by            : laurent.puchelle@nokia.com
+...               06-17-2021              |           Remove Sherpa activation (will be automatically done by AF)
+...               16-08-2021              |           Try to add a fix to avoid X2-U packet lost after X2 release
+...               02-Dec-2021             |           Remove RAD param related keywords (cleanup, useless now)
+...               05-Jan-2022             |           Add 22R2 tag
+...               20-Jan-2022             |           Fix test name typo
+...               27-Jan-2022             |           Restart TL after param update without taking account of returned value
+...                                       |           of 'SSH Was OAM Rebooted'
+...               20-Apr-2022             |           Update test names to fit QC name
+...               09-May-2022             |           Remove 22R1/22R2 tag
+...               17-Jun-2022             |           Define variable "${TestSharkTool}    MC_SHARK"
+...               03-August-2022          |           Move to MCShark instead of Luashark
+...               09-August-2022          |           Remove 22R3 tag for branch off
+
+
+Library           ../resources/python/luashark_tools.py
+Library           luashark_tools.analyzer       WITH NAME       analyzer
+
+Resource          ../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../resources/SWENG/robot/Sherpa.robot
+Resource          ./resources/robot/5GC001248_Keywords.robot
+
+Variables         ../../../resources/SWENG/python/ReadConfig.py
+Variables         ./resources/python/Constants.py
+
+Force Tags                          CA_5G_SW_FR-Villarceaux    RRM
+...                                 PY36
+...                                 CLOUD_5G_I_LO_AP_LO_SANSA_FS_ECPRI_CMWV_TDD    master_classicalbts_all
+...                                 SBTS00    SBTS23R1    SBTS22R4
+...                                 CONFIGURED    5G_RAN    RAN_5G    CRT
+
+# For 1248-J, enable all possible MCS as L.A. is used to downgrade MCS.
+Suite Setup         Suite Setup From Scratch          listBackupFiles=${FD_ALL}
+Suite Teardown      Setup.Suite Teardown
+
+# YHE - Add test teardown section to manage SOS Report collection on error
+Test Teardown       Test Teardown for 1248
+
+*** Variables ***
+${TestSharkTool}    MC_SHARK
+
+#  variable set to "${True} to automatically save debug data (SOS report and snapshot)
+#  at the end of each TC
+${AutoSaveDebugData}    ${False}
+
+&{UE_PROFILE_1}                 ue=1                                    profile=None
+...                             pdu=${None}           qfi=${None}       type=l3
+...                             bearer=2                                testMode=False
+...                             trf_id=1                                burst=${None}
+...                             period_ms=${None}
+
+&{UE_PROFILE_2}                 ue=1                                    profile=None
+...                             pdu=${None}           qfi=${None}       type=l3
+...                             bearer=2                                testMode=False
+...                             trf_id=2                                burst=${None}
+...                             period_ms=${None}
+
+&{UE_PROFILE_BURST}             ue=1                                    profile=None
+...                             pdu=${None}           qfi=${None}       type=l3
+...                             bearer=2                                testMode=False
+...                             trf_id=2                                burst=60
+...                             period_ms=${None}
+
+*** Test Cases ***
+
+[1][1.0] 5GC001248_J_64_PDCP Flow control with missing DDDS report
+   [Documentation]                 Automation for 1248-J TC_64
+   ...                             F1+X2 with BLER and missing DDDS report
+
+   Set Flow Control Configuration  FC_protocol=3gpp
+   ...                             split_mode=dlOverF1UX2U
+
+   Restart TL
+
+   WTS Setup
+
+   Run Keyword If                  ${enable_sherpa}==${True}           Activate Sherpa
+
+   # UE attach to 4G+5G (NSA)
+   SgNB Addition to ENB             ueSetting=${UE_SIMPLE}
+   # Set congestion over X2
+   Update DDDS Parameters          ueSetting=${UE_SIMPLE}      dbs=100000   ddr=0   success_rate=100
+
+   # Start 27 Mbps DL traffic. It will be stopped by hand   
+   ${status}   ${msg}      Run Keyword And Ignore Error      
+   ...                             Traffic UE DL                   ueSetting=${UE_PROFILE_1}
+   ...                             throughput=27
+   ...                             shouldBeStop=False
+   ...                             duration=20s
+
+   # Add BLER to send some traffic over X2 (otherwise F1 is too good...)
+   Enable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   #
+   # Stop DDDS reports for a short time to trigger data sending over F1 as a first step.
+   # Because (???), in case of 3GPP FC, data rate on X2 side is badly estimated because of eNB model, it seems
+   # there may be unstabilities of traffic balance between F1 and X2. This step is used to
+   # force to send data over F1. It should avoid to send all data over X2 and stabilise X2 (hopefully...)
+   #
+   Set DDDS Drop Configuration      ueSetting=${UE_SIMPLE}        ddds_transmission=off
+   Traced Sleep  5 seconds
+
+   # Drop some DDDS reports (150 ms hole). Should not have any impact on FC.
+   Set DDDS Drop Configuration      ueSetting=${UE_SIMPLE}        ddds_transmission=3:200
+
+   Traced Sleep  3 minutes
+
+   # Stop DDDS reports and remove BLER (traffic should be send only over F1)
+   Set DDDS Drop Configuration      ueSetting=${UE_SIMPLE}        ddds_transmission=off
+   Disable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   Traced Sleep  3 minutes
+
+   # Stop traffic
+   Traffic Stop                    ueSetting=${UE_PROFILE_1}   
+
+   # Detach UE
+   UE Detach Enb                   ueSetting=${UE_SIMPLE}
+
+   # Sleep 5 mn in case of GP overlap
+   Traced Sleep  ${auto_1248_gp_period} minutes       msg=GP overlap
+
+   # Retrieve counters and compare with a reference
+   # Verify Object Counter cumulative values
+   ${status}             Run Keyword If        '${auto_1248_check_counters}' == 'True'
+   ...                   Verify Counter Cumulative Values With Margin     5GC001248_J_64
+
+
+[1][1.0] 5GC001248_J_61_PDCP flow control during transport congestion over F1-U
+   [Documentation]                 Automation for 1248-J TC_61
+   ...                             F1+X2 with F1 congestion (DL = 25 Mbps)
+
+   Set Flow Control Configuration  FC_protocol=3gpp
+   ...                             split_mode=dlOverF1UX2U
+
+   Restart TL
+
+   WTS Setup
+
+   Run Keyword If                  ${enable_sherpa}==${True}            Activate Sherpa
+
+   SgNB Addition to ENB            ueSetting=${UE_SIMPLE}
+
+   #
+   # DDDS configuration: Good X2 link traffic but congestion over F1
+   # 3GPP FC seems not well handled on WTS side. As reported DDR is ignored on gNB side in case of 3GPP FC,
+   # the throughput is estimated with the data volume transmitted by eNB between 2 DDDS reports.
+   # However, eNB always send all data immediatly. I think it leads to bad LTE throughput estimation on gNB side...
+   # Anyway, as the aim is to compare results when 1248-J enabled vs disabled, behavior should be the same and it should be ok.
+   # So, DDDS is set to an average value (150000) which should be roughtly ok for most of estimated throuhgput done by gNB.
+   #
+   Update DDDS Parameters          ueSetting=${UE_SIMPLE}      dbs=100000   ddr=0   success_rate=100
+
+   # Start 27 Mbps DL traffic (congestion). It will be stopped by hand   
+   ${status}   ${msg}      Run Keyword And Ignore Error      
+   ...                             Traffic UE DL                   ueSetting=${UE_PROFILE_1}
+   ...                             throughput=27
+   ...                             shouldBeStop=False
+   ...                             duration=20s
+
+   #
+   # Stop DDDS reports for a short time to trigger data sending over F1 as a first step.
+   # Because (???), in case of 3GPP FC, data rate on X2 side is badly estimated because of eNB model, it seems
+   # there may be unstabilities of traffic balance between F1 and X2. This step is used to
+   # force to send data over F1. It should avoid to send all data over X2 and stabilise X2 (hopefully...)
+   #
+   Set DDDS Drop Configuration      ueSetting=${UE_SIMPLE}        ddds_transmission=off
+   Traced Sleep  5 seconds   
+   Set DDDS Drop Configuration      ueSetting=${UE_SIMPLE}        ddds_transmission=on
+
+   # Target MCS will drop to 0
+   Enable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   Traced Sleep  5 minutes
+
+   # Stop traffic
+   Traffic Stop                    ueSetting=${UE_PROFILE_1}
+
+   Disable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   # Detach UE
+   UE Detach Enb                   ueSetting=${UE_SIMPLE}
+
+   # Sleep 5 mn in case of GP overlap
+   Traced Sleep  ${auto_1248_gp_period} minutes       msg=GP overlap
+
+   # Retrieve counters and compare with a reference
+   # Verify Object Counter cumulative values
+   ${status}             Run Keyword If        '${auto_1248_check_counters}' == 'True'
+   ...                   Verify Counter Cumulative Values With Margin     5GC001248_J_61
+
+[1][1.0] 5GC001248_J_60_PDCP flow control during transport congestion over X2-U
+   [Documentation]                 Automation for 1248-J TC_60
+   ...                             F1+X2 with X2 congestion (DBS=0)
+
+   Set Flow Control Configuration  FC_protocol=3gpp
+   ...                             split_mode=dlOverF1UX2U
+
+   Restart TL
+   WTS Setup
+
+   Run Keyword If                  ${enable_sherpa}==${True}               Activate Sherpa
+
+   # Attach to 5G (NSA)
+   SgNB Addition to ENB             ueSetting=${UE_SIMPLE}
+
+   # Set low delay over X2
+   Update DDDS Parameters          ueSetting=${UE_SIMPLE}      dbs=100000   ddr=0   success_rate=100
+
+   # Start 27 Mbps DL traffic. It will be stopped by hand      
+   # Throughput is set to almost reach congestion and BLER is added.
+   # Otherwize, nothing is sent over X2 and F1 is always selected...
+   ${status}   ${msg}              Run Keyword And Ignore Error      
+   ...                             Traffic UE DL                   ueSetting=${UE_PROFILE_1}
+   ...                             throughput=27
+   ...                             shouldBeStop=False
+   ...                             duration=20s
+
+   #
+   # Stop DDDS reports for a short time to trigger data sending over F1 as a first step.
+   # Because (???), in case of 3GPP FC, data rate on X2 side is badly estimated because of eNB model, it seems
+   # there may be unstabilities of traffic balance between F1 and X2. This step is used to
+   # force to send data over F1. It should avoid to send all data over X2 and stabilise X2 (hopefully...)
+   #
+   Set DDDS Drop Configuration      ueSetting=${UE_SIMPLE}        ddds_transmission=off
+   Traced Sleep  5 seconds    
+   Set DDDS Drop Configuration      ueSetting=${UE_SIMPLE}        ddds_transmission=on
+
+   # Target MCS will drop to 0
+   Enable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   Traced Sleep  3 minutes
+
+   Disable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   # Set congestion over X2
+   Update DDDS Parameters          ueSetting=${UE_SIMPLE}      dbs=0   ddr=0   success_rate=100
+
+   Traced Sleep  5 minutes
+
+   # Stop traffic
+   Traffic Stop                    ueSetting=${UE_PROFILE_1}   
+
+   Disable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   # Detach UE
+   UE Detach Enb                   ueSetting=${UE_SIMPLE}
+
+   # Sleep 5 mn in case of GP overlap
+   Traced Sleep  ${auto_1248_gp_period} minutes       msg=GP overlap
+
+   # Retrieve counters and compare with a reference
+   ${status}             Run Keyword If        '${auto_1248_check_counters}' == 'True'
+   ...                   Verify Counter Cumulative Values With Margin     5GC001248_J_60   
+
+[1][1.0] 5GC001248_J_73_Downlink Flow control for PDCP PDUs with intermittent data
+   [Documentation]                 Automation for 1248-J TC_73
+   ...                             F1 only with bursty traffic
+
+   Set Flow Control Configuration  FC_protocol=3gpp
+   ...                             split_mode=dlOverF1U
+   ...                             initial_dl=initDLoverF1U
+
+   Restart TL
+
+   WTS Setup
+
+   Run Keyword If                  ${enable_sherpa}==${True}            Activate Sherpa
+
+   # Attach to 5G (NSA)
+   SgNB Addition to ENB             ueSetting=${UE_SIMPLE}
+
+   # Start 10 Mbps DL traffic.
+   # Ignore egate throughput checks and use gNB counters instead.
+   Traffic UE DL                   ueSetting=${UE_PROFILE_BURST}
+   ...                             throughput=10
+   ...                             duration=300s
+   ...                             shouldBeCheck=False
+
+   # Detach UE
+   UE Detach Enb                   ueSetting=${UE_SIMPLE}
+
+   # Sleep 5 mn in case of GP overlap
+   Traced Sleep  ${auto_1248_gp_period} minutes       msg=GP overlap
+
+   # Retrieve counters and compare with a reference
+   # Verify Object Counter cumulative values
+   ${status}             Run Keyword If        '${auto_1248_check_counters}' == 'True'
+   ...                   Verify Counter Cumulative Values With Margin     5GC001248_J_73
+
+
+[1][1.0] 5GC001248_J_59_PDCP Flow control over X2-U and F1-U interface
+   [Documentation]                 Automation for 1248-J TC_59
+   ...                             F1+X2 with and without BLER ("main stream" FC test case)   
+
+   Set Flow Control Configuration  FC_protocol=3gpp
+   ...                             split_mode=dlOverF1UX2U
+
+   Restart TL
+
+   WTS Setup
+
+   Run Keyword If                  ${enable_sherpa}==${True}                  Activate Sherpa
+
+   # Attach to 5G (NSA)
+   SgNB Addition to ENB             ueSetting=${UE_SIMPLE}
+
+   # Set low delay over X2
+   Update DDDS Parameters          ueSetting=${UE_SIMPLE}      dbs=100000   ddr=0   success_rate=100
+
+   # Start 27 Mbps DL traffic. It will be stopped by hand   
+   # Throughput is set to almost reach congestion and BLER is added.
+   # Otherwize, nothing is sent over X2 and F1 is always selected...
+   ${status}   ${msg}      Run Keyword And Ignore Error      
+   ...                             Traffic UE DL                   ueSetting=${UE_PROFILE_1}
+   ...                             throughput=27
+   ...                             shouldBeStop=False
+   ...                             duration=20s
+
+   #
+   # Stop DDDS reports for a short time to trigger data sending over F1 as a first step.
+   # Because (???), in case of 3GPP FC, data rate on X2 side is badly estimated because of eNB model, it seems
+   # there may be unstabilities of traffic balance between F1 and X2. This step is used to
+   # force to send data over F1. It should avoid to send all data over X2 and stabilise X2 (hopefully...)
+   #
+   Set DDDS Drop Configuration      ueSetting=${UE_SIMPLE}        ddds_transmission=off
+   Traced Sleep  5 seconds   
+   Set DDDS Drop Configuration      ueSetting=${UE_SIMPLE}        ddds_transmission=on
+
+   # Target MCS will drop to 0
+   Enable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   Traced Sleep  3 minutes
+
+   # Disable BLER to decrease RLC delay and move back to F1
+   Disable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   # Set congestion over X2
+   Update DDDS Parameters          ueSetting=${UE_SIMPLE}      dbs=0   ddr=0   success_rate=100
+
+   Traced Sleep  3 minutes
+
+   # Set low delay again over X2
+   Update DDDS Parameters          ueSetting=${UE_SIMPLE}      dbs=100000   ddr=0   success_rate=100
+   
+   # Target MCS will drop to 0
+   Enable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   Traced Sleep  3 minutes
+
+   # Stop traffic
+   Traffic Stop                    ueSetting=${UE_PROFILE_1}  
+
+   Disable BLER on F1 side          ueSetting=${UE_SIMPLE} 
+
+   # Detach UE
+   UE Detach Enb                   ueSetting=${UE_SIMPLE}
+
+   # Sleep 5 mn in case of GP overlap
+   Traced Sleep  ${auto_1248_gp_period} minutes       msg=GP overlap
+
+   # Retrieve counters and compare with a reference
+   # Verify Object Counter cumulative values
+   ${status}             Run Keyword If        '${auto_1248_check_counters}' == 'True'       
+   ...                   Verify Counter Cumulative Values With Margin     5GC001248_J_59
+
+
+[1][1.0] 5GC001248_J_66_Latency based discard for PDCP SDUs
+   [Documentation]                 Automation for 1248-J TC_66
+   ...                             F1+X2 with X2 and F1 congestion (DL = 30 Mbps and DBS=0)
+
+   Set Flow Control Configuration  FC_protocol=3gpp
+   ...                             split_mode=dlOverF1UX2U
+
+   Restart TL
+
+   WTS Setup
+
+   Run Keyword If                  ${enable_sherpa}==${True}                  Activate Sherpa
+
+   # Attach to 5G (NSA)
+   SgNB Addition to ENB             ueSetting=${UE_SIMPLE}
+
+   # Set congestion over X2
+   Update DDDS Parameters          ueSetting=${UE_SIMPLE}      dbs=0   ddr=0   success_rate=100
+
+   # Start 30 Mbps DL traffic (> max traffic in MCS0). It will be stopped by hand   
+   ${status}   ${msg}      Run Keyword And Ignore Error      
+   ...                             Traffic UE DL                   ueSetting=${UE_PROFILE_1}
+   ...                             throughput=30
+   ...                             shouldBeStop=False
+   ...                             duration=20s
+
+   # Target MCS will drop to 0
+   Enable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   Traced Sleep  5 minutes
+
+   # Stop traffic
+   Traffic Stop                    ueSetting=${UE_PROFILE_1} 
+
+   Disable BLER on F1 side          ueSetting=${UE_SIMPLE} 
+
+   # Detach UE
+   UE Detach Enb                   ueSetting=${UE_SIMPLE}
+
+   # Sleep 5 mn in case of GP overlap
+   Traced Sleep  ${auto_1248_gp_period} minutes       msg=GP overlap
+
+   # Retrieve counters and compare with a reference
+   # Verify Object Counter cumulative values
+   ${status}             Run Keyword If        '${auto_1248_check_counters}' == 'True'       
+   ...                   Verify Counter Cumulative Values With Margin     5GC001248_J_66
+
+
+[1][1.0] 5GC001248_J_62_PDCP Flow control over X2-U and F1-U with intermittent data
+   [Documentation]                 Automation for 1248-J TC_62
+   ...                             F1+X2 with X2 and without BLER and bursty traffic
+
+   Set Flow Control Configuration  FC_protocol=3gpp
+   ...                             split_mode=dlOverF1UX2U
+
+   Restart TL
+
+   WTS Setup
+
+   Run Keyword If                  ${enable_sherpa}==${True}                  Activate Sherpa
+
+   # Attach to 5G (NSA)
+   SgNB Addition to ENB             ueSetting=${UE_SIMPLE}
+
+    # First configuration: Good X2 link and bad radio condition on F1 => more traffic should be sent over X2
+   Update DDDS Parameters          ueSetting=${UE_SIMPLE}      dbs=100000   ddr=0   success_rate=100
+
+   # Start 21 Mbps DL traffic . It will be stopped by hand   
+   ${status}   ${msg}      Run Keyword And Ignore Error      
+   ...                             Traffic UE DL                   ueSetting=${UE_PROFILE_BURST}
+   ...                             throughput=27
+   ...                             shouldBeStop=False
+   ...                             duration=20s   
+
+   #
+   # Stop DDDS reports for a short time to trigger data sending over F1 as a first step.
+   # Because (???), in case of 3GPP FC, data rate on X2 side is badly estimated because of eNB model, it seems
+   # there may be unstabilities of traffic balance between F1 and X2. This step is used to
+   # force to send data over F1. It should avoid to send all data over X2 and stabilise X2 (hopefully...)
+   #
+   Set DDDS Drop Configuration      ueSetting=${UE_SIMPLE}        ddds_transmission=off
+   Traced Sleep  5 seconds   
+   Set DDDS Drop Configuration      ueSetting=${UE_SIMPLE}        ddds_transmission=on
+
+   # Target MCS will drop to 0
+   Enable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   Traced Sleep  3 minutes
+
+    # Second configuration: Bad X2 link and good radio condition on F1 => more traffic should be sent over F1
+   Update DDDS Parameters          ueSetting=${UE_SIMPLE}      dbs=0   ddr=0   success_rate=100
+
+   Disable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   Traced Sleep  3 minutes
+
+    # Third configuration: Good X2 link and bad radio condition on F1 => more traffic should be sent over X2
+   Update DDDS Parameters          ueSetting=${UE_SIMPLE}      dbs=100000   ddr=0   success_rate=100
+
+   # Target MCS will drop to 0
+   Enable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   Traced Sleep  3 minutes
+
+   # Stop traffic
+   Traffic Stop                    ueSetting=${UE_PROFILE_BURST}  
+
+   Disable BLER on F1 side          ueSetting=${UE_SIMPLE}
+
+   # Detach UE
+   UE Detach Enb                   ueSetting=${UE_SIMPLE}
+
+   # Sleep 5 mn in case of GP overlap
+   Traced Sleep  ${auto_1248_gp_period} minutes       msg=GP overlap
+
+   # Retrieve counters and compare with a reference
+   # Verify Object Counter cumulative values
+   ${status}             Run Keyword If        '${auto_1248_check_counters}' == 'True'
+   ...                   Verify Counter Cumulative Values With Margin     5GC001248_J_62
+
+
+[1][1.0] 5GC001248_J_63_bearer configuration with initial traffic over X2
+
+   [Documentation]                 Automation for 1248-J TC_63
+   ...                             Bearer configurations checks with X2 only FC
+
+   &{fc_configuration}				Create Dictionary		FC_Mode=3gpp	InitialDL=initDLoverX2U
+
+	PDCP FC Bearer Configuration Checks		${fc_configuration}
+
+   # Sleep 15 mn in case of GP overlap
+   Traced Sleep  ${auto_1248_gp_period} minutes       msg=GP overlap
+
+   # Retrieve counters and compare with a reference
+   # Verify Object Counter cumulative values
+   ${status}             Run Keyword If        '${auto_1248_check_counters}' == 'True'
+   ...                   Verify Counter Cumulative Values With Margin     5GC001248_J_63
+
+
+[1][1.0] 5GC001248_J_80_bearer configuration with initial traffic over F1
+
+   [Documentation]                 Automation for 1248-J TC_80
+   ...                             Bearer configurations checks with F1 only FC   
+
+   &{fc_configuration}				Create Dictionary		FC_Mode=3gpp	InitialDL=initDLoverF1U
+
+	PDCP FC Bearer Configuration Checks		${fc_configuration}
+
+   # Sleep 15 mn in case of GP overlap
+   Traced Sleep  ${auto_1248_gp_period} minutes       msg=GP overlap
+
+   # Retrieve counters and compare with a reference
+   # Verify Object Counter cumulative values
+   ${status}             Run Keyword If        '${auto_1248_check_counters}' == 'True'
+   ...                   Verify Counter Cumulative Values With Margin     5GC001248_J_80
+
+
+*** Keywords *** 
+
+PDCP FC Bearer Configuration Checks
+
+   [Documentation]            Generic KW used for PDCP FC bearer checks inside L2HI messages HiUserCu_BearerSetupReq
+   ... 							   or HiUserDu_BearerSetupReq. Used for TCs 5GC001248_J_63, 5GC001248_J_80
+   ...							   Input dictionary ${FC_Configuration} with FC_Mode and InitialDL:
+   ...							   FC_Mode = 3gpp
+   ...							   InitialDL = initDLoverX2U | initDLoverF1U
+   
+   [Arguments]                     ${FC_Configuration}
+   
+   ${mode}   					   Get From Dictionary     ${FC_Configuration}     FC_Mode
+   ${initial_dl}				   Get From Dictionary     ${FC_Configuration}     InitialDL
+
+   ${fc_value}                     Run Keyword If          '${mode}' == '3gpp'     Set Variable	1
+   ...                             ELSE                                            Set Variable	0
+   
+   ${initial_dl_traffic_value}     Run Keyword If          '${initial_dl}' == 'initDLoverX2U'    Set Variable    1
+   ...                             ELSE                                                          Set Variable    0
+
+   Set Flow Control Configuration  FC_protocol=${mode}
+   ...                             split_mode=dlOverF1UX2U
+   ...                             initial_dl=${initial_dl}
+
+   Restart TL
+
+   WTS Setup
+
+   Run Keyword If                  ${enable_sherpa}==${True}                     Activate Sherpa
+
+   # Attach to 4G
+   UE Attach Enb                   ueSetting=${UE_SIMPLE}
+
+   # Start capture on ASIK_S etha01 to get L2HIDU configuration message : HiUserCu_BearerSetupReq
+   ${CaptureCPRT}                   Capture CPRT Set Upon Config            airscale=${GNB_DU}
+   Capture Init                     ${CaptureCPRT}
+   Capture Start                    ${CaptureCPRT}
+   Set Suite Variable               ${CaptureCPRT}
+
+   # Start 10 Mbps DL traffic for 5 mn
+   ${status}   ${msg}      Run Keyword And Ignore Error      
+   ...                             Traffic UE DL                   ueSetting=${UE_PROFILE_1}
+   ...                             throughput=10
+   ...                             shouldBeStop=False
+   ...                             duration=20s
+
+   # Attach to 5G
+   UE Attach Gnb                   ueSetting=${UE_SIMPLE}
+
+   # Stop capture on ASIK_S etha01
+   Capture Stop                     ${CaptureCPRT}
+
+   # Stop traffic
+   Traffic Stop                    ueSetting=${UE_PROFILE_1}   
+
+   # Detach UE
+   UE Detach Enb                   ueSetting=${UE_SIMPLE}
+
+   # Look for HiUserCu_BearerSetupReq
+   ${filterPcap}                   analyzer.filter_pcap            ${CaptureCPRT.path}
+   ...                             filterName=syscom               filterExp=syscom
+   
+   ${pdmlFile}=                    analyzer.pcap_to_pdml           ${filterPcap}
+
+   # Checks related to CU/F1 and X2 sides
+   Check Bearer CU                 pdmlFile=${pdmlFile}      fc_mode=${fc_value}       initial_dl=${initial_dl_traffic_value}
+
+   # Checks related to DU/F1 side
+   Check Bearer DU                 pdmlFile=${pdmlFile}      fc_mode=${fc_value}
+

@@ -1,0 +1,244 @@
+# *** Settings ***
+# Documentation     example case for RAN HZ L2 SW11. test step description in QC as below:
+# ...
+# ...               QC case full name:
+# ...               CB007922_Case111_D_A_5b_Blind_activation_BufferAndRLQualityBased_Deactivation_BF
+# ...               US5GC001729-A#11: Single UE connection setup and DL/UL data scheduling in SA option 2 (BF activated,
+# ...               A1 MR based SCell addition and RLQ-based SCell deactivation)
+# ...               US5GC001729-A-11c: BufferAndRLQualityBased scell Deactivation
+# 
+# Suite Setup       Common Suite Setup
+# Test Setup        Common Test Setup
+# Force Tags        CLOUD_5G_I_BOO_AP_KLLL_SANSA_L1B_ECPRI_CMWV_TDD    5G_RAN_TDD    RAN_5G    SBTS22R3    ownerbylilyu    SBTS23R1
+# Test Timeout      60 minutes
+# Resource          ../resources/sg11/internal_resource/robot/modify_configuration.robot
+# 
+# *** Variables ***
+# ${CONFIG_DIR_PATH}    ${CURDIR}/../resources/sg11/internal_resource/config/
+# ${UE_ID}          1
+# ${PDU_ID}         1
+# ${GW_ID}          1
+# ${SLICE_ID}       1
+# ${SCFC_NAME}      gNB_scf_ASIB_ABIO_TDD_eCPRI_cmwv_SANSA_L1b_4S_1CC.xml
+# ${AIRPHONE_NAME}    AP_iphy_AEQE_ASIB_ABIO_TDD_eCPRI_cmwv_SANSA_L1b_4S_1CC.xml
+# ${WTS_NAME}       wts_config_ASIB_ABIO_TDD_eCPRI_cmwv_SANSA_L1b_4S_1CC.cfg
+# @{LOG_NAME_LIST}    gnb_snapshot    sosreport    tshark    egatelog
+# ${carrierAggregationSupportList}    text|ca_Fr1Tdd_Sa|//list[@name\="carrierAggregationSupportList"]/p
+# ${actInterNumerologyCa}    text|false|//*[@name\="actInterNumerologyCa"]
+# ${flexibleCAMode}    text|MixedCAMode|//*[@name\="flexibleCAMode"]
+# ${pucchModeSelect}    text|longPucch|//*[@name\="pucchModeSelect"]
+# ${actBeamforming}    text|true|//*[@name\="actBeamforming"]
+# ${nrBtsBeamRefinementP2}    text|false|//*[@name\="nrBtsBeamRefinementP2"]
+# #${numberOfTransmittedSsBlocks}    text|1 beam|//*[@name\="numberOfTransmittedSsBlocks"]
+# #${basicBeamSet}    text|beamSet_1|//*[@name\="basicBeamSet"]
+# ${nrCellType}     text|4DL2UL|//*[@name\="nrCellType"]
+# ${cellDepType}    text|SA+NSA|//*[@name\="cellDepType"]
+# ${actCDrx}        text|false|//*[@name\="actCDrx"]
+# ${frameStructureType}    text|tdLte|//*[@name\="frameStructureType"]
+# ${guardPeriodLength}    text|6Symbols|//*[@name\="guardPeriodLength"]
+# ${lteToNrFrameShift}    text|0ms|//*[@name\="lteToNrFrameShift"]
+# ${prachConfigurationIndex}    text|97|//*[@name\="prachConfigurationIndex"]
+# ${ssBurstSetPeriod}    text|20|//*[@name\="ssBurstSetPeriod"]
+# ${sCellGoodChannelQualityThreshold}    text|18|//*[@name\="sCellGoodChannelQualityThreshold"]
+# ${sCellBadChannelQualityThreshold}    text|14|//*[@name\="sCellBadChannelQualityThreshold"]
+# ${sCellChannelEstimationPeriod}    text|2000|//*[@name\="sCellChannelEstimationPeriod"]
+# ${actDl256Qam}    text|false|//*[@name\="actDl256Qam"]
+# ${sCellAdditionMethod}    text|blind|//*[@name\="sCellAdditionMethod"]
+# ${maxNumScellsDl}    text|1|//*[@name\="maxNumScellsDl"]
+# ${actFdmScheduling}    text|true|//*[@name\="actFdmScheduling"]
+# ${sCellDeactivationBadRlqCount}    text|100|//*[@name\="sCellDeactivationBadRlqCount"]
+# ${sCellActivationMethod}    text|bufferBased|//*[@name\="sCellActivationMethod"]
+# ${a1MeasSCellAddEnabled}    text|rsrp|//*[@name\="a1MeasSCellAddEnabled"]
+# ${a1ThresholdSCellAddSsbRsrpTDD}    text|60|//*[@name\="a1ThresholdSCellAddSsbRsrpTDD"]
+# #${actMeasBasedSCellAddition}    text|false|//*[@name\="actMeasBasedSCellAddition"]
+# ${chBw}           text|20MHz|//*[@name\="chBw"]
+# ${sCellDeactivationBadRlqCount}    text|100|//*[@name\="sCellDeactivationBadRlqCount"]
+# ${sCellDeactivationTimerGNB}    text|ms1280|//*[@name\="sCellDeactivationTimerGNB"]
+# 
+# *** Test Cases ***
+# CB007922_Case111_D_A_5b_Blind_activation_BufferAndRLQualityBased_Deactivation_BF
+#     Step1:Commission the above configuration on WebUI
+#     Step2:UE attach to cell2
+#     Step3:push big DL and UL full data to UE
+#     Step4:keep big DL data transfer,override scell CQI to bad but not reach bad scell RLQ threshold
+#     Step5:keep big DL data transfer,override scell CQI to reach bad scell RLQ threshold
+#     Step6:keep big DL data transfer,override scell CQI to reach good scell RLQ threshold
+#     Step7:keep big DL data transfer,override scell CQI to reach bad scell RLQ threshold for more than 200s
+#     Step8:keep big DL data transfer,override scell CQI to good again
+#     Step9:Detach UE
+# 
+# *** Keywords ***
+# Step1:Commission the above configuration on WebUI
+#     Start Collect GNB and AP Syslog in 'step1_before_onair' File
+#     ${CONFIG_DIR_PATH}    Set Variable    ${CONFIG_DIR_PATH}/${SW_BRANCH}
+#     change_iphy_rru_version    ${CONFIG_DIR_PATH}${/}${AIRPHONE_NAME}
+#     modify_swconfig_by_CB007922    ${CONFIG_DIR_PATH}${/}${SCFC_NAME}
+#     ${scfc_path}    Set Variable    ${TEST_LOG_DIRECTORY()}${/}scfc.xml
+#     copy_file    ${CONFIG_DIR_PATH}/${SCFC_NAME}    ${scfc_path}
+#     add_ca_relation_CB7922    ${scfc_path}
+#     ${modify_list}    create list    ${carrierAggregationSupportList}    ${actInterNumerologyCa}    ${flexibleCAMode}    ${pucchModeSelect}
+#     ...    ${actBeamforming}    ${nrBtsBeamRefinementP2}    ${cellDepType}    ${actCDrx}    ${frameStructureType}    ${guardPeriodLength}
+#     ...    ${lteToNrFrameShift}    ${prachConfigurationIndex}    ${ssBurstSetPeriod}    ${sCellGoodChannelQualityThreshold}
+#     ...    ${sCellBadChannelQualityThreshold}    ${sCellChannelEstimationPeriod}    ${actDl256Qam}    ${sCellAdditionMethod}    ${maxNumScellsDl}
+#     ...    ${actFdmScheduling}    ${sCellDeactivationBadRlqCount}    ${sCellActivationMethod}    ${a1MeasSCellAddEnabled}    ${chBw}
+#     ...    ${a1ThresholdSCellAddSsbRsrpTDD}    ${nrCellType}    ${sCellDeactivationBadRlqCount}    ${sCellDeactivationTimerGNB}
+#     modify_xml    ${scfc_path}    ${scfc_path}    ${modify_list}
+#     Modify TL VM And AP SCTP Configuration
+#     Perform Full Commission And Reach Onair    ${scfc_path}    ${CONFIG_DIR_PATH}${/}${WTS_NAME}    reset_after_commission=${False}
+#     [Teardown]    Stop Collect GNB and AP Syslog in 'step1_before_onair' File
+# 
+# Step2:UE attach to cell2
+#     Start Collect GNB and AP Syslog in 'step2_ue_attach' File
+#     #Start GNB BIP Log
+#     #Start AP BIP Log
+#     #Start GNB Ttitrace With Streaming Mode
+#     Airphone Location Change    id=${UE_ID}    cell_id=2
+#     #    open beaforming
+#     airphone_execute_egate_command
+#     ...    beam_control_testmode_nr profile_id\=1 ueBeamIndexInitial\=0,1,2,3,4,5,6,7 ssbeam_bestbeam\=0 ssbeam_rsrp_best\=-44 ssbeam_rsrp_avg\=-70
+#     airphone_execute_egate_command    ue_testmode_set_nr id\=1 testmode\=beam_control action\=activate profile_id\=1 beamaction\=attach scell\=0,1
+#     Airphone Sa Attach    ue_id=${UE_ID}
+#     airphone_set_traffic_type    ${UE_ID}    ${PDU_ID}    internal
+#     Airphone Pdu Session Setup    ${UE_ID}    ${PDU_ID}    ${SLICE_ID}    ${GW_ID}
+#     #airphone_execute_egate_command    ue_meas_cfg_disp id\=1 meas_obj_type\=nr
+#     #airphone_execute_egate_command    ue_measurement\_send\_nr id\=1 meas_id\=1 event\=A1 srsrp_nr\=80    pass_regexp=sCellToAddModList
+#     #Stop Gnb BIP Log    log_dir=${TEST_LOG_DIRECTORY()}${/}step2_ue_attach${/}
+#     #Stop AP BIP Log    log_dir=${TEST_LOG_DIRECTORY()}${/}step2_ue_attach${/}
+#     #${pacp}=    Stop GNB Ttitrace With Streaming Mode    save_path=${TEST_LOG_DIRECTORY()}step2_ue_attach
+#     #Decoder Tttirace From Pcap To Csv    ${pacp}    ${TEST_LOG_DIRECTORY()}step2_ue_attach/output
+#     [Teardown]    Stop Collect GNB and AP Syslog in 'step2_ue_attach' File
+# 
+# Step3:push big DL and UL full data to UE
+#     Start Collect GNB and AP Syslog in 'Step3_DL_UL_data' File
+#     #Start GNB BIP Log
+#     #Start AP BIP Log
+#     Airphone SA Start Data Traffic    ${UE_ID}    DL    175M    trf_id=1    pdu_id=${PDU_ID}    duration=${3600}
+#     Airphone SA Start Data Traffic    ${UE_ID}    DL    175M    trf_id=2    pdu_id=${PDU_ID}    duration=${3600}
+#     Airphone SA Start Data Traffic    ${UE_ID}    DL    175M    trf_id=3    pdu_id=${PDU_ID}    duration=${3600}
+#     Airphone SA Start Data Traffic    ${UE_ID}    UL    50M    trf_id=1    pdu_id=${PDU_ID}    duration=${3600}
+#     #Start GNB Ttitrace With Streaming Mode
+#     Wait Throughput Timer    20
+#     #Stop Gnb BIP Log    log_dir=${TEST_LOG_DIRECTORY()}${/}Step3_DL_UL_data${/}
+#     #Stop AP BIP Log    log_dir=${TEST_LOG_DIRECTORY()}${/}Step3_DL_UL_data${/}
+#     #${pacp}=    Stop GNB Ttitrace With Streaming Mode    save_path=${TEST_LOG_DIRECTORY()}Step3_DL_UL_data
+#     #Decoder Tttirace From Pcap To Csv    ${pacp}    ${TEST_LOG_DIRECTORY()}Step3_DL_UL_data/output
+#     ${Pcell_dl_throughput} =    Airphone Get Throughput On Specific Scell    ue_id=${UE_ID}    scell_id=0    type=pdsch    tput_type=ave
+#     ${Scell_dl_throughput} =    Airphone Get Throughput On Specific Scell    ue_id=${UE_ID}    scell_id=1    type=pdsch    tput_type=ave
+#     should be true    ${Pcell_dl_throughput} > 50000
+#     should be true    ${Scell_dl_throughput} > 50000
+#     [Teardown]    Stop Collect GNB and AP Syslog in 'Step3_DL_UL_data' File
+# 
+# Step4:keep big DL data transfer,override scell CQI to bad but not reach bad scell RLQ threshold
+#     Start Collect GNB and AP Syslog in 'step4_trigger_cqi_7' File
+#     #Start GNB BIP Log
+#     #Start AP BIP Log
+#     #Start GNB Ttitrace With Streaming Mode
+#     Airphone Execute Egate Command    csi_override_testmode_nr profile_id\=1 cqi\=7
+#     Airphone Execute Egate Command    csi_override_testmode_nr profile_id\=2 cqi\=1
+#     Airphone Execute Egate Command    ue_testmode_set_nr id\=1 testmode\=csi_override action\=activate profile_id\=1 scell\=1
+#     #Wait Throughput Timer    5
+#     #Stop Gnb BIP Log    log_dir=${TEST_LOG_DIRECTORY()}${/}step4_trigger_cqi_7${/}
+#     #Stop AP BIP Log    log_dir=${TEST_LOG_DIRECTORY()}${/}step4_trigger_cqi_7${/}
+#     #${pacp}=    Stop GNB Ttitrace With Streaming Mode    save_path=${TEST_LOG_DIRECTORY()}step4_trigger_cqi_7
+#     #Decoder Tttirace From Pcap To Csv    ${pacp}    ${TEST_LOG_DIRECTORY()}step4_trigger_cqi_7/output
+#     Wait Throughput Timer    20
+#     ${Pcell_dl_throughput} =    Airphone Get Throughput On Specific Scell    ue_id=${UE_ID}    scell_id=0    type=pdsch    tput_type=ave
+#     ${Scell_dl_throughput} =    Airphone Get Throughput On Specific Scell    ue_id=${UE_ID}    scell_id=1    type=pdsch    tput_type=ave
+#     should be true    ${Pcell_dl_throughput} > 10000
+#     should be true    ${Scell_dl_throughput} > 10000
+#     [Teardown]    Stop Collect GNB and AP Syslog in 'step4_trigger_cqi_7' File
+# 
+# Step5:keep big DL data transfer,override scell CQI to reach bad scell RLQ threshold
+#     #Start Collect GNB and AP Syslog in 'step5_trigger_cqi_1' File
+#     #Start GNB BIP Log
+#     #Start AP BIP Log
+#     #Start GNB Ttitrace With Streaming Mode
+#     Airphone Execute Egate Command    csi_override_testmode_nr profile_id\=1 cqi\=15
+#     Airphone Execute Egate Command    csi_override_testmode_nr profile_id\=2 cqi\=1
+#     Airphone Execute Egate Command    ue_testmode_set_nr id\=1 testmode\=csi_override action\=activate profile_id\=2 scell\=1
+#     #Wait Throughput Timer    5
+#     #Stop Gnb BIP Log    log_dir=${TEST_LOG_DIRECTORY()}${/}step5_trigger_cqi_1${/}
+#     #Stop AP BIP Log    log_dir=${TEST_LOG_DIRECTORY()}${/}step5_trigger_cqi_1${/}
+#     #${pacp}=    Stop GNB Ttitrace With Streaming Mode    save_path=${TEST_LOG_DIRECTORY()}step5_trigger_cqi_1
+#     #Decoder Tttirace From Pcap To Csv    ${pacp}    ${TEST_LOG_DIRECTORY()}step5_trigger_cqi_1/output
+#     Wait Throughput Timer    20
+#     ${Pcell_dl_throughput} =    Airphone Get Throughput On Specific Scell    ue_id=${UE_ID}    scell_id=0    type=pdsch    tput_type=ave
+#     ${Scell_dl_throughput} =    Airphone Get Throughput On Specific Scell    ue_id=${UE_ID}    scell_id=1    type=pdsch    tput_type=ave
+#     should be true    ${Pcell_dl_throughput} > 20000
+#     should be true    ${Scell_dl_throughput} == 0
+#     [Teardown]    Stop Collect GNB and AP Syslog in 'step5_trigger_cqi_1' File
+# 
+# Step6:keep big DL data transfer,override scell CQI to reach good scell RLQ threshold
+#     #Start Collect GNB and AP Syslog in 'step6_override_cqi_good' File
+#     #Start GNB BIP Log
+#     #Start AP BIP Log
+#     Airphone Execute Egate Command    csi_override_testmode_nr profile_id\=1 cqi\=15
+#     Airphone Execute Egate Command    csi_override_testmode_nr profile_id\=2 cqi\=1
+#     Airphone Execute Egate Command    ue_testmode_set_nr id\=1 testmode\=csi_override action\=activate profile_id\=1 scell\=1
+#     #Wait Throughput Timer    5
+#     #Stop Gnb BIP Log    log_dir=${TEST_LOG_DIRECTORY()}${/}step6_override_cqi_good${/}
+#     #Stop AP BIP Log    log_dir=${TEST_LOG_DIRECTORY()}${/}step6_override_cqi_good${/}
+#     #${pacp}=    Stop GNB Ttitrace With Streaming Mode    save_path=${TEST_LOG_DIRECTORY()}step6_override_cqi_good
+#     #Decoder Tttirace From Pcap To Csv    ${pacp}    ${TEST_LOG_DIRECTORY()}step6_override_cqi_good/output
+#     Wait Throughput Timer    20
+#     ${Pcell_dl_throughput} =    Airphone Get Throughput On Specific Scell    ue_id=${UE_ID}    scell_id=0    type=pdsch    tput_type=ave
+#     ${Scell_dl_throughput} =    Airphone Get Throughput On Specific Scell    ue_id=${UE_ID}    scell_id=1    type=pdsch    tput_type=ave
+#     should be true    ${Pcell_dl_throughput} > 20000
+#     should be true    ${Scell_dl_throughput} > 20000
+#     [Teardown]    Stop Collect GNB and AP Syslog in 'step6_override_cqi_good' File
+# 
+# Step7:keep big DL data transfer,override scell CQI to reach bad scell RLQ threshold for more than 200s
+#     Start Collect GNB and AP Syslog in 'step7_override_cqi_bad_longtime' File
+#     #Start GNB BIP Log
+#     #Start AP BIP Log
+#     #Start GNB Ttitrace With Streaming Mode
+#     Airphone Execute Egate Command    csi_override_testmode_nr profile_id\=1 cqi\=15
+#     Airphone Execute Egate Command    csi_override_testmode_nr profile_id\=2 cqi\=1
+#     Airphone Execute Egate Command    ue_testmode_set_nr id\=1 testmode\=csi_override action\=activate profile_id\=2 scell\=1
+#     #Wait Throughput Timer    5
+#     #Stop Gnb BIP Log    log_dir=${TEST_LOG_DIRECTORY()}${/}step7_override_cqi_bad_longtime${/}
+#     #Stop AP BIP Log    log_dir=${TEST_LOG_DIRECTORY()}${/}step7_override_cqi_bad_longtime${/}
+#     #${pacp}=    Stop GNB Ttitrace With Streaming Mode    save_path=${TEST_LOG_DIRECTORY()}step7_override_cqi_bad_longtime
+#     #Decoder Tttirace From Pcap To Csv    ${pacp}    ${TEST_LOG_DIRECTORY()}step7_override_cqi_bad_longtime/output
+#     Wait Throughput Timer    300
+#     ${Pcell_dl_throughput} =    Airphone Get Throughput On Specific Scell    ue_id=${UE_ID}    scell_id=0    type=pdsch    tput_type=ave
+#     ${Scell_dl_throughput} =    Airphone Get Throughput On Specific Scell    ue_id=${UE_ID}    scell_id=1    type=pdsch    tput_type=ave
+#     should be true    ${Pcell_dl_throughput} > 20000
+#     should be true    ${Scell_dl_throughput} == 0
+#     [Teardown]    Stop Collect GNB and AP Syslog in 'step7_override_cqi_bad_longtime' File
+# 
+# Step8:keep big DL data transfer,override scell CQI to good again
+#     #Start Collect GNB and AP Syslog in 'step8_override_cqi_goog_again' File
+#     #Start GNB BIP Log
+#     #Start AP BIP Log
+#     #Start GNB Ttitrace With Streaming Mode
+#     Airphone Execute Egate Command    csi_override_testmode_nr profile_id\=1 cqi\=15
+#     Airphone Execute Egate Command    csi_override_testmode_nr profile_id\=2 cqi\=1
+#     Airphone Execute Egate Command    ue_testmode_set_nr id\=1 testmode\=csi_override action\=activate profile_id\=1 scell\=1
+#     #Wait Throughput Timer    5
+#     #Stop Gnb BIP Log    log_dir=${TEST_LOG_DIRECTORY()}${/}step8_override_cqi_good_agian${/}
+#     #Stop AP BIP Log    log_dir=${TEST_LOG_DIRECTORY()}${/}step8_override_cqi_good_agian${/}
+#     #${pacp}=    Stop GNB Ttitrace With Streaming Mode    save_path=${TEST_LOG_DIRECTORY()}step8_override_cqi_good_agian
+#     #Decoder Tttirace From Pcap To Csv    ${pacp}    ${TEST_LOG_DIRECTORY()}step8_override_cqi_good_agian/output
+#     Wait Throughput Timer    20
+#     ${Pcell_dl_throughput_again} =    Airphone Get Throughput On Specific Scell    ue_id=${UE_ID}    scell_id=0    type=pdsch    tput_type=ave
+#     ${Scell_dl_throughput_again} =    Airphone Get Throughput On Specific Scell    ue_id=${UE_ID}    scell_id=1    type=pdsch    tput_type=ave
+#     should be true    ${Pcell_dl_throughput_again} > 20000
+#     should be true    ${Scell_dl_throughput_again} == 0
+#     [Teardown]    Stop Collect GNB and AP Syslog in 'step8_override_cqi_good_agian' File
+# 
+# Step9:Detach UE
+#     #Start Collect GNB and AP Syslog in 'Step9_Detach_UE' File
+#     Airphone Execute Egate Command    csi_override_testmode_nr profile_id\=1 cqi\=15
+#     Airphone Execute Egate Command    ue_testmode_set_nr id\=1 testmode\=csi_override action\=activate profile_id\=1 scell\=0
+#     airphone_sa_stop_data_traffic    ${UE_ID}    DL    pdu_id=${PDU_ID}
+#     airphone_sa_detach    ${UE_ID}
+#     [Teardown]    Stop Collect GNB and AP Syslog in 'Step9_Detach_UE' File
+# 
+# add_ca_relation_CB7922
+#     [Arguments]    ${scfc_path}
+#     #L2RT intra band CA Cell2&Cell3 Inter L2RT inter band CA Cell4&Cell1 Intra L2RT intra band CA Cell1&Cell2 Intra L2RT inter band CA Cell3&Cell4
+#     add_nrrel_extend_parameter_on_cell    xml_path=${scfc_path}    cellid=1    lcrid=2
+#     add_nrrel_extend_parameter_on_cell    xml_path=${scfc_path}    cellid=2    lcrid=3
+#     add_nrrel_extend_parameter_on_cell    xml_path=${scfc_path}    cellid=3    lcrid=4
+#     add_nrrel_extend_parameter_on_cell    xml_path=${scfc_path}    cellid=4    lcrid=1

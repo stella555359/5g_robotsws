@@ -1,0 +1,156 @@
+*** Settings ***
+Documentation            [SUITE PURPOSE]  CB007487 - ABIP integration part UTE Cloud introduction
+...
+...               Scope : 1/ chain a SA ans a NSA call in a same test
+...                       2/ be as simple as possible without any confguration file modification during the test to be  
+...                          able to validate golden config file delivered on UTE via single run UTE mechanism
+...
+...               Test Case Scenario author   : francois.tourlonnias@nokia.com
+...               Test Case Scenario contact  : francois.tourlonnias@nokia.com
+...               Test Case automation contact: laurent.paillasse@nokia.com
+...               Creation Date               : 2022/06/19
+...               Last Modified               : 2022/11/23 francois.tourlonnias@nokia.com - UL traffic value adaptation to 1x1 Mimo Abip Restriction
+
+Resource            ../../../resources/SWENG/robot/GenericTest.robot
+Resource            ../../../resources/SWENG/robot/CallSetup.robot
+Resource            ../../../resources/SWENG/robot/Restart.robot
+Resource            ../../../resources/SWENG/robot/Traffic.robot
+Resource            ../../../resources/SWENG/robot/Setup.robot
+
+Resource            resources/robot/CB007487_PerfKPI_Keywords.robot    #for UL traffic Check adaptation
+
+Library             taf.wts.runner              WITH NAME       wtsemu
+Library             taf.transport.ssh           WITH NAME       ssh
+
+Suite Setup         Suite Setup From Scratch
+Suite Teardown      Suite Teardown
+Test Teardown       Teardown_CB007487_SA_NSA_introutecloud
+
+Force Tags          CA_5G_SW_FR-Villarceaux    RRM
+...                 PY36
+...                 CONFIGURED    5G_RAN    RAN_5G
+
+*** Variables ***
+
+# variable set to ${True} to automatically save SOS report and OAM snapshot
+# (by default, these information are saved only if a test is failed)
+${AutoSaveDebugData}        ${False}
+
+&{TDD_4T4R_2x2MIMO}
+...                                 Downlink_throughput=211   # Mbps
+...                                 Uplink_throughput=70      # Mbps
+...                                 celltype=TDD
+
+&{FDD_4T4R_2x2MIMO}
+...                                 Downlink_throughput=184    # Mbps
+...                                 Uplink_throughput=79       # Mbps
+...                                 celltype=FDD
+#	http://5gtables.eecloud.dynamic.nsn-net.net/?code=KCSBBhmnekACXQIEKtN3pAAQAAAAAAD21ghJQDFwA5JCAQBAAAAAACYABAABkQQAA
+#   FwAAAAJAAxKJRKJAkgAAAAAAAAAAAAAAAAAAABAgAAAABAATQARjAAAgAAAAAAAAAAAYBAEwJAAAAIBAAAAAA
+
+${consTraceColor}            Evaluate                    "${CYAN}"
+${defColor}                  Evaluate                    "${NORMAL}"
+*** Test Cases ***
+
+[1][1.0] CB007487_D_24_ABIP_L3_Call_FDD_CPRI
+    [Tags]    CLOUD_5G_I_MP_AP_KL_SANSA_FS_CPRI_CMWV_FDD     SBTS00
+    CB007487_SA_NSA_call    ${FDD_4T4R_2x2MIMO}
+
+# CB007487_B_37_AB***xxxAntiRegexp***xxxIP_L3_Call_TDD_eCPRI_wo_beamforming
+#     [Tags]    CLOUD_5G_I_MP_AP_LO_SANSA_FS_ECPRI_CMWV_TDD     SBTS00    #new topology introduction
+#     CB007487_SA_NSA_call    ${TDD_4T4R_2x2MIMO}
+
+*** Keywords ***
+
+CB007487_SA_NSA_call
+    [Arguments]                     ${param}
+    Init Sequence    ${param}
+
+    SA_call          ${param}
+    Clean Simu Basic Files
+    Dated Log        Fresh basic_wts_step2.cfg creation
+    Copy Config Files For WTS
+    NSA_call         ${param}
+    Clean Simu Basic Files
+
+SA_call
+    [Documentation]                 SA call DL and after UL traffic
+    [Arguments]                     ${param}
+
+    Restart TL
+    Critical Step                   CallSetup.Setup Wtsemu SA    shouldSaveBasicCfg=${True}
+    Critical Step                   CallSetup.UE Register                                         depends=CallSetup.Setup Wtsemu SA
+    Critical Step                   CallSetup.UE Attach Check                                     depends=CallSetup.UE Register
+    Critical Step                   CallSetup.Launch PDU Session                                  depends=CallSetup.UE Attach Check
+    Critical Step                   DL Traffic Feature BW        ueSetting_type=${BASIC_UE_SA}    depends=CallSetup.Launch PDU Session
+    Critical Step                   UL Traffic Feature BW        ueSetting_type=${BASIC_UE_SA}    depends=CallSetup.Launch PDU Session
+
+NSA_call
+    [Documentation]                 NSA call DL and after UL traffic
+    [Arguments]                     ${param}
+
+    Restart TL
+    Critical Step                   WTS Setup                    shouldSaveBasicCfg=${True}       shouldUseLua=${False}
+    Critical Step                   UE Cell Setup Check                                           depends=WTS Setup
+    Critical Step         CallSetup.SgNB Addition to ENB         ueSetting=${UE_SIMPLE}           depends=UE Cell Setup Check
+    Critical Step                   UE Attach Check                                               depends=SgNB Addition to ENB
+    Critical Step                   DL Traffic Feature BW        ueSetting_type=${UE_SIMPLE}      ue_id=11    scell_idx=8      
+    Critical Step                   UL Traffic Feature BW        ueSetting_type=${UE_SIMPLE}      ue_id=11    scell_idx=8
+
+UL Traffic Feature BW
+    [Arguments]       ${ueSetting_type}=none    ${ue_id}=1    ${scell_idx}=0
+    Dated log                       Starting UL Traffic procedure
+    Traffic UE UL     ueSetting=${ueSetting_type}    throughput=${param.Uplink_throughput}    duration=30    deviation=50
+    ...               shouldBeStop=False    shouldBeCheck=${False}  #line added to bypass traffic UL bearer check
+
+    #block added to bypass traffic UL bearer check
+    ${Ue_Avg_PUSCH_Tput}=    run Keyword if      '${param.Uplink_throughput}'!='0'
+    ...                      Get PUSCH ue_stats_nr  ue_id=${ue_id}  scell_idx=${scell_idx}
+    ...  ELSE                set variable   0
+
+    ${trig}=                 Evaluate            ${param.Uplink_throughput} - ( ${param.Uplink_throughput} * 50 / 100 )
+    ${value}                 Set Variable if     ${Ue_Avg_PUSCH_Tput} > 0     ${Ue_Avg_PUSCH_Tput}    0
+    ${DOD}                   Set Variable if     ${value} >= ${trig}          True                    False          
+    Dated log                ** => ** UL Traffic ${value} Mbps, DOD ${DOD}  <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    Should Be True           '${DOD}' == 'True'
+
+
+DL Traffic Feature BW
+    [Arguments]       ${ueSetting_type}=none         ${ue_id}=1  ${scell_idx}=0
+    Dated log         Starting DL Traffic procedure
+    Traffic UE DL     ueSetting=${ueSetting_type}    throughput=${param.Downlink_throughput}  duration=30  deviation=50
+    ...               shouldBeStop=False             shouldBeCheck=${False}  #line added to bypass traffic DL bearer check
+
+    #block added to bypass traffic UL bearer check
+    ${Ue_Avg_PDSCH_Tput}=    run Keyword if      '${param.Downlink_throughput}'!='0'
+    ...                      Get PDSCH ue_stats_nr  ue_id=${ue_id}  scell_idx=${scell_idx}
+    ...  ELSE                set variable   0
+    Dated log                ** => ** UL Traffic ${Ue_Avg_PDSCH_Tput}
+
+    ${trig}=                 Evaluate            ${param.Downlink_throughput} - ( ${param.Downlink_throughput} * 50 / 100 )
+    ${value}                 Set Variable if     ${Ue_Avg_PDSCH_Tput} > 0     ${Ue_Avg_PDSCH_Tput}    0
+    ${DOD}                   Set Variable if     ${value} >= ${trig}          True                    False          
+    Dated log                ** => ** UL Traffic ${value} Mbps, DOD ${DOD}  <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    Should Be True           '${DOD}' == 'True'
+
+Teardown_CB007487_SA_NSA_introutecloud
+    [Documentation]    At the end of This test case
+    ...                1/ erase Sweng scories
+    ...                2/ Sos Report and Snapshot collection 
+    ...                     on failure 
+    ...                     or on user request (AutoSaveDebugData variable set to True on the top of this robot scenario)
+
+    Dated log          Test Teardown_CB007487_SA_NSA_introutecloud : start
+
+    Clean Simu Basic Files
+
+    # this mini algo save SOS Report, OAM snapshot if testcase failed or if ${AutoSaveDebugData} is ${True}
+    Set Global Variable             ${save_debug_data}     ${False}  #mini Algo initialisation
+    Run Keyword If Test Failed      Set Global Variable    ${save_debug_data}    ${True}
+    Run Keyword If                  ${AutoSaveDebugData} == ${True}    Set Global Variable    ${save_debug_data}    ${True}
+    # Get_Traces_Sherpa to be added when it's OK
+    Run Keyword If                  ${save_debug_data} == ${True} and not ${isAic}    Run Keywords
+    ...                             Get Sos Report
+    ...                             Get Snapshot
+
+    Dated log        Test Teardown_CB007487_SA_NSA_introutecloud : end

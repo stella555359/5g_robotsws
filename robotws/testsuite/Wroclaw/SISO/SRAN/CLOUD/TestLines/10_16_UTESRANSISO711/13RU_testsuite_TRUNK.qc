@@ -1,0 +1,142 @@
+{
+    "SBTS.*_ENB_9999.*": {
+        "Root\\Test_Sets\\Trunk\\VRF_WRO3\\VRF_WRO3_T01": {
+            "10_16_UTESRANSISO711": [
+                "[1][CB013232][1.0] Automated_AIC_vDU_reset",
+                "[1][1.0] Automated_AIC_vDU_reset",
+                "[1][CB013232[1.0] Automated_AIC_RF_Power_Reset",
+                "[1]Automated_AIC_RF_Power_Reset",
+                "[1][CB013232][1.0] Automated_AIC_vDU_delta_recommissioning",
+                "[1][1.0] Automated_AIC_vDU_delta_recommissioning",
+                "[1][CB012206][1.0] Automated_AIC_vDU_commissioning",
+                "[1][1.0] Automated_AIC_vDU_commissioning",
+                "[1][CB007065][1.0] Automated_AiC_RU_Entering_Deep_Sleep_Mode_And_Power_Reset_Recovery_Action",
+                "[1][1.0] Automated_AiC_RU_Entering_Deep_Sleep_Mode_And_Power_Reset_Recovery_Action",
+                "[1][CB007065][1.0] TC Entering Deep Sleep Mode And Returning By One Cell Unblock",
+                "[1][1.0] TC Entering Deep Sleep Mode And Returning By One Cell Unblock",
+                "[1][CB007065][1.0] TC_Activation_Deactivation_Of_Energy_Consumption_Measurement",
+                "[1][1.0] TC_Activation_Deactivation_Of_Energy_Consumption_Measurement",
+                "[1][CB012206][1]Automated_AIC_Sync_Source_Switch_Over_From_Primary_To_Secondary",
+                "[1][1]Automated_AIC_Sync_Source_Switch_Over_From_Primary_To_Secondary",
+                "[1][CB008388-SR-B][1.0] General_SiSo_Auto_Cloud_SBTS_Cell_Block_Unblock",
+                "[1][1.0] General_SiSo_Auto_Cloud_SBTS_Cell_Block_Unblock",
+                "[1][CB008388-SR-B][1.0] General_SiSo_Auto_Cloud_SBTS_SM_Radio_Modules_Lock_Unlock",
+                "[1][1.0] General_SiSo_Auto_Cloud_SBTS_SM_Radio_Modules_Lock_Unlock",
+                "[1][CB008388-SR-B][1.0] General_SiSo_Auto_Cloud_SBTS_STARTUP_Radio_Modules_Reset",
+                "[1][1.0] General_SiSo_Auto_Cloud_SBTS_STARTUP_Radio_Modules_Reset",
+                "[1][CB014375][1.0] General_SiSo_Auto_Cloud_Enable_Disable_Energy_Optimized_Mode",
+                "[1][1.0] General_SiSo_Auto_Cloud_Enable_Disable_Energy_Optimized_Mode",
+                "[1][CB013232][1.0] General_SiSo_Auto_Cloud_Rannic_Reset",
+                "[1][1.0] General_SiSo_Auto_Cloud_Rannic_Reset"
+            ]
+        },
+        "label": ".*CLOUD_AIC_10_16_UTESRANSISO711.*",
+        "qc_domain": "MN_RAN",
+        "qc_project": "RAN_VRF"
+    },
+    "SBTS26R2_ENB_0000.*": {
+        "Root\\Test_Sets\\26R2\\Regression\\VRF_WRO3\\VRF_WRO3_T01": {
+            "10_16_UTESRANSISO711": [
+                "[1][CB013232][1.0] General_SiSo_Auto_Cloud_Rannic_Reset",
+                "[1][1.0] General_SiSo_Auto_Cloud_Rannic_Reset",
+                "[1][CB014375][1.0] General_SiSo_Auto_Cloud_Enable_Disable_Energy_Optimized_Mode",
+                "[1][1.0] General_SiSo_Auto_Cloud_Enable_Disable_Energy_Optimized_Mode",
+                "[1][CB008388-SR-B][1.0] General_SiSo_Auto_Cloud_SBTS_STARTUP_Radio_Modules_Reset",
+                "[1][1.0] General_SiSo_Auto_Cloud_SBTS_STARTUP_Radio_Modules_Reset",
+                "[1][CB007065][1.0] TC_Activation_Deactivation_Of_Energy_Consumption_Measurement",
+                "[1][1.0] TC_Activation_Deactivation_Of_Energy_Consumption_Measurement",
+                "[1][CB013232][1.0] Automated_AIC_vDU_reset",
+                "[1][1.0] Automated_AIC_vDU_reset",
+                "[1][CB012206][1.0] Automated_AIC_vDU_commissioning",
+                "[1][1.0] Automated_AIC_vDU_commissioning",
+                "[1][CB013232[1.0] Automated_AIC_RF_Power_Reset",
+                "[1]Automated_AIC_RF_Power_Reset",
+                "[1][CB007065][1.0] TC Entering Deep Sleep Mode And Returning By One Cell Unblock",
+                "[1][1.0] TC Entering Deep Sleep Mode And Returning By One Cell Unblock",
+                "[1][CB007065][1.0] Automated_AiC_RU_Entering_Deep_Sleep_Mode_And_Power_Reset_Recovery_Action",
+                "[1][1.0] Automated_AiC_RU_Entering_Deep_Sleep_Mode_And_Power_Reset_Recovery_Action",
+                "[1][CB008388-SR-B][1.0] General_SiSo_Auto_Cloud_SBTS_Cell_Block_Unblock",
+                "[1][1.0] General_SiSo_Auto_Cloud_SBTS_Cell_Block_Unblock",
+                "[1][CB008388-SR-B][1.0] General_SiSo_Auto_Cloud_SBTS_SM_Radio_Modules_Lock_Unlock",
+                "[1][1.0] General_SiSo_Auto_Cloud_SBTS_SM_Radio_Modules_Lock_Unlock",
+                "[1][CB012206][1]Automated_AIC_Sync_Source_Switch_Over_From_Primary_To_Secondary",
+                "[1][1]Automated_AIC_Sync_Source_Switch_Over_From_Primary_To_Secondary",
+                "[1][CB013232][1.0] Automated_AIC_vDU_delta_recommissioning",
+                "[1][1.0] Automated_AIC_vDU_delta_recommissioning"
+            ]
+        },
+        "label": ".*CLOUD_AIC_10_16_UTESRANSISO711.*",
+        "qc_domain": "MN_RAN",
+        "qc_project": "RAN_VRF"
+    },
+    "vDUCNF.*_0.*": {
+        "Root\\Test_Sets\\Trunk\\VRF_WRO3\\VRF_WRO3_T01": {
+            "10_16_UTESRANSISO711": [
+                "[1][CB013232][1.0] Automated_AIC_vDU_reset",
+                "[1][1.0] Automated_AIC_vDU_reset",
+                "[1][CB013232[1.0] Automated_AIC_RF_Power_Reset",
+                "[1]Automated_AIC_RF_Power_Reset",
+                "[1][CB013232][1.0] Automated_AIC_vDU_delta_recommissioning",
+                "[1][1.0] Automated_AIC_vDU_delta_recommissioning",
+                "[1][CB012206][1.0] Automated_AIC_vDU_commissioning",
+                "[1][1.0] Automated_AIC_vDU_commissioning",
+                "[1][CB007065][1.0] Automated_AiC_RU_Entering_Deep_Sleep_Mode_And_Power_Reset_Recovery_Action",
+                "[1][1.0] Automated_AiC_RU_Entering_Deep_Sleep_Mode_And_Power_Reset_Recovery_Action",
+                "[1][CB007065][1.0] TC Entering Deep Sleep Mode And Returning By One Cell Unblock",
+                "[1][1.0] TC Entering Deep Sleep Mode And Returning By One Cell Unblock",
+                "[1][CB007065][1.0] TC_Activation_Deactivation_Of_Energy_Consumption_Measurement",
+                "[1][1.0] TC_Activation_Deactivation_Of_Energy_Consumption_Measurement",
+                "[1][CB012206][1]Automated_AIC_Sync_Source_Switch_Over_From_Primary_To_Secondary",
+                "[1][1]Automated_AIC_Sync_Source_Switch_Over_From_Primary_To_Secondary",
+                "[1][CB008388-SR-B][1.0] General_SiSo_Auto_Cloud_SBTS_Cell_Block_Unblock",
+                "[1][1.0] General_SiSo_Auto_Cloud_SBTS_Cell_Block_Unblock",
+                "[1][CB008388-SR-B][1.0] General_SiSo_Auto_Cloud_SBTS_SM_Radio_Modules_Lock_Unlock",
+                "[1][1.0] General_SiSo_Auto_Cloud_SBTS_SM_Radio_Modules_Lock_Unlock",
+                "[1][CB008388-SR-B][1.0] General_SiSo_Auto_Cloud_SBTS_STARTUP_Radio_Modules_Reset",
+                "[1][1.0] General_SiSo_Auto_Cloud_SBTS_STARTUP_Radio_Modules_Reset",
+                "[1][CB014375][1.0] General_SiSo_Auto_Cloud_Enable_Disable_Energy_Optimized_Mode",
+                "[1][1.0] General_SiSo_Auto_Cloud_Enable_Disable_Energy_Optimized_Mode",
+                "[1][CB013232][1.0] General_SiSo_Auto_Cloud_Rannic_Reset",
+                "[1][1.0] General_SiSo_Auto_Cloud_Rannic_Reset"
+            ]
+        },
+        "label": ".*CLOUD_AIC_10_16_UTESRANSISO711.*",
+        "qc_domain": "MN_RAN",
+        "qc_project": "RAN_VRF"
+    },
+    "vDUCNF26R2_28.*": {
+        "Root\\Test_Sets\\26R2\\Regression\\VRF_WRO3\\VRF_WRO3_T01": {
+            "10_16_UTESRANSISO711": [
+                "[1][CB013232][1.0] General_SiSo_Auto_Cloud_Rannic_Reset",
+                "[1][1.0] General_SiSo_Auto_Cloud_Rannic_Reset",
+                "[1][CB014375][1.0] General_SiSo_Auto_Cloud_Enable_Disable_Energy_Optimized_Mode",
+                "[1][1.0] General_SiSo_Auto_Cloud_Enable_Disable_Energy_Optimized_Mode",
+                "[1][CB008388-SR-B][1.0] General_SiSo_Auto_Cloud_SBTS_STARTUP_Radio_Modules_Reset",
+                "[1][1.0] General_SiSo_Auto_Cloud_SBTS_STARTUP_Radio_Modules_Reset",
+                "[1][CB007065][1.0] TC_Activation_Deactivation_Of_Energy_Consumption_Measurement",
+                "[1][1.0] TC_Activation_Deactivation_Of_Energy_Consumption_Measurement",
+                "[1][CB013232][1.0] Automated_AIC_vDU_reset",
+                "[1][1.0] Automated_AIC_vDU_reset",
+                "[1][CB012206][1.0] Automated_AIC_vDU_commissioning",
+                "[1][1.0] Automated_AIC_vDU_commissioning",
+                "[1][CB013232[1.0] Automated_AIC_RF_Power_Reset",
+                "[1]Automated_AIC_RF_Power_Reset",
+                "[1][CB007065][1.0] TC Entering Deep Sleep Mode And Returning By One Cell Unblock",
+                "[1][1.0] TC Entering Deep Sleep Mode And Returning By One Cell Unblock",
+                "[1][CB007065][1.0] Automated_AiC_RU_Entering_Deep_Sleep_Mode_And_Power_Reset_Recovery_Action",
+                "[1][1.0] Automated_AiC_RU_Entering_Deep_Sleep_Mode_And_Power_Reset_Recovery_Action",
+                "[1][CB008388-SR-B][1.0] General_SiSo_Auto_Cloud_SBTS_Cell_Block_Unblock",
+                "[1][1.0] General_SiSo_Auto_Cloud_SBTS_Cell_Block_Unblock",
+                "[1][CB008388-SR-B][1.0] General_SiSo_Auto_Cloud_SBTS_SM_Radio_Modules_Lock_Unlock",
+                "[1][1.0] General_SiSo_Auto_Cloud_SBTS_SM_Radio_Modules_Lock_Unlock",
+                "[1][CB012206][1]Automated_AIC_Sync_Source_Switch_Over_From_Primary_To_Secondary",
+                "[1][1]Automated_AIC_Sync_Source_Switch_Over_From_Primary_To_Secondary",
+                "[1][CB013232][1.0] Automated_AIC_vDU_delta_recommissioning",
+                "[1][1.0] Automated_AIC_vDU_delta_recommissioning"
+            ]
+        },
+        "label": ".*CLOUD_AIC_10_16_UTESRANSISO711.*",
+        "qc_domain": "MN_RAN",
+        "qc_project": "RAN_VRF"
+    }
+}

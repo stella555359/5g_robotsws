@@ -1,0 +1,357 @@
+*** Settings ***
+Documentation
+...               Common keywords for Automation of Feature 1586 DSS
+...
+...               Test Case Scenario author   : franck.ngoune_messi@nokia.com
+...               Test Case Scenario contact  : franck.ngoune_messi@nokia.com
+...               Test Case automation author : franck.ngoune_messi@nokia.com
+...               Test Case automation contact: franck.ngoune_messi@nokia.com
+...               Creation Date               : 19-Jun-2020
+...               Modified Date               : 29-September-2020
+...               Last Modified by            : christophe.samson@nokia.com
+
+
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Connect.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Capture.robot
+
+Resource          5GC001586_Keywords.robot
+Resource          5GC001586_C_Keywords.robot
+Resource          5GC001586_Ue_command.robot
+
+Variables         ../../../../../resources/SWENG/python/ReadConfig.py
+Library           ../../../resources/python/luashark_tools.py
+Library           taf.rfrl.common_resources.python.SWConfig
+
+Library         ute_wtssim           WITH NAME    wts
+Library           ../../../resources/python/luashark_tools.py
+Library         taf.epcsim
+Library         luashark_tools.analyzer         WITH NAME       analyzer
+# Library         taf.config.scf                WITH NAME       scf
+Library         taf.gnb.oam.commissioning       WITH NAME       commissioning
+Library    		taf.sbts.oam.coam.admin         WITH NAME       coam
+Library         taf.ul.oam.selenium_coam        WITH NAME       selenium_coam
+Library         taf.collectors.pmcounters       WITH NAME       tafpmcounters
+Library         DateTime
+Library         OperatingSystem
+Library         ../../../../../resources/SWENG/python/OsTool.py
+Library         ../../../../../resources/SWENG/python/CfgConfig.py  WITH NAME   CfgConfig
+
+Library         ../python/tools.py              WITH NAME        nps_1586_tools
+
+*** Variables ***
+
+*** Keywords ***
+################################################################################################################################################
+#Test case for 1586-D
+#################################################################################################################################################
+
+TC Verify_Cell_Setup_updates_SSB_Position
+    [Documentation]                1586-D Test case for ssb position and for checking DL load indication for 15Mhz and 20Mhz
+    [Arguments]                    ${param}         ${egate_alias}=default
+    Init Sequence                  ${param}
+    5GC001586_Keywords.Restart     OwnTLReset=${False}     GNBCallback=5GC001586_Keywords.Set Reset Loop Counter
+    Step              Start Capture GNB Asik        argument=TC_Verify_Cell_Setup_updates_${egate_alias}     depends=5GC001586_Keywords.Restart
+    Step              common_Dss_Keywords.Start WTS         argument=${egate_alias}       depends=Start Capture GNB Asik
+    Step              5GC001586_Keywords.Wait Xp link Up    argument=${egate_alias}       depends=common_Dss_Keywords.Start WTS
+    Step              common_Dss_command.X2Ap link Setup    argument=${egate_alias}       depends=common_Dss_Keywords.Start WTS
+   # DSS_Cell_Setup use ${param} variable initialized into the Init Sequence Kw
+    Step              5GC001586_Keywords.DSS_Cell_Setup     argument=${egate_alias}       depends=5GC001586_Keywords.Wait Xp link Up
+	Step              5GC001586_Ue_command.Verify AP Classical Cell Setup      depends=5GC001586_Keywords.DSS_Cell_Setup
+    # Wait gNB cell 5g On air with globalCellId=1
+    Critical Step     common_Dss_CellSetup.Wait gNB cell 5g On air     globalCellId=1
+    Critical Step     5GC001586_Keywords.Test SgNB Addition PRACH      depends=5GC001586_Ue_command.Verify AP Classical Cell Setup
+    Traffic UE DL     ueSetting=${UE_SIMPLE_CellDSS}  throughput=60  duration=1s  shouldBeStop=False    shouldBeCheck=False   deviation=15
+    run keyword and ignore error   Stop Capture GNB Asik
+    Point AF_PATH to current sw package
+    Point ENB_BUILD to luashark sw package
+    # run keyword and ignore error    1586-D Check ssbpos on l2_cell_group_setupreq Pcap         ${CAPTURE_CPRT}
+    Step    Check csirsTrackingSlotOffset Info from Syscom Pcap    capture=${CAPTURE_CPRT.path}
+    ...                                                            csirsTrackingSlotOffset_to_verify=${param.seq.SlotOffsetValue_1}
+    Step    Check csirsTrackingSlotOffset Info from Syscom Pcap    capture=${CAPTURE_CPRT.path}
+    ...                                                            csirsTrackingSlotOffset_to_verify=${param.seq.SlotOffsetValue_2}
+    # 25/08/2023 : only keep high level acceptance criteria (meaning check of attach and Traffic OK)
+    # run keyword and ignore error    1586-D Check ssbpos on RRC reconf Pcap                     ${CAPTURE_CORE}
+    Point AF_PATH to local luashark XP package
+    Point ENB_BUILD to local luashark XP package
+    ${capture_BH_GNB}=             set Backhaul Capture                     prefix=BH.XP
+    set global variable              ${capture_BH_GNB}
+    ${capture_BH_GNB}=             Initialize Filter XP message Capture     capture=${capture_BH_GNB}
+    common_Dss_Keywords.Start capture Backhaul XP for DSS New               capture=${capture_BH_GNB}    suffix=CheckQosLoadInd
+    Traced Sleep   3s     msg=DL Traffic to test DL Qos load Indication
+    ${pdmlFile}           common_Dss_Keywords.Stop capture for Backhaul XP DSS New     capture=${capture_BH_GNB}
+    ...                                         lua_path=/home/ute/tools/luashark/generated_luashark-9.1800.330/luashark.lua
+    ...                                         suffix=CheckQosLoadInd
+    Step          1586-D Check DL Qos Load Indication MeasuredNgbrNnbrLoad     depends=5GC001586_Keywords.Test SgNB Addition PRACH
+    ...                            argument=${pdmlFile}
+    Step          5GC001586_Keywords.Start capture Bip and Xp for 1586          argument=BIP_L1L2_BH_w_DLTput_${egate_alias}
+    Traced Sleep   2s     mgs=take BIP L1L2 and BH pcap traces with DL Tput
+    Step              5GC001586_Keywords.Stop capture Bip and Xp for 1586              depends=5GC001586_Keywords.Start capture Bip and Xp for 1586
+    Traffic Stop          ueSetting=${UE_SIMPLE_CellDSS}  dir=dl
+    [Teardown]        Run keywords     GenericTest.Display diagnosis        AND
+    ...                      Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CAPTURE_CORE.path}      AND
+    ...                      Run Keyword And Ignore Error    OperatingSystem.Copy File    ${CAPTURE_CORE.path}    ${testCaseDir}
+
+
+TC Check the EN_ DSS_DL_QoS_Load_Indication_procedure
+    [Documentation]                1586-D Test case for checking DL load indication for 15Mhz and 20Mhz
+    [Arguments]                    ${param}         ${egate_alias}
+    Init Sequence                  ${param}
+    5GC001586_Keywords.Restart       OwnTLReset=${False}    GNBCallback=5GC001586_Keywords.Set Reset Loop Counter
+    Step                   common_Dss_Keywords.Start WTS          argument=${egate_alias}       depends=5GC001586_Keywords.Restart
+    Step                   5GC001586_Keywords.Wait Xp link Up     argument=${egate_alias}       depends=common_Dss_Keywords.Start WTS
+    Step                   common_Dss_command.X2Ap link Setup     argument=${egate_alias}       depends=common_Dss_Keywords.Start WTS
+    # DSS_Cell_Setup use ${param} variable initialized into the Init Sequence Kw
+    Step                   5GC001586_Keywords.DSS_Cell_Setup     argument=${egate_alias}        depends=5GC001586_Keywords.Wait Xp link Up
+	Step                   5GC001586_Ue_command.Verify AP Classical Cell Setup      depends=5GC001586_Keywords.DSS_Cell_Setup
+    Critical Step          5GC001586_Keywords.Test SgNB Addition PRACH
+    Step                   common_Dss_Keywords.Start capture Backhaul for DSS              depends=5GC001586_Keywords.Test SgNB Addition PRACH
+    Traffic UE DL          ueSetting=${UE_SIMPLE_CellDSS}  throughput=40  duration=3s  shouldBeStop=False    shouldBeCheck=False   deviation=15
+    ${pdmlFile}            5GC001586_Keywords.Stop capture Backhaul for DSS to rework
+    Step                   1586-D Check DL Qos Load Indication MeasuredNgbrNnbrLoad
+    ...                            depends=common_Dss_Keywords.Stop capture Backhaul for DSS to rework
+    ...                            argument=${pdmlFile}
+    Traffic Stop           ueSetting=${UE_SIMPLE_CellDSS}  dir=dl
+    [Teardown]             GenericTest.Display diagnosis
+
+
+TC Check_UL_Tput
+    [Documentation]                Generic test for 1586-D: test purpose is to test UL Tput Only
+    [Arguments]                    ${param}         ${egate_alias}
+    Init Sequence                  ${param}
+    5GC001586_Keywords.Restart      OwnTLReset=${False}    GNBCallback=5GC001586_Keywords.Set Reset Loop Counter
+    Step                 common_Dss_Keywords.Start WTS          argument=${egate_alias}       depends=5GC001586_Keywords.Restart
+    Step                 5GC001586_Keywords.Wait Xp link Up     argument=${egate_alias}       depends=common_Dss_Keywords.Start WTS
+    Step                 common_Dss_command.X2Ap link Setup     argument=${egate_alias}       depends=common_Dss_Keywords.Start WTS
+    # DSS_Cell_Setup use ${param} variable initialized into the Init Sequence Kw
+    Step                 5GC001586_Keywords.DSS_Cell_Setup      argument=${egate_alias}       depends=5GC001586_Keywords.Wait Xp link Up
+    # Wait gNB cell 5g On air with globalCellId=1
+	Step                 common_Dss_CellSetup.Wait gNB cell 5g On air      argument=1         depends=5GC001586_Keywords.DSS_Cell_Setup
+	Step                 5GC001586_Ue_command.Verify AP Classical Cell Setup                  depends=5GC001586_Keywords.DSS_Cell_Setup
+    Critical Step        5GC001586_Keywords.Test SgNB Addition PRACH                  depends=5GC001586_Ue_command.Verify AP Classical Cell Setup
+    5GC001586_Keywords.TC 1586-UL_Tput_and_check       ${param}
+    [Teardown]           GenericTest.Display diagnosis
+
+
+TC Check_EN_DSS_UL_Cell_Subcarrier_Resource_Allocation_Procedure_Failure_case
+    [Documentation]                1586-D Test case for checking failure case
+    [Arguments]                    ${param}         ${egate_alias}
+    Init Sequence                  ${param}
+    5GC001586_Keywords.Restart        OwnTLReset=${False}     GNBCallback=5GC001586_Keywords.Set Reset Loop Counter
+    Step                 common_Dss_Keywords.Start WTS          argument=${egate_alias}       depends=5GC001586_Keywords.Restart
+    Step                 5GC001586_Keywords.Wait Xp link Up     argument=${egate_alias}       depends=common_Dss_Keywords.Start WTS
+    Step                 common_Dss_command.X2Ap link Setup     argument=${egate_alias}       depends=common_Dss_Keywords.Start WTS
+    Step                 5GC001586_Keywords.DSS_Cell_Setup      argument=${egate_alias}       depends=5GC001586_Keywords.Wait Xp link Up
+    5GC001586_C_Keywords.TC 1586-C-UL_Cell_SubCarrier_Allocation_Failure_case           ${param}    ${egate_alias}
+    [Teardown]            GenericTest.Display diagnosis
+
+
+Teardown 1586-D
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+    BuiltIn.Log      \nTest 1586 ending   console=yes
+
+    # Restore WTS cfg file name
+    Run Keyword If   '${Param.seq.bandwidth}'!='10MHz'      restoreFilename
+
+    Run Keyword If  '${TEST STATUS}' == 'FAIL'     5GC001586_Keywords.Collect Logs    ${alias}
+    ...    ELSE    Pass Execution If    '${TEST STATUS}' == 'PASS'    Not collect logs
+
+    # OAM Disconnect                          ${GNB_DU.oam}
+
+    # wts.stop_and_collect_wts_logs   subdirectory=${LOG_PATH}
+    wts.teardown_all_aliases_for_egate
+    wts.teardown_all_aliases_for_edaemon
+
+#################################################################################################################################################
+#End Test case for 1586-D
+#################################################################################################################################################
+
+################################################################################################################################################
+# KW to switch from 15Mhz -> 20Mhz (cfg modification)
+################################################################################################################################################
+
+###############################################END######################################################
+
+########################################################################################################
+# Keywords for Capturing Pcap
+#########################################################################################################
+
+Start Capture GNB Asik
+    [Tags]      CAPTURE
+    [Arguments]                 ${prefix}=TC
+    ${CAPTURE_CORE}            Capture CORE Set Upon Config
+    ${CAPTURE_CORE.prefix}  set Variable    ${prefix}_CORE_GNB_SYS0_M_FP0
+
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${LOG_PATH}/SCF.xml
+    scf.load_scf	 ${current_scf_fullname}
+    ${ipAddr}	 scf.get_value_from_scf   p_name=localIpAddr
+    ...              dist_name=MRBTS-${MRBTS_ID}/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1
+    ${ipAddress_XPIFREMOTE}	 scf.get_value_from_scf   p_name=ipAddress
+    ...              dist_name=MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/XPAP-1/XPIF-1/XPIFREMOTE-1
+
+    ${filter}       Catenate      '(src ${ipAddr} and dst ${ipAddress_XPIFREMOTE}) or (src ${ipAddress_XPIFREMOTE} and dst ${ipAddr})'
+    ${CAPTURE_CORE.filter}               set variable        ${filter}
+    Dated log          CAPTURE_CORE.filter = ${CAPTURE_CORE.filter}
+
+    Set Suite Variable       ${CAPTURE_CORE}
+    Capture init             ${CAPTURE_CORE}
+    Capture start            ${CAPTURE_CORE}
+    ${CAPTURE_CPRT}         Capture CPRT Set Upon Config
+    ${CAPTURE_CPRT.prefix}  set Variable     ${prefix}_NODECPRT_GNB
+    Set Suite Variable       ${CAPTURE_CPRT}
+    Capture init             ${CAPTURE_CPRT}
+    Capture start            ${CAPTURE_CPRT}
+    pcap.Point to luashark scripts via AF_PATH variable
+
+Stop Capture GNB Asik
+    [Tags]      CAPTURE
+    Capture stop            ${CAPTURE_CORE}
+    Capture stop            ${CAPTURE_CPRT}
+
+
+############################################################### End Keywords for Capturing #########################################""
+
+#####################################################################################################################################
+#Common Keywords
+####################################################################################################################################
+
+####################################################################################################################################################
+# Check BIPs Traces and Xp traces
+####################################################################################################################################################
+
+1586-D Check DL Qos Load Indication MeasuredNgbrNnbrLoad
+    [Arguments]    ${pdmlFile}      #${value}=4d
+    Dated log           ${pdmlFile}         #and  ${value}
+
+    ${cmd}=    Catenate     cat ${pdmlFile} | grep -i 'dssDlQosLoadMeasurement.measuredNgbrNnbrLoad' | grep 'measuredNgbrNnbrLoad (Uint8)' |
+    ...                                             awk '{print $9}' | sed -e 's/value="//g' | sed -e 's/"/ /g' | awk '{print $1}'
+    ${MeasuredNgbrNnbrLoad}=    OperatingSystem.Run    ${cmd}
+    @{lines}    Split To Lines    ${MeasuredNgbrNnbrLoad}
+    Remove Values From List     ${lines}     00
+    ${length}=    get length     ${lines}
+    @{MeasuredNgbrNnbrLoad}    Evaluate    map(lambda x: int(x, 16), @{lines})
+    Dated log   MeasuredNgbrNnbrLoad = @{MeasuredNgbrNnbrLoad} and length = ${length}
+    ${avg_dl_MeasuredNgbrNnbrLoad}    Evaluate    round(round(sum(@{MeasuredNgbrNnbrLoad}), 1)/round(${length}, 1), 1)
+
+    # ${ul_MeasuredNgbrNnbrLoad_average_hex}=    nps_sweng_tools.calculate_average_of_list_in_file
+    # ...                  ${LOG_PATH}/nbr_enDssUlQosLoadIndMeasuredNgbrNnbrLoad_Value_parsed_${TEST_NAME}.txt
+    # ${ul_MeasuredNgbrNnbrLoad_average_int}=      Convert To Integer       0x${ul_MeasuredNgbrNnbrLoad_average_hex}
+    # ${ul_MeasuredNgbrNnbrLoad_average_int_2}=      Convert To Integer       0x${ul_MeasuredNgbrNnbrLoad_average_int}
+
+    Log many          [DATA TRANSFER] dssDlQosLoadMeasurement MeasuredNgbrNnbrLoad average: ${avg_dl_MeasuredNgbrNnbrLoad}
+    Log To Console    \t\t\tDownlink dssDlQosLoadMeasurement.MeasuredNgbrNnbrLoad Avg:\t\t ${avg_dl_MeasuredNgbrNnbrLoad} %
+
+    # to improve with a specific param for dl_ratio, in this case 70%
+    ${min}=                         Evaluate                                100 * (100 - 10) / 100
+    ${max}=                         Evaluate                                100 * (100 + 10) / 100
+    ${status}=                      Evaluate                                ${min} <= ${avg_dl_MeasuredNgbrNnbrLoad} <= ${max}
+    Run Keyword If                  '${status}'=='True'
+    ...    Dated Log                Average DL DSS Ratio REACHED: expected = 100 % , current = ${avg_dl_MeasuredNgbrNnbrLoad}
+    ...    ELSE
+    ...    Dated Log                Average DL DSS RATIO NOT REACHED: expected = 100 %, current = ${avg_dl_MeasuredNgbrNnbrLoad}
+    Run Keyword If                  '${status}'!='True'                     Fail    DL DSS Ratio
+
+    ${cmd}=    Catenate       grep -n -i dssDlQosLoadMeasurement.measuredNgbrNnbrLoad ${pdmlFile} |
+    ...                                grep -n -i 'value="${param.seq.Dl_MeasuredNgbrNnbrLoad}"' |
+    ...                                wc -l > ${LOG_PATH}/dssDlQosLoadMeasurement.measuredNgbrNnbrLoad_parsed_${TEST_NAME}.txt
+    OperatingSystem.Run         ${cmd}
+    # ${value}=49
+    # OperatingSystem.Run      grep -n -i enDssUlQosLoadMeasurement.MeasuredNgbrNnbrLoad ${pdmlFile}
+    # | grep -n -i 'value="${value}"' | wc -l > ${LOG_PATH}/nbr_enDssUlQosLoadIndMeasuredNgbrNnbrLoad_parsed.txt
+    ${output_dl}    OperatingSystem.Run     cat ${LOG_PATH}/dssDlQosLoadMeasurement.measuredNgbrNnbrLoad_parsed_${TEST_NAME}.txt
+#    Should Be True    (${output_dl}>0)
+
+# Info;sfn;slot;rnti;csirsTrackingSlotOffset
+Extract Usefull info from itf_l2_ps_cell_cellgroupsetupreq Pcap
+    [Arguments]                     ${File}
+    [Documentation]                 Extract itf_l2_ps_cell_cellgroupsetupreq info from Pcap
+
+    Dated log                   Extract itf_l2_ps_cell_cellgroupsetupreq info from PCAP file [${File}]
+
+    set test variable   ${pcapprocessed_itf_l2_ps_cell_cellgroupsetupreq}    pcapprocessed_Extract_pcapprocessed_itf_l2_ps_cell_cellgroupsetupreq.txt
+    set test variable   ${pcapprocessed_itf_l2_ps_cell_cellgroupsetupreq_path}  ${testCaseDir}/${pcapprocessed_itf_l2_ps_cell_cellgroupsetupreq}
+    ${cmd_mcshark}    Catenate      tshark -r
+    ...        ${File} -T fields -Y "itf_l2_ps_cell_cellgroupsetupreq" -e _ws.col.Info
+    ...           -e 3gpp.sfn
+    ...           -e 3gpp.slot
+    ...           -e 3gpp.rnti
+    ...           -e itf_l2_ps_cell_CsiRsTrackingResource.csirsTrackingSlotOffset
+    ...           -E header=y -E separator=';' > ${pcapprocessed_itf_l2_ps_cell_cellgroupsetupreq_path}
+    Run       ${cmd_mcshark}
+    # remove space if present
+    Run      command=sed -i -e 's/ //g' ${pcapprocessed_itf_l2_ps_cell_cellgroupsetupreq_path}
+
+    ${extract_col_info}   OperatingSystem.grep file        ${pcapprocessed_itf_l2_ps_cell_cellgroupsetupreq_path}   _ws.col.Info
+    ${pattern}=      set variable      itf_l2_ps_cell_CellGroupSetupReq
+    ${extract}  OperatingSystem.grep file  ${pcapprocessed_itf_l2_ps_cell_cellgroupsetupreq_path}
+    ...                                    ${pattern}
+    run keyword if  len($extract)==0     fail   itf_l2_ps_cell_CellGroupSetupReq not found
+    OperatingSystem.copy file    ${pcapprocessed_itf_l2_ps_cell_cellgroupsetupreq_path}  ${testCaseDir}/msg_itf_l2_ps_cell_cellgroupsetupreq_pcap.csv
+
+Verify csirsTrackingSlotOffset based on syscom traces
+    [Arguments]                   ${csirsTrackingSlotOffset_to_verify}=1
+    Dated log     ==========> verify_csirsTrackingSlotOffset_Info from itf_l2_ps_cell_cellgroupsetupreq syscom pcap file
+    ${pattern}=     set variable      itf_l2_ps_cell_CellGroupSetupReq
+    ${output}=      nps_1586_tools.verify_csirsTrackingSlotOffset_Info     pattern=${pattern}
+    ...                                                                    csirsTrackingSlotOffset_to_verify=${csirsTrackingSlotOffset_to_verify}
+    [return]    ${output}
+
+Check csirsTrackingSlotOffset Info from Syscom Pcap
+    [Documentation]                test purpose is to test csirsTrackingSlotOffset info from syscom pcap
+    [Arguments]                    ${capture}    ${csirsTrackingSlotOffset_to_verify}=1
+    Extract Usefull info from itf_l2_ps_cell_cellgroupsetupreq Pcap        ${capture}
+    ${output}                      Verify csirsTrackingSlotOffset based on syscom traces
+    ...                                                                      csirsTrackingSlotOffset_to_verify=${csirsTrackingSlotOffset_to_verify}
+    should contain	                ${output}	                            passed
+    [return]    ${output}
+
+1586-D Check ssbpos on l2_cell_group_setupreq Pcap
+    [Arguments]                     ${capture}
+    [Documentation]                 Check ssbposition parameter fron msg l2_ps_cell_group_setupreq in GNB_ASIK_Slave pcap
+    Dated log                       pdml files generation and analysis from [${capture.path}] ...
+    ${pdmlFile}                     analyzer.pcap_to_pdml                  ${capture.path}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...           packetName=itf_l2_ps_cell_cellgroupsetupreq
+    ...           path=.*/itf_l2_ps_cell_cellgroupsetupreq.2./itf_l2_ps_cell_CellGroupSetupReq.csirsTrackingResource_item_3.csirsTrackingSlotOffset$
+    ...           value=${param.seq.SlotOffsetValue_1}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...           packetName=itf_l2_ps_cell_cellgroupsetupreq
+    ...           path=.*/itf_l2_ps_cell_cellgroupsetupreq.3./itf_l2_ps_cell_CellGroupSetupReq.csirsTrackingResource_item_3.csirsTrackingSlotOffset$
+    ...           value=${param.seq.SlotOffsetValue_2}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...           packetName=itf_l2_ps_cell_cellgroupsetupreq
+    ...           path=.*/itf_l2_ps_cell_cellgroupsetupreq.2./itf_l2_ps_cell_CellGroupSetupReq.csirsTrackingResource_item_3.csirsTrackingSymbol$
+    ...           value=${param.seq.SymbolValue_1}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...           packetName=itf_l2_ps_cell_cellgroupsetupreq
+    ...           path=.*/itf_l2_ps_cell_cellgroupsetupreq.3./itf_l2_ps_cell_CellGroupSetupReq.csirsTrackingResource_item_3.csirsTrackingSymbol$
+    ...           value=${param.seq.SymbolValue_2}
+
+1586-D Check ssbpos on RRC reconf Pcap
+    [Arguments]                     ${capture}
+    [Documentation]                 Check ssbposition parameter fron msg SgNBAdditionRequestAcknowledge
+    Dated log                       pdml files generation and analysis from [${capture.path}] ...
+    ${pdmlFile}                     analyzer.pcap_to_pdml                  ${capture.path}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...          packetName=SgNBAdditionRequestAcknowledge         #itf_l2_ps_cell_cellsetupreq
+    ...          path=.*/nr-rrc.nzp_CSI_RS_ResourceToAddModList/_.3./nr-rrc.NZP_CSI_RS_Resource_element/nr-rrc.periodicityAndOffset/nr-rrc.slots80$
+    ...          value=${param.seq.slots80Value_1}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...          packetName=SgNBAdditionRequestAcknowledge         #itf_l2_ps_cell_cellsetupreq
+    ...          path=.*/nr-rrc.nzp_CSI_RS_ResourceToAddModList/_.4./nr-rrc.NZP_CSI_RS_Resource_element/nr-rrc.periodicityAndOffset/nr-rrc.slots80$
+    ...          value=${param.seq.slots80Value_2}

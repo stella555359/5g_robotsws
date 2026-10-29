@@ -1,0 +1,88 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  verification of CB007873-H feature in the case of FDD+TDD Classical L1Bypass SA
+...               Prerequisite : GNB and Airphone should be installed
+...               Scope : Reach a cell setup state, and perfom basic tests : 
+...                       Ue Register, UL or/& DL traffic, ...                
+...
+...
+...               Test Case Scenario author   : loic.marzin@nokia.com
+...               Test Case Scenario contact  : loic.marzin@nokia.com
+...               Test Case automation author : loic.marzin@nokia.com
+...               Test Case automation contact: loic.marzin@nokia.com
+...               Creation Date               : 01-June-2021
+...               Modified Date               : 18-August-2023
+...               Last Modified by            : loic.marzin@nokia.com
+...                    18/08/2023        Refactoring due to BOO_AP_LOO Migration
+
+
+
+Resource          ../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+Resource          robot/CB007873_Keywords.robot
+Variables         ../../../resources/SWENG/python/ReadConfig.py
+
+
+
+Force Tags        CA_5G_SW_FR-Villarceaux   RRM
+...               PY36
+...               master_classicalbts_all
+...               CONFIGURED    5G_RAN    RAN_5G
+
+Suite Setup       CB007873_Keywords.setup 7873
+Suite Teardown    CB007873_Keywords.teardown 7873
+
+
+*** Variables ***
+${TestSharkTool}      MC_SHARK
+
+# variable set to ${True} to automatically save SOS report and OAM snapshot
+# (by default, these information are saved only if a test is failed)
+${ForceDebugDataCollection}    ${False}
+#${ForceDebugDataCollection}    ${True}
+
+# UE Profile for call Setup
+&{UE_3}                             ue=3                                        profile=1
+...                                 bearer=${None}                              testMode=False
+...                                 pdu=3                                       qfi=1             type=l3
+...                                 trf_id=1                                    burst=${None}
+...                                 target_gnb=2                                target_cells=2
+...                                 throughput=350                              testModeValue=csi_report_override
+...                                 maxThroughputPerTransfer=175                trfDuration=300s
+...                                 deviation=25                                period_ms=${None}
+
+
+*** Test Cases ***
+
+[1][1.0] CB007873_5G_H_4_ScellActivation_BufferBased_DL_1_UE_CA
+    [Tags]                          CRT        CLOUD_5G_I_BOO_AP_LOO
+	...                             VARIANT    VARIANT_SANSA_FS_ECPRI_CMWV_FDD+TDD
+    ...                             SBTS00
+    [Documentation]                 Carrier Aggregation CB007873 Test H-4
+    CB007873-H-4         ${UE_3}
+
+*** Keywords ***
+ 
+CB007873-H-4
+    [Documentation]     start UE set up with UE profile in parameter
+    ...                 Cell_setup SA 2 cells (1 FDD + 1 TDD)
+    ...                 UE Register FDD CA Capable
+    ...                 PDU Session FDD CA Capable
+    ...                 traffic DL performed SA FDD CA capable 
+	
+    [Arguments]                     ${param}
+	
+    Init Sequence                   ${param}
+    Critical Step    Restart TL
+    Critical Step    Cell_Setup_SA_2_Cells_1FDD_1TDD
+    Step             UE_register_FDD_CA_Capable
+    Step             PDU_Session_FDD_CA_Capable             depends=UE_register_FDD_CA_Capable
+    Step             Check_sCellToAddModList_onegateLogs    depends=PDU_Session_FDD_CA_Capable
+    Step             Traffic_DL_SA_FDD_CA_Capable           depends=Check_sCellToAddModList_onegateLogs
+    [Teardown]       Teardown CB007873_H-4
+
+
+Teardown CB007873_H-4
+    [Documentation]    collect Sos Report if a TC is failed or if the user need traces ForceDebugDataCollection
+    Dated log                       Teardown for CB007873_H-4
+    Run Keyword If                  ${ForceDebugDataCollection}   Get Sos Report
+    [Teardown]                      GenericTest.Display diagnosis

@@ -1,0 +1,528 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for 5GC001948/5GC001966 feature tests cases
+...
+...               Automation author           : anne.enyih@nokia.com
+...               Automation contact          : anne.enyih@nokia.com
+...               Creation Date               : 20-April-2020
+...               Last Modified by            : richard.duthu@nokia.com
+...               Modified Date               : 03-May-2022 - Workaround for cells mapping issue
+...               Modified Date               : 30-Jun-2022 - Workaround for Logs and Nodes discovery issue
+...               Modified Date               : 10-Jan-2023 - BO_AP_KLLL adaptation
+...               Modified Date               : 24-Apr-2023 - Code adaptation for the new content of the CPRT traces
+...               Modified Date               : 04-Jul-2023 - Redesign to LO_AP_LO topology
+...               Modified Date               : 18-Sep-2024 - Scout data
+
+
+Library           OperatingSystem
+Library           Collections
+Library           ute_wtssim
+Library           taf.transport.ssh                     WITH NAME    ssh
+
+Resource          taf/rfrl/common_resources/robot/coam.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+
+Variables         ../../../../../resources/SWENG/python/ReadConfig.py
+
+
+*** Variables ***
+# Custom config files for TC_2UL_2DL_5MHz:
+${TC_2UL_2DL_5MHz_scfc}            ${CURDIR}/../config/TC_2UL_2DL_5MHz_scf.xml
+${TC_2UL_2DL_5MHz_iphy}            ${CURDIR}/../config/TC_2UL_2DL_5MHz_iphy.xml
+${TC_2UL_2DL_5MHz_cfg}             ${CURDIR}/../config/TC_2UL_2DL_5MHz_basic.cfg
+
+# Custom config files for TC_2UL_4DL_10MHz:
+${TC_4UL_2DL_10MHz_scfc}            ${CURDIR}/../config/TC_4UL_2DL_10MHz_scf.xml
+${TC_4UL_2DL_10MHz_iphy}            ${CURDIR}/../config/TC_4UL_2DL_10MHz_iphy.xml
+${TC_4UL_2DL_10MHz_cfg}             ${CURDIR}/../config/TC_4UL_2DL_10MHz_basic.cfg
+
+# Custom config files for TC_4UL_4DL_20MHz:
+${TC_4UL_4DL_20MHz_scfc}            ${CURDIR}/../config/TC_4UL_4DL_20MHz_scf.xml
+${TC_4UL_4DL_20MHz_iphy}            ${CURDIR}/../config/TC_4UL_4DL_20MHz_iphy.xml
+${TC_4UL_4DL_20MHz_cfg}             ${CURDIR}/../config/TC_4UL_4DL_20MHz_basic.cfg
+
+# Define the UE Fs Id pour each UE (used in check Attach):
+${ueFsId_1}                         10
+${ueFsId_2}                         11
+${ueFsId_3}                         12
+${ueFsId_4}                         13
+
+# Define the MaxNumberOfCellGroup Parameters:
+${LO_LO_NrCellGroup}                6                                       # value when pooling is not activated
+${LO_LO_NrCellGroup_pooling}        12                                      # value when pooling is activated
+
+# Define the Number Of Cells:
+${NB_CELLS}                         4
+
+# Define UE profiles. One UE per cells.
+&{UE_SIMPLE_Cell1}                  ue=11                                   profile=1
+...                                 bearer=2                                testMode=False
+...                                 trf_id=1                                burst=${None}
+...                                 trf_dl_id=4                             trf_ul_id=1
+...                                 target_gnb=2                            target_cells=1
+...                                 pdu=${None}                             qfi=${None}
+...                                 testModeValue=csi_report_override       type=l3
+...                                 throughput=${DEFAUT_THROUGHPUT}         period_ms=${None}
+...                                 throughput_dl=${DEFAUT_THROUGHPUT}      throughput_ul=${DEFAUT_THROUGHPUT}
+&{UE_SIMPLE_Cell2}                  ue=12                                   profile=1
+...                                 bearer=2                                testMode=False
+...                                 trf_id=1                                burst=${None}
+...                                 trf_dl_id=5                             trf_ul_id=2
+...                                 target_gnb=2                            target_cells=2
+...                                 pdu=${None}                             qfi=${None}
+...                                 testModeValue=csi_report_override       type=l3
+...                                 throughput=${DEFAUT_THROUGHPUT}         period_ms=${None}
+...                                 throughput_dl=${DEFAUT_THROUGHPUT}      throughput_ul=${DEFAUT_THROUGHPUT}
+&{UE_SIMPLE_Cell3}                  ue=13                                   profile=1
+...                                 bearer=2                                testMode=False
+...                                 trf_id=1                                burst=${None}
+...                                 trf_dl_id=6                             trf_ul_id=3
+...                                 target_gnb=2                            target_cells=3
+...                                 pdu=${None}                             qfi=${None}
+...                                 testModeValue=csi_report_override       type=l3
+...                                 throughput=${DEFAUT_THROUGHPUT}         period_ms=${None}
+...                                 throughput_dl=${DEFAUT_THROUGHPUT}      throughput_ul=${DEFAUT_THROUGHPUT}
+&{UE_SIMPLE_Cell4}                  ue=14                                   profile=1
+...                                 bearer=2                                testMode=False
+...                                 trf_id=1                                burst=${None}
+...                                 trf_dl_id=7                             trf_ul_id=4
+...                                 target_gnb=2                            target_cells=4
+...                                 pdu=${None}                             qfi=${None}
+...                                 testModeValue=csi_report_override       type=l3
+...                                 throughput=${DEFAUT_THROUGHPUT}         period_ms=${None}
+...                                 throughput_dl=${DEFAUT_THROUGHPUT}      throughput_ul=${DEFAUT_THROUGHPUT}
+
+# Define the UEs List:
+@{UE_SIMPLE_LIST}                   ${UE_SIMPLE_Cell1}
+...                                 ${UE_SIMPLE_Cell2}
+...                                 ${UE_SIMPLE_Cell3}
+...                                 ${UE_SIMPLE_Cell4}
+
+# Evenif these data are no more used, we keep them in order to remember delta between 5MHz, 10MHz and 20MHz:
+&{A_5Mhz}                           chBwUl=5MHz
+...                                 chBwDl=5MHz
+...                                 gscnOrSsPbchArfcn=1
+...                                 nrarfcnDl=125900
+...                                 nrarfcnUl=135100
+...                                 nrCellType=2DL2UL
+...                                 dlMimoMode=2x2 Open Loop Spatial Multiplexing
+...                                 New_TL_name=5Mhz 2UL2DL
+...                                 type0CoresetConfigurationIndex=0
+...                                 systemInformationTargetRate=0
+&{A_10Mhz}                          chBwUl=10MHz
+...                                 chBwDl=10MHz
+...                                 gscnOrSsPbchArfcn=1592
+...                                 nrarfcnDl=127420
+...                                 nrarfcnUl=136620
+...                                 nrCellType=2DL4UL
+...                                 dlMimoMode=2x2 Open Loop Spatial Multiplexing
+...                                 New_TL_name=10Mhz 4UL2DL
+...                                 type0CoresetConfigurationIndex=7
+...                                 systemInformationTargetRate=1
+&{A_20Mhz}                          chBwUl=20MHz
+...                                 chBwDl=20MHz
+...                                 gscnOrSsPbchArfcn=1582
+...                                 nrarfcnDl=126380
+...                                 nrarfcnUl=135760
+...                                 nrCellType=4DL4UL
+...                                 dlMimoMode=4x4 or 4x2 Closed Loop Spatial Multiplexing
+...                                 New_TL_name=20Mhz 4UL4DL
+...                                 type0CoresetConfigurationIndex=7
+...                                 systemInformationTargetRate=1
+
+# Define the TestCases Parameters:
+&{TC_2UL_2DL_5MHz}                  frequency=${A_5Mhz}
+...                                 TestName=TC_2UL_2DL_5MHz
+&{TC_4UL_2DL_10MHz}                 frequency=${A_10Mhz}
+...                                 TestName=TC_4UL_2DL_10MHz
+&{TC_4UL_4DL_20MHz}                 frequency=${A_20Mhz}
+...                                 TestName=TC_4UL_4DL_20MHz
+
+
+*** Keywords ***
+TC 4 Cells 4 UEs
+    [Documentation]                 Configures the TL, verifies the cells setup, initiates and check DL/UL Traffic.
+    [Arguments]                     ${param}
+    Init Sequence                   ${param}
+    Critical Step                   Get TL Type
+    Critical Step                   Apply Custom Config for 4 Cells Configuration
+    Step                            sleep               argument=300s
+    Critical Step                   Restart TL
+    Step                            Save Current Configuration
+    Critical Step                   Step Setup LTEemu
+    Critical Step                   Test Verify Cell Setup
+    Step                            Test Perform Attach
+    Critical Step                   Test Verify Attach for 4 UEs on 4 Sectors
+    Step                            Test DL traffic for 4 Ues on 4 Sectors
+    Step                            Test UL traffic for 4 Ues on 4 Sectors
+    sleep                           30
+
+
+Get TL Type
+    [Documentation]                 Check the topology and set TL_Type and Apply_CustomConfig variables
+    Dated Log                       TL type is: ${GNB_DU.profil}_AP_${AP_DU.profil}
+    ${NoCustomConfig}               Set Variable        ${True}
+    Run Keyword If                  '${GNB_DU.profil}'=='LO' and '${AP_DU.profil}'=='LO'
+    ...                                 Run Keywords    Set Global Variable     ${NoCustomConfig}   ${False}
+    ...                                 AND             Set Global Variable     ${TL_Type}          LO_AP_LO
+    ...         ELSE                Should be true      ${False}    ERROR: Unknown Topology !!!
+
+
+Apply Custom Config for 4 Cells Configuration
+    [Documentation]                 If a custom config is required, then apply the custom config files.
+    Return from keyword if          ${NoCustomConfig}
+    OperatingSystem.Run             rm -f /tmp/Delivered_iphy.xml
+    OperatingSystem.Run             rm -f /tmp/iphy.xml
+    Dated Log                       ${param.TestName} Custom Config: In progress...
+    Apply Custom Config             scfc=${${param.TestName}_scfc}
+    ...                             iphy=${${param.TestName}_iphy}
+    ...                             cfg=${${param.TestName}_cfg}
+    OperatingSystem.Run             rm -f /tmp/${param.TestName}_iphy.xml
+    OperatingSystem.Run             rm -f /tmp/iphy.xml
+    Dated Log                       ${param.TestName} Custom Config: DONE.
+
+
+Step Setup LTEemu
+    [Documentation]                 Clean WTS, restart and configure ePC simulator in order to get X2 link eNB and gNB.
+    WTS Setup                       shouldUseLua=${False}
+    ...                             nbCell=${NB_CELLS}
+
+
+Test Verify Cell Setup
+    [Documentation]                 Check the Cell Setup on Airphone side
+    Verify cell setup per cell
+
+
+Test Verify Max Number Of NR Cell Group
+   [Documentation]                 Check the number of cell groups on gNB side
+    ${isPoolingActivated}           Get BB Pooling status
+   ${valueToCheck}                 set variable if     '${isPoolingActivated}'=='true'   ${LO_LO_NrCellGroup_pooling}    ${LO_LO_NrCellGroup}
+   Dated Log                       The max number of NR cell group must be worth ${valueToCheck}
+   Verify Max Number Of NR Cell Group in CPRT      valueToCheck=${valueToCheck}
+   Verify Max Number Of NR Cell Group in L2RT      valueToCheck=${valueToCheck}   nodeToCheck=L2RTa0    fileToCheck=ASP-2730
+   Verify Max Number Of NR Cell Group in L2RT      valueToCheck=${valueToCheck}   nodeToCheck=L2RTa1    fileToCheck=ASP-2732
+
+
+Get BB Pooling status
+    [Documentation]                 Check in SCF if BB Pooling is or not activated and return True or False
+    ${dist_name}                    set variable        MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ${param_name}                   set variable        actSlowPrbPoolingFddFr1Enh
+    ${param_value}                  OAM Get Param From Any Of SCF       param=${param_name}
+    ...                                                                 current_scf=${LOG_PATH}/${param.TestName}_SCF_DU_Setup.xml
+    ...                                                                 dist_name=${dist_name}
+    Dated Log                       Used SCF for check: ${LOG_PATH}/${param.TestName}_SCF_DU_Setup.xml
+    Dated Log                       BB Pooling Status : ${param_value}
+    [Return]                        ${param_value}
+
+
+Test Perform Attach
+    [Documentation]                 Start the UE Attach on eNB
+    FOR     ${ind}      IN RANGE    1   ${NB_CELLS}+1
+        UE Attach Enb               ueSetting=${UE_SIMPLE_Cell${ind}}
+        Traced Sleep                duration=5s     msg=Workaround for pb Attach Gnb
+        UE Attach Gnb               ueSetting=${UE_SIMPLE_Cell${ind}}
+        ...                         expected_gnb_log=reported successful RA
+    END
+
+
+Test Verify Attach for 4 UEs on 4 Sectors
+    [Documentation]                 Check the UE Attach on Airphone side
+    run keyword and ignore error    wait until keyword succeeds    5min    30s
+    ...                             Verify AP Classical for UEs attach
+
+
+Test DL traffic for 4 Ues on 4 Sectors
+    [Documentation]                 Generate DownLink Traffic on each UEs
+    Traffic UEs DL                  ueSettingList=${UE_SIMPLE_LIST}
+    ...                             throughput=3
+
+
+Test UL traffic for 4 Ues on 4 Sectors
+    [Documentation]                 Generate UpLink Traffic on each UEs
+    Traffic UEs UL                  ueSettingList=${UE_SIMPLE_LIST}
+    ...                             throughput=3
+
+
+Verify Max Number Of NR Cell Group in CPRT
+    [Documentation]                 Check the Number of Cell Groups in startup_cp_rt on ASIK Slave
+    [Arguments]                     ${valueToCheck}
+    Dated Log New Line              Check the startup_cp_rt.log file:
+    ${LogCPRT}                      Container.Get Log                       name=CPRT
+    ${alias}                        SSH Connect                             ${LogCPRT.node.host}
+    ${CprtLog}                      Set variable                            ${LogCPRT.path.replace('.zip','.*').replace('.log','.*')}
+    ${myPattern1}                   Set variable                            TMaxNumberOfNrCellGroup = ${valueToCheck}
+    ${myPattern2}                   Set variable                            "maxNumberOfNrCellGroup":${valueToCheck}
+
+    Dated log                       Save CPRT log for debug purpose
+    Run Keyword And Ignore Error    SSH Download File
+    ...                                 host=${LogCPRT.node.host}
+    ...                                 remotePath=${LogCPRT.path}
+    ...                                 localPath=${LOG_PATH}/${param.TestName}_startup_cp_rt.log
+
+    Dated log                       Check CPRT Log File=${CprtLog}
+    ${output}                       SSH Cmd
+    ...                                 ls -lrt ${CprtLog}
+    ...                                 alias=${alias}
+    ${len}                          Get Length                              ${output}
+    Run Keyword If                  ${len} != 0
+    ...                             SSH Cmd
+    ...                                 unzip -o -d $(dirname ${CprtLog}) ${CprtLog}
+    ...                                 alias=${alias}
+    Dated log                       CPRT Log Files list is: ${output}
+    ${output1}                      SSH Cmd
+    ...                                 xzgrep -i "l2RtPoolDeploymentInfo" ${CprtLog}
+    ...                                 alias=${alias}
+    ${output1} =                    Convert To String                       ${output1}
+    Dated log                       case 1: CPRT xzgrep output is: ${output1}
+
+    ${output2}                      SSH Cmd
+    ...                                 xzgrep -i -A1 "l2RtPoolDeploymentInfo" ${LogCPRT.path} | xzgrep -A1 maxNumberOfNrCellGroup
+    ...                                 alias=${alias}
+    ${output2} =                    Convert To String                       ${output2}
+    Dated log                       case 2: CPRT xzgrep -A1 output is: ${output2}
+
+    SSH.Disconnect                  connection=${alias}
+
+    ${isFound1}                     Call Method     ${output1}  find    ${myPattern1}
+    ${isFound2}                     Call Method     ${output2}  find    ${myPattern1}
+    ${isFound3}                     Call Method     ${output1}  find    ${myPattern2}
+    ${isFound4}                     Call Method     ${output2}  find    ${myPattern2}
+
+    # Stop action if pattern1 is found:
+    Dated log                       Pattern "${myPattern1}" : search results are: ${isFound1} and ${isFound2}
+    Return From Keyword If          ${isFound1} > 0 or ${isFound2} > 0
+    # Pattern1 is not found : we should find the pattern2
+    Dated log                       Pattern "${myPattern2}" : search result are: ${isFound3} and ${isFound4}
+    Should be true                  ${isFound3} > 0 or ${isFound4} > 0
+
+
+Verify Max Number Of NR Cell Group in L2RT
+    [Documentation]                 Check the Number of Cell Groups in ASP-27xx_startup file
+    [Arguments]                     ${valueToCheck}
+    ...                             ${nodeToCheck}
+    ...                             ${fileToCheck}
+    Dated Log New Line              Check on node_${nodeToCheck} the ${fileToCheck}_startup.* file:
+    ${alias}                        SSH Connect                             ${GNB_DU.bb[0].M}
+    ${L2rtLog}                      Set variable                            /tmp/node_${nodeToCheck}/tmp/${fileToCheck}_startup.*
+    ${ZipLog}                       Set variable                            /tmp/node_${nodeToCheck}/tmp/${fileToCheck}_startup.zip
+
+    ${myPattern1}                   Set variable                            maxNumberOfNrCellGroup=${valueToCheck}
+    ${myPattern2}                   Set variable                            maxNumberOfNrCellGroup: ${valueToCheck}
+
+    Dated log                       Check on ${nodeToCheck} this log file=${L2rtLog}
+    ${output}                       SSH Cmd
+    ...                                 ls -lrt ${L2rtLog}
+    ...                                 alias=${alias}
+    Dated log                       L2RT Log Files list is: ${output}
+    ${len}                          Get Length                              ${output}
+    Run Keyword If                  ${len} != 0
+    ...                             SSH Cmd
+    ...                                 unzip -o -d $(dirname ${ZipLog}) ${ZipLog}
+    ...                                 alias=${alias}
+    ${output}                       SSH Cmd
+    ...                                 xzgrep "maxNumberOfNrCellGroup" ${L2rtLog}
+    ...                                 alias=${alias}
+    ${output} =                     Convert To String                       ${output}
+    Dated log                       L2RT xzgrep output is: ${output}
+
+    SSH.Disconnect                  connection=${alias}
+
+    ${isFound1}                     Call Method     ${output}   find    ${myPattern1}
+    ${isFound2}                     Call Method     ${output}   find    ${myPattern2}
+    Dated log                       Search of "${myPattern1}" : result is ${isFound1}
+    # Stop action if pattern1 is found:
+    Return From Keyword If          ${isFound1} > 0
+    # Pattern1 is not found : we should find the pattern2
+    Dated log                       Search of "${myPattern2}" : result is ${isFound2}
+    Should Contain                  ${output}       ${myPattern2}
+
+
+Verify cell setup per cell
+    [Documentation]                 Check the Cell Setup on Airphone side
+    Dated log                       Check the startup_l3.log file: zipped or not zipped
+    ${output_1}                     SSH Wait For Connect and Cmd
+    ...                                 command=ls -ltr /tmp/startup_l3.log.xz
+    ...                                 host=${AP_DU.sys[0].M}
+    ${output_2}                     SSH Wait For Connect and Cmd
+    ...                                 command=ls -ltr /tmp/startup_l3.log
+    ...                                 host=${AP_DU.sys[0].M}
+    ${lenght_1}                     Get Length                              ${output_1}
+    ${length_2}                     Get Length                              ${output_2}
+    Dated log                       length_xz:${lenght_1} - lenght_non_xz:${length_2}
+    Run Keyword If                  ${lenght_1} != 0                        AP CellSetup log file is zipped
+    Run Keyword If                  ${length_2} != 0                        AP CellSetup log file is not zipped
+
+
+AP CellSetup log file is zipped
+    [Documentation]                 Unzip startup_l3 file and extract searched value
+    ${output}                       SSH Wait For Connect and Cmd
+    ...                                 command=xz -d -c /tmp/startup_l3.log.xz|grep RFM_EVENT
+    ...                                 host=${AP_DU.sys[0].M}
+    Dated log                       ${output}
+    AP CellSetup check pattern      ${output}
+
+
+AP CellSetup log file is not zipped
+    [Documentation]                 Unzip startup_l3 file and extract searched value
+    ${output}                       SSH Wait For Connect and Cmd
+    ...                                 command=grep RFM_EVENT /tmp/startup_l3.log
+    ...                                 host=${AP_DU.sys[0].M}
+    Dated log                       ${output}
+    AP CellSetup check pattern      ${output}
+
+
+AP CellSetup check pattern
+    [Documentation]                 Search pattern in input parameter
+    [Arguments]                     ${output}
+    FOR     ${ind}      IN RANGE    1   ${NB_CELLS}+1
+        Should Contain              ${output}                   Cell Setup completed for [CELL_ID:${ind}]
+        Dated log                   Cell Group ${ind} was successfully configured
+    END
+
+Verify AP Classical for UEs attach
+    [Documentation]                 Check the UE Attach on Airphone side
+    Dated log                       Check the startup_l3.log file: zipped or not zipped
+    ${output_1}                     SSH Wait For Connect and Cmd
+    ...                                 command=ls -ltr /tmp/startup_l3.log.xz
+    ...                                 host=${AP_DU.sys[0].M}
+    ${output_2}                     SSH Wait For Connect and Cmd
+    ...                                 command=ls -ltr /tmp/startup_l3.log
+    ...                                 host=${AP_DU.sys[0].M}
+    ${lenght_1}                     Get Length                              ${output_1}
+    ${length_2}                     Get Length                              ${output_2}
+    Dated log                       length_xz:${lenght_1} - lenght_non_xz:${length_2}
+    Run Keyword If                  ${lenght_1} != 0                        AP UEAttach log file is zipped
+    Run Keyword If                  ${length_2} != 0                        AP UEAttach log file is not zipped
+
+
+AP UEAttach log file is zipped
+    [Documentation]                 Unzip startup_l3 file and extract searched value
+    Dated log                       Backup of AP log file: /tmp/startup_l3.log.xz
+    ${yyyy}  ${mm}  ${dd}  ${hh}  ${min}  ${ss}=  Get Time  format=year,month,day,hour,min,sec
+    ${startup_filename}=            Set Variable  ${yyyy}${mm}${dd}_${hh}${min}${ss}_startup_l3.log.xz
+    ${alias_ap}                     SSH Wait For Connect                    ${AP_DU.entryCard[0]}
+    csn.download_file               remote_path=/tmp/startup_l3.log.xz
+    ...                             local_path=${LOG_PATH}/${startup_filename}
+    ...                             connection=${alias_ap}
+    ${output}                       SSH Wait For Connect and Cmd
+    ...                                 command=xz -d -c /tmp/startup_l3.log.xz|grep crnti
+    ...                                 host=${AP_DU.sys[0].M}
+    Dated log                       ${output}
+    AP UEAttach check pattern      ${output}
+
+
+AP UEAttach log file is not zipped
+    [Documentation]                 Extract searched value from log file
+    Dated log                       Backup of AP log file: /tmp/startup_l3.log
+    ${yyyy}  ${mm}  ${dd}  ${hh}  ${min}  ${ss}=  Get Time  format=year,month,day,hour,min,sec
+    ${startup_filename}=            Set Variable  ${yyyy}${mm}${dd}_${hh}${min}${ss}_startup_l3.log
+    ${alias_ap}                     SSH Wait For Connect                    ${AP_DU.entryCard[0]}
+    csn.download_file               remote_path=/tmp/startup_l3.log
+    ...                             local_path=${LOG_PATH}/${startup_filename}
+    ...                             connection=${alias_ap}
+    ${output}                       SSH Wait For Connect and Cmd
+    ...                                 command=grep crnti /tmp/startup_l3.log
+    ...                                 host=${AP_DU.sys[0].M}
+    Dated log                       ${output}
+    AP UEAttach check pattern      ${output}
+
+
+AP UEAttach check pattern
+    [Documentation]                 Search pattern in input parameter
+    [Arguments]                     ${output}
+    FOR     ${ind}      IN RANGE    1   ${NB_CELLS}+1
+        Should Contain              ${output}        [UE-${ueFsId_${ind}}]: Sm User Ue Connection Established Ind message status OK: crnti=
+        Dated log                   5G attach successful for UE ${ind}
+    END
+
+
+Setup 1948
+    [Documentation]                 Perform a Suite Setup, then save the delivered SCF
+    Suite setup from scratch        listBackupFiles=${FD_ALL}
+    Backup All Delivered Config Files
+
+
+Teardown 1948
+    [Documentation]                 Perform a Suite Teardown, then restore all config files (see ${FD_ALL}).
+    Setup.Suite Teardown
+    Restore Files                   listFileDesc=${FD_ALL}
+
+
+Test Teardown 1948
+    [Documentation]                 Call Scout services, then remove temporary files.
+    run keyword and ignore error    Produce Scout Data
+    Display diagnosis
+    Cleanup Temporary files
+    # Go Back To Delivered Configuration
+    # As there is only one survival 5GC001966 test in CIT/CRT, I comment the following line:
+    # Traced Sleep                    duration= 180s                          msg=inter test
+
+
+Backup All Delivered Config Files
+    [Documentation]                 Saves all initial config files used as an input parameter to MultiCellsCreator.
+    # SCF backup:
+    ${Delivered_SCF}                OAM Get SCF File
+    ...                             file=Delivered_SCF_DU_Setup.xml
+    Set Suite Variable              ${Delivered_SCF}
+    Dated Log                       Base SCF file will be: ${Delivered_SCF}
+
+    # iphy.xml backup:
+    ${Delivered_IPHY}               Set Variable                            ${LOG_PATH}/Delivered_iphy.xml
+    Set Suite Variable              ${Delivered_IPHY}
+    ${alias_ap}                     SSH Wait For Connect                    ${AP_DU.entryCard[0]}
+    csn.download_file               remote_path=/ffs/run/simmode/iphy.xml
+    ...                             local_path=${Delivered_IPHY}
+    ...                             connection=${alias_ap}
+    Dated Log                       Base iphy file will be: ${Delivered_IPHY}
+
+    # basic_wts.cfg backup:
+    ${Delivered_BASIC_WTS}          Set Variable                            ${LOG_PATH}/Delivered_basic_wts.cfg
+    Set Suite Variable              ${Delivered_BASIC_WTS}
+    ${alias_epc}                    SSH Wait For Connect                    ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${Delivered_BASIC_WTS}
+    ...                             connection=${alias_epc}
+    Dated Log                       Base basic_wts file will be: ${Delivered_BASIC_WTS}
+
+
+Go Back To Delivered Configuration
+    [Documentation]                 Use the Apply Custom Config to go back to delivered config.
+    Return from keyword if          ${NoCustomConfig}
+    # Copy Delivered iphy.xml file into a temporary file in order to preserve its contain
+    OperatingSystem.Run             cp -f ${LOG_PATH}/Delivered_iphy.xml /tmp/Delivered_iphy.xml
+    Dated Log                       >>> Go Back To Delivered Config: In progress...
+    Apply Custom Config             scfc=${LOG_PATH}/Delivered_SCF_DU_Setup.xml
+    ...                             iphy=/tmp/Delivered_iphy.xml
+    ...                             cfg=${LOG_PATH}/Delivered_basic_wts.cfg
+    Cleanup Temporary files
+    Dated Log                       >>> Go Back To Delivered Config: DONE.
+
+
+Cleanup Temporary files
+    [Documentation]                 Remove temporary files created during the Apply Custom Config actions.
+    OperatingSystem.Run             rm -f /tmp/Delivered_iphy.xml
+    OperatingSystem.Run             rm -f /tmp/iphy.xml
+
+
+Save Current Configuration
+    [Documentation]                 Saves all running config files for debug purpose...
+    Dated Log                       Saves all running config files for ${param.TestName}
+    # SCF backup:
+    ${Running_SCF}                  OAM Get SCF File
+    ...                             file=${param.TestName}_SCF_DU_Setup.xml
+    # basic_wts.cfg backup:
+    ${alias_epc}                    SSH Wait For Connect                    ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/${param.TestName}_basic_wts.cfg
+    ...                             connection=${alias_epc}
+    # iphy.xml backup:
+    ${alias_ap}                     SSH Wait For Connect                    ${AP_DU.entryCard[0]}
+    csn.download_file               remote_path=/ffs/run/simmode/iphy.xml
+    ...                             local_path=${LOG_PATH}/${param.TestName}_iphy.xml
+    ...                             connection=${alias_ap}

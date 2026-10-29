@@ -1,0 +1,45 @@
+*** Settings ***
+Documentation
+...   Author:   Terhi Talvitie
+...   Contact:  I_MN_RAN_RD_TV_OTACI_CITCRT1@internal.nsn.com
+
+Library     Collections
+Library          taf.sw.reporting_portal
+Resource         testsuite/Oulu/TrunkEng/Common/Robot/Resources/common_resources.robot
+Resource         testsuite/Oulu/TrunkEng/OMKPI/Robot/TestKeywords/omkpi_bts_block_unblock.robot
+
+Suite Setup       Common Suite Setup
+Suite Teardown    Common Suite Teardown
+
+Test Setup        Run Keywords  Common Test Setup
+...               AND           Start Alarm Listener  ${ALLOWED_ALARMS_FILE}
+Test Teardown     Common Test Teardown
+
+*** Variables ***
+# to list below you can add prints that will be monitored from syslog, if print is found, it is written to eventlog
+@{SYSLOG_LIST}          Reset::ResetRequestsObserver    Detected most recent reset type was    failed to execute
+# to list below you can add prints that will fail the test if they are found from syslog
+@{UNALLOWED_SYSLOGS}    13 (ERPresetTypeApplicationBts)  4 (ERPresetTypeSpuriousReset)
+                   ...  14 (ERPresetTypeSpuriousResetBts)
+# Path to allowed alarms file
+${ALLOWED_ALARMS_FILE}  /home/ute/MN/UTE/robotws/testsuite/Oulu/TrunkEng/OMKPI/allowed_alarms.txt
+${WAIT_CHECKS}          60    # seconds, 0 if no waiting nor printing before post conditions check
+${WAIT_FOR_CELLS_UP}    300
+# Collect logs variable. POssible values are: On failure/Never/Always
+${COLLECT_LOGS}         On failure
+# How many times test will be run, needs to be more than 0
+${TEST_LOOPS}           1
+
+*** Test Cases ***
+BTS_Block_Unblock
+    [Documentation]  Block BTS, checks that cells are disabled and alarm is raised. Unblock BTS, check that units are back to ok
+    ...              and no unexpected alarms are seen.
+    [Tags]           "BTS Block Unblock" -test loops: ${TEST_LOOPS}
+    Run Keyword And Continue On Failure  Run Keyword In Loop And Return Pass Rate
+        ...    ${SYSLOG_LIST}  ${UNALLOWED_SYSLOGS}  ${WAIT_CHECKS}  ${WAIT_FOR_CELLS_UP}
+        ...    name=Bts Block Unblock
+        ...    test_case=1
+        ...    loops=${TEST_LOOPS}
+        ...    keywords=Block Unblock Bts
+        ...    expected_pass_rate=1
+        ...    collect_test_logs=${COLLECT_LOGS}

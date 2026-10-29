@@ -1,0 +1,253 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB009355 step A
+...
+...               Test Case Scenario author   : yann.ah.herve@nokia.com / jing.tian@nokia.com
+...               Test Case Scenario contact  : yann.ah.herve@nokia.com / jing.tian@nokia.com
+...               Test Case automation author : yann.ah.herve@nokia.com / jing.tian@nokia.com
+...               Test Case automation contact: yann.ah.herve@nokia.com / jing.tian@nokia.com
+...               Creation Date               : 10-January-2024
+...               Last Modified by            : 
+...               Modification:
+...                       10-January-2024     | Creation
+
+Library           ../python/getti_events.py
+
+Resource          ./CB009355_common_keywords.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/KPIs.robot
+Resource          ../../../resources/common/TtiTrace/ttitrace.robot
+
+
+
+*** Variables ***
+
+# DL and UL throughputs in Mbps
+${max_DL_tput_15MHz}             180
+${max_UL_tput_15MHz}             20
+${small_UL_tput_15MHz}           5
+
+${delta_scf_A_B2_TC4}            testsuite/Paris/RRM/ET/CB009355/resources/config/Delta_Configuration_scf_A_B2_TC4.json
+${TC_A_B2_TC4_PM_constraints}    testsuite/Paris/RRM/ET/CB009355/resources/config/TC_A_B2_TC4_PM_Constraints.csv
+
+${delta_scf_A_B6_TC10}           testsuite/Paris/RRM/ET/CB009355/resources/config/Delta_Configuration_scf_A_B6_TC10.json
+${TC_A_B6_TC10_PM_constraints}   testsuite/Paris/RRM/ET/CB009355/resources/config/TC_A_B6_TC10_PM_Constraints.csv
+
+${delta_scf_A_B13_TC14}          testsuite/Paris/RRM/ET/CB009355/resources/config/Delta_Configuration_scf_A_B13_TC14.json
+${TC_A_B13_TC14_PM_constraints}  testsuite/Paris/RRM/ET/CB009355/resources/config/TC_A_B13_TC14_PM_Constraints.csv
+
+*** Keywords ***
+
+Start Max DL and UL traffic
+    [Documentation]     Start UL and DL traffic to reach 15 MHz max throughput
+
+    Traffic UE UL           ueSetting=${BASIC_UE_SA}
+    ...                     shouldBeStop=False      shouldBeCheck=False     duration=20s
+    ...                     throughput=${max_UL_tput_15MHz}
+
+    Traffic UE DL           ueSetting=${BASIC_UE_SA}
+    ...                     shouldBeStop=False      shouldBeCheck=False     duration=20s
+    ...                     throughput=${max_DL_tput_15MHz}
+
+Stop Max DL and UL traffic
+
+    Traffic Stop                  ueSetting=${BASIC_UE_SA}             dir=ul
+    Traffic Stop                  ueSetting=${BASIC_UE_SA}             dir=dl
+
+Start Small UL traffic
+    [Documentation]     Start Small UL throughput to activate UL CG 
+
+    Traffic UE UL           ueSetting=${BASIC_UE_SA}
+    ...                     shouldBeStop=False      shouldBeCheck=False     duration=20s
+    ...                     throughput=${small_UL_tput_15MHz}
+
+Stop Small UL traffic
+
+    Traffic Stop                  ueSetting=${BASIC_UE_SA}             dir=ul
+
+Check SRS receive
+    [Documentation]     KW used to check if SRS is well handled by gNB in case of 15 MHz BW
+    ...                 It triggerd a TTI trace and looks for SRS messages inside it.
+    ...                 However, SRS is only triggered in case of RANK 1 UL transmissions
+    ...                 So, as a first test, an AP test mode is used to add UL correlation
+    ...                 and fallback to rank 1 during TTI trace capture
+
+    wtsemu.ul_mimo_switch_nr                profile_id=1
+    ...                                     pusch_tx_mix_ratio=100
+
+    # Trigger SRS reports by moving to rank1
+    wtsemu.ue_testmode_set_nr               id=1
+    ...                                     testmode=ul_mimo_switch_nr
+    ...                                     profile_id=1
+    ...                                     action=activate
+
+    # Small UL traffic to check SRS and avoid a too big TTI trace
+    Traffic UE UL       ueSetting=${BASIC_UE_SA}
+    ...                 shouldBeStop=False      shouldBeCheck=False     duration=20s
+    ...                 throughput=1
+
+    # Capture TTI trace
+    # TTI capture configuration
+    ${TTIdir}                     Get TTI Trace Path                 dir_suffix=A_B2_TC4
+
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+
+    Traced Sleep                  1 seconds               msg=DL traffic capture
+
+    # stop TTI capture
+    ${TTIpcap}                    Stop TTI Traces in Streaming mode
+    ...                           tti_trace_path=${TTIdir}
+    ...                           tti_trace_filename=TTITrace_A_B2_TC4
+
+    Dated Log New Line            === Convert TTItrace to json and csv ===
+    ${TTIjson}                    Convert TTItrace from pcap to others      input_file_path=${TTIpcap}    
+    &{events_list}=               gettti_events          ${TTIjson}
+
+    ${srs_event_list}=            Set Variable       ${events_list}[ulSrsReceiveRespPsData]
+
+    # Check there are SRS reports
+    Should Not Be Empty         ${srs_event_list}
+    # Parse L2PS events and just check that SRS is received with a good SNR. 
+    # The check is just intended to verify that SRS works fine in case of 15 MHz.
+    FOR     ${srs_event}    IN      @{srs_event_list}
+        Should be True               ${srs_event}[snr] > 35
+    END
+
+    Traffic Stop        ueSetting=${BASIC_UE_SA}             dir=ul
+
+    # Disable AP test mode
+    wtsemu.ue_testmode_set_nr               id=1
+    ...                                     testmode=ul_mimo_switch_nr
+    ...                                     profile_id=1
+    ...                                     action=deactivate
+
+Check SCell activation on Egate
+    # Flush egate console
+    Empty Buffer For Egate
+
+    ${cmd}                              Catenate
+    ...                                 cd ${tl.core.dir_path}; 
+    ...                                 grep "SCellIndex 1 activated successfully at airphone" egate_console.log | tail -1
+    ${output}                           SSH Wait For Connect and Cmd
+    ...                                 command=${cmd}
+    ...                                 host=${HOST_EPCSIM}
+
+    should contain                      ${output}      SCellIndex 1 activated successfully at airphone
+    Dated Log New Line                  ====== SCell activation => OK ======
+
+CB009355_A_B2_TC4_Peak_Throughput_actDynPdcchTdMode_LargestBWP_CCE_Split
+
+    [Documentation]     This test describes successful SgNB addition procedure for a SA UE for NR cell FR1-TDD bandwidth 15MHz
+    ...                 with DL/UL traffic when the dynamic PDCCH size management is largestBWP and CCE split is enabled. 
+    ...                 The activation of those features aims to check there is no issue with TDD 15 MHz bandwidth.
+
+    Init Sequence   "CB009355_A_B2_TC4"
+    Dated Log New Line                  ---> Starting gNB commissioning
+
+    # Update SCF file, move 2 first TDD cells to 15 MHz (change band, BW, PDCCH configuration, W...)
+    Critical Step   CB009355_Update_SCF                 ${delta_scf_A_B2_TC4}
+    Critical Step   CB009355_Update_iPHY_RU_model       AEHC
+    Critical Step   CB009355_Update_Wts_config_file     WTS_CFG_MODEL1      1
+    
+    Dated Log New Line                                  ---> Restart TL
+    Critical Step   Restart TL
+    Dated Log New Line                                  ---> WTS setup SA
+    Critical Step   WTS Setup                           shouldUseLua=${False}
+
+    Critical Step   UE Register                         ue=${BASIC_UE_SA.ue}
+    Critical Step   Launch PDU Session                  ue=${BASIC_UE_SA.ue}    pdu=${BASIC_UE_SA.pdu}    gw=${BASIC_UE_SA.ue}
+
+    Critical Step   Check SRS receive
+
+    # UL/DL max throughput
+    Step            Start Max DL and UL traffic
+
+    ${zoi}          ZOI Start
+    ZOI Wait End    zoi=${zoi}
+    
+    Step            Stop Max DL and UL traffic
+
+    Step            UE Deregister           id=${BASIC_UE_SA.ue}
+
+    # KPIs and counters checks
+    ${pm_path}      Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+    KPI Evaluate    pmFile=${pm_path}
+    ...             constraintsFile=${TC_A_B2_TC4_PM_constraints}
+    ...             failOnError=${True}
+
+CB009355_A_B6_TC10_SA_Carrier_Aggregation_FDD-TDD_Scell_selection
+
+    [Documentation]     This test aims to validate Carrier Aggregation FDD+TDD with a BW=15MHZ TDD cell (5GC001390/2255).
+    ...                 The activation of those features aims to check there is no issue with TDD 15 MHz bandwidth.
+
+    Init Sequence   "CB009355_A_B6_TC10"                               
+    Dated Log New Line                  ---> Starting gNB commissioning
+
+    # Update SCF file, move one TDD cell to 15MHz and one to 50Mhz (change band, BW, PDCCH config, W...)
+    Critical Step   CB009355_Update_SCF                 ${delta_scf_A_B6_TC10}
+    Critical Step   CB009355_Update_iPHY_RU_model       AEHC_CA
+    Critical Step   CB009355_Update_Wts_config_file     WTS_CFG_MODEL2      3
+
+    Dated Log New Line                                  ---> Restart TL
+    Critical Step   Restart TL
+    Dated Log New Line                                  ---> WTS setup SA
+    Critical Step   WTS Setup                           shouldUseLua=${False}
+
+    Critical Step   UE Register                         ue=${BASIC_UE_SA.ue}
+    Critical Step   Launch PDU Session                  ue=${BASIC_UE_SA.ue}    pdu=${BASIC_UE_SA.pdu}    gw=${BASIC_UE_SA.ue}
+
+    # UL/DL max throughput
+    Step            Start Max DL and UL traffic
+
+    ${zoi}          ZOI Start
+    ZOI Wait End    zoi=${zoi}
+    
+    Step            Stop Max DL and UL traffic
+
+    Step            UE Deregister           id=${BASIC_UE_SA.ue}
+
+    # Check SCell activation message on Egate console
+    Step            Check SCell activation on Egate
+
+    # KPIs and counters checks
+    ${pm_path}      Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+    KPI Evaluate    pmFile=${pm_path}
+    ...             constraintsFile=${TC_A_B6_TC10_PM_constraints}
+    ...             failOnError=${True}
+
+CB009355_A_B13_TC14_SA_IWK_CB008124_ULCG_Type_2
+
+    [Documentation]     This test aims to check the CB008124 ULCG feature inter-working with a BW=15MHZ TDD cell.
+    ...                 The activation of UL CG aims to check there is no issue with TDD 15 MHz bandwidth.
+
+    Init Sequence   "CB009355_A_B13_TC14"                               
+    Dated Log New Line                  ---> Starting gNB commissioning
+
+    # Update SCF file, move one TDD cell to 15MHz and active ULCG (change band, BW, PDCCH config, W...)
+    Critical Step   CB009355_Update_SCF                 ${delta_scf_A_B13_TC14}
+    Critical Step   CB009355_Update_iPHY_RU_model       AEHC
+    Critical Step   CB009355_Update_Wts_config_file     WTS_CFG_MODEL4      1
+
+    Dated Log New Line                                  ---> Restart TL
+    Critical Step   Restart TL
+    Dated Log New Line                                  ---> WTS setup SA
+    Critical Step   WTS Setup                           shouldUseLua=${False}
+
+    Critical Step   UE Register                         ue=${BASIC_UE_SA.ue}
+    Critical Step   Launch PDU Session                  ue=${BASIC_UE_SA.ue}    pdu=${BASIC_UE_SA.pdu}    gw=${BASIC_UE_SA.ue}
+
+    # Launch UL throughput to activate UL CG
+    Step            Start Small UL traffic
+
+    ${zoi}          ZOI Start
+    ZOI Wait End    zoi=${zoi}
+    
+    Step            Stop Small UL traffic
+
+    Step            UE Deregister           id=${BASIC_UE_SA.ue}
+
+    # KPIs and counters checks
+    ${pm_path}      Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+    KPI Evaluate    pmFile=${pm_path}
+    ...             constraintsFile=${TC_A_B13_TC14_PM_constraints}
+    ...             failOnError=${True}

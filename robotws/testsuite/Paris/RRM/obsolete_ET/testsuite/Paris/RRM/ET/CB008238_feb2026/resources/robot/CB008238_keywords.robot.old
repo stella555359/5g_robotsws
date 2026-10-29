@@ -1,0 +1,619 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Generic keywords for 5GC00CB008238
+...
+...               Test Case automation author : laurent.puchelle@nokia.com
+...               Test Case automation contact: laurent.puchelle@nokia.com
+...               Creation Date               : 05-Jan-2022
+...               Last Modified Date          : 22-Jun-2022
+...               Last Modified by            : yann.ah.herve@nokia.com
+...               Modification:
+...                       05-Jan-2022         | Creation
+...                       17-Jun-2022         | Adaptation to use MC_SHARK in cell setup check
+...                       22-Jun-2022         | Dynamic Discovery of nrDrbDN
+...                       19-Oct-2023         | Move to BOO_LOO topology
+
+Library             taf.sbts.oam.coam.admin     WITH NAME       sbts_coam
+Library             taf.wts.runner              WITH NAME       wtsemu
+Library             ../../../resources/python/luashark_tools.py
+Library             ../../../../../resources/SWENG/python/CoamParameter.py    WITH NAME    coam_parameter
+
+Library             ../python/CB008238_checkTTItrace.py
+Variables           ../python/Constants.py
+
+Resource            ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource            ../../../../../resources/SWENG/robot/Tools.robot
+Resource            ../../../../../resources/SWENG/robot/Capture.robot
+Resource            ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource            ../../../../../resources/SWENG/robot/Traffic.robot
+Resource            ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource            ../../../../../resources/SWENG/robot/Restart.robot
+Resource            ../../../../../resources/SWENG/robot/Counters.robot
+Resource            ../../../../../resources/SWENG/robot/Oam.robot
+Resource            ../../../../../resources/SWENG/robot/CfgFilesTools.robot
+Resource            ../../../../../resources/SWENG/robot/Setup.robot
+Resource            ../../../../../resources/SWENG/robot/Scf.robot
+Resource            ../../../../../resources/SWENG/robot/Sherpa.robot
+
+Variables           ../../../../../resources/SWENG/python/Colors.py
+
+
+*** Variables ***
+${gnb_alias}                        gnb_under_test
+
+&{counter_DL_RLCdataPDUvolume}      QCI1=M55310C01001
+...                                 QCI6=M55310C01006
+...                                 QCI9=M55310C01009
+
+&{counter_DL_RLC_sumDelay}          QCI1=M55310C05001
+...                                 QCI6=M55310C05006
+...                                 QCI9=M55310C05009
+
+&{counter_DL_PDCP_SDUnb}            QCI1=M55311C02001
+...                                 QCI6=M55311C02006
+...                                 QCI9=M55311C02009
+
+@{counters_initial_dl_transmission}            M55300C00000    M55300C00001    M55300C00002    M55300C00003
+...                                            M55300C00004    M55300C00005    M55300C00006    M55300C00007
+...                                            M55300C00008    M55300C00009    M55300C00010    M55300C00011
+...                                            M55300C00012    M55300C00013    M55300C00014    M55300C00015
+...                                            M55300C00016    M55300C00017    M55300C00018    M55300C00019
+...                                            M55300C00020    M55300C00021    M55300C00022    M55300C00023
+...                                            M55300C00024    M55300C00025    M55300C00026    M55300C00027
+...                                            M55300C00028
+
+@{counters_success_dl_transmission}            M55300C02000    M55300C02001    M55300C02002    M55300C02003
+...                                            M55300C02004    M55300C02005    M55300C02006    M55300C02007
+...                                            M55300C02008    M55300C02009    M55300C02010    M55300C02011
+...                                            M55300C02012    M55300C02013    M55300C02014    M55300C02015
+...                                            M55300C02016    M55300C02017    M55300C02018    M55300C02019
+...                                            M55300C02020    M55300C02021    M55300C02022    M55300C02023
+...                                            M55300C02024    M55300C02025    M55300C02026    M55300C02027
+...                                            M55300C02028
+
+${counter_DataSlotWithPDSCH}                   M55308C00005
+
+# CB008238 counters
+${counter_MICRO_DTX_OPTIMIZED}      M55308C33000
+${counter_MICRO_DTX_NO_BUNDLING}    M55308C33001
+
+
+
+${AverageDelayMax}               6
+
+${default_cell_bound}            8
+
+${Cs1ThresholdHigh}              4
+
+${Cs1ThresholdLow}               4
+
+${DtxCellEnablingTimer}          50
+
+# rdDtxCS1SizeThreshold
+${RD_DtxCS1SizeThreshold}                        0x580578
+
+#rdDtxCellNbUeCs1ThresholdHigh_percent
+${RD_DtxCellNbUeCs1ThresholdHigh_percent}        0x580574
+
+#rdDtxCellNbUeCs1ThresholdLow_percent
+${RD_DtxCellNbUeCs1ThresholdLow_percent}         0x580575
+
+#rdDtxCellEnablingTime_ms
+${RD_DtxCellEnablingTimer_ms}                    0x580576
+
+
+*** Keywords ***
+CB008238 CellSetup
+    [Documentation]                 Keyword to configure the TL.
+    ...                             Common parameters:
+    ...                               actDtxOptimzedScheduler: enable/disable uDTX, default: true
+    ...                               MaxRetentionDelay: max retention delay value, default: 10
+    ...                               dtxPrbThreshold: uDTX PRB threshold, default: 100 to disable it
+    ...                               CallType: NSA or SA, default: NSA
+    ...                               nbUe: number of UEs to configure, default: 1
+    ...                             Parameters associated to a TC:
+    ...                               actPdschAtSsbSlots: enable/disable scheduling on SSB, default: false
+    ...                               VoNR: to configure VoNR environment, default: false
+    ...                               PRBblanking: to configure PRB blanking environment, default: false
+    ...                               CS1size: uDTX CS1 size threshold, default: 0 to disable it
+    ...                               CS1Threshold: enable/disable uDtx Nb of UE Cs1 Threshold, default: false
+    ...                               dtxDelaySinceLastScheduling: uDTX delay since last scheduling, default: 0 to disable it
+    ...                               actNonGbrServiceDif: enable/disable scheduling weight, default: false
+    ...                               schedulWeight: scheduling weight of the default bearer, default: 1
+    [Arguments]                     ${actDtxOptimzedScheduler}=true    ${MaxRetentionDelay}=10        ${dtxPrbThreshold}=100
+    ...                             ${CallType}=NSA                    ${actPdschAtSsbSlots}=false    ${VoNR}=false
+    ...                             ${nbUe}=1                          ${PRBblanking}=false           ${CS1size}=0
+    ...                             ${CS1Threshold}=false              ${dtxDelaySinceLastScheduling}=0
+    ...                             ${actNonGbrServiceDiff}=false      ${schedulWeight}=1             ${actDl256Qam}=false
+    CB008238 Config                 actDtxOptimzedScheduler=${actDtxOptimzedScheduler}    MaxRetentionDelay=${MaxRetentionDelay}
+    ...                             dtxPrbThreshold=${dtxPrbThreshold}   actPdschAtSsbSlots=${actPdschAtSsbSlots}
+    ...                             VoNR=${VoNR}    PRBblanking=${PRBblanking}    CS1size=${CS1size}    CallType=${CallType}
+    ...                             CS1Threshold=${CS1Threshold}    dtxDelaySinceLastScheduling=${dtxDelaySinceLastScheduling}
+    ...                             actNonGbrServiceDiff=${actNonGbrServiceDiff}      schedulWeight=${schedulWeight}
+    ...                             actDl256Qam=${actDl256Qam}
+    Dated Log new line              ${trcColor}--- Restart TL ${defColor}
+    Restart TL
+    CB008238 Start Capture After GNB Ready
+    Dated Log new line              ${trcColor}--- WTS setup ${CallType} ${defColor}
+    Run Keyword If                  "${CallType}" == "NSA"     WTS setup    nbUe=${nbUe}
+    Run Keyword If                  "${CallType}" == "SA"      Setup Wtsemu SA    nbUe=${nbUe}    nbSaUe=${nbUe}    shouldUseLua=${True}
+    CB008238 Capture Stop           cellSetup
+
+CB008238 CellSetup CA
+    [Arguments]                     ${actDtxOptimzedScheduler}=true    ${MaxRetentionDelay}=10                 ${dtxPrbThreshold}=100
+    ...                             ${CallType}=SA                     ${sCellActivationMethod}=blind    ${sCellDeactivationTimerGNB}=infinity
+    ...                             ${nbUe}=3                          ${dtxDelaySinceLastScheduling}=0        ${actDl256Qam}=false
+    Dated Log                       WARNING - RF50 W0919 Keyword argument '${actDl256Qam}' is not used
+    CB008238 Config CA              actDtxOptimzedScheduler=${actDtxOptimzedScheduler}    MaxRetentionDelay=${MaxRetentionDelay}
+    ...                             dtxPrbThreshold=${dtxPrbThreshold}   sCellActivationMethod=${sCellActivationMethod}
+    ...                             sCellDeactivationTimerGNB=${sCellDeactivationTimerGNB}
+    ...                             dtxDelaySinceLastScheduling=${dtxDelaySinceLastScheduling}
+
+    Dated Log new line              ${trcColor}--- Restart TL ${defColor}
+    Restart TL
+    CB008238 Start Capture After GNB Ready
+    Dated Log new line              ${trcColor}--- WTS setup ${CallType} ${defColor}
+    Run Keyword If                  "${CallType}" == "SA"      Setup Wtsemu SA    nbUe=${nbUe}    nbSaUe=${nbUe}    shouldUseLua=${False}
+    CB008238 Capture Stop           cellSetup CA
+
+CB008238 Attach NSA
+    [Arguments]                     ${ueSetting}    ${CPRTcapture}=${False}
+    Dated Log new line              ${trcColor}--- NSA call UE ${ueSetting.ue} ${defColor}
+    Run Keyword If                  ${CPRTcapture} == ${True}
+    ...                             CB008238 Start Capture Attach       UE=${ueSetting.ue}
+    SgNB Addition to ENB            ueSetting=${ueSetting}
+    Run Keyword If                  ${CPRTcapture} == ${True}
+    ...                             CB008238 Capture Stop               Attach
+
+
+CB008238 Attach SA
+    [Arguments]                     ${ueSetting}    ${CPRTcapture}=${False}    ${VoNR}=false
+    Dated Log new line              ${trcColor}--- SA call UE ${ueSetting.ue} ${defColor}
+    Run Keyword If                  ${CPRTcapture} == ${True}
+    ...                             CB008238 Start Capture Attach       UE=${ueSetting.ue}
+    UE Register                     ue=${ueSetting.ue}
+    Launch PDU Session              ue=${ueSetting.ue}    pdu=${ueSetting.ue}    gw=${ueSetting.ue}
+    Run Keyword If                  '${VoNR}'=='true'
+    ...                             CB008238 Modify PDU for VoNR        ueSetting=${ueSetting}
+    Run Keyword If                  ${CPRTcapture} == ${True}
+    ...                             CB008238 Capture Stop               Attach
+
+
+CB008238 Modify PDU for VoNR
+    [Arguments]                     ${ueSetting}
+    UE PDU Session Modify           ue=${ueSetting.ue}    pdu=${ueSetting.ue}    qfta=2    by=amf
+    UE PDU Session Modify           ue=${ueSetting.ue}    pdu=${ueSetting.ue}    qfta=3    by=amf
+
+
+CB008238 Set VoNR UE Capa
+    ${UEcapa}                       Set Variable If       '${duplexMode}' == 'TDD'    ${UEcapa_VoNR_TDD}    ${UEcapa_VoNR_FDD}
+    Modify Field in WtsEmu Cfg File    field=ue_nr_capabilities    value=${UEcapa}
+
+
+CB008238 Get Config PRBblanking
+    &{NIDD_actPRBBlanking}                   Create Dictionary    dist_name=${NRCELL_DIST_NAME}
+    ...                                                           parameter=actPRBBlanking
+    ...                                                           value=true
+
+    &{NIDD_trsMutingInBlankedPRBsEnabled}    Create Dictionary    dist_name=${NRCELL_DIST_NAME}
+    ...                                                           parameter=trsMutingInBlankedPRBsEnabled
+    ...                                                           value=true
+
+    #&{NIDD_actConnectivitySilver}            Create Dictionary    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    #...                                                           parameter=actGeneralConnectivitySilver
+    #...                                                           value=true
+
+    #&{NIDD_actConnectivityGold}              Create Dictionary    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    #...                                                           parameter=actGeneralConnectivityGold
+    #...                                                           value=true
+
+    &{NIDD_aggregationLevel}                 Create Dictionary    dist_name=${NRCELL_DIST_NAME}
+    ...                                                           parameter=aggregationLevel
+    ...                                                           value=4CCEs
+
+    &{NIDD_nbrOfBlankedPRBsLowEdgeDL}        Create Dictionary    dist_name=${NRCELL_DIST_NAME}
+    ...                                                           parameter=nbrOfBlankedPRBsLowEdgeDL
+    ...                                                           value=6
+
+    &{NIDD_nbrOfBlankedPRBsLowEdgeUL}        Create Dictionary    dist_name=${NRCELL_DIST_NAME}
+    ...                                                           parameter=nbrOfBlankedPRBsLowEdgeUL
+    ...                                                           value=6
+
+    @{param_list_PRBblanking}       Create List          ${NIDD_actPRBBlanking}    ${NIDD_trsMutingInBlankedPRBsEnabled}
+    ...                                                  ${NIDD_nbrOfBlankedPRBsLowEdgeDL}    ${NIDD_nbrOfBlankedPRBsLowEdgeUL}
+    ...                                                  ${NIDD_aggregationLevel}
+
+    [Return]    ${param_list_PRBblanking}
+
+
+CB008238 Set CS1sizeThreshold
+    [Arguments]                     ${CS1size}
+    ${prd_DtxCS1SizeThreshold}      Create Dictionary    field=${RD_DtxCS1SizeThreshold}      value=${CS1size}
+    ${list_rad_param}               Create List          ${prd_DtxCS1SizeThreshold}
+    Set Fields in swconfig DU       param_list=${list_rad_param}
+
+
+CB008238 Set CellNbUeCs1PercentThreshold
+    [Arguments]                     ${CS1Threshold}
+    Dated Log                       WARNING - RF50 W0919 Keyword argument '${CS1Threshold}' is not used
+    ${prd_CS1percentThresholdHigh}  Create Dictionary    field=${RD_DtxCellNbUeCs1ThresholdHigh_percent}   value=${Cs1ThresholdHigh}
+    ${prd_CS1percentThresholdLow}   Create Dictionary    field=${RD_DtxCellNbUeCs1ThresholdLow_percent}    value=${Cs1ThresholdLow}
+    ${prd_CellEnablingTimer}        Create Dictionary    field=${RD_DtxCellEnablingTimer_ms}               value=${DtxCellEnablingTimer}
+    ${list_rad_param}               Create List          ${prd_CS1percentThresholdHigh}    ${prd_CS1percentThresholdLow}
+    ...                                                  ${prd_CellEnablingTimer}
+    Set Fields in swconfig DU       param_list=${list_rad_param}
+
+
+CB008238 Get Config schedulWeight
+    [Arguments]                     ${schedulWeight}    ${CallType}=NSA
+    &{NIDD_actNonGbrServiceDiff}    Create Dictionary    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ...                                                  parameter=actNonGbrServiceDiff
+    ...                                                  value=true
+
+    ${bearerToFind}                 Set Variable If      "${CallType}" == "NSA"    9    6
+    ${distName}                     OAM Get nrDrbDN      callType=${CallType}    bearerId=${bearerToFind}    oam=${GNB_DU.oam}
+    &{NIDD_schedulWeight}           Create Dictionary    dist_name=${distName}
+    ...                                                  parameter=schedulWeight
+    ...                                                  value=${schedulWeight}
+
+    @{param_list_schedulWeight}     Create List          ${NIDD_actNonGbrServiceDiff}    ${NIDD_schedulWeight}
+
+    [Return]    ${param_list_schedulWeight}
+
+
+CB008238 Config
+    [Arguments]                     ${actDtxOptimzedScheduler}=true    ${MaxRetentionDelay}=20    ${dtxPrbThreshold}=100
+    ...                             ${actPdschAtSsbSlots}=false        ${VoNR}=false    ${PRBblanking}=false    ${CS1size}=0
+    ...                             ${CallType}=NSA                    ${CS1Threshold}=false      ${dtxDelaySinceLastScheduling}=0
+    ...                             ${actNonGbrServiceDiff}=false      ${schedulWeight}=1         ${actDl256Qam}=false
+
+    Run Keyword If                  '${VoNR}'=='true'                  CB008238 Set VoNR UE Capa
+    Run Keyword If                  ${CS1size}!=0                      CB008238 Set CS1sizeThreshold    CS1size=${CS1size}
+    Run Keyword If                  '${CS1Threshold}'=='true'          CB008238 Set CellNbUeCs1PercentThreshold    CS1Threshold=${CS1Threshold}
+
+    &{NIDD_actInactDetNSAUe}        Create Dictionary    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ...                                                  parameter=actInactDetNSAUe
+    ...                                                  value=false
+
+    &{NIDD_actDtxOptimSched}        Create Dictionary    dist_name=${NRCELL_DIST_NAME}
+    ...                                                  parameter=actDtxOptimizedScheduler
+    ...                                                  value=${actDtxOptimzedScheduler}
+
+    &{NIDD_dtxOptimSched_val}       Create Dictionary    dtxMaxRetentionDelay=${MaxRetentionDelay}
+    ...                                                  dtxPrbThreshold=${dtxPrbThreshold}
+    ...                                                  dtxDelaySinceLastScheduling=${dtxDelaySinceLastScheduling}
+
+    &{NIDD_dtxOptimSched_struct}    Evaluate
+    ...                             {'dist_name':'${NRCELL_DIST_NAME}','parameter':'dtxOptimizedScheduler','value':[&{NIDD_dtxOptimSched_val}]}
+
+    &{NIDD_actVoNR}                 Create Dictionary    dist_name=${NRCELL_DIST_NAME}
+    ...                                                  parameter=actVoNR
+    ...                                                  value=${VoNR}
+
+    &{NIDD_actPdschAtSsbSlots}      Create Dictionary    dist_name=${NRCELL_DIST_NAME}
+    ...                                                  parameter=actPdschAtSsbSlots
+    ...                                                  value=${actPdschAtSsbSlots}
+
+    &{NIDD_actPdschRmCsirsForTracking}    Create Dictionary    dist_name=${NRCELL_DIST_NAME}
+    ...                                                  parameter=actPdschRmCsirsForTracking
+    ...                                                  value=${actPdschAtSsbSlots}
+
+    &{NIDD_Dl256Qam}                Create Dictionary    dist_name=${NRCELL_DIST_NAME}
+    ...                                                  parameter=actDl256Qam
+    ...                                                  value=${actDl256Qam}
+
+    @{param_list}                   Create List          ${NIDD_actInactDetNSAUe}        ${NIDD_actDtxOptimSched}
+    ...                                                  ${NIDD_dtxOptimSched_struct}    ${NIDD_actVoNR}
+    ...                                                  ${NIDD_actPdschAtSsbSlots}      ${NIDD_actPdschRmCsirsForTracking}
+    ...                                                  ${NIDD_Dl256Qam}
+
+    @{param_list_PRBblanking}       Run Keyword If      '${PRBblanking}'=='true'    CB008238 Get Config PRBblanking
+    ...                             ELSE                Create List
+
+    @{param_list_ServiceDiff}       Run Keyword If      '${actNonGbrServiceDiff}'=='true'
+    ...                             CB008238 Get Config schedulWeight    schedulWeight=${schedulWeight}    CallType=${CallType}
+    ...                             ELSE                Create List
+
+    ${param_scf}                    Combine lists       ${param_list}    ${param_list_PRBblanking}    ${param_list_ServiceDiff}
+
+    Dated Log new line              ${trcColor}--- Updating SCF file with: ${param_scf} ${defColor}
+    OAM Set Params                  ${param_scf}
+
+
+CB008238 Config CA
+    [Arguments]                     ${actDtxOptimzedScheduler}=true    ${MaxRetentionDelay}=10    ${dtxPrbThreshold}=100
+    ...                             ${sCellActivationMethod}=blind     ${sCellDeactivationTimerGNB}=infinity
+    ...                             ${dtxDelaySinceLastScheduling}=0
+
+    &{NIDD_actDtxOptimSched}        Create Dictionary    dist_name=${NRCELL_DIST_NAME}
+    ...                                                  parameter=actDtxOptimizedScheduler
+    ...                                                  value=${actDtxOptimzedScheduler}
+    ...                                                  dtxDelaySinceLastScheduling=${dtxDelaySinceLastScheduling}
+
+    &{NIDD_actDtxOptimSched_cell2}  Create Dictionary    dist_name=MRBTS-1/NRBTS-1/NRCELL-3
+    ...                                                  parameter=actDtxOptimizedScheduler
+    ...                                                  value=${actDtxOptimzedScheduler}
+    ...                                                  dtxDelaySinceLastScheduling=${dtxDelaySinceLastScheduling}
+
+    &{NIDD_dtxOptimSched_val}       Create Dictionary    dtxMaxRetentionDelay=${MaxRetentionDelay}
+    ...                                                  dtxPrbThreshold=${dtxPrbThreshold}
+
+    &{NIDD_dtxOptimSched_struct}    Evaluate
+    ...                             {'dist_name':'${NRCELL_DIST_NAME}','parameter':'dtxOptimizedScheduler','value':[&{NIDD_dtxOptimSched_val}]}
+
+    &{NIDD_dtxOptimSched_struct_2}  Evaluate
+    ...                             {'dist_name':'MRBTS-1/NRBTS-1/NRCELL-3','parameter':'dtxOptimizedScheduler','value':[&{NIDD_dtxOptimSched_val}]}
+
+    &{NIDD_sCellDeactTimer}         Create Dictionary    dist_name=${NRCELL_DIST_NAME}
+    ...                                                  parameter=sCellDeactivationTimerGNB
+    ...                                                  value=${sCellDeactivationTimerGNB}
+
+    # NRCELL-3 is 60 MHz TDD with variant VARIANT_SANSA_FS_ECPRI_CMWV_FDD+TDD
+    &{NIDD_sCellDeactTimer_cell2}   Create Dictionary    dist_name=MRBTS-1/NRBTS-1/NRCELL-3
+    ...                                                  parameter=sCellDeactivationTimerGNB
+    ...                                                  value=${sCellDeactivationTimerGNB}
+
+    &{NIDD_sCellActivationMethod}   Create Dictionary    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ...                                                  parameter=sCellActivationMethod
+    ...                                                  value=${sCellActivationMethod}
+
+    @{param_list}                   Create List          ${NIDD_actDtxOptimSched}        ${NIDD_dtxOptimSched_struct}
+    ...                                                  ${NIDD_actDtxOptimSched_cell2}  ${NIDD_dtxOptimSched_struct_2}
+
+    @{param_list_CA}                Create List          ${NIDD_sCellActivationMethod}   ${NIDD_sCellDeactTimer}
+    ...                                                  ${NIDD_sCellDeactTimer_cell2}
+
+    ${param_scf}                    Combine lists        ${param_list}    ${param_list_CA}
+
+    Dated Log new line              ${trcColor}--- Updating SCF file with: ${param_scf} ${defColor}
+    OAM Set Params                  ${param_scf}
+
+
+########################  Traces KWs  ########################
+#CB008238 Start Capture After GNB Ready
+#    [Documentation]                 ORIGINAL CODE TO BE RESTORED WHEN THE PR803992 (ASIM board not detected) IS FIXED
+#    ...                             DO NOT FORGET TO REMOVE TEMPORARY CODE BELOW
+#
+#    ${CaptureCPRT_setup}            Capture CPRT Set upon config
+#    ${TestNameWOspace}              getFormattedTestName
+#
+#    ${CaptureCPRT_setup.filter}     Get Filter For SCTP
+#    # Filter to use when CNI-78299 will be implemented again:
+#    #${CaptureCPRT_setup.filter}     Get Filter For TCP
+#    Capture Init                    ${CaptureCPRT_setup}             withTN=True             suffix=_setup
+#
+#    ${CaptureCore_setup}            Capture CORE Set Upon Config
+#    Capture Init                    ${CaptureCore_setup}             withTN=True             suffix=_setup
+#
+#    Capture Start                   ${CaptureCPRT_setup}
+#    Capture Start                   ${CaptureCore_setup}
+#    Set Suite Variable              ${CaptureCPRT_setup}
+#    Set Suite Variable              ${CaptureCore_setup}
+
+CB008238 Start Capture After GNB Ready
+    [Documentation]                 TEMPORARY CODE TO BE REMOVED WHEN THE PR803992 (ASIM board not detected) IS FIXED
+    Dated log                       >>> WARNING: ASIM board not detected (PR803992)=> CPRT TRACES ARE TEMPORARILY INHIBITED
+    ${TestNameWOspace}              getFormattedTestName
+    ${CaptureCore_setup}            Capture CORE Set Upon Config
+    Capture Init                    ${CaptureCore_setup}            withTN=True                     suffix=_setup
+    Capture Start                   ${CaptureCore_setup}
+    Set Suite Variable              ${CaptureCore_setup}
+
+
+CB008238 Start Capture Attach
+    [Arguments]                     ${UEid}=1
+    ${TestNameWOspace}              getFormattedTestName
+
+    ${CaptureCPRT_attach}           Capture CPRT Set upon config
+    ${CaptureCPRT_attach.filter}    Get Filter For TCP
+    Capture Init                    ${CaptureCPRT_attach}            withTN=True             suffix=_attach_${UEid}
+
+    ${CaptureCore_attach}           Capture CORE Set Upon Config
+    Capture Init                    ${CaptureCore_attach}            withTN=True             suffix=_attach_${UEid}
+
+    Capture Start                   ${CaptureCPRT_attach}
+    Capture Start                   ${CaptureCore_attach}
+    Set Suite Variable              ${CaptureCPRT_attach}
+    Set Suite Variable              ${CaptureCore_attach}
+
+
+#CB008238 Capture Stop
+#    [Documentation]                 ORIGINAL CODE TO BE RESTORED WHEN THE PR803992 (ASIM board not detected) IS FIXED
+#    ...                             DO NOT FORGET TO REMOVE TEMPORARY CODE BELOW
+#
+#    [Arguments]                     ${step}
+#    Run Keyword If                  "${step}" == "cellSetup"         Run Keywords
+#    ...                             Capture Stop                     ${CaptureCore_setup}
+#    ...                             AND
+#    ...                             Capture Stop                     ${CaptureCPRT_setup}
+#    Run Keyword If                  "${step}" == "Attach"            Run Keywords
+#    ...                             Capture Stop                     ${CaptureCore_attach}
+#    ...                             AND
+#    ...                             Capture Stop                     ${CaptureCPRT_attach}
+
+
+CB008238 Capture Stop
+#    [Documentation]                 TEMPORARY CODE TO BE RESTORED WHEN THE PR803992 (ASIM board not detected) IS FIXED
+    [Arguments]                     ${step}
+    ...                             ${CPRTcapture}=${False}
+    Dated log                       >>> WARNING: ASIM board not detected (PR803992) => CPRT TRACES ARE TEMPORARILY INHIBITED
+    Run Keyword If                  "${step}" == "cellSetup" and ${CPRTcapture} == ${True}
+    ...                             Capture Stop                     ${CaptureCPRT_setup}
+
+    Run Keyword If                  "${step}" == "cellSetup"
+    ...                             Capture Stop                     ${CaptureCore_setup}
+
+    Run Keyword If                  "${step}" == "Attach" and ${CPRTcapture} == ${True}
+    ...                             Capture Stop                     ${CaptureCPRT_attach}
+
+    Run Keyword If                  "${step}" == "Attach"
+    ...                             Capture Stop                     ${CaptureCore_attach}
+
+
+##########################  TM BLER  ##########################
+CB008238 activate DL BLER
+    [Documentation]                 Activate DL BLER Target for the UE (per thousand).
+    ...                             Number of elements correspond to 1st transmission, 2nd to 8th re-transmission
+    ...                             e.g. BLER=200,100 means 20% initial BLER and 10% BLER on retrans.
+    [Arguments]                     ${UEid}=1    ${BLER}=100
+
+    # Define BLER configurations
+    wtsemu.bler_testmode_nr         profile_id=${UEid}
+    ...                             dl_bler=${BLER}
+
+    wtsemu.ue_testmode_set_nr       id=${UEid}
+    ...                             testmode=bler
+    ...                             profile_id=${UEid}
+    ...                             scell=${default_cell_bound}
+    ...                             action=activate
+
+CB008238 deactivate DL BLER
+    [Documentation]                 Deactivate DL BLER Target for the UE
+    [Arguments]                     ${UEid}=1
+
+    wtsemu.ue_testmode_set_nr       id=${UEid}
+    ...                             testmode=bler
+    ...                             profile_id=${UEid}
+    ...                             scell=${default_cell_bound}
+    ...                             action=deactivate
+
+
+#########################  Check KWs  #########################
+CB008238 get PM files
+    CB008238 Get Reporting Interval PM
+    Traced Sleep                    ${reportingIntervalPm}[0]    msg=waiting PM counter generation
+    ${pm_path}                      Set Variable                 ${LOG_PATH}/pm_files
+    ${pm_latest}                    Collect PM files from BTS    ${pm_path}
+    Set Suite Variable              ${pm_path}
+
+CB008238 Get Reporting Interval PM
+    ${CURRENT_SCF}                  OAM Get SCF File
+    ...                             oam=${GNB_DU.oam}            file=SCF_DU_Current.xml
+    SCF StartSession                scf_file=${CURRENT_SCF}
+    ${dist_name}                    Set Variable                 MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/PMCADM-1
+    ${reportingIntervalPm}          SCF Get Single Value         ${dist_name}           reportingIntervalPm
+    SCF StopSession                 scf_file=${CURRENT_SCF}
+    Dated Log new line              ${trcColor}- ReportingIntervalPm is: ${reportingIntervalPm} ${defColor}
+    Set Suite Variable              ${reportingIntervalPm}
+
+CB008238 check CellSetup
+    [Arguments]                     ${actDtxOptimzedScheduler}    ${MaxRetentionDelay}    ${dtxPrbThreshold}
+    Dated Log new line              ${trcColor}=== Check cell setup ${defColor}
+
+    ${pdmlFile}                     analyzer.pcap_to_pdml         ${CaptureCPRT_setup.path}
+
+    ${actDtxOptimzedSchedulerVal}     Set Variable If   '${actDtxOptimzedScheduler}'=='true'    True    False
+    ${MaxRetentionDelayHexa}          Convert To Hex    ${MaxRetentionDelay}   prefix=0x    length=4    lowercase=${True}
+    ${dtxPrbThresholdHexa}            Convert To Hex    ${dtxPrbThreshold}     prefix=0x    length=4    lowercase=${True}
+
+    ${actDtxOptimzedSchedulerPath}    set variable       itf_l2_ps_cell_CellSetupReq_t.actDtxOptimizedScheduler
+    ${MaxRetentionDelayPath}          set variable       itf_l2_ps_DtxOptimizedScheduler.dtxMaxRetentionDelay
+    ${dtxPrbThresholdPath}            set variable       itf_l2_ps_DtxOptimizedScheduler.dtxPrbThreshold
+
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_cellsetupreq
+    ...                             path=${actDtxOptimzedSchedulerPath}
+    ...                             value=${actDtxOptimzedSchedulerVal}
+
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_cellsetupreq
+    ...                             path=${MaxRetentionDelayPath}
+    ...                             value=${MaxRetentionDelay}
+
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_cellsetupreq
+    ...                             path=${dtxPrbThresholdPath}
+    ...                             value=${dtxPrbThreshold}
+
+CB008238 check DL Data Volume
+    [Arguments]                 ${QCI}    ${expectedDataVol}
+    Dated Log new line          ${trcColor}=== Check DL data volume counters for ${QCI} ${defColor}
+
+    ${counter_dataVol}          Get From Dictionary     ${counter_DL_RLCdataPDUvolume}     ${QCI}
+    ${data_volume}              Retrieve Counter Sum of Values From Pm Files For Object With Name
+    ...                         ${pm_path}     NRCELL    ${counter_dataVol}    object_id=${NRCELL_ID}
+
+    Dated Log new line          ${trcColor}- ${counter_dataVol} : ${data_volume} (expected ${expectedDataVol}) ${defColor}
+    ${Status}                   Set Variable If    ${data_volume} > ${expectedDataVol}    ${True}    ${False}
+    [Return]                    ${Status}
+
+CB008238 check DL BLER
+    [Arguments]                 ${maxBLER}=10
+    Dated Log new line          ${trcColor}=== Check DL BLER ${defColor}
+
+    # 1. Initial transmission
+    ${num_of_initial_transmission}          Set Variable      0
+    FOR    ${counter}    IN    @{counters_initial_dl_transmission}
+        ${value}              Retrieve Counter Sum of Values From Pm Files For Object With Name
+        ...                   ${pm_path}    NRCELL    ${counter}    object_id=${NRCELL_ID}
+
+        ${num_of_initial_transmission}      Evaluate          ${num_of_initial_transmission} + ${value}
+    END
+    Dated Log new line          ${trcColor}- Number of initial DL transmission: ${num_of_initial_transmission} ${defColor}
+
+    # 2. Successful transmission
+    ${num_of_successful_transmission}       Set Variable      0
+    FOR    ${counter}    IN    @{counters_success_dl_transmission}
+
+        ${value}              Retrieve Counter Sum of Values From Pm Files For Object With Name
+        ...                   ${pm_path}    NRCELL    ${counter}    object_id=${NRCELL_ID}
+
+        ${num_of_successful_transmission}     Evaluate        ${num_of_successful_transmission} + ${value}
+    END
+    Dated Log new line          ${trcColor}- Number of successful DL transmission: ${num_of_successful_transmission} ${defColor}
+
+    ${bler_level}   Run Keyword If  ${num_of_initial_transmission}!=0
+    ...             Evaluate    (${num_of_initial_transmission} - ${num_of_successful_transmission})*100 / ${num_of_initial_transmission}
+    ...             ELSE
+    ...             Set Variable    100
+
+    Dated Log new line          ${trcColor}- DL BLER: ${bler_level}% (expected max ${maxBLER}%) ${defColor}
+    ${Status}                   Set Variable If    ${bler_level} < ${maxBLER}    ${True}    ${False}
+    [Return]                    ${Status}
+
+CB008238 get Average Delay
+    [Arguments]                 ${QCI}
+    Dated Log new line          ${trcColor}=== Compute average delay for ${QCI} ${defColor}
+
+    ${counter_sumDelay}         Get From Dictionary     ${counter_DL_RLC_sumDelay}     ${QCI}
+    ${counter_PDUnb}            Get From Dictionary     ${counter_DL_PDCP_SDUnb}       ${QCI}
+    ${sumDelay}                 Retrieve Counter Sum of Values From Pm Files For Object With Name
+    ...                         ${pm_path}     NRCELL    ${counter_sumDelay}    object_id=${NRCELL_ID}
+    ${PDUnb}                    Retrieve Counter Sum of Values From Pm Files For Object With Name
+    ...                         ${pm_path}     NRDU    ${counter_PDUnb}       object_id=1
+
+    ${AverageDelay}             Evaluate    ${sumDelay} / ${PDUnb} / 1000.0
+    Dated Log new line          ${trcColor}- Average delay for ${QCI} : ${AverageDelay} ${defColor}
+    [Return]                    ${AverageDelay}
+
+CB008238 get uDTX counters
+        ${uDTX_OPTIMIZED}     Retrieve Counter Sum of Values From Pm Files For Object With Name
+        ...                   ${pm_path}    NRCELL    ${counter_MICRO_DTX_OPTIMIZED}    object_id=${NRCELL_ID}
+        ${uDTX_NO_BUNDLING}   Retrieve Counter Sum of Values From Pm Files For Object With Name
+        ...                   ${pm_path}    NRCELL    ${counter_MICRO_DTX_NO_BUNDLING}    object_id=${NRCELL_ID}
+        [Return]              ${uDTX_OPTIMIZED}    ${uDTX_NO_BUNDLING}
+
+CB008238 get number of slot with PDSCH
+        ${SlotWithPDSCH}      Retrieve Counter Sum of Values From Pm Files For Object With Name
+        ...                   ${pm_path}    NRCELL    ${counter_DataSlotWithPDSCH}    object_id=${NRCELL_ID}
+        [Return]              ${SlotWithPDSCH}
+
+
+####################  Setup/Teardown KWs  ####################
+CB008238 Test Setup
+    [Documentation]             Perform needed actions at the begining of a test case
+    Init Trace color
+
+CB008238 Test Teardown
+    [Documentation]             Perform needed actions at the end of a test case
+    Restore Files               listFileDesc=${FD_ALL}
+
+    # "Test Teardown" KW from Setup.robot
+    Test Teardown
+
+Init Trace color
+    ${trcColor}                 Evaluate    "${CYAN}"
+    ${defColor}                 Evaluate    "${NORMAL}"
+    ${OkColor}                  Evaluate    "${GREEN}"
+    Set Suite Variable          ${trcColor}
+    Set Suite Variable          ${defColor}
+    Set Suite Variable          ${OkColor}

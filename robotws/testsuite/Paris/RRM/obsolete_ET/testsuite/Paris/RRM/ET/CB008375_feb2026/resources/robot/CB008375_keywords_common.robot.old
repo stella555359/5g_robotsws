@@ -1,0 +1,394 @@
+*** Settings ***
+Documentation     [PURPOSE] keywords used for CB007103 feature
+...
+...               Automation author           : anne.enyih@nokia.com
+
+
+Library           ../../../../../resources/SWENG/python/CoamParameter.py      WITH NAME   sweng_coam_parameter
+Library           taf.sbts.oam.coam.admin                                     WITH NAME   taf_sbts_coam
+## Library           luashark_tools.analyzer       WITH NAME   analyzer
+Library           Collections
+Library           OperatingSystem
+library           ../python/kwmkt_csvParser.py
+library           ../python/miscellaneous.py
+
+Resource          ../../../resources/robot/KeyWordMarket.robot
+Resource           ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource           ../../../../../resources/SWENG/robot/Connect.robot
+Resource           ../../../../../resources/SWENG/robot/Counters.robot
+
+*** Variables ***
+${CommissionToDo}                     ${True}
+${BtsLogStarted}                      ${False}
+# ${RRCScriptspath}                     ${CURDIR}/../resources/python
+${RRCScriptsname}                     verify_reconfig.py
+${VMmonitoring}                       ${False}  #will create a MONITORING directory, collect Top info each 20s and do a preprocessing of data
+
+
+${scf_type}                           Vdu
+
+
+&{8375_PDCP_DRB_4_Counter_Expected_FDD}        PM_ID=M55319C12006
+...                                            Expected_value=5000000
+...                                            TYPE=PDCP
+...                                            isCellCounter=FALSE
+...                                            DRB=4
+
+&{8375_PDCP_DRB_4_Counter_Expected_TDD}        PM_ID=M55319C12006
+...                                            Expected_value=45000000
+...                                            TYPE=PDCP
+...                                            isCellCounter=FALSE
+...                                            DRB=4
+
+&{8375_PDCP_DRB_5_Counter_Expected}            PM_ID=M55319C12007
+...                                            Expected_value=1000
+...                                            TYPE=PDCP
+...                                            isCellCounter=FALSE
+...                                            DRB=5
+
+&{8375_RLC_DRB_4_Counter_Expected_FDD}         PM_ID=M55311C02006
+...                                            Expected_value=4000000
+...                                            TYPE=RLC
+...                                            isCellCounter=FALSE
+...                                            DRB=4
+
+&{8375_RLC_DRB_4_Counter_Expected_TDD}         PM_ID=M55311C02006
+...                                            Expected_value=30000000
+...                                            TYPE=RLC
+...                                            isCellCounter=FALSE
+...                                            DRB=4
+
+&{8375_RLC_DRB_5_Counter_Expected}             PM_ID=M55311C02007
+...                                            Expected_value=500
+...                                            TYPE=RLC
+...                                            isCellCounter=FALSE
+...                                            DRB=5
+
+&{8375_MAC_Counter_Expected_FDD}               PM_ID=M55309C01001
+...                                            Expected_value=7000000000
+...                                            TYPE=MAC
+...                                            isCellCounter=TRUE
+...                                            DRB=N/A
+
+&{8375_MAC_Counter_Expected_TDD}               PM_ID=M55309C01001
+...                                            Expected_value=47000000000
+...                                            TYPE=MAC
+...                                            isCellCounter=TRUE
+...                                            DRB=N/A
+
+
+&{8375_BOP_Non_Crit_Thresh_Counter_Expected}   PM_ID=M55350C00036
+...                                            Expected_value=2000000
+...                                            TYPE=PDCP
+...                                            isCellCounter=TRUE
+...                                            DRB=N/A
+
+
+&{8375_BOP_Crit_Thresh_Counter_Expected}       PM_ID=M55320C02021
+...                                            Expected_value=1000000
+...                                            TYPE=PDCP
+...                                            isCellCounter=FALSE
+...                                            DRB=N/A
+
+*** Keywords ***
+#FTS------------------------------------------------------------------------
+
+# basic block ---------------------------------------------------------------------------------------------------------
+
+Set_basic_context
+    [Documentation]    Adds basic.cfg elements for CB07103.
+    ...                Adapts basic.cfg for each engaged UE.
+    ...                Sets UE on a specific cell if a target cell is defined.
+    ...                Sets UE context if UE NR capabilities are defined.
+
+    Dated Log New Line   Add basic.cfg elements for CB07103
+
+    FOR     ${idx}     IN                            @{param.ListOfUeEngaged}
+            kwmkt_dbg_log                            basic.cfg adaptation for UE=${idx.ueid}
+
+            Run Keyword If                          '${idx.Target_cell}'!='${EMPTY}'    kwmkt_SetUExonCelly    ${idx.ueid}    ${idx.Target_cell}
+            Run Keyword If                          '${idx.ue_nr_capabilities}'!='${EMPTY}'
+            ...                                      kwmkt_Set_Context_basic
+            ...                                      ue_id_used=${idx.ueid}
+            ...                                      capa=${idx.ue_nr_capabilities}
+            ...                                      release=${idx.ue_release}
+            ...                                      APPdcpPacketTrunc=${True}
+    END
+
+
+
+Set_cfg_file_dedicated_bearer
+    kwmkt_dbg_log       Adding Dedicated bearer
+    WtsCfgConfig.startSession
+	${line}             getIndexUsingParam   prefix=set_qosflow    paramId=id    paramVal=1
+	kwmkt_dbg_log       First line is ${line}
+    setConfigLine       configuration=set_qosflow id=4 5qi=7  #TCP
+	...                 line=${line+2}
+	kwmkt_dbg_log       Added qos_flow on line=${line+2}
+
+    ${line}             getIndexUsingParam   prefix=set_qosflow    paramId=id    paramVal=1
+	kwmkt_dbg_log       Second line is ${line}
+    setConfigLine       configuration=set_qosrule id=3 proto=tcp qos_flow=4
+	...                 line=${line+3}
+	kwmkt_dbg_log       Added qos_rules on line=${line+3}
+
+    ${prefix}           Set variable  nwslice_set id=1
+    ${oldValue}           getParam        prefix=${prefix}    param=qos_flows    ignore_comments=True
+    replaceValue          prefix=${prefix}    occurrence=${-1}
+    ...                   param=qos_flows
+    ...                   oldValue=${oldValue}
+    ...                   newValue=1,2,3,4
+    ...                   ignore_comments=True
+
+	${oldValue}           getParam        prefix=${prefix}    param=qos_rules    ignore_comments=True
+    replaceValue          prefix=${prefix}    occurrence=${-1}
+    ...                   param=qos_rules
+    ...                   oldValue=${oldValue}
+    ...                   newValue=1,2,3
+    ...                   ignore_comments=True
+	#deleteConfig        ${line}
+    WtsCfgConfig.stopSession
+
+
+
+Launch iperf traffic severs
+    #[Arguments]     ${param}
+    #...				$traffic_type
+    #...	            $port
+    Start iperf server udp
+    sleep    5sec
+
+	Start iperf server tcp
+    sleep    5sec
+
+    #Verify Ping Traffic
+
+
+Start iperf server udp
+    #[Arguments]     ${pattern}   ${packetsize}    ${bearerIp}   ${interval}
+    # Login to LTE emu
+    ${alias}     SSH Connect      host=${HOST_EPCSIM}
+    SSH Cmd     alias=${alias}
+    ...         readOuput=False
+    ...         command=iperf -s -p 7068 -i 1 -B 10.0.2.1 -t 3600 -f KBytes -u >/dev/null&
+
+Start iperf server tcp
+    #[Arguments]     ${pattern}   ${packetsize}    ${bearerIp}   ${interval}
+    # Login to LTE emu
+    ${alias}     SSH Connect      host=${HOST_EPCSIM}
+    SSH Cmd     alias=${alias}
+    ...         readOuput=False
+    ...         command=iperf -s -p 7072 -i 1 -B 10.0.2.1 -t 3600 -f KBytes >/dev/null&
+
+
+Launch iperf traffic Clients
+    #[Arguments]     ${param}
+    #...				$traffic_type
+    #...	            $port
+    Start iperf client udp
+    sleep    5sec
+
+	Start iperf client tcp
+    sleep    5sec
+
+    #Verify Ping Traffic
+
+
+Start iperf client udp
+    #[Arguments]     ${pattern}   ${packetsize}    ${bearerIp}   ${interval}
+    # Login to LTE emu
+    ${alias}     SSH Connect      host=${HOST_EPCSIM}
+    SSH Cmd     alias=${alias}
+    ...         readOuput=False
+    ...         command=iperf -c 1.2.4.2 -p 7068 -l 1400 -i 1 -t 3600 -B 10.0.2.1 -b 750M -u >/dev/null&
+
+Start iperf client tcp
+    #[Arguments]     ${pattern}   ${packetsize}    ${bearerIp}   ${interval}
+    # Login to LTE emu
+    ${alias}     SSH Connect      host=${HOST_EPCSIM}
+    SSH Cmd     alias=${alias}
+    ...         readOuput=False
+    ...         command=iperf -c 1.2.4.2 -p 7072 -l 1400 -i 1 -t 3600 -B 10.0.2.1 -b 20M >/dev/null&
+
+
+Stop all iperf traffic
+    ${alias}     SSH Connect      host=${HOST_EPCSIM}
+    SSH Cmd      alias=${alias}
+    ...          command=killall iperf
+
+
+Collect Lastest PM Counters File
+    [Documentation]                 KW to get counters and store in specific directory with day date
+    ${date}                         Get Current Date
+    ${date_in_dir_name}             Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                  Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+    Dated Log                       The PM counters file collected from gnb will be stored under : ${log_path_pm}
+    ${pm_latest}                    Counters.Collect PM files from BTS      ${log_path_pm}
+    set Suite Variable              ${LATEST_PM_FILE}       ${pm_latest}
+    set Suite Variable              ${log_path_pm}
+    Dated Log                       Latest pm counters file : ${LATEST_PM_FILE}
+
+Verify Pm counters B1 nCrit Threshold
+    Dated Log                       Running the non-Critical counter set
+    Check 8375 PM Counters Expected values          ${8375_PDCP_DRB_4_Counter_Expected_TDD}
+    Check 8375 PM Counters Expected values          ${8375_RLC_DRB_4_Counter_Expected_TDD}
+    Check 8375 PM Counters Expected values cell     8395_PM_Counters_Expected=${8375_MAC_Counter_Expected_TDD}
+    Check 8375 PM Counters Expected values cell     8395_PM_Counters_Expected=${8375_BOP_Non_Crit_Thresh_Counter_Expected}
+
+Verify Pm counters B1 Crit Threshold
+    Dated Log                       Running the Critical counter set
+    Check 8375 PM Counters Expected values          ${8375_PDCP_DRB_4_Counter_Expected_TDD}
+    Check 8375 PM Counters Expected values          ${8375_RLC_DRB_4_Counter_Expected_TDD}
+    Check 8375 PM Counters Expected values cell     8395_PM_Counters_Expected=${8375_MAC_Counter_Expected_TDD}
+    Check 8375 PM Counters Expected values          8395_PM_Counters_Expected=${8375_BOP_Crit_Thresh_Counter_Expected}
+
+Verify Pm counters FDD
+    Dated Log                       Running the FDD counter set
+    Check 8375 PM Counters Expected values          ${8375_PDCP_DRB_4_Counter_Expected_FDD}
+    Check 8375 PM Counters Expected values          ${8375_PDCP_DRB_5_Counter_Expected}
+    Check 8375 PM Counters Expected values          ${8375_RLC_DRB_4_Counter_Expected_FDD}
+    Check 8375 PM Counters Expected values          ${8375_RLC_DRB_5_Counter_Expected}
+    Check 8375 PM Counters Expected values cell     8395_PM_Counters_Expected=${8375_MAC_Counter_Expected_FDD}
+    ...                                              cell_id=3
+
+
+Check 8375 PM Counters Expected values
+    [Documentation]                 To Check 8375 PM counter values are as exepected
+    [Arguments]                     ${8395_PM_Counters_Expected}
+
+
+    Dated Log                       =======================================================================
+    Dated Log                       Checking PM counter : ${8395_PM_Counters_Expected.TYPE}: ${8395_PM_Counters_Expected.PM_ID}
+    ...                             : ${8395_PM_Counters_Expected.DRB}
+    Dated Log                       --------------------------------------------------------------------------------
+
+    ${Value_PM_Counter}=            Counters.Retrieve Latest Single Counter Value From Pm File
+    ...                             ${LATEST_PM_FILE}       ${8395_PM_Counters_Expected.PM_ID}
+
+
+    Dated Log                       Value of PM counter : ${8395_PM_Counters_Expected.PM_ID} : ${Value_PM_Counter}
+
+	should be true                  ${Value_PM_Counter} > ${8395_PM_Counters_Expected.Expected_value}
+
+	Dated Log                       Counter value = ${Value_PM_Counter} is > ${8395_PM_Counters_Expected.Expected_value} as expected
+
+
+Check 8375 PM Counters Expected values cell
+    [Documentation]                 To Check 8375 PM counter values are as exepected
+    [Arguments]                     ${8395_PM_Counters_Expected}
+    ...                             ${cell_id}=1
+
+    Dated Log                       ======================================================================
+    Dated Log                       Checking PM counter : ${8395_PM_Counters_Expected.TYPE}: for cell ${cell_id}
+    Dated Log                       --------------------------------------------------------------------------------
+
+
+    ${Value_PM_Counter}=            Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                             ${LATEST_PM_FILE}       ${8395_PM_Counters_Expected.PM_ID}       ${cell_id}
+    Dated Log                       --------------------------------------------------------------------------------
+    Dated Log                       Value of PM counter : ${8395_PM_Counters_Expected.PM_ID} : cell : ${cell_id} : ${Value_PM_Counter}
+
+    should be true                  ${Value_PM_Counter} > ${8395_PM_Counters_Expected.Expected_value}
+
+	Dated Log                       Counter value = ${Value_PM_Counter} is > ${8395_PM_Counters_Expected.Expected_value} as expected
+
+# SCF NIDD block  -----------------------------------------------------------------------------------------------------
+
+
+Set_SCF_ofTheTest
+    [Documentation]    Sets ChBw and eventual NIDD param on the fly.
+    ...                Retrieves the SCF file and starts a session.
+    ...                Iterates over a list of parameters to modify in the SCF.
+    ...                Modifies the SCF either by setting an element or setting an element in a list.
+    ...                Logs the modifications made to the SCF.
+    ...                Stops the SCF session and performs a full commissioning.
+    ...                Waits for OAM to be available after commissioning.
+    [Arguments]                        ${L}=None
+    kwmkt_dbg_log                      KW: Set_SCF_ofTheTest Arg: ${L}
+
+    OAM Get SCF File                   file=SCF_intermediate_8375.xml
+    ${scf_file_update_path}            set variable             ${LOG_PATH}/SCF_intermediate_8375.xml
+
+    SCF StartSession              scf_file=${scf_file_update_path}
+
+    kwmkt_dbg_log                      Scf Dic key list:${L}
+
+    FOR    ${Lidx}     IN               @{L}
+
+           ${dist_name}=                                               Get From Dictionary         ${Lidx}    dist_name
+           ${status}  ${response}=     Run Keyword And Ignore Error    Get From Dictionary         ${Lidx}    list_name
+        #    kwmkt_dbg_log               status / response : ${status} / ${response}
+           ${list_name}=               Set Variable IF    "${status}" != "PASS"    ${EMPTY}        ${response}
+           ${param}=                                                   Get From Dictionary         ${Lidx}    param
+           ${value}=                                                   Get From Dictionary         ${Lidx}    value
+           Run Keyword If              '${value}' != '${EMPTY}' and '${list_name}' == '${EMPTY}'
+           ...                                      SCF Set element    dist_name=${dist_name}
+           ...                                                         element_name=${param}
+           ...                                                         element_value=${value}
+           ...                                                         aicListEntity=vdu   scope=Both
+           ...    ELSE                              SCF Set element in List
+           ...                                                         dist_name=${dist_name}
+           ...                                                         list_name=${list_name}
+           ...                                                         element_name=${param}
+           ...                                                         element_value=${value}
+           ...                                                         aicListEntity=vdu   scope=Both
+
+           ${console_msg}              Evaluate     "Database Modifications for ${dist_name} ..... ${list_name} ..... ${param} ..... value=${value}"
+           Dated Log                   ${console_msg}
+    END
+
+    SCF StopSession               scf_file=${scf_file_update_path}
+
+    Dated Log    =======> Waiting to  perform commissioning
+    wait until keyword succeeds    10min    30s      OAM Perform Full Commissioning  scf_file=${scf_file_update_path}
+    Dated Log    =======> Commissioning done
+
+
+    # Restart TL
+    Dated Log New Line  "OAM wait available ..."
+    OAM wait available
+    Dated Log  "OAM wait available => OK"
+
+# END SCF NIDD block  -------------------------------------------------------------------------------------------------
+
+Suite Setup 8375
+    [Documentation]    Sets up the test suite for CB008375.
+    ...                Performs a suite setup with automatic teardown and keeps all UE data in the cfg file.
+    ...                Backs up files before the test.
+    ...                Initializes variables for the market.
+    ...                Initializes the capture session.
+
+    #Read And Print Version    # Read and print the version of this 8375 framework level
+    Setup.Suite Setup      automaticTeardown=${True}    keepAllUeDataInCfgFile=${True}
+    Backup Files
+    kwmkt_Init Variables
+    kwmkt_Capt_session_init
+
+Suite Teardown 8375
+    [Documentation]    Performs teardown operations for the test suite CB008375.
+    ...                Logs the start of the teardown process.
+    ...                If KeepConfig is not set, restores files and performs the suite teardown.
+
+    kwmkt_dbg_log                      Suite Teardown 8375 is ongoing !!
+    Run Keyword if                     not ${KeepConfig}    Run Keywords
+    ...                                                     Restore Files
+    ...    AND                                              Setup.Suite Teardown
+
+# Test running
+Cell_setup
+    [Documentation]    Sets up the cell for the test.
+    ...                Starts Btslog if userneed_Btslog is set.
+    ...                Logs the alarm list at the beginning of the test.
+    ...                Starts a capture if userneed_PCAP is set.
+    ...                Sets up the call with Wtsemu in SA mode.
+    ...                Stops the capture if userneed_PCAP is set.
+
+    Run Keyword If      ${userneed_Btslog}           Start Btslog
+    kwmkt_Alarmslist     Beg                          ${logsDir}
+    Run Keyword If      ${userneed_PCAP}             kwmkt_Capture_Start    cellSetup
+
+    Critical Step                                    CallSetup.Setup Wtsemu SA
+
+    Run Keyword If      ${userneed_PCAP}             kwmkt_Capture_Stop     cellSetup
+
+#---------------------------------------------------------------------------

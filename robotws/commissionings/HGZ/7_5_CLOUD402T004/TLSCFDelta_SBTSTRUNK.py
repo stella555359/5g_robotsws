@@ -1,0 +1,929 @@
+# -*- coding: utf-8 -*-
+import os
+
+__team__ = "MN 5G RAN I&V 4 Pz HZG SG1"
+__email__ = "I_MN_5G_RAN_IV4_LINE_HZG_1@internal.nsn.com"
+
+TLSCF_CELL_NUMs = [1, 2]
+
+PARAMS_TO_DELETE_HW_TOPO = [
+    dict(dist_name="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/SMOD-1"),
+    dict(dist_name="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/BBMOD-1"),
+    dict(dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1"),
+    dict(dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-1"),
+    dict(dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-2"),
+    dict(dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1"),
+    dict(
+        dist_name="MRBTS-12345/TNLSVC-1/TNL-1/IPNO-1/IPRT-1", list_name="staticRoutes"
+    ),
+]
+PARAMS_TO_DELETE_SW_COMMON = [
+    dict(dist_name="MRBTS-12345/NRBTS-12345/NRCELL-1/NRPLMNSET_SA-1"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345/NRDU-1", list_name="refNrCellGroup"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345", list_name="s1Uplane"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345", list_name="ngCplane"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345", list_name="ngUplane"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345", list_name="x2Cplane"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345", list_name="x2Uplane"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345", list_name="xnCplane"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345", list_name="xnUplane"),
+]
+PARAMS_TO_DELETE_SW_1CELL = [
+    dict(dist_name="MRBTS-12345/NRBTS-12345/NRCELL-2"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345/NRCELL-3"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345/NRCELL-4"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345/NRCELL-5"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345/NRCELL-6"),
+    dict(dist_name="MRBTS-12345/NRBTS-1/NRCELLGRP-1"),
+    dict(dist_name="MRBTS-12345/NRBTS-1/NRCELLGRP-2"),
+    dict(dist_name="MRBTS-12345/NRBTS-1/NRCELLGRP-3"),
+    dict(dist_name="MRBTS-12345/NRBTS-1/NRCELLGRP-4"),
+    dict(dist_name="MRBTS-12345/NRBTS-1/NRCELLGRP-5"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345/NRCELLGRP-0", list_name="nrCellList"),
+]
+PARAMS_TO_DELETE_SW_2CELL = [
+    dict(dist_name="MRBTS-12345/NRBTS-12345/NRCELL-3"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345/NRCELL-4"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345/NRCELL-5"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345/NRCELL-6"),
+    dict(dist_name="MRBTS-12345/NRBTS-1/NRCELLGRP-2"),
+    dict(dist_name="MRBTS-12345/NRBTS-1/NRCELLGRP-3"),
+    dict(dist_name="MRBTS-12345/NRBTS-1/NRCELLGRP-4"),
+    dict(dist_name="MRBTS-12345/NRBTS-1/NRCELLGRP-5"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345/NRCELLGRP-0", list_name="nrCellList"),
+    dict(dist_name="MRBTS-12345/NRBTS-12345/NRCELLGRP-1", list_name="nrCellList"),
+]
+TL_PARAMS_TO_DELETE_1Cell = (
+    PARAMS_TO_DELETE_HW_TOPO + PARAMS_TO_DELETE_SW_COMMON + PARAMS_TO_DELETE_SW_1CELL
+)
+TL_PARAMS_TO_DELETE_2Cell = (
+    PARAMS_TO_DELETE_HW_TOPO + PARAMS_TO_DELETE_SW_COMMON + PARAMS_TO_DELETE_SW_2CELL
+)
+
+TL_ADD_MOS_HW_TOPO = [
+    dict(
+        class_name="com.nokia.srbts.eqm:SMOD",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/SMOD-1",
+        version="EQM22R1_2109_101",
+    ),
+    dict(
+        class_name="com.nokia.srbts.eqm:BBMOD",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/BBMOD-1",
+        version="EQM22R1_2109_101",
+    ),
+    dict(
+        class_name="com.nokia.srbts.eqm:RMOD",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1",
+        version="EQM22R1_2109_101",
+    ),
+    dict(
+        class_name="com.nokia.srbts.eqm:ANTL",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-1",
+        version="EQM22R1_2109_101",
+    ),
+    dict(
+        class_name="com.nokia.srbts.eqm:ANTL",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-2",
+        version="EQM22R1_2109_101",
+    ),
+    dict(
+        class_name="com.nokia.srbts.eqm:RMOD",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2",
+        version="EQM22R1_2109_101",
+    ),
+    dict(
+        class_name="com.nokia.srbts.eqm:ANTL",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-1",
+        version="EQM22R1_2109_101",
+    ),
+    dict(
+        class_name="com.nokia.srbts.eqm:ANTL",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-2",
+        version="EQM22R1_2109_101",
+    ),
+    dict(
+        class_name="com.nokia.srbts.eqm:CABLINK",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-1",
+        version="EQM22R1_2109_101",
+    ),
+    dict(
+        class_name="com.nokia.srbts.eqm:CABLINK",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-2",
+        version="EQM22R1_2109_101",
+    ),
+    dict(
+        class_name="com.nokia.srbts.eqm:CABLINK",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-3",
+        version="EQM22R1_2109_101",
+    ),
+]
+TL_ADD_MOS_SW_COMMON = []
+TL_ADD_MOS_SW_CELL1 = [
+    dict(
+        class_name="com.nokia.srbts.mnl:CELLMAPPING",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1",
+        version="MNL22R1_2108_100",
+    ),
+    dict(
+        class_name="com.nokia.srbts.mnl:LCELNR",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1",
+        version="MNL22R1_2108_100",
+    ),
+    dict(
+        class_name="com.nokia.srbts.mnl:CHANNELGROUP",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1",
+        version="MNL22R1_2108_100",
+    ),
+    dict(
+        class_name="com.nokia.srbts.mnl:CHANNEL",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-1",
+        version="MNL22R1_2108_100",
+    ),
+    dict(
+        class_name="com.nokia.srbts.mnl:CHANNEL",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-2",
+        version="MNL22R1_2108_100",
+    ),
+    dict(
+        class_name="com.nokia.srbts.mnl:CHANNEL",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-3",
+        version="MNL22R1_2108_100",
+    ),
+    dict(
+        class_name="com.nokia.srbts.mnl:CHANNEL",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-4",
+        version="MNL22R1_2108_100",
+    ),
+]
+TL_ADD_MOS_SW_CELL2 = [
+    dict(
+        class_name="com.nokia.srbts.mnl:LCELNR",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2",
+        version="MNL22R1_2108_100",
+    ),
+    dict(
+        class_name="com.nokia.srbts.mnl:CHANNELGROUP",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1",
+        version="MNL22R1_2108_100",
+    ),
+    dict(
+        class_name="com.nokia.srbts.mnl:CHANNEL",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-1",
+        version="MNL22R1_2108_100",
+    ),
+    dict(
+        class_name="com.nokia.srbts.mnl:CHANNEL",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-2",
+        version="MNL22R1_2108_100",
+    ),
+    dict(
+        class_name="com.nokia.srbts.mnl:CHANNEL",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-3",
+        version="MNL22R1_2108_100",
+    ),
+    dict(
+        class_name="com.nokia.srbts.mnl:CHANNEL",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-4",
+        version="MNL22R1_2108_100",
+    ),
+]
+TL_ADD_MOS_1Cell = TL_ADD_MOS_HW_TOPO + TL_ADD_MOS_SW_COMMON + TL_ADD_MOS_SW_CELL1
+
+TL_ADD_MOS_2Cell = TL_ADD_MOS_1Cell + TL_ADD_MOS_SW_CELL2
+
+PARAMS_TO_MODIFY_HW_TOPO = [
+    dict(
+        value="474021A.101",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/SMOD-1",
+        p_name="prodCodePlanned",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/SMOD-1",
+        p_name="climateControlOcxoTemperatureLearning",
+    ),
+    dict(
+        value="Optimized Cooling",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/SMOD-1",
+        p_name="climateControlProfiling",
+    ),
+    dict(
+        value="474020B.101",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/BBMOD-1",
+        p_name="prodCodePlanned",
+    ),
+    dict(
+        value="true",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/BBMOD-1",
+        p_name="useFullCapacity",
+    ),
+    dict(
+        value="Unlocked",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/BBMOD-1",
+        p_name="administrativeState",
+    ),
+    dict(
+        value="not used",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/BBMOD-1",
+        p_name="fddNrCellConfigTradeoff",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1",
+        p_name="actPimCancellation",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1",
+        p_name="actSnapshotCollection",
+    ),
+    dict(
+        value="Unlocked",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1",
+        p_name="administrativeState",
+    ),
+    dict(
+        value="570",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1",
+        p_name="alVoltHighThreshold",
+    ),
+    dict(
+        value="405",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1",
+        p_name="alVoltLowThreshold",
+    ),
+    dict(
+        value="5",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1",
+        p_name="alVoltUnstableThreshold",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1",
+        p_name="legacyWideCarrierMode",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1",
+        p_name="pimCancellingEnabled",
+    ),
+    dict(
+        value="474788A.101",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1",
+        p_name="prodCodePlanned",
+    ),
+    dict(
+        value="AWAKE",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1",
+        p_name="oruEnergySavingMode",
+    ),
+    dict(
+        value="1",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-1",
+        p_name="antPortId",
+    ),
+    dict(
+        value="220",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-1",
+        p_name="antennaPathDelayDL",
+    ),
+    dict(
+        value="220",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-1",
+        p_name="antennaPathDelayUL",
+    ),
+    dict(
+        value="215",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-1",
+        p_name="cwaThreshold",
+    ),
+    dict(
+        value="OFF",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-1",
+        p_name="dcVoltage",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-1",
+        p_name="hdlcCommunicationAllowed",
+    ),
+    dict(
+        value="300",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-1",
+        p_name="totalLoss",
+    ),
+    dict(
+        value="2",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-2",
+        p_name="antPortId",
+    ),
+    dict(
+        value="220",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-2",
+        p_name="antennaPathDelayDL",
+    ),
+    dict(
+        value="220",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-2",
+        p_name="antennaPathDelayUL",
+    ),
+    dict(
+        value="215",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-2",
+        p_name="cwaThreshold",
+    ),
+    dict(
+        value="OFF",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-2",
+        p_name="dcVoltage",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-2",
+        p_name="hdlcCommunicationAllowed",
+    ),
+    dict(
+        value="300",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-2",
+        p_name="totalLoss",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2",
+        p_name="actPimCancellation",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2",
+        p_name="actSnapshotCollection",
+    ),
+    dict(
+        value="Unlocked",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2",
+        p_name="administrativeState",
+    ),
+    dict(
+        value="570",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2",
+        p_name="alVoltHighThreshold",
+    ),
+    dict(
+        value="405",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2",
+        p_name="alVoltLowThreshold",
+    ),
+    dict(
+        value="5",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2",
+        p_name="alVoltUnstableThreshold",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2",
+        p_name="legacyWideCarrierMode",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2",
+        p_name="pimCancellingEnabled",
+    ),
+    dict(
+        value="474788A.101",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2",
+        p_name="prodCodePlanned",
+    ),
+    dict(
+        value="AWAKE",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2",
+        p_name="oruEnergySavingMode",
+    ),
+    dict(
+        value="1",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-1",
+        p_name="antPortId",
+    ),
+    dict(
+        value="220",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-1",
+        p_name="antennaPathDelayDL",
+    ),
+    dict(
+        value="220",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-1",
+        p_name="antennaPathDelayUL",
+    ),
+    dict(
+        value="215",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-1",
+        p_name="cwaThreshold",
+    ),
+    dict(
+        value="OFF",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-1",
+        p_name="dcVoltage",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-1",
+        p_name="hdlcCommunicationAllowed",
+    ),
+    dict(
+        value="300",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-1",
+        p_name="totalLoss",
+    ),
+    dict(
+        value="2",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-2",
+        p_name="antPortId",
+    ),
+    dict(
+        value="220",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-2",
+        p_name="antennaPathDelayDL",
+    ),
+    dict(
+        value="220",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-2",
+        p_name="antennaPathDelayUL",
+    ),
+    dict(
+        value="215",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-2",
+        p_name="cwaThreshold",
+    ),
+    dict(
+        value="OFF",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-2",
+        p_name="dcVoltage",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-2",
+        p_name="hdlcCommunicationAllowed",
+    ),
+    dict(
+        value="300",
+        dist_name="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-2",
+        p_name="totalLoss",
+    ),
+    dict(
+        value="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/SMOD-1",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-1",
+        p_name="firstEndpointDN",
+    ),
+    dict(
+        value="BACKPLANE",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-1",
+        p_name="firstEndpointLabel",
+    ),
+    dict(
+        value="1",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-1",
+        p_name="firstEndpointPortId",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-1",
+        p_name="linkModeConfiguration",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-1",
+        p_name="linkModeDC",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-1",
+        p_name="linkModeData",
+    ),
+    dict(
+        value="false",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-1",
+        p_name="linkModeSynchronization",
+    ),
+    dict(
+        value="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/BBMOD-1",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-1",
+        p_name="secondEndpointDN",
+    ),
+    dict(
+        value="BACKPLANE",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-1",
+        p_name="secondEndpointLabel",
+    ),
+    dict(
+        value="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/BBMOD-1",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-2",
+        p_name="firstEndpointDN",
+    ),
+    dict(
+        value="SFP",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-2",
+        p_name="firstEndpointLabel",
+    ),
+    dict(
+        value="1",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-2",
+        p_name="firstEndpointPortId",
+    ),
+    dict(
+        value="none",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-2",
+        p_name="iqCompression",
+    ),
+    dict(
+        value="Cpri7",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-2",
+        p_name="linkSpeed",
+    ),
+    dict(
+        value="TDDCPRI",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-2",
+        p_name="radioProtocolType",
+    ),
+    dict(
+        value="MRBTS-12345/EQM-1/APEQM-1/RMOD-1",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-2",
+        p_name="secondEndpointDN",
+    ),
+    dict(
+        value="SFP",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-2",
+        p_name="secondEndpointLabel",
+    ),
+    dict(
+        value="1",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-2",
+        p_name="secondEndpointPortId",
+    ),
+    dict(
+        value="MRBTS-12345/EQM-1/APEQM-1/CABINET-1/BBMOD-1",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-3",
+        p_name="firstEndpointDN",
+    ),
+    dict(
+        value="SFP",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-3",
+        p_name="firstEndpointLabel",
+    ),
+    dict(
+        value="2",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-3",
+        p_name="firstEndpointPortId",
+    ),
+    dict(
+        value="none",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-3",
+        p_name="iqCompression",
+    ),
+    dict(
+        value="Cpri7",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-3",
+        p_name="linkSpeed",
+    ),
+    dict(
+        value="TDDCPRI",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-3",
+        p_name="radioProtocolType",
+    ),
+    dict(
+        value="MRBTS-12345/EQM-1/APEQM-1/RMOD-2",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-3",
+        p_name="secondEndpointDN",
+    ),
+    dict(
+        value="SFP",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-3",
+        p_name="secondEndpointLabel",
+    ),
+    dict(
+        value="1",
+        dist_name="MRBTS-12345/EQM-1/HWTOP-1/CABLINK-3",
+        p_name="secondEndpointPortId",
+    ),
+    dict(
+        value="MRBTS-12345/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/MPLANENW-1",
+        p_name="mPlaneIpv4AddressDN",
+    ),
+    dict(
+        value="10.110.227.5",
+        dist_name="MRBTS-12345/NRBTS-1/SERVEDAMF-1",
+        p_name="amfIPAddress",
+    ),
+    dict(
+        value="10.57.251.186",
+        dist_name="MRBTS-12345/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1",
+        p_name="localIpAddr",
+    ),
+]
+PARAMS_TO_MODIFY_SW_COMMON = [
+    dict(value="MRBTS-12345", dist_name="MRBTS-12345", p_name="btsName"),
+    dict(value="SA+NSA", dist_name="MRBTS-12345/NRBTS-12345", p_name="gNbCuType"),
+    dict(value="true", dist_name="MRBTS-12345/NRBTS-12345", p_name="actPaging"),
+    dict(
+        value="210",
+        dist_name="MRBTS-12345/NRBTS-12345/TRACKINGAREA-210",
+        p_name="fiveGsTac",
+    ),
+    dict(value="460", dist_name="MRBTS-12345/NRBTS-12345", p_name="mcc"),
+    dict(value="2", dist_name="MRBTS-12345/NRBTS-12345", p_name="mnc"),
+    dict(value="460", dist_name="MRBTS-12345/NRBTS-12345/NRPLMN-1", p_name="mcc"),
+    dict(value="2", dist_name="MRBTS-12345/NRBTS-12345/NRPLMN-1", p_name="mnc"),
+    dict(
+        value="config1",
+        dist_name="MRBTS-12345/NRBTS-12345",
+        p_name="pdschRat0RbgConfig",
+    ),
+]
+PARAMS_TO_MODIFY_SW_CELL1 = [
+    dict(
+        value="MRBTS-12345/NRBTS-12345/TRACKINGAREA-210",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-1",
+        p_name="trackingAreaDN",
+    ),
+    dict(
+        value="SA+NSA",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-1",
+        p_name="cellDepType",
+    ),
+    dict(value="1", dist_name="MRBTS-12345/NRBTS-12345/NRCELL-1", p_name="lcrId"),
+    dict(value="51", dist_name="MRBTS-12345/NRBTS-12345/NRCELL-1", p_name="physCellId"),
+    dict(value="40MHz", dist_name="MRBTS-12345/NRBTS-12345/NRCELL-1", p_name="chBw"),
+    dict(
+        value="20000",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-1",
+        p_name="configuredEpsTac",
+    ),
+    dict(
+        value="98",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-1",
+        p_name="prachConfigurationIndex",
+    ),
+    dict(
+        value="TDD",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-1",
+        p_name="cellTechnology",
+    ),
+    dict(
+        value="78",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-1",
+        p_name="freqBandIndicatorNR",
+    ),
+    dict(
+        value="2x2 Open Loop Spatial Multiplexing",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-1",
+        p_name="dlMimoMode",
+    ),
+    dict(value="7854", dist_name="MRBTS-12345/NRBTS-12345/NRCELL-1", p_name="gscn"),
+    dict(
+        value="2DL2UL",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-1",
+        p_name="nrCellType",
+    ),
+    dict(
+        value="634000", dist_name="MRBTS-12345/NRBTS-12345/NRCELL-1", p_name="nrarfcn"
+    ),
+    dict(
+        value="TX",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-1",
+        p_name="direction",
+    ),
+    dict(
+        value="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-1",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-1",
+        p_name="antlDN",
+    ),
+    dict(
+        value="RX",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-2",
+        p_name="direction",
+    ),
+    dict(
+        value="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-1",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-2",
+        p_name="antlDN",
+    ),
+    dict(
+        value="TX",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-3",
+        p_name="direction",
+    ),
+    dict(
+        value="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-2",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-3",
+        p_name="antlDN",
+    ),
+    dict(
+        value="RX",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-4",
+        p_name="direction",
+    ),
+    dict(
+        value="MRBTS-12345/EQM-1/APEQM-1/RMOD-1/ANTL-2",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-4",
+        p_name="antlDN",
+    ),
+]
+PARAMS_TO_MODIFY_SW_CELL2 = [
+    dict(
+        value="MRBTS-12345/NRBTS-12345/TRACKINGAREA-210",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-2",
+        p_name="trackingAreaDN",
+    ),
+    dict(
+        value="SA+NSA",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-2",
+        p_name="cellDepType",
+    ),
+    dict(value="2", dist_name="MRBTS-12345/NRBTS-12345/NRCELL-2", p_name="lcrId"),
+    dict(value="52", dist_name="MRBTS-12345/NRBTS-12345/NRCELL-2", p_name="physCellId"),
+    dict(value="40MHz", dist_name="MRBTS-12345/NRBTS-12345/NRCELL-2", p_name="chBw"),
+    dict(
+        value="20000",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-2",
+        p_name="configuredEpsTac",
+    ),
+    dict(
+        value="98",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-2",
+        p_name="prachConfigurationIndex",
+    ),
+    dict(
+        value="TDD",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-2",
+        p_name="cellTechnology",
+    ),
+    dict(
+        value="78",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-2",
+        p_name="freqBandIndicatorNR",
+    ),
+    dict(
+        value="2x2 Open Loop Spatial Multiplexing",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-2",
+        p_name="dlMimoMode",
+    ),
+    dict(value="7854", dist_name="MRBTS-12345/NRBTS-12345/NRCELL-2", p_name="gscn"),
+    dict(
+        value="2DL2UL",
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELL-2",
+        p_name="nrCellType",
+    ),
+    dict(
+        value="634000", dist_name="MRBTS-12345/NRBTS-12345/NRCELL-2", p_name="nrarfcn"
+    ),
+    dict(
+        value="TX",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-1",
+        p_name="direction",
+    ),
+    dict(
+        value="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-1",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-1",
+        p_name="antlDN",
+    ),
+    dict(
+        value="RX",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-2",
+        p_name="direction",
+    ),
+    dict(
+        value="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-1",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-2",
+        p_name="antlDN",
+    ),
+    dict(
+        value="TX",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-3",
+        p_name="direction",
+    ),
+    dict(
+        value="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-2",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-3",
+        p_name="antlDN",
+    ),
+    dict(
+        value="RX",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-4",
+        p_name="direction",
+    ),
+    dict(
+        value="MRBTS-12345/EQM-1/APEQM-1/RMOD-2/ANTL-2",
+        dist_name="MRBTS-12345/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-4",
+        p_name="antlDN",
+    ),
+]
+TL_PARAMS_TO_MODIFY_1Cell = (
+    PARAMS_TO_MODIFY_HW_TOPO + PARAMS_TO_MODIFY_SW_COMMON + PARAMS_TO_MODIFY_SW_CELL1
+)
+TL_PARAMS_TO_MODIFY_2Cell = TL_PARAMS_TO_MODIFY_1Cell + PARAMS_TO_MODIFY_SW_CELL2
+
+LIST_PARAMS_TO_MODIFY_HW_TOPO = []
+LIST_PARAMS_TO_MODIFY_SW_COMMON = []
+LIST_PARAMS_TO_MODIFY_SW_CELL1 = []
+LIST_PARAMS_TO_MODIFY_SW_CELL2 = []
+
+TL_LIST_PARAMS_TO_MODIFY_1Cell = (
+    LIST_PARAMS_TO_MODIFY_HW_TOPO
+    + LIST_PARAMS_TO_MODIFY_SW_COMMON
+    + LIST_PARAMS_TO_MODIFY_SW_CELL1
+)
+TL_LIST_PARAMS_TO_MODIFY_2Cell = (
+    TL_LIST_PARAMS_TO_MODIFY_1Cell + LIST_PARAMS_TO_MODIFY_SW_CELL2
+)
+
+LIST_TO_ADD_HW_TOPO = [
+    dict(
+        dist_name="MRBTS-12345/TNLSVC-1/TNL-1/IPNO-1/IPRT-1",
+        list_name="staticRoutes",
+        elements=dict(
+            destinationIpPrefixLength="0", destIpAddr="0.0.0.0", gateway="10.57.251.185"
+        ),
+    ),
+]
+LIST_TO_ADD_SW_COMMON = [
+    dict(
+        dist_name="MRBTS-12345/NRBTS-12345/TRACKINGAREA-210",
+        list_name="snssaiDNList",
+        elements=["MRBTS-12345/NRBTS-12345/SNSSAI-1"],
+    ),
+    dict(
+        dist_name="MRBTS-12345/NRBTS-12345",
+        list_name="x2Cplane",
+        elements=dict(
+            ipV4AddressDN1="MRBTS-12345/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1"
+        ),
+    ),
+    dict(
+        dist_name="MRBTS-12345/NRBTS-12345",
+        list_name="x2Uplane",
+        elements=dict(
+            ipV4AddressDN1="MRBTS-12345/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1"
+        ),
+    ),
+    dict(
+        dist_name="MRBTS-12345/NRBTS-12345",
+        list_name="ngCplane",
+        elements=dict(
+            ipV4AddressDN1="MRBTS-12345/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1"
+        ),
+    ),
+    dict(
+        dist_name="MRBTS-12345/NRBTS-12345",
+        list_name="ngUplane",
+        elements=dict(
+            ipV4AddressDN1="MRBTS-12345/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1"
+        ),
+    ),
+    dict(
+        dist_name="MRBTS-12345/NRBTS-12345",
+        list_name="xnCplane",
+        elements=dict(
+            ipV4AddressDN1="MRBTS-12345/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1"
+        ),
+    ),
+    dict(
+        dist_name="MRBTS-12345/NRBTS-12345",
+        list_name="xnUplane",
+        elements=dict(
+            ipV4AddressDN1="MRBTS-12345/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1"
+        ),
+    ),
+    dict(
+        dist_name="MRBTS-12345/NRBTS-12345",
+        list_name="s1Uplane",
+        elements=dict(
+            ipV4AddressDN1="MRBTS-12345/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1"
+        ),
+    ),
+]
+LIST_TO_ADD_SW_CELL1 = [
+    dict(
+        dist_name="MRBTS-12345/NRBTS-12345/NRDU-1",
+        list_name="refNrCellGroup",
+        elements=["0"],
+    ),
+    dict(
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELLGRP-0",
+        list_name="nrCellList",
+        elements=["1"],
+    ),
+]
+LIST_TO_ADD_SW_CELL2 = [
+    dict(
+        dist_name="MRBTS-12345/NRBTS-12345/NRDU-1",
+        list_name="refNrCellGroup",
+        elements=["1"],
+    ),
+    dict(
+        dist_name="MRBTS-12345/NRBTS-12345/NRCELLGRP-1",
+        list_name="nrCellList",
+        elements=["2"],
+    ),
+]
+TL_LIST_TO_ADD_1CELL = (
+    LIST_TO_ADD_HW_TOPO + LIST_TO_ADD_SW_COMMON + LIST_TO_ADD_SW_CELL1
+)
+TL_LIST_TO_ADD_2CELL = TL_LIST_TO_ADD_1CELL + LIST_TO_ADD_SW_CELL2

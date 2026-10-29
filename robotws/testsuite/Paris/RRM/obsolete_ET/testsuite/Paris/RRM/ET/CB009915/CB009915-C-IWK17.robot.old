@@ -1,0 +1,128 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]   Common keyword of CB009915 feature
+...               Prerequisite : gNB configured with 2 Cells & RU detected
+...               Scope : CB009915-C-IWK17 (IWK with CB008322)
+
+...               Test Case Scenario author   : adrien.hervat@nokia.com
+
+...               Creation Date               : 24-01-2024
+...               Version History    Date           Author                      Notes
+...               1.0                24-01-2024     adrien.hervat@nokia.com     Creation
+...               0.2                24-09-2024     richard.duthu@nokia.com     Produce Scout data t+ some RF50 fixes
+
+
+
+Variables         ./resources/python/Constants-CB009915-C-IWK16-IWK17.py
+
+Library           ./resources/python/CB009915-C-IWK16-IWK17_Checks.py
+
+Resource          ./resources/robot/CB009915-C-IWK17-Keywords.robot
+
+Library           OperatingSystem
+Library           Collections
+Library           logging
+Library           ArchiveLibrary
+
+
+
+
+Suite Setup                 Suite Setup for CB009915     custom_bsr_update=1
+
+Suite Teardown              Suite Teardown
+
+
+
+*** Variables ***
+
+${TestSharkTool}            MC_SHARK
+
+&{params}                   nbCell=2
+...                         duration=5
+...                         deviation=50
+...                         timeCapture=2
+...                         repetition=r2
+...                         bip=400
+
+# ue's parameters
+&{dict_settings_ue_1}                 originalCell=1                # original cell for call establishment
+...                                   DL_throughput=480             # DL_throughput nonGBR
+...                                   DL_throughput_GBR=0           # DL_throughput GBR
+...                                   UL_throughput=50             # UL_throughput nonGBR
+...                                   ue_nr_capa=${SA_TDD_RANK4}
+
+&{dict_settings_ue_2}                 originalCell=1
+...                                   DL_throughput=480
+...                                   DL_throughput_GBR=0
+...                                   UL_throughput=50
+...                                   ue_nr_capa=${SA_TDD_RANK2}
+
+&{dict_settings_ue_3}                 originalCell=2
+...                                   DL_throughput=480
+...                                   DL_throughput_GBR=0
+...                                   UL_throughput=50
+...                                   ue_nr_capa=${SA_TDD_RANK4}
+
+&{dict_settings_ue_4}                 originalCell=2
+...                                   DL_throughput=480
+...                                   DL_throughput_GBR=0
+...                                   UL_throughput=50
+...                                   ue_nr_capa=${SA_TDD_RANK2}
+
+@{List_UEs}                           ${dict_settings_ue_1}
+...                                   ${dict_settings_ue_2}
+...                                   ${dict_settings_ue_3}
+...                                   ${dict_settings_ue_4}
+
+# Cells parameters
+&{Cell1_Conf}
+...                                   PRBsHighEdge=0           # nbrOfBlankedPRBsHighEdge
+...                                   PRBsLowEdge=55           # nbrOfBlankedPRBsLowEdge
+...                                   SubCellId=0
+...                                   CellIdentity=16385
+...                                   CoresetFreqDomain=18014381329612800   # depends of start crb on dedicated BWP
+
+&{Cell2_Conf}
+...                                   PRBsHighEdge=25
+...                                   PRBsLowEdge=20
+...                                   SubCellId=1
+...                                   CellIdentity=16386
+...                                   CoresetFreqDomain=1152920405095219200
+
+@{List_Cells}                         ${Cell1_Conf}
+...                                   ${Cell2_Conf}
+
+
+
+*** Test Cases ***
+
+[1]CB009915-C-IWK17_with_Sub-Band_Beamforming_xxMhz_SA
+    TC_CB009915-C-IWK17    ${params}    ${List_UEs}    ${List_Cells}
+    [Teardown]            Setup.Test Teardown
+
+
+
+*** Keywords ***
+
+TC_CB009915-C-IWK17
+    [Documentation]       CB009915 Basic Call
+    [Arguments]           ${params}    ${UEs}    ${Cells}
+    Set Suite Variable    ${params}
+    Init Sequence         ${params}
+    Step                  Set RAD Params for CB009915
+    Step                  Set CB009915 Context TDD SA
+    Step                  Restart.F1 Wait Link Classical
+    ${listOfUes}          Build UEs list SA Multi UEs
+    Step                  Set UE_Capa Context_WTS CFG           listOfUes=${listOfUes}
+    Step                  Multi Cells Setup for CB009915        listOfUes=${listOfUes}
+	Step                  Start Capture CPRT
+    Step                  SA Start Traffic Multi UEs NonGBR     listOfUes=${listOfUes}
+	Step                  Stop Capture CPRT
+	Step                  Check Switch to SRS WB in RRC Reconf
+    Step                  Get L1L2 Logs
+	Step                  Check ChecksrsBwvEnableFlag and SRS Blanking in L1L2
+    Step                  Get TTI Logs
+    Step                  Check 9915 PM Counters
+	Step                  Get Snaphot Sos Report
+    Step                  SA DeRegister Multi UEs               listOfUes=${listOfUes}
+    [Teardown]            Display diagnosis
+

@@ -1,0 +1,675 @@
+# - Override values for deployment in cloud-development enviromnent
+# - Operator need to set the values base on the real scenario.
+# - This is a YAML-formatted file.
+# - Declare variables to be passed into your templates.
+
+# - Description: Infrasturcture type. Support value: NCIR_CaaS, WebScale_CaaS or NCS
+# - Default value: NCIR_CaaS
+cloudInfraType: &cInfraType "NCIR_CaaS"
+# - Description: flag for enable container application startupProbe
+# - Values:
+  # -   NCIR_CaaS: false
+  # -   WebScale_CaaS/StarlingX 4.0: true
+  # -   StarlingX 3.0: false
+  # -   NCS: true
+startupProbe:
+  enable: &startProbeFlag false
+
+# - Description: securiryContext configuration for vDU uid/gid/groups
+securityContext:
+  uid: &uid 9999
+  gid: &gid 9999
+  groups: &groups 9999
+
+global:
+
+  #########################################################
+  # global configuration shared by parent and sub charts
+  #########################################################
+  # - Description: convention of name
+  name_convention:
+
+    pod_prefix:
+    - po
+    - _NAMESPACE_
+
+    container_prefix:
+    - ctr
+    - _NAMESPACE_
+
+    deployment_prefix:
+    - po
+    - _NAMESPACE_
+
+    statefulset_prefix:
+    - po
+    - _NAMESPACE_
+
+  # - Description: registry of image
+  # - NCIR_CaaS: registry.kube-system.svc.nokia.net:5555/dep align with images.properties in onBoradignApp
+  # - NCS: bcmt-registry:5000/dep align with images.properties.NCS in onBoradignApp
+  image:
+    registry: "registry.kube-system.svc.nokia.net:5555/dep"
+
+  # - Description: time zone in format "Region/City", e.g. "Asia/Shanghai". Defuault as 'UTC'.
+  timezone: "UTC"
+
+  #########################################################
+  # global configuration for VDU parent chart
+  #########################################################
+
+  # - Description: the name of persistent volume
+  # - Note: Ensure uniqueness for every VDU and keep same when do upgrade/update
+  # -       consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character
+  pvcName: "vdutest"
+  # - Description: the storageclass name of persistent volume. Will use default storageclass in case not filled.
+  # - Values:
+  # -   NCIR_CaaS Non SNC: ceph-storage-class
+  # -   NCIR_CaaS SNC: local-volume
+  # -   WebScale_CaaS: general
+  # -   NCS:
+  #     -  when install the ceph storage: csi-cephrbd
+  #     -  when use the local storage: dynamic-local-storage
+  storageClassName: &sc ""
+  # - Description: the flag that indicate if fastpath interfaces are bind on Host or not. Support Values: true, false.
+  # - Default value: true
+  fpIfaceBindOnHost: "true"
+  # - Description: Name of a network Device Plugin resource pool. it is Physical function, which has mapped to several virtual function
+  # - Note:  fronthaul net need a Individual PF
+  netPF:
+    # - Description: The SR-IOV Device Pool used by f1 and bip networks (fast path)
+    # - Note: mandatory if fpIfaceBindOnHost set true
+    commonHostBind: &bipf1DevicePoolName "nokia.k8s.io/sriov_vfio_ens1f1"
+    # - Description: Device Pool for slow path
+    # - Note: if fpIfaceBindOnHost set true, used by oam network; else used by f1, bip and oam networks
+    common: "nokia.k8s.io/sriov_ens1f1"
+    # - Description: The SR-IOV Device Pool used by fhuc network (fast path)
+    # - Note: mandatory if fpIfaceBindOnHost set true
+    fhHostBind: &fhucDevicePoolName "nokia.k8s.io/sriov_vfio_ens11f0"
+    # - Description: Device Pool for slow path used by fh
+    # - Note: if fpIfaceBindOnHost set true, used by fhm network; else used by fhuc and fhm networks
+    fh: "nokia.k8s.io/sriov_ens11f0"
+
+  # Custom extensions for labels which will be injected into ConfigMap,
+  # Service, Pod resources.
+  # Example:
+  #  labels: {nf-type: 5g-nf-producer}
+  custom_extensions:
+    labels: {}
+
+  # ================== NMS vs. vDU connection information ===========================================
+  # - Description: Description of a site used as auto connection site ID.
+  # - Note: As it will be used for identifying the vDU, ensure uniqueness for every vDU
+  # -       equal to the value of MRBTS/AutoConnSiteID parameter from the CM plan imported to the NMS
+  # -       1 to 50 ASCII characters
+  siteDescription: "MRBTS-5206"
+
+  # - Description: URL (containing IP address) of the NMS
+  urlNMS: ""
+
+  # - Description: external IP to access ne3sagent, used by NMS to connect back (register)  with ne3sagent
+  # - Note: current agentIP should be the same as vDU oam IP by default, due to ne3sagent run in oam container
+  agentIP: ""
+  # ================== NMS vs. vDU connection information end =======================================
+
+  # - Description: psk for vault application access
+  psk:
+    httpd:              "4ReY6MQRFhxZuQGkeuoQqEqEp95gKj9m"
+    ne3sagent:          "4ReY6MQRFhxZuQGkeuoQqEqEp95gKj9m"
+    providercontroller: "4ReY6MQRFhxZuQGkeuoQqEqEp95gKj9m"
+
+  # - Description: IPv6 UDP packets with zero checksum is valid for ingress traffic. Support Values: enabled (packets with zero checksum is valid), disabled (packets with zero checksum is invalid).
+  # - Default value: enabled
+  ipv6RxUdpZeroChecksum: "enabled"
+
+  # - Description: Fill udp checksum with zero (enabled) or generate udp checksum (disabled) for IPv6 egress traffic. Support Values: enabled, disabled.
+  # - Default value: disabled
+  ipv6TxUdpZeroChecksum: "disabled"
+
+#########################################################
+# top level configuration private to RCP sub charts
+#########################################################
+
+# - Description: sub chart pm private configuration
+pm:
+  pvc:
+    hfrw:
+      storageClassName: *sc
+    lfrw:
+      storageClassName: *sc
+  # - Description: the uid and gid to start PM container
+  securityContext:
+    uid: *uid
+    gid: *gid
+
+# - Description: sub chart rcpfm private configuration
+rcpfm:
+  pvc:
+    storageClassName: *sc
+  # - Description: the uid and gid to start FM container
+  securityContext:
+    uid: *uid
+    gid: *gid
+
+# - Description: sub chart logservice private configuration
+logservice:
+  # Use persistent volume for log storage
+  pvc:
+    # syslog persistent volume
+    syslog:
+      storageClassName: *sc
+    # auditlog persistent volume
+    auditlog:
+      storageClassName: *sc
+  podSecurityContext:
+    fsGroup: *groups
+  securityContext:
+    runAsUser: *uid
+    runAsGroup: *gid
+
+# - Description: sub chart healing-controller private configuration
+healing-controller:
+  custom:
+    serviceAccount: "healing-controller"
+  # - Description: the uid and gid to start healing-controller container
+  securityContext:
+    uid: *uid
+    gid: *gid
+    groups: *groups
+
+# - Description: sub chart secret-storage-framework private configuration
+secret-storage-framework:
+  vaultmanagerpvc:
+    name: "vaultmanagerpvc"
+    storageClassName: *sc
+
+  vaultserverpvc:
+    name: "vaultserverpvc"
+    storageClassName: *sc
+
+  configuration:
+    uid: *uid
+    gid: *gid
+
+# - Description: sub chart lwsd private configuration
+lwsd:
+  # - Description: the uid and gid to start lwsd container
+  securityContext:
+    uid: *uid
+    gid: *gid
+    groups: *groups
+
+# - Description: sub chart rcpsdl private configuration
+rcpsdl:
+  # - Description: the uid and gid to start DB container
+  securityContext:
+    uid: *uid
+    gid: *gid
+
+# - Description: sub chart rcpum private configuration
+rcpum:
+  cloudInfraType: *cInfraType
+  podSecurityContext:
+    fsGroup: *groups
+  # - Description: the uid and gid to start rcpum container
+  securityContext:
+    runAsUser: *uid
+    runAsGroup: *gid
+
+# - Description: sub chart trsconfig private configuration
+trsconfig:
+  # - Description: the uid and gid to start trsconfig container
+  securityContext:
+    uid: *uid
+    gid: *gid
+
+# - Description: sub chart kubeapisymptomdataprovider private configuration
+kubeapisymptomdataprovider:
+  podSecurityContext:
+    fsGroup: *groups
+  securityContext:
+    runAsGroup: *gid
+    runAsUser: *uid
+
+# - Description: sub chart certificate-management private configuration
+certificate-management:
+  securityContext:
+    runAsUser: *uid
+    runAsGroup: *gid
+  psk:
+    certificatemanagement: "4ReY6MQRFhxZuQGkeuoQqEqEp95gKj9m"
+
+# ========configuration oamcp POD =========
+aic-vdu-oamcp:
+  # ========configuration oamcp POD dynamic networks =========
+  netConf:
+    f1c:
+      # - Description: ip version used for f1c interface
+      # - Value range: string, "ipv4" or "ipv6"
+      version: "ipv4"
+      # - Description: MTU of f1-c network
+      # - Value range: string, feature 1995 define range from "1280" to "9500".
+      # - Note: eg."1500"
+      mtu: "1500"
+      # - Description: Guest VLAN information for f1c interface
+      vlanInfo:
+        vlanId: "615"
+      # - Description: IP allocation pool for f1c interface used by oamcp POD
+      # - Note: ip pool information for specific ip version is mandantory
+      ippool:
+        ipv4:
+          start: "10.71.171.10"
+          end: "10.71.171.10"
+          subnet: "10.71.171.8/29"
+        ipv6:
+          start: "2a00:8a00:8000:117:1:2:a47:a10a"
+          end: "2a00:8a00:8000:117:1:2:a47:a10a"
+          subnet: "2a00:8a00:8000:117:1:2:a47:a108/125"
+    oam:
+      # - Description: ip version used for oam interface
+      # - Value range: string, "ipv4" or "ipv6"
+      version: "ipv4"
+      # - Description: MTU of oam network
+      # - Value range: string, feature 1995 define range from "1280" to "9500".
+      # - Note: eg."1500"
+      mtu: "1500"
+      # - Description: Guest VLAN information for oam interface
+      vlanInfo:
+        vlanId: "616"
+      # - Description: IP allocation pool for oam interface
+      # - Note: ip pool information for specific ip version is mandantory
+      ippool:
+        ipv4:
+          start: "10.71.171.18"
+          end: "10.71.171.18"
+          subnet: "10.71.171.16/29"
+        ipv6:
+          start: "2a00:8a00:8000:117:1:2:a47:a112"
+          end: "2a00:8a00:8000:117:1:2:a47:a112"
+          subnet: "2a00:8a00:8000:117:1:2:a47:a110/125"
+      # - Description: oam default route configuration.
+      # - Note: gateway information for specific ip version is mandantory
+      oamDefaultRoute:
+        # ipv4 gateway address for source based route "via [address]"
+        gateway: "10.71.171.17"
+        # ipv6 gateway address for source based route "via [address]"
+        gateway6: "2a00:8a00:8000:117:1:2:a47:a111"
+    fhm:
+      # - Description: Guest VLAN information for fhm interface
+      vlanInfo:
+        # - Note: when guest VLAN applied, vlanId 295 for fhm is not recommend to change
+        vlanId: "295"
+        pcp: "2"
+      # - Description: IP allocation pool for fhm interface
+      # - Note: ipv4 pool information is mandantory for fhm, not support ipv6
+      ippool:
+        ipv4:
+          start: "192.168.254.33"
+          end: "192.168.254.60"
+          subnet: "192.168.254.0/26"
+
+  # ========configuration oamcp POD security context =========
+  # - Description: the flag that indicate if container run with privileged permission. Support Values: true, false.
+  # - Note: this flag used by oam, oamfh, cprt containers.
+  # - Default value: true
+  # - SWM securityContext will align with OAMCP securityContext, DONOT remove the anchor
+  privilegedMode: &privileged "false"
+  # - Description: define the uid for runAsUser, the gid for runAsGroup and the groups for fsGroup to start the containers in oamcp pods
+  securityContext:
+    # Define the uid and gid for pod, uid/gid with non zero the container start with
+    # non-root user, if the uid/gid is zero will start with root user.
+    runAsUser: *uid
+    runAsGroup: *gid
+    # Define the group of mounted volumes for pod, containers started with non-root
+    # need to make sure their gid can access expected volume.
+    fsGroup: *groups
+
+  # - Description: Infrasturcture type. Support value: NCIR_CaaS, WebScale_CaaS or NCS
+  # - Default value: NCIR_CaaS
+  cloudInfraType: *cInfraType
+  # - Description: flag for enable container application startupProbe
+  # - Values:
+    # -   NCIR_CaaS: false
+    # -   WebScale_CaaS/StarlingX 4.0: true
+    # -   StarlingX 3.0: false
+    # -   NCS: true
+  startupProbe:
+    enable: *startProbeFlag
+
+  # ====== configuration about in oam conatiner=====
+  oam:
+    ne3sagent:
+      configuration:
+        # TLS enable or not. Available value is 'true' or 'false'.
+        # Ne3sAgent only support non-TLS mode in container currently.
+        is_tls_enabled: false
+    # - Description: PTP domain number used for oam getting status retrieval.
+    # - Default value: 24
+    # - Note: it must set same as infrastructure ptp4l service
+    domainNumber: "24"
+  # ========configuration about dhcp container ========
+  dhcp:
+    securityContext:
+      runAsUser: *uid
+      runAsGroup: *gid
+    service:
+      # v4Pools define the actual part of your subnet that is governed
+      v4Pools: 192.168.254.34 - 192.168.254.60
+      # v4Subnet define the whole subnet.
+      v4Subnet: 192.168.254.0/26
+
+      # DHCP vendor specific information of master agent ip and port number
+      option43_vendor_specific_information_master_agent_ip: "192.168.254.33"
+      option43_vendor_specific_information_port_number: "13001"
+
+  # ========configuration about APIGW ========
+  apigw:
+    securityContext:
+      runAsUser: *uid
+      runAsGroup: *gid
+
+  # ========configuration about HTTPD ========
+  httpd:
+    securityContext:
+      runAsUser: *uid
+      runAsGroup: *gid
+
+  # ====== configuration running in nwmgmt conatiner=====
+  nwmgmt:
+    securityContext:
+      runAsUser: *uid
+      runAsGroup: *gid
+
+  # ========configuration about nftmgmt ========
+  nftmgmt:
+    securityContext:
+      runAsUser: *uid
+      runAsGroup: *gid
+
+  # ========configuration about providercontroller ========
+  providercontroller:
+    securityContext:
+      runAsUser: *uid
+      runAsGroup: *gid
+
+  # ========configuration about givaxi ========
+  givaxi:
+    securityContext:
+      runAsUser: *uid
+      runAsGroup: *gid
+
+  # ========configuration about vsftp ========
+  vsftp:
+    securityContext:
+      # set default user and group
+      runAsUser: *uid
+      runAsGroup: *gid
+
+  # ========configuration about vaultapp, including appsecretinit&stunnel&credmediator ========
+  vaultapp:
+    securityContex:
+      runAsUser: *uid
+      runAsGroup: *gid
+
+  # ========configuration oamcpu and up POD node affinity =========
+  # - Description: select node to deploy oam pod. it will be automatic allocation by system if the value is blank
+  # - Note: please use the value of kubernetes.io/hostname.it's usually a ip address,
+  #         the value can be fetched by command: kubectl get nodes --show-labels
+  oamnodeAffinityIP: ""
+
+# ========configuration up POD =========
+aic-vdu-up:
+  netConf:
+    f1:
+      devicePool: *bipf1DevicePoolName
+      # - Description: ip version used for f1 interface
+      # - Value range: string, "ipv4" or "ipv6"
+      version: "ipv4"
+      # - Description: MTU of f1-u interface
+      # - Value range: string, feature 1995 define range from "1280" to "9500".
+      # - Note: eg."1500"
+      mtu: "1500"
+      # - Description: Guest VLAN information for f1 interface
+      vlanInfo:
+      - vlanName: "f1uplane"
+        vlanId: "615"
+      # - Description: IP allocation pool for f1 interface used by up POD
+      # - Note: ip pool information for specific ip version is mandantory
+      ippool:
+        ipv4:
+          start: "10.71.171.11"
+          end: "10.71.171.11"
+          subnet: "10.71.171.8/29"
+        ipv6:
+          start: "2a00:8a00:8000:117:1:2:a47:a10b"
+          end: "2a00:8a00:8000:117:1:2:a47:a10b"
+          subnet: "2a00:8a00:8000:117:1:2:a47:a108/125"
+    fhuc:
+      devicePool: *fhucDevicePoolName
+      # - Description: Guest VLAN information for fhuc interface
+      vlanInfo:
+      # - Note: when guest VLAN applied, vlanId 301 for fhuc is not recommend to change
+      - vlanName: "fhucplane1"
+        vlanId: "301"
+        pcp: "7"
+      - vlanName: "fhucplane2"
+        vlanId: ""
+        pcp: ""
+    l1bipl1:
+      devicePool: *bipf1DevicePoolName
+      # - Description: bip network name used for interface l1bipl1, default is "bip"
+      # name: "l1bip"
+      # - Description: Guest VLAN information for l1bip interface used by l1hi
+      vlanInfo:
+      - vlanName: "vlanl1bipl1"
+        vlanId: ""
+    l1biprt:
+      devicePool: *bipf1DevicePoolName
+      # - Description: bip network name used for interface l1biprt, default is "bip"
+      # name: "l1bip"
+      # - Description: Guest VLAN information for l1bip interface used by l2rt
+      vlanInfo:
+      - vlanName: "vlanl1biprt"
+        vlanId: ""
+    l2biphi:
+      devicePool: *bipf1DevicePoolName
+      # - Description: bip network name used for interface l2biphi, default is "bip"
+      # name: "l2bip"
+      # - Description: Guest VLAN information for l2bip interface used by l2hi
+      vlanInfo:
+      - vlanName: "vlanl2biphi"
+        vlanId: ""
+    l2biprt:
+      devicePool: *bipf1DevicePoolName
+      # - Description: bip network name used for interface l2biprt, default is "bip"
+      # name: "l2bip"
+      # - Description: Guest VLAN information for l2bip interface used by l2rt
+      vlanInfo:
+      - vlanName: "vlanl2biprt"
+        vlanId: "613"
+
+  # ========configuration up POD security context =========
+  # - Description: the flag that indicate if container run with privileged permission. Support Values: true, false.
+  # - Note: this flag used by l1hi, l2rt and l2hi containers.
+  # - Default value: true
+  privilegedMode: "false"
+  # - Description: define the uid for runAsUser, the gid for runAsGroup and the groups for fsGroup to start the containers in up pods
+  securityContext:
+    # Define the uid and gid for pod, uid/gid with non zero the container start with
+    # non-root user, if the uid/gid is zero will start with root user.
+    runAsUser: *uid
+    runAsGroup: *gid
+    # Define the group of mounted volumes for pod, containers started with non-root
+    # need to make sure their gid can access expected volume.
+    fsGroup: *groups
+
+  # - Description: Infrasturcture type. Support value: NCIR_CaaS, WebScale_CaaS or NCS
+  # - Default value: NCIR_CaaS
+  cloudInfraType: *cInfraType
+
+  # ====== configuration about l1hi container =====
+  l1hi:
+    securityContext:
+      privilegedMode: "true"
+      # if run as non-privilege, user/group must set as non-root
+      runAsUser: *uid
+      runAsGroup: *gid
+    # WA for PR541790: "TRUE" for enable, "FALSE" for disable
+    FHP_PRACH_RECEIVE_WIN_WORKAROUND_ENABLE: "FALSE"
+
+    # FHP static L3 call and dynamic call compactible solution
+    fhpconfig:
+      # - Description: FHP_HOST_VLAN_ENABLE, default FALSE in FHP code, miss this value FHP will act as guest vLAN.
+      # - Note: it is forbidden to change.
+      # -       after guest VLAN enable, remove this value or change to FALSE
+      FHP_HOST_VLAN_ENABLE: "FALSE"
+
+    # - Description:Enable or disable fast cplane feature
+    # - Note: RCP2029 enable or not. Available value is 'TRUE' or 'FALSE'.
+    #         FALSE means disable RCP2029 feature as default.
+    #         TRUE means enable RCP2029 feature.
+    #         This functions should be enabled together on FHGW and vDU side, if FHGW hasn't included this function, this value
+    #         should be set to FALSE on VDU side, or this value should be set to TRUE.
+    fast_cplane_enabled: "TRUE"
+
+    # FDD SCS is 15K, TDD SCS is 30k, to avoid SCS change after l1-container startup, operator need configure correct value for UP pod.
+    # Introduce env variable to set initial SCS value for FHP and L1-Hi during startup(workaround for  CB007289 integration):
+    #     1. L1_DEFAULT_SCS: miss this value , FHP set 15K as default SCS.
+    #     2. L1_DEFAULT_SCS: 30, set 30k as default SCS.
+    #     3. L1_DEFAULT_SCS: if it is not 30, set 15k as default SCS.
+    l1_default_scs: "15"
+
+    resources:
+      # - Description: define the dedicated core from which cpu type pool
+      dedicatedCorePool:
+        # - Note: in NCIR_CaaS, dedicated cores allocated from the cpu pooler
+        # -       it is not recommend to change
+        NCIR_CaaS: "nokia.k8s.io/exclusive_caas"
+        # - Note: in WebScale_CaaS, dedicated cores support to alloctate from the cpu manager or isolcpu device plugin
+        # -       valuse can be configrued to: "cpu" or "windriver.com/isolcpus"
+        WebScale_CaaS: "cpu"
+        # - Note: in NCS, dedicated cores allocated from the cpu pooler
+        # -       it is not recommend to change
+        NCS: "nokia.k8s.io/exclusive_numa_0_pool"
+      # - Description: The FEC Device Pool for HW FEC accelerator function supporting
+      #                Support NCIR CaaS + Vista Greek or NCS + MT.Bryce
+      # - The values configuration as following
+      #   - NCIR_CaaS: nokia.k8s.io/fec_nr_vf
+      #   - NCS: nokia.k8s.io/sriov_fec
+      fecVF: "nokia.k8s.io/fec_nr_vf"
+      # - Description: fecVFNum is that number of virtual function.
+      # - Note: When install the NCIR CaaS + Vista Greek or NCS + MT.Bryce, and you want to active the HW FEC
+      #         This value should be set to 1
+      fecVFNum: "0"
+
+      limits:
+        # - Description: the total dedicated cpu limits for the apps in l1-container
+        # - Note: in MVP phase, there have more configruations to supprot different cells
+        #         For NCIR_CaaS and NCS cloud platform
+        #           1) for <=2 cells, the apps in l1-container will use 6 dedicated cpu totally for l1 apps(5) and fh-proxy+fh-io(1)
+        #           2) for <=3 cells, the apps in l1-container will use 7 dedicated cpu totally for l1 apps(5) and fh-proxy+fh-io(2)
+        #         For WebScale_CaaS need one additional core for ccs with NCIR_CaaS and NCS, because there no support dedicated core and shared core coexist in one container
+        #         Default with supporting <= 2 cells, operator can change it according to the request
+        #         Please note the limits.dedicatedNum need to equals with requests.dedicatedNum
+        dedicatedNum:
+          NCIR_CaaS: "6"
+          WebScale_CaaS: "7"
+          NCS: "6"
+      requests:
+        # - Description: the total dedicated cpu requests for the apps in l1-container
+        # - Note: in MVP phase, there have more configruations to supprot different cells
+        #         For NCIR_CaaS and NCS cloud platform
+        #           1) for <=2 cells, the apps in l1-container will use 6 dedicated cpu totally for l1 apps(5) and fh-proxy+fh-io(1)
+        #           2) for <=3 cells, the apps in l1-container will use 7 dedicated cpu totally for l1 apps(5) and fh-proxy+fh-io(2)
+        #         For WebScale_CaaS need one additional core for ccs with NCIR_CaaS and NCS, because there no support dedicated core and shared core coexist in one container
+        #         Default with supporting <= 2 cells, operator can change it according to the request
+        #         Please note the requests.dedicatedNum need to equals with limits.dedicatedNum
+        dedicatedNum:
+          NCIR_CaaS: "6"
+          WebScale_CaaS: "7"
+          NCS: "6"
+    dptrace:
+      # - Description: Enable or disable l1 container dptrace function. 0 means disable, 1 means enable.
+      enable: "0"
+      # - Description: Enable or disable l1 container payload dump. 0 means disable payload dump, 1 means enable payload dump.
+      dump_payload: "0"
+      # - Description: Config l1 container dptrace filter. Format: messageID:queueID. Example: none:1(means messageID not set ,queueID set with 1), which means will trace em packets with local queueID=1.
+      # - Note: Maxmum dptrace filter condition num is 4. Example: "none:1,1:10,10:none,2:5", which means 4 type of em packets will be traced: 1. local queueID=1; 2. messageID=1 and local queueID=10; 3. messageID=10; 4. messageID=2 and local queueID=5.
+      filter: "none:none"
+
+  # ====== configuration about l2hi container =====
+  l2hi:
+    resources:
+      # - Description: define the dedicated core from which cpu type pool
+      dedicatedCorePool:
+        # - Note: in NCIR_CaaS, dedicated cores allocated from the cpu pooler
+        # -       it is not recommend to change
+        NCIR_CaaS: "nokia.k8s.io/exclusive_caas"
+        # - Note: in WebScale_CaaS, dedicated cores support to alloctate from the cpu manager or isolcpu device plugin
+        # -       valuse can be configrued to: "cpu" or "windriver.com/isolcpus"
+        WebScale_CaaS: "cpu"
+        # - Note: in NCS, dedicated cores allocated from the cpu pooler
+        # -       it is not recommend to change
+        NCS: "nokia.k8s.io/exclusive_numa_0_pool"
+    dptrace:
+      # - Description: Enable or disable l2hi container dptrace function. 0 means disable, 1 means enable.
+      enable: "0"
+      # - Description: Enable or disable l2hi container payload dump. 0 means disable payload dump, 1 means enable payload dump.
+      dump_payload: "0"
+      # - Description: Config l2hi container dptrace filter. Format: messageID:queueID. Example: none:1(means messageID not set ,queueID set with 1), which means will trace em packets with local queueID=1.
+      # - Note: Maxmum dptrace filter condition num is 4. Example: "none:1,1:10,10:none,2:5", which means 4 type of em packets will be traced: 1. local queueID=1; 2. messageID=1 and local queueID=10; 3. messageID=10; 4. messageID=2 and local queueID=5.
+      filter: "none:none"
+
+  # ====== configuration about l2rt container =====
+  l2rt:
+    resources:
+      # - Description: define the dedicated core from which cpu type pool
+      dedicatedCorePool:
+        # - Note: in NCIR_CaaS, dedicated cores allocated from the cpu pooler
+        # -       it is not recommend to change
+        NCIR_CaaS: "nokia.k8s.io/exclusive_caas"
+        # - Note: in WebScale_CaaS, dedicated cores support to alloctate from the cpu manager or isolcpu device plugin
+        # -       valuse can be configrued to: "cpu" or "windriver.com/isolcpus"
+        WebScale_CaaS: "cpu"
+        # - Note: in NCS, dedicated cores allocated from the cpu pooler
+        # -       it is not recommend to change
+        NCS: "nokia.k8s.io/exclusive_numa_0_pool"
+    dptrace:
+      # - Description: Enable or disable l2rt container dptrace function. 0 means disable, 1 means enable.
+      enable: "0"
+      # - Description: Enable or disable l2rt container payload dump. 0 means disable payload dump, 1 means enable payload dump.
+      dump_payload: "0"
+      # - Description: Config l2rt container dptrace filter. Format: messageID:queueID. Example: none:1(means messageID not set ,queueID set with 1), which means will trace em packets with local queueID=1.
+      # - Note: Maxmum dptrace filter condition num is 4. Example: "none:1,1:10,10:none,2:5", which means 4 type of em packets will be traced: 1. local queueID=1; 2. messageID=1 and local queueID=10; 3. messageID=10; 4. messageID=2 and local queueID=5.
+      filter: "none:none"
+
+    nrtDisp:
+      # - Description: Enable(1) or disable(0) NRT dispatcher by environment variable NRT_DISPATCH_ENABLE, default value is 0
+      enable: "0"
+
+  # ====== configuration running in nwmgmt conatiner=====
+  nwmgmt:
+    securityContext:
+      runAsUser: *uid
+      runAsGroup: *gid
+
+  # ========configuration about nftmgmt ========
+  nftmgmt:
+    securityContext:
+      runAsUser: *uid
+      runAsGroup: *gid
+
+  # - Description: select node to deploy up pod,it will be automatic allocation by system if the value is blank
+  # - Note: please use the value of kubernetes.io/hostname.it's usually a ip address,
+  #         the value can be fetched by command: kubectl get nodes --show-labels
+  upnodeAffinityIP: ""
+
+# - Description: securityContext parameters used in SWM hook
+# - NOTE: SWM securityContext will align with OAMCP securityContext
+swm:
+  privilegedMode: *privileged
+  # gid: this value should belong to the the same fsGroup secondary group defined for the OAM Pod
+  # if OAM pod doesn't specify the fsgroup id, then this value should same OAM pod gid.
+  securityContext:
+    runAsGroup: *gid
+    runAsUser: *uid

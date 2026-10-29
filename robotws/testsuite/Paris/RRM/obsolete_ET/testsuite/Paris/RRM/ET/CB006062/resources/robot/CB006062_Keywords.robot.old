@@ -1,0 +1,374 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for CB006062 feature tests cases
+...
+...               Automation author           : bernard.hoche@nokia.com
+...               Automation contact          : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com
+...               Creation Date               : 05-June-2019
+...               Modified Date               : 05-June-2019
+...               Last Modified by            : bernard.hoche@nokia.com
+...               Last Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: adapt to CB006062
+...               Last Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: PTRS act 8792-B-22R3
+...               Last Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: Refactoring Long Pucch
+...               Last Modified by            : martial.hummel@nokia.com marie-laurence.le_borgne@nokia.com: Refactoring vRAN2.0 April2022
+...               Modified Date               : 26-May-2022 change BIPvalueDMrsCdmGroupWithoutData format - pdml changes - MLLB
+...               Modified Date               : 13-June-2022 Improvement for BIP decoding issue
+...               Modified Date               : 20-Feb-2023 Improvement for taking CORE Trace only 1 (from SgNB Addition PRACH)
+...               Modified Date               : 22-Apr-2024 : Parity testing to introduce dRNIC RINLINE2 CLOUD_5GC_dRNIC_1vDU_P_AP_LO_DC
+...               Modified Date               : 18-Sep-2024 : Scout data
+
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+
+Library           ../../../resources/python/luashark_tools.py
+Library           luashark_tools.analyzer       WITH NAME      analyzer
+Library           taf.config.scf                WITH NAME      scf
+Library           Collections
+
+*** Variables ***
+#${Destination_port}             5678
+
+*** Keywords ***
+#=======================================================================================================================
+# KW to perform checks in pcap files
+#=======================================================================================================================
+
+Check UL FDM in BIP Msg
+    [Arguments]                     ${pcapFile}
+    ...                             ${DMrsCdmGroupWithoutData}=1
+    Dated log                       Check UL FDM Activation in BIP Msg (DMrsCdmGroupWithoutData=1)
+    Filter and Check field          ${pcapFile}
+    ...                             filterExp=(uldata_puschreceivereq) && (nr_l1ul_l2ps_uldata_puschreceivereqgrant_t)
+    ...                             msg=UlData_PuschReceiveReq
+    ...                             data=.numOfDmrsCdmGroupWithoutData
+    ...                             value=${DMrsCdmGroupWithoutData}
+    ...                             endPacket=${1}
+
+Check UL PTRS in BIP Msg
+    [Arguments]                     ${pcapFile}
+    ...                             ${ulPtrsFlag}=${param.enableulPtrs}
+    Dated log                       Check UL PTRS status in BIP Traces
+    Filter and Check field          ${pcapFile}
+    ...                             filterExp=(uldata_puschreceivereq) && (nr_l1ul_l2ps_uldata_puschreceivereqgrant_t)
+    ...                             msg=UlData_PuschReceiveReq
+    ...                             data=.ulPtrsFlag
+    ...                             value=${ulPtrsFlag}
+    ...                             endPacket=${1}
+
+Check CRC OK for HarqU in BIP Msg
+    [Arguments]                     ${pcapFile}
+    ...                             ${crc}=0
+    Dated log                       Check CRC OK for PuschReceiveRespHarqU in BIP Msg
+    Filter and Check field          ${pcapFile}
+    ...                             filterExp=uldata_puschreceiverespharqu
+    ...                             msg=UlData_PuschReceiveRespHarqU
+    ...                             data=.crc
+    ...                             value=${crc}
+    ...                             endPacket=${1}
+
+Filter and Check field
+    [Arguments]                     ${pcapfile}
+    ...                             ${filterExp}=None               ${msg}=None
+    ...                             ${data}=none                    ${value}=None
+    ...                             ${startPacket}=${1}             ${endPacket}=${-1}
+    ${filterPcap}                   analyzer.filter_pcap            ${pcapFile}
+    ...                             filterName=${msg}               filterExp=${filterExp}
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${filterPcap}
+
+    Dated log                       \tIn BIP messages ${msg} [${startPacket}..${endpacket}], check ${data}=${value}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${data}$
+    ...                             value=${value}
+    ...                             startPacket=${startPacket}
+    ...                             endPacket=${endPacket}
+
+Check UserSetupReq
+    [Arguments]                     ${pcapFile}                     ${field}                       ${value}
+    ${pcapFiltered}                 analyzer.filter_pcap
+    ...                             pcapInFile=${pcapFile}
+    ...                             filterName=UserSetupReq
+    ...                             filterExp=itf_l2_ps_user_usersetupreq
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+    ${msg}=                         Set Variable                    itf_l2_ps_user_UserSetupReq
+    Dated log                       In message ${msg}, check ${field}=${value}                     first=True
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${msg}.${field}$
+    ...                             value=${value}
+
+Check UL DMRS in X2 Msg
+    [Arguments]                     ${pcapFile}
+    ...                             ${value}
+    Check RRC Reconfiguration for Additional DMRS       pcapFile=${pcapFile}            prefix=nr-rrc.pusch_Config
+    ...                             value=${value}
+
+Check PuschMappingType in X2 Msg
+    [Arguments]                     ${pcapFile}
+    ...                             ${value}
+    Check RRC Reconfiguration for PuschMappingType       pcapFile=${pcapFile}            prefix=nr-rrc.pusch_Config
+    ...                             value=${value}
+
+Check RRC Reconfiguration for Additional DMRS
+    [Arguments]                     ${pcapFile}
+    ...                             ${prefix}
+    ...                             ${field}=nr-rrc.dmrs_AdditionalPosition
+    ...                             ${value}=value
+    ${pcapFiltered}                 analyzer.filter_pcap
+    ...                             pcapInFile=${pcapFile}
+    ...                             filterName=X2AP
+    ...                             filterExp=x2ap
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+    Dated Log                       In RRC Reconfiguration, check ${prefix}/.../${field} is set to ${value}
+    ...                             first=True
+    ${msg}                          Set Variable                    SgNBAdditionRequestAcknowledge
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${prefix}/.*/${field}$
+    ...                             value=${value}
+
+Check RRC Reconfiguration for PuschMappingType
+    [Arguments]                     ${pcapFile}
+    ...                             ${prefix}
+    ...                             ${field}=nr-rrc.dmrs_UplinkForPUSCH_MappingTypeB
+    ...                             ${value}=value
+    ${pcapFiltered}                 analyzer.filter_pcap
+    ...                             pcapInFile=${pcapFile}
+    ...                             filterName=X2AP
+    ...                             filterExp=x2ap
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFiltered}
+    Dated Log                       In RRC Reconfiguration, check ${prefix}/.../${field} is st to ${value}
+    ...                             first=True
+    ${msg}                          Set Variable                    SgNBAdditionRequestAcknowledge
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=${msg}
+    ...                             path=${prefix}/.*/${field}$
+    ...                             value=${value}
+
+Check FDM UL
+    Check UL FDM in BIP Msg          pcapFile=${CaptureL1L2.path}
+    ...                              DMrsCdmGroupWithoutData=1
+
+Check PTRS UL
+    Check UL PTRS in BIP Msg        pcapFile=${CaptureL1L2.path}
+    ...                             ulPtrsFlag=${param.enableulPtrs}
+
+Check CRC OK for HarqU in UL
+    Check CRC OK for HarqU in BIP Msg        pcapFile=${CaptureL1L2.path}
+    ...                                      crc=0
+
+Check Additional DMRS UL
+    Check UL DMRS in X2 Msg         pcapFile=${CaptureCORE.path}
+    ...                             value=${param.ulAdditionalDmrs}
+
+Check PuschMappingType UL
+    Check PuschMappingType in X2 Msg         pcapFile=${CaptureCORE.path}
+    ...                                      value=${UplinkForPUSCH_MappingTypeB_1}
+
+#=======================================================================================================================
+# KW to set some parameters in SCF
+#=======================================================================================================================
+
+Backup current and Set new gNB swconfig file
+    [Documentation]                 Creates a copy of current gNB ASIK swconfig file and replaces it by a targeted file
+    [Arguments]    ${Target_SWConfig}    ${filename}
+    ${alias}                SSH Connect             ${HOST_GNB_ASIK_M}
+    ${backup_exists}=       csn.execute    test -f ${filename}.backup && echo -n "okman" || echo -n "noway"
+    ...                     connection=${alias}
+    ${filename_exists}=     csn.execute    test -f ${filename} && echo -n "okman" || echo -n "noway"    connection=DU_conn
+    Run Keyword If          '${filename_exists}'=='okman' and '${backup_exists}'!='okman'    csn.execute    cp ${filename} ${filename}.backup
+    ...                     connection=${alias}
+    ...    ELSE             csn.execute       touch ${filename}                    connection=${alias}
+    csn.execute             rm ${filename}    connection=${alias}
+    csn.upload_file                 remote_path=${filename}
+    ...                             local_path=${Target_SWConfig}
+    ...                             connection=${alias}
+    csn.execute                     chmod 777 ${filename}    connection=${alias}
+
+Crasign any File
+    [Arguments]                     ${airscale}=${GNB_DU}
+    ...                             ${file_path}=/ffs/run/swconfig.txt
+    ${output}                       SSH Wait for Connect and Exec
+    ...                                 command=crasign ${file_path}
+    ...                                 host=${airscale.sys[0].M}
+
+Set Parameters on SCF_COAM
+   [Documentation]                  Set frame type and eventual XDMRSAdditionalPosition upon dir parameter
+    ...                             dir should be one of 'UL', 'DL', 'UL_DL' or 'None'
+    [Arguments]                     ${dir}=None
+    ...                             ${DMRS_value}=Automatic
+    ...                             ${FStype_value}=semiStatic
+    ...                             ${GuardPeriod_value}=2Symbols
+    ...                             ${UlDlSlotRatio_value}=1/4
+    ...                             ${puschMappingType_value}=${param.puschMappingType}
+    ...                             ${actUlDataDmrsFdm_value}=${param.actUlDataDmrsFdm}
+    ...                             ${ulDataDmrsFdmThres64QamMcs_value}=${param.ulDataDmrsFdmThres64QamMcs}
+    ...                             ${ulDMRSAdditionalPosition_value}=${param.ulDMRSAdditionalPosition}
+    ...                             ${actUlPtrs_value}=${param.actUlPtrs}
+    ...                             ${ulPtrsFreqDensityThresNrb0_value}=${param.ulPtrsFreqDensityThresNrb0}
+    ...                             ${ulPtrsFreqDensityThresNrb1_value}=${param.ulPtrsFreqDensityThresNrb1}
+
+    ${list_name}                    Set Variable        tddFrameStructure
+    ${list_tddFrameStructure_params}    Create Dictionary            frameStructureType=${FStype_value}
+    ...                                                              guardPeriodLength=${GuardPeriod_value}
+    ...                                                              ulDlDataSlotRatio=${UlDlSlotRatio_value}
+    Run Keyword If    ${isAic}      Run Keywords
+    ...                             SCF Remove List    dist_name=${NRCELL_DIST_NAME}    list_name=${list_name}    aicListEntity=Vdu    scope=aic
+    ...    AND                      SCF Add List       dist_name=${NRCELL_DIST_NAME}    list_name=${list_name}    aicListEntity=Vdu    scope=aic
+    ...    AND                      SCF Add Items To List    dist_name=${NRCELL_DIST_NAME}    list_name=${list_name}
+    ...                                                elements=${list_tddFrameStructure_params}    aicListEntity=Vdu    scope=aic
+    ...         ELSE    Run Keywords
+    ...                             SCF Set element in List    dist_name=${NRCELL_DIST_NAME}    list_name=${list_name}
+    ...                             element_name=frameStructureType    aicListEntity=Vdu    scope=Both
+    ...                             element_value=${FStype_value}
+    ...    AND                      SCF Set element in List    dist_name=${NRCELL_DIST_NAME}    list_name=${list_name}
+    ...                             element_name=guardPeriodLength
+    ...                             element_value=${GuardPeriod_value}    aicListEntity=Vdu    scope=Both
+    ...    AND                      SCF Set element in List    dist_name=${NRCELL_DIST_NAME}    list_name=${list_name}
+    ...                             element_name=ulDlDataSlotRatio
+    ...                             element_value=${UlDlSlotRatio_value}    aicListEntity=Vdu    scope=Both
+
+    #actInactDetNSAUe is set as default in VRAN on VCU#
+    Run Keyword If                  not ${isAic}    SCF Set element
+    ...                             dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}      element_name=actInactDetNSAUe
+    ...                             element_value=false
+
+    SCF Set element                 dist_name=${NRCELL_DIST_NAME}      element_name=puschMappingType
+    ...                             element_value=${puschMappingType_value}    aicListEntity=Vdu    scope=Both
+
+    SCF Set element                 dist_name=${NRCELL_DIST_NAME}      element_name=actUlDataDmrsFdm
+    ...                             element_value=${actUlDataDmrsFdm_value}    aicListEntity=Vdu    scope=Both
+
+    SCF Set element                 dist_name=${NRCELL_DIST_NAME}      element_name=ulDataDmrsFdmThres64QamMcs
+    ...                             element_value=${ulDataDmrsFdmThres64QamMcs_value}    aicListEntity=Vdu    scope=Both
+
+    SCF Set element                 dist_name=${NRCELL_DIST_NAME}      element_name=ulDMRSAdditionalPosition
+    ...                             element_value=${ulDMRSAdditionalPosition_value}    aicListEntity=Vdu    scope=Both
+
+    SCF Set element                 dist_name=${NRCELL_DIST_NAME}      element_name=actUlPtrs
+    ...                             element_value=${actUlPtrs_value}    aicListEntity=Vdu    scope=Both
+
+    SCF Set element                 dist_name=${NRCELL_DIST_NAME}      element_name=ulPtrsFreqDensityThresNrb0
+    ...                             element_value=${ulPtrsFreqDensityThresNrb0_value}    aicListEntity=Vdu    scope=Both
+
+    SCF Set element                 dist_name=${NRCELL_DIST_NAME}      element_name=ulPtrsFreqDensityThresNrb1
+    ...                             element_value=${ulPtrsFreqDensityThresNrb1_value}    aicListEntity=Vdu    scope=Both
+    Dated Log    ---> Modifications completed\n
+
+Restore Default Context 6062
+    Set Freq and TDD Frame struct
+    Set UE capa on EPCSim           ue_nr_capa_value=${ue_nr_capa_defValue}
+
+Suite Setup 6062
+    Setup.Suite Setup From Scratch      automaticTeardown=${True}
+    Backup Files
+
+Set Context
+    [Tags]                          SETUP
+    Copy File                       ${SCF_SETUP_PATH}     ${SCF_SETUP_PATH}.ori
+    ${scf_file_name}                Fetch from right      ${SCF_SETUP_PATH}      /
+    ${file_name_without_extention}    String.Replace string    ${scf_file_name}    .xml    ${EMPTY}
+    ${scf_name_for_update}            catenate    SEPARATOR=${EMPTY}    ${file_name_without_extention}
+    ...                               _6062_TDD.xml
+    ${scf_file_update_path}          set variable    ${LOG_PATH}/${scf_name_for_update}
+    Copy File                       ${SCF_SETUP_PATH}    ${scf_file_update_path}
+    SCF StartSession                scf_file=${scf_file_update_path}
+    ${modify_param}                 Set Parameters on SCF_COAM    dir=${param.dir}
+    SCF StopSession                 scf_file=${scf_file_update_path}
+
+    ${TestName}                     getFormattedName
+    Copy File                       ${LOG_PATH}/${scf_name_for_update}     ${LOG_PATH}/${TestName}.xml
+
+    OAM Perform Full Commissioning  scf_file=${scf_file_update_path}
+
+    Run Keyword If                  not ${isAic}    Airscale Wait for Ready         ${GNB_DU}
+    ...         ELSE                                OAM wait available    oam=${GNB_DU.oam}    wait_time=300
+    Set UE_Capa Context_WTS CFG
+
+Set UE_Capa Context_WTS CFG
+    WtsCfgConfig.startSession
+    # RDH: New LO_AP_LO Variant
+    # Issue: the "prefix=ue_param id=11" input parameter is hardcoded
+    # Solution: Use the new global variable: ${FIRST_NSA_UE_ID} as in the following line:
+    ${oldValue}          getParam           prefix=ue_param id=${FIRST_NSA_UE_ID}         param=ue_nr_capabilities
+    # ${oldValue}          getParam           prefix=ue_param id=11         param=ue_nr_capabilities
+
+    replaceValue         prefix=ue_param id=${FIRST_NSA_UE_ID}
+    ...                  param=ue_nr_capabilities
+    ...                  oldValue=${oldValue}
+    ...                  newValue=${param.ue_nr_capa}
+    WtsCfgConfig.stopSession         rename=modified
+
+Suite Teardown 6062
+    Restore Files
+    Setup.Suite Teardown
+
+
+Restart
+    [Tags]                          RESTART
+    Restart TL
+
+Captures Init
+#vRAN2.0#  tcpdump instead of Dpdkdump for BIP L1L2 Traces
+    ${CaptureL1L2}                  Capture L1L2 Set Upon Config            airscale=${GNB_DU}           isMirror=${True}
+    ${CaptureCPRT}                  Capture CPRT Set Upon Config            airscale=${GNB_DU}
+    Capture Init                    ${CaptureL1L2}                          withTN=True
+    Capture Init                    ${CaptureCPRT}                          withTN=True
+    Set Suite Variable              ${CaptureL1L2}
+    Set Suite Variable              ${CaptureCPRT}
+
+Captures Start
+    Capture Start                   capture=${CaptureCPRT}
+
+Captures Stop
+    Capture Stop                    capture=${CaptureCPRT}
+
+Test WTS Setup
+    WTS Setup    shouldUseLua=${False}
+
+Test Verify Cell Setup
+    UE Cell Setup Check
+
+SgNB Addition PRACH
+    ${CaptureCORE.path}             SgNB Addition to ENB            ueSetting=${UE_SIMPLE}
+    ...                             captureCallback=None
+    ...                             capture=None
+    Set Suite Variable              ${CaptureCORE.path}
+    dated log                       CaptureCORE.path is ${CaptureCORE.path}
+
+Attach_FR1
+    UE Attach Check
+
+#=======Keyword for passing eGATE commands on WTS=========================
+Wts_command
+    [Arguments]          @{varargs}    &{kwargs}      #les non named vont dans la suite @{varargs} les named argument vont dans le dico &{kwargs}
+    Dated Log    ----> wtsemu.${varargs[0]} &{kwargs}
+    Run Keyword    wtsemu.${varargs[0]}    &{kwargs}
+
+#=======WA For decresing PUSCH RX_Power/RSSI/SINR/NOISE for AIC===========
+Reduce_Pusch_RX_Power_AND_SINR
+    Wts_command    ul_sinr_testmode_nr    profile_id=1    sinr_target_pusch=-250
+    Wts_command    ue_testmode_set_nr    id=1    testmode=ul_sinr    action=activate    profile_id=1
+
+#=======WA For decresing PUSCH RX_Power/RSSI/SINR/NOISE for ABIP===========
+Reduce_Pusch_RX_Power_AND_SINR_FOR_ABIP
+    Wts_command    ul_sinr_testmode_nr    profile_id=1    sinr_target_pusch=-150
+    Wts_command    ue_testmode_set_nr    id=1    testmode=ul_sinr    action=activate    profile_id=1
+
+UL Traffic
+    Traffic UE UL                   throughput=2
+    ...                             captureCallback=Callback Capture L1L2
+    ...                             capture=${CaptureL1L2}
+    ...                             deviation=20
+
+DL Traffic
+    Traffic UE DL                   throughput=2
+    ...                             captureCallback=Callback Capture L1L2
+    ...                             capture=${CaptureL1L2}
+    ...                             deviation=20
+
+UL_DL Traffic
+    Traffic UE UL DL                throughput=2
+    ...                             captureCallback=Callback Capture L1L2
+    ...                             capture=${CaptureL1L2}
+    ...                             deviation=20

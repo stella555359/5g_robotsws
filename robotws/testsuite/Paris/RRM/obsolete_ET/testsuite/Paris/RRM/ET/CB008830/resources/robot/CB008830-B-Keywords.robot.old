@@ -1,0 +1,191 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB008830 step B
+...
+...               Test Case Scenario author   : ilakcoumi.pareemanen@nokia.com
+...               Test Case Scenario contact  : ilakcoumi.pareemanen@nokia.com
+...               Creation Date               : 26-03-2024
+
+
+Resource                         ./CB008830-Keywords.robot
+
+
+*** Variables ***
+&{SA_Cell1_Tput300M_Rank2_DMRSt2_pos2}     callType=SA     targetCell=1    throughput=250    DMRStype=2    rank=2    UEposProfile=2
+&{SA_Cell1_Tput300M_Rank2_DMRSt2_pos4}     callType=SA     targetCell=1    throughput=250    DMRStype=2    rank=2    UEposProfile=4
+&{SA_Cell2_Tput250M_Rank2_DMRSt2_pos1}     callType=SA     targetCell=2    throughput=250    DMRStype=2    rank=2    UEposProfile=1
+&{SA_Cell2_Tput250M_Rank2_DMRSt2_pos2}     callType=SA     targetCell=2    throughput=250    DMRStype=2    rank=2    UEposProfile=2
+&{SA_Cell2_Tput250M_Rank2_DMRSt2_pos3}     callType=SA     targetCell=2    throughput=250    DMRStype=2    rank=2    UEposProfile=3
+&{SA_Cell3_Tput250M_Rank2_DMRSt2_pos1}     callType=SA     targetCell=3    throughput=250    DMRStype=2    rank=2    UEposProfile=1
+&{SA_Cell3_Tput320M_Rank4_DMRSt2_pos3}     callType=SA     targetCell=3    throughput=320    DMRStype=2    rank=4    UEposProfile=3
+
+
+@{UE_B03}
+...    ${SA_Cell3_Tput250M_Rank2_DMRSt2_pos1}    ${SA_Cell3_Tput320M_Rank4_DMRSt2_pos3}
+...    ${SA_Cell2_Tput250M_Rank2_DMRSt2_pos1}    ${SA_Cell2_Tput250M_Rank2_DMRSt2_pos2}
+...    ${SA_Cell2_Tput250M_Rank2_DMRSt2_pos3}
+...    ${SA_Cell1_Tput300M_Rank2_DMRSt2_pos2}    ${SA_Cell1_Tput300M_Rank2_DMRSt2_pos4}
+
+
+${conf_DIR}             ${CURDIR}/../config
+${jsonPath_B03}         ${conf_DIR}/Delta_Configuration_CB008830_B_03.json
+${BSR_git_path}         gitlabe1.ext.net.nokia.com/nps_vrf_8_and_9/bsr.git
+${BSR_git_folder}       CB008830
+${BSR_git_file_name}    BSR_AEQE_6_H6_ALN60_ARP60_P00_COVERAGE_00424_00001.zip
+
+
+*** Keywords ***
+CB008830-B-3
+    [Documentation]
+    [Arguments]            ${UEdefListparam}
+
+    Init Sequence          ${UEdefListparam}
+    Critical Step          CB008830B define UEs             UEdefList=${UEdefListparam}
+    Critical Step          CB008830B Load BSR file
+    Critical Step          CB008830 json recommissioning    jsonFile=${jsonPath_B03}
+    Critical Step          CB008830B Configure iphy
+    Critical Step          Restart TL
+    Critical Step          WTS Setup                        shouldUseLua=False
+    Critical Step          CB008830 set rank                ${UEs_SA_list}
+    Critical Step          CB008830 attach SA UEs           UElist=${UEs_SA_list}
+    Critical Step          CB008830B Set UEs position       UElist=${UEs_SA_list}
+    Step                   CB008830 start traffic DL        UElist=${UEs_SA_list}
+    Step                   CB008830 start TTI Capture       suffix=B03
+    Traced Sleep           duration=5s    msg=DL TTI traffic capture
+    Step                   CB008830 stop TTI Capture        suffix=B03_Traffic
+    Traced Sleep           duration=60s    msg=DL traffic
+    Step                   CB008830 stop traffic DL         UElist=${UEs_SA_list}
+    Step                   CB008830 get PM files
+    Step                   CB008830B03 check TTI            TTIpcap=${TTIpcap}
+    Step                   CB008830 check DL BLER           cellID=${TDD_Cell_list[0].nrCellId}    maxBLER=1
+    Step                   CB008830 check DL BLER           cellID=${TDD_Cell_list[1].nrCellId}    maxBLER=1
+    Step                   CB008830 check DL BLER           cellID=${TDD_Cell_list[2].nrCellId}    maxBLER=1
+    [Teardown]             Display diagnosis
+
+
+########################  Step B KWs  ########################
+CB008830B define UEs
+    [Arguments]               ${UEdefList}
+
+    ${nbUEs}                  Get Length    ${UEdefList}
+
+    Dated Log New Line     ===> Define ${nbUEs} SA UEs in CFG
+    Create UEs in Cfg File    nb_sa_ues=${nbUEs}
+
+    ${SA_UE_id}               Set Variable    1
+    ${UEs_SA_list}            Create List
+
+    FOR    ${UEitem}    IN     @{UEdefList}
+        # Copy UE dictionary from SWENG according to call type
+        ${UEdef}              Copy Dictionary     ${BASIC_UE_SA}
+
+        # Set UE id according to call type and target cell
+        Set To Dictionary     ${UEdef}     ue    ${SA_UE_id}
+
+        ${tgtCellId}          Set Variable      ${TDD_Cell_list[${UEitem.targetCell}-1].nrCellId}
+        Set To Dictionary     ${UEdef}     target_cells    ${tgtCellId}
+        Set To Dictionary     ${UEdef}     throughput      ${UEitem.throughput}
+        Set To Dictionary     ${UEdef}     DMRStype        ${UEitem.DMRStype}
+        Set To Dictionary     ${UEdef}     rank            ${UEitem.rank}
+        Set To Dictionary     ${UEdef}     UEposProfile    ${UEitem.UEposProfile}
+
+        Modify UE Data in Cfg File    sa_or_nsa=SA    ue_id=${SA_UE_id}   cell_id=${tgtCellId}
+
+        Dated Log new line    ==== ${UEdef} ====
+
+        Append To List        ${UEs_SA_list}     ${UEdef}
+        ${SA_UE_id}           Evaluate           ${SA_UE_id}+1
+    END
+
+    Set Suite Variable        ${UEs_SA_list}
+
+
+CB008830B Configure SRS beam
+    [Documentation]         Previous way to define UE positions in CFG file
+    ...                     Now OBSOLETE: cell_srs_beam_pos_nr no more supprted after introducing Spatial Manager (from CB008360) for Beamforming
+    ...                     Replaced by ul_mimo_srs_beam_pos_nr and BSR file
+    [Arguments]             ${cellnb}
+
+    WtsCfgConfig.startSession
+
+    # Add Test Mode Srs beam
+    ${SRS_beam_pos_prof}         Set Variable    cell_srs_beam_pos_nr profile_id=1 num_of_ue_positions=4 azimuth=-70,-19,20,70
+    ${line}                      getIndex   prefix=cfg_end    param=${EMPTY}
+    WtsCfgConfig.setConfigLine   configuration=${SRS_beam_pos_prof}    line=${line}
+
+    ${line}                      Evaluate           ${line}+1
+    FOR    ${cellNum}    IN RANGE    0    ${cellnb}
+        ${Act_SRS_cell}              Catenate    cell_testmode_set_nr cell_id=${TDD_Cell_list[${cellNum}].nrCellId}
+        ...                                      gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate
+        WtsCfgConfig.setConfigLine   configuration=${Act_SRS_cell}    line=${line}
+        ${line}                      Evaluate    ${line}+1
+    END
+    WtsCfgConfig.stopSession
+
+
+CB008830B Load BSR file
+    [Documentation]         Load BSR file to enable the use of Spatial Managed UE position
+
+    Dated Log New Line     ===> Download BSR file ${BSR_git_file_name}
+    Download Package Using Git Update OAM
+    ...                                 git_path=${BSR_git_path}
+    ...                                 git_folder=${BSR_git_folder}
+    ...                                 git_file_name=${BSR_git_file_name}
+    ...                                 target_dir=${LOG_PATH}
+
+
+CB008830B Configure iphy
+    [Documentation]         Modify iphy to enable SRS (current case is for DL Beam forming) and BSR file
+    WtsXmlConfig.startSession           file=iphy
+
+    WtsXmlConfig.addTextEltAll          Elt=//vcell     name=ulFeatures      val=advancedSRS
+# obsolete param:    WtsXmlConfig.addTextEltAll          Elt=//vcell     name=refinedBeams    val=true
+    WtsXmlConfig.addTextEltAll          Elt=//vcell     name=dlFeatures      val=pmiBeams
+
+    ${Feat1}                            Create Dictionary    feature=FILE_DOWNLOAD                      support=1
+    ${Feat2}                            Create Dictionary    feature=BEAMFORMING_PATTERNS_FILE          support=1
+    ${Feat3}                            Create Dictionary    feature=BEAMFORMING_DATA_FILE_FORMAT_V1    support=0
+    ${Feat4}                            Create Dictionary    feature=BEAMFORMING_DATA_FILE_FORMAT_V2    support=1
+    @{Feat_list}                        Create List          ${Feat1}    ${Feat2}    ${Feat3}    ${Feat4}
+
+    WtsXmlConfig.addObjectEltAll        Elt=//soap-config    name=supportedFeatures
+    WtsXmlConfig.addItemsFromListAll    Elt=//soap-config/supportedFeatures    itemlist=${Feat_list}
+
+    WtsXmlConfig.stop Session           file=iphy
+
+
+CB008830B Set UEs position
+    [Documentation]          As part of CB008360, command 'ul_mimo_srs_beam_pos_nr' has been implemented to position the UE
+    ...                      in a defined Quadrant/sub-Quadrant position relative to the RU geometry
+    [Arguments]             ${UElist}
+
+    # Define UE position profiles
+    wtsemu.ul_mimo_srs_beam_pos_nr    profile_id=1    mode=fixed    test_type=SRS    init_quad_pos=0    init_sub_quad_pos=0
+    wtsemu.ul_mimo_srs_beam_pos_nr    profile_id=2    mode=fixed    test_type=SRS    init_quad_pos=1    init_sub_quad_pos=0
+    wtsemu.ul_mimo_srs_beam_pos_nr    profile_id=3    mode=fixed    test_type=SRS    init_quad_pos=2    init_sub_quad_pos=0
+    wtsemu.ul_mimo_srs_beam_pos_nr    profile_id=4    mode=fixed    test_type=SRS    init_quad_pos=3    init_sub_quad_pos=0
+
+    FOR    ${UEitem}    IN     @{UElist}
+        wtsemu.ue_testmode_set_nr    id=${UEitem.ue}    testmode=ul_mimo_srs_beam_pos    action=activate    profile_id=${UEitem.UEposProfile}
+    END
+
+
+CB008830B03 check TTI
+    [Arguments]            ${TTIpcap}    ${ThresholdMcs}=20
+
+    Dated Log New Line     ===> convert TTI trace ${TTIpcap}
+    ${TTIjson}             Convert TTI trace from pcap to others    input_file_path=${TTIpcap}
+    ${TTIcsv}              decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson}    num_of_events=100000
+
+    Dated Log New Line     ===> check TTI of cell ${TDD_Cell_list[0].physCellId}
+    ${nbCheck1}            check_CB008830_B03_2xRANK2_noDMRSFDM    jsonPathName=${TTIjson}
+    ...                                                            cellId=${TDD_Cell_list[0].physCellId}
+
+    Dated Log New Line     ===> check TTI of cell ${TDD_Cell_list[1].physCellId}
+    ${nbCheck2}            check_CB008830_B03_3xRANK2              jsonPathName=${TTIjson}
+    ...                                                            cellId=${TDD_Cell_list[1].physCellId}    McsThreshold=${ThresholdMcs}
+
+    Dated Log New Line     ===> check TTI of cell ${TDD_Cell_list[2].physCellId}
+    ${nbCheck3}            check_CB008830_B03_1xRANK2_1xRANK4      jsonPathName=${TTIjson}
+    ...                                                            cellId=${TDD_Cell_list[2].physCellId}    McsThreshold=${ThresholdMcs}
+
+    Should Be True         ${nbCheck1}*${nbCheck2}*${nbCheck3} > 0

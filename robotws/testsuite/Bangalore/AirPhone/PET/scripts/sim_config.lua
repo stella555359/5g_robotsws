@@ -1,0 +1,737 @@
+-- Copyright (c) 2019 Nokia. All rights reserved.
+-------------------------------------------------------------------------------------
+--VLAN Finder
+-------------------------------------------------------------------------------------
+function find_vlan(interface)
+        local filename = os.tmpname()
+        local command = "ip link > " .. filename
+        os.execute(command)
+
+		local file = io.open(filename, "r")
+		local output = ""
+		if file then
+		for line in file:lines() do
+			if string.match(line, "trunk") then
+				break
+			elseif string.match(line, interface) then
+			local vlan = string.match(line, "%.%d+")
+			if vlan then
+				output = vlan
+				break
+			end
+			end
+		end
+		file:close()
+		os.remove(filename)
+		end
+		if output ~= "" then
+		return output -- Return VLAN ID if found
+		else
+		return "" -- Return empty string if VLAN ID is not found
+		end
+end
+
+function add_ip(interface, ip_address)
+    
+    
+    if interface == nil and ip_address == nil then
+        print("Interface or IP address is nil")
+    end
+
+    if interface == "eth3" then
+        VLANID = find_vlan("eth3")
+    elseif interface == "eth4" then
+        VLANID = find_vlan("eth4")
+    end
+    if VLANID ~= "" then
+        interface = interface .. VLANID
+    end
+
+    local command = "sudo ip addr add " .. ip_address .."/24  dev " .. interface
+
+    local result = os.execute(command)
+
+
+end
+
+function sys_cmd()
+
+    os.execute("ulimit -c unlimited")   --To support unlimited coredump file size on WTS VM
+    os.execute("sudo bash -c 'echo 'core.%e.%p' > /proc/sys/kernel/core_pattern'")  --To enable all types of coredumps on WTS VM
+    os.execute('sudo sysctl -w net.sctp.rto_min=100')
+    os.execute('sudo sysctl -w net.sctp.sack_timeout=200')
+    os.execute('sudo sysctl -w net.sctp.rto_initial=3000')
+    os.execute('sudo sysctl -w net.sctp.rto_max=60000')
+    os.execute('sudo sysctl -w net.core.wmem_max=20971520')
+    os.execute('sudo sysctl -w net.core.wmem_default=20971520')
+    os.execute('sudo sysctl -w net.core.rmem_max=20971520')
+    os.execute('sudo sysctl -w net.core.rmem_default=20971520')
+    os.execute('sudo sysctl -w net.ipv4.tcp_rmem="10240 87380 20971520"') --Only for TCP
+    os.execute('sudo sysctl -w net.ipv4.tcp_wmem="10240 87380 20971520"') --Only for TCP
+    os.execute('sudo sysctl -w net.core.wmem_max=20971520') --Only for TCP
+    os.execute('sudo sysctl -w net.core.rmem_max=20971520') --Only for TCP
+    os.execute('sudo sysctl -w net.ipv4.tcp_limit_output_bytes=62914560') --Only for TCP
+    os.execute('sudo sysctl -w net.ipv4.tcp_congestion_control=cubic') --Only for TCP
+
+end
+
+
+function covert_to_pci(input)
+	local value=tonumber(input)
+	a=math.floor(value/3)
+	b=value%3
+	return (''..a..':'..b..'')
+	
+end
+
+function check_data_file(file_name)
+    local IS_OK,sim_data=pcall(require,file_name)
+    if not IS_OK then
+        print("ERR : "..sim_data)
+        print("SIM_DATA file not exits:\""..file_name.."\" or have SYNTAX ERROR")
+        return
+    else
+        return sim_data 
+    end
+end
+
+function real_gnb_configuartion()
+	for real_gnb_id, data in pairs(GNB_DATA) do
+		if data.xp_management == "on" then
+			exec('set_gnb id='..real_gnb_id..' type=external gnb_id='..data.gnb_id..' plmn='..data.plmn..' plmnList='..data.plmn..' nssai='..data.snssai..' x2_peers=none amf=all s1u='..data.s1u..' x2='..data.x2..':36422 x2u='..data.x2u..':36422 ng='..data.ng..' ngu='..data.ngu..' xn='..data.xn..' xnu='..data.xnu..' daemon='..EDAEMON_IP..':'..EDAEMON_PORT..' xp_management='..data.xp_management..' xp='..data.xp..':32742 xpu='..data.xpu..':32742')
+		else 
+			exec('set_gnb id='..real_gnb_id..' type=external gnb_id='..data.gnb_id..' plmn='..data.plmn..' plmnList='..data.plmn..' nssai='..data.snssai..' x2_peers=none amf=all s1u='..data.s1u..' x2='..data.x2..':36422 x2u='..data.x2u..':36422 ng='..data.ng..' ngu='..data.ngu..' xn='..data.xn..' xnu='..data.xnu..' daemon='..EDAEMON_IP..':'..EDAEMON_PORT..'')
+		end
+	end
+end
+
+
+function real_gnb_cell_configuartion()
+	for _, cell_data in ipairs(GNB_CELL_DATA) do
+        local pci = covert_to_pci(cell_data.pci)       	
+		if cell_data.gscn > 2 then
+            exec('set_cell id='..cell_data.cell_id..' nrci=0x'..string.format('%x',cell_data.cell_id)..' gnb='..cell_data.gnb..' pci='..pci..' tac='..cell_data.tac_list..' tdd_cell='..cell_data.tdd_flag..' gscn='..cell_data.gscn..' nr_arfcn='..cell_data.nrarfcn..' proxy='..cell_data.ue_proxy_ip..':9999|'..cell_data.ue_proxy_ip..':8888 mandatory_for_activation=off')
+        else
+            exec('set_cell id='..cell_data.cell_id..' nrci=0x'..string.format('%x',cell_data.cell_id)..' gnb='..cell_data.gnb..' pci='..pci..' tac='..cell_data.tac_list..' tdd_cell='..cell_data.tdd_flag..' nr_arfcn='..cell_data.nrarfcn..' proxy='..cell_data.ue_proxy_ip..':9999|'..cell_data.ue_proxy_ip..':8888 mandatory_for_activation=off') 
+        end
+	end
+end
+
+function sim_enb_configuartion()
+	for sim_enb_id, sim_enb_data in pairs(SIM_ENB_DATA) do
+
+        add_ip("eth3", sim_enb_data.s1)
+        add_ip("eth3", sim_enb_data.x2)
+        add_ip("eth3", sim_enb_data.x2u)
+        add_ip("eth3", sim_enb_data.xp)
+        add_ip("eth3", sim_enb_data.xpu)
+        add_ip("eth4", sim_enb_data.enb_server_ip)
+
+		if sim_enb_data.xp_management == "on" then
+			exec('enb_set id='..sim_enb_id..' name=SimModeLTERAN-'..sim_enb_id..' type=simulated enb_id_macro=0x0000'..sim_enb_id..' plmn='..sim_enb_data.plmn..' s1='..sim_enb_data.s1..' x2='..sim_enb_data.x2..' x2u='..sim_enb_data.x2u..' x2_peers='..sim_enb_data.x2_peers..' daemon='..sim_enb_data.enb_server_ip..':'..EDAEMON_PORT..' xp_management='..sim_enb_data.xp_management..' xp='..sim_enb_data.xp..':32742 xpu='..sim_enb_data.xpu..':32742 x2u_snd_buff_size=41943040 x2u_rcv_buff_size=41943040 proxy_read_packets_threshold=10')
+			exec('enb_xp_param id='..sim_enb_id..'  xp_peers='..sim_enb_data.xp_peers..' ignore_xp=off xp_listening_socket=on')
+		else 	
+			exec('enb_set id='..sim_enb_id..' name=SimModeLTERAN-'..sim_enb_id..' type=simulated enb_id_macro=0x0000'..sim_enb_id..' plmn='..sim_enb_data.plmn..' s1='..sim_enb_data.s1..' x2='..sim_enb_data.x2..' x2u='..sim_enb_data.x2u..' x2_peers='..sim_enb_data.x2_peers..' daemon='..sim_enb_data.enb_server_ip..':'..EDAEMON_PORT..' x2u_snd_buff_size=41943040 x2u_rcv_buff_size=41943040 proxy_read_packets_threshold=10')
+		end
+		exec('enb_param id='..sim_enb_id..' drb_id_begin=3 endc_capable_qci='..sim_enb_data.qci_supported..'')
+		exec('enb_endc_param id='..sim_enb_id..' control_flow_period=3gpp1 use_nr_ran_cont=on serving_cell_index_range_scg=8:31')
+        
+	end
+end
+
+function sim_enb_cell_configuartion()
+
+	for _, sim_enb_cell_data in ipairs(SIM_ENB_CELL_DATA) do
+	
+		local pci = covert_to_pci(sim_enb_cell_data.pci)
+		exec('set_cell id='..sim_enb_cell_data.cell_id..' enb='..sim_enb_cell_data.enb..' eci='..sim_enb_cell_data.eci..' pci='..pci..' tac=222 tdd_cell='..sim_enb_cell_data.tdd_flag..' earfcn='..sim_enb_cell_data.earfcn..' bw=20MHz proxy='..sim_enb_cell_data.cell_proxy..':2152|'..sim_enb_cell_data.cell_proxy..':8889 mandatory_for_activation=off')
+
+	end
+end
+
+function sim_gnb_configuartion()
+	for sim_gnb_id, sim_gnb_data in pairs(SIM_GNB_DATA) do 
+
+        add_ip("eth3", sim_gnb_data.sim_gnb_s1u)
+        add_ip("eth3", sim_gnb_data.sim_gnb_x2)
+        add_ip("eth3", sim_gnb_data.sim_gnb_ng)
+        add_ip("eth3", sim_gnb_data.sim_gnb_xn)
+        add_ip("eth4", sim_gnb_data.sim_gnb_server_ip)
+
+		exec('set_gnb id='..sim_gnb_id..' name=SimMode5GRAN-'..sim_gnb_id..' type=simulated gnb_id=0x0000'..sim_gnb_id..' plmn='..sim_gnb_data.plmn..' plmnList='..sim_gnb_data.plmn..' nssai='..sim_gnb_data.snassi..' x2_peers=none s1u='..sim_gnb_data.sim_gnb_s1u..' x2='..sim_gnb_data.sim_gnb_x2..':36422 ng='..sim_gnb_data.sim_gnb_ng..' xn='..sim_gnb_data.sim_gnb_xn..' daemon='..sim_gnb_data.sim_gnb_server_ip..':'..EDAEMON_PORT..'')
+		exec('gnb_param id='..sim_gnb_id..' xn_listening_socket=on send_xn_setup=on measEvent=A1 measEvent=A2 measEvent=A3 measEvent=A5 measEvent=A4 sib1_period=2000')
+		exec('enb_timer T_RELOCprepTimeout=2000')
+	end
+end
+
+function sim_gnb_cell_configuartion()
+	for _, sim_gnb_cell_data in pairs(SIM_GNB_CELL_DATA) do
+		local pci = covert_to_pci(sim_gnb_cell_data.pci)
+		exec('set_cell id='..sim_gnb_cell_data.cell_id..' nrci=0x'..string.format('%x',sim_gnb_cell_data.cell_id)..' gnb='..sim_gnb_cell_data.gnb..' pci='..pci..' tac='..sim_gnb_cell_data.tac..' tdd_cell='..sim_gnb_cell_data.tdd_flag..' gscn='..sim_gnb_cell_data.gscn..' nr_arfcn='..sim_gnb_cell_data.nrarfcn..' proxy='..sim_gnb_cell_data.cell_proxy..':9999|'..sim_gnb_cell_data.cell_proxy..':8888 mandatory_for_activation=off')
+	end
+end
+
+function sim_amf_configuration()
+	for sim_amf_id, sim_amf_data in pairs(SIM_AMF_DATA) do
+
+        add_ip("eth3", sim_amf_data.amf_ng)
+
+		exec('set_amf_region id='..sim_amf_data.amf_region..' plmn='..sim_amf_data.plmn..' tac_list=7627107,100,788,'..sim_amf_data.tac_list..',0')
+		exec('set_amf id='..sim_amf_id..' name=SimModeAMF-'..sim_amf_id..' daemon='..EDAEMON_IP..':'..EDAEMON_PORT..' ng='..sim_amf_data.amf_ng..':38412 region='..sim_amf_data.amf_region..' set_id='..sim_amf_data.amf_set..' pointer='..sim_amf_data.amf_pointer..'')
+		exec('amf_param id='..sim_amf_id..' full_nas_auth=on nia=null+zuc nea=null+zuc')
+	end	
+end
+
+function sim_upf_configuration()
+	for sim_upf_id, sim_upf_data in pairs(SIM_UPF_DATA) do
+
+        add_ip("eth3", sim_upf_data.upf_ngu)
+	
+		exec('set_upf id='..sim_upf_id..' daemon='..EDAEMON_IP..':'..EDAEMON_PORT..' type=simulated addr='..sim_upf_data.upf_addr..'/21 ngu='..sim_upf_data.upf_ngu..' devname=tunUPF'..sim_upf_id..' ngu_snd_buff_size=20M ngu_rcv_buff_size=20M ngu_read_packets_threshold=20 n6_read_packets_threshold=40 n6_queue=2500')
+        --adding nft rule
+        os.execute('sudo nft add rule ip filter INPUT iifname tunUPF'..sim_upf_id..' counter packets 0 bytes 0 accept')
+        os.execute('sudo nft add rule ip filter FORWARD iifname tunUPF'..sim_upf_id..' counter packets 0 bytes 0 accept')
+	end
+end
+
+function sim_smf_configuration()
+	for sim_smf_id, sim_smf_data in pairs(SIM_SMF_DATA) do
+		exec('smf_upf_mapping id='..sim_smf_id..' upf='..sim_smf_data.upf_list..'')
+		exec('smf_param id='..sim_smf_id..' max_pdu_session_supported='..sim_smf_data.pdu_sessions..'')
+	end
+end
+
+function sim_mme_configuration()
+    for sim_mme_id, sim_mme_data in pairs(SIM_MME_DATA) do
+
+        add_ip("eth3", sim_mme_data.mme_slc)
+
+		exec('mme_pool_area id=1 mmegi=1 plmn='..sim_mme_data.plmn..' tac_list=777,111,222,444,333,'..TAC..'')
+        exec('set_mme id='..sim_mme_id..' name=SimModeMME-'..sim_mme_id..' ip='..EDAEMON_IP..':'..EDAEMON_PORT..' s1='..sim_mme_data.mme_slc..':36412 supported_rat=lte,nblte pool=1:1')
+	end
+end
+
+function sim_sgw_configuration()
+	for sim_sgw_id, sim_sgw_data in pairs(SIM_SGW_DATA) do
+
+        add_ip("eth3", sim_sgw_data.sgw_s1u)
+        add_ip("eth3", sim_sgw_data.sgw_s11)
+        exec('set_sgw id='..sim_sgw_id..' ip='..EDAEMON_IP..':'..EDAEMON_PORT..' s1u='..sim_sgw_data.sgw_s1u..' s11='..sim_sgw_data.sgw_s11..':60100 s5u_snd_buff_size=40M s5u_rcv_buff_size=40M s1u_snd_buff_size=40M s1u_rcv_buff_size=40M gtpu_read_packets_threshold=20')
+	
+    end
+end
+
+function sim_pgw_configuration()
+	for sim_pgw_id, sim_pgw_data in pairs(SIM_PGW_DATA) do
+        exec('set_pgw id='..sim_pgw_id..' type=simulated ip='..EDAEMON_IP..':'..EDAEMON_PORT..' addr='..sim_pgw_data.pgw_addr..'/17 apn=lteapn'..sim_pgw_id..'.com.mnc69.mcc450.gprs devtype=tun devname=tunPGW'..sim_pgw_id..' sgi_rcv_buff_size=40M sgi_snd_buff_size=40M s5u_rcv_buff_size=40M s5u_snd_buff_size=40M gtpu_read_packets_threshold=20 sgi_read_packet_threshold=20 sgi_queue_len=2500')
+        --adding nft rule
+        os.execute('sudo nft add rule ip filter INPUT iifname tunPGW'..sim_pgw_id..' counter packets 0 bytes 0 accept')
+        os.execute('sudo nft add rule ip filter FORWARD iifname tunPGW'..sim_pgw_id..' counter packets 0 bytes 0 accept')
+	end
+end
+
+function sim_uec_configuaration()
+	for sim_uec_id, sim_uec_data in pairs(UEC_DATA) do
+
+        add_ip("eth4", sim_uec_data.uec_ip)
+        add_ip("eth4", sim_uec_data.uplane_ip)
+
+		exec('set_uec id='..sim_uec_id..' daemon='..sim_uec_data.uec_ip..':'..EDAEMON_PORT..' peer='..sim_uec_data.uec_ip..':2152 peer_uplane='..sim_uec_data.uplane_ip..':2152 retries=unlimited gtpu=off pdn=1 devtype=tun devname=tunUEC'..sim_uec_id..' addr=72.'..sim_uec_id + 20 ..'.0.1/16 proxy_snd_buf_size=20971520 proxy_rcv_buf_size=20971520 proxy_read_packets_threshold=10 sctp_rto_min=100 ctrl_conn_timeout=150000')
+		exec('uec_param id='..sim_uec_id..' reordering_window_size=1000 reordering_timer=500')
+	end
+end
+
+function sim_trf_gen_configuaration()
+	exec('sim_param_set trf_gen_client_ports=14001-19000,23000-41000 trf_gen_server_ports=41001-41010 L2_HI_IP_ADDRESS=10.0.2.81,10.0.2.82,10.0.2.83,10.0.2.84,10.0.2.85,10.0.2.86,10.0.2.91,10.0.2.92,10.0.2.93,10.0.2.94,10.0.2.95,10.0.2.96')
+	exec('sim_param_set max_connections_trfgen_client=5000 max_connections_trfgen_server=5000 max_datarate_trfgen_client=2500 max_datarate_trfgen_server=2500 max_datarate_upf=2500 RND_STATS=on MAX_FILE_DESCRIPTORS_PER_TRF_GEN=4096')
+	for sim_trf_gen_id, sim_trf_gen_data in pairs(SIM_TRF_GEN_DATA) do
+		
+        if sim_trf_gen_data.trf_gen_loc == "ue" then
+            add_ip("eth4", sim_trf_gen_data.trf_gen_ip_address)
+        else
+            add_ip("eth3", sim_trf_gen_data.trf_gen_ip_address)
+        end
+
+		if sim_trf_gen_data.trf_gen_type == "client" then
+			exec('set_trf_gen id='..sim_trf_gen_id..' daemon='..EDAEMON_IP..':'..EDAEMON_PORT..' loc='..sim_trf_gen_data.trf_gen_loc..' trf_gen_type=client client_addr='..sim_trf_gen_data.trf_gen_ip_address..' quick_ack=off drop_packets_on_congestion=on send_buff_size=40M recv_buff_size=40M mss=1310')
+		elseif sim_trf_gen_data.trf_gen_type == "server" then
+			exec('set_trf_gen id='..sim_trf_gen_id..' daemon='..EDAEMON_IP..':'..EDAEMON_PORT..' loc='..sim_trf_gen_data.trf_gen_loc..' trf_gen_type=server server_addr='..sim_trf_gen_data.trf_gen_ip_address..' quick_ack=off drop_packets_on_congestion=on send_buff_size=40M recv_buff_size=40M mss=1310')
+		else 
+			print(" Invaild trf_gen_type : "..sim_trf_gen_data.trf_gen_type.." Might be typo")
+			return
+		end
+	end
+end
+
+function sim_ue_group_and_ue_configuration()
+	local current_ue_id=1
+    for _, ue_group_data in pairs(UE_GROUP_DATA) do
+    	
+		--[[ FOR SA UE ALLOCATON BASED ON UE GROUP DATA --]]
+	  
+		exec('set_ue_group id='..ue_group_data.ue_group_id..' name='..ue_group_data.name..' enb='..ue_group_data.ran_id..' cell='..ue_group_data.cell..' uec='..ue_group_data.uec..'  pdn='..ue_group_data.pdn..' ptw=2.56 idle_edrx_cycle_len=2 release=15 nia=null+zuc+aes+snow3g nea=null+zuc+aes+snow3g eia=null+zuc+aes+snow3g eea=null+zuc+aes+snow3g')
+	    
+		print(' UE GROUP ID '..ue_group_data.ue_group_id..' : UEs Range allacted '..current_ue_id..' - '..(current_ue_id+ue_group_data.num_ue-1)..'')	
+		
+		if ue_group_data.ue_type == "SA" then
+			if ue_group_data.num_ue ~= 0 then
+				for ue_id = current_ue_id,(current_ue_id+ue_group_data.num_ue-1) do
+					if ue_group_data.additional_qosflows_to_activate == "NIL" then
+						exec('set_ue id='..ue_id..' group='..ue_group_data.ue_group_id..' opc_key=0ED47545168EAFE2C39C075829A7B61F sec_key=0102030405060708090A0B0C0D0EFF00 mode=nr enb='..ue_group_data.ran_id..' cell='..ue_group_data.cell..' suci=0:'..PLMN..':0000:0:0:0'.. SA_IMSI + ue_id - 1)
+					else
+						exec('set_ue id='..ue_id..' group='..ue_group_data.ue_group_id..' opc_key=0ED47545168EAFE2C39C075829A7B61F sec_key=0102030405060708090A0B0C0D0EFF00 mode=nr enb='..ue_group_data.ran_id..' cell='..ue_group_data.cell..' additional_qosflows_to_activate='..ue_group_data.additional_qosflows_to_activate..' suci=0:'..PLMN..':0000:0:0:0'.. SA_IMSI + ue_id - 1)
+					end
+					
+					if UPLANE_DATA_WITH_TRF_GEN == "YES" and ue_group_data.trf_gen then
+						
+						local set_ue_trfgen_param = "set_ue_trfgen_param ue="..ue_id..""
+						
+						for _, pdu_session_id in ipairs(ue_group_data.pdu_sesstions) do
+							for _,qfi in ipairs(pdu_session_id.qfi) do
+								
+								if (ue_group_data.ue_trf_gen_to_use.dl_server ~= nil ) or (ue_group_data.ue_trf_gen_to_use.dl_client ~= nil ) then
+									set_ue_trfgen_param = ""..set_ue_trfgen_param.." pdu="..pdu_session_id.pdu.." upf="..ue_group_data.upf.." qfi="..qfi.." dir=dl max_data_rate=1 trf_gen_client="..ue_group_data.ue_trf_gen_to_use.dl_client.." trf_gen_server="..ue_group_data.ue_trf_gen_to_use.dl_server..""
+								end
+								if (ue_group_data.ue_trf_gen_to_use.ul_server ~= nil ) or (ue_group_data.ue_trf_gen_to_use.ul_client ~= nil ) then
+									set_ue_trfgen_param = ""..set_ue_trfgen_param.." pdu="..pdu_session_id.pdu.." upf="..ue_group_data.upf.." qfi="..qfi.." dir=ul max_data_rate=1 trf_gen_client="..ue_group_data.ue_trf_gen_to_use.ul_client.." trf_gen_server="..ue_group_data.ue_trf_gen_to_use.ul_server..""
+								end
+							end
+						end
+						exec(set_ue_trfgen_param)
+						exec("set_pdu_param ue="..ue_id.." pdu=1 trf_type=external_trf_gen")
+					else
+					
+						for _,pdu_session_id in ipairs(ue_group_data.pdu_sesstions) do
+							exec("set_pdu_param ue="..ue_id.." pdu="..pdu_session_id.pdu.." upf="..ue_group_data.upf.." trf_type=internal ")	
+						end
+					end
+				end
+			end
+		--[[ FOR NSA UE ALLOCATON BASED ON UE GROUP DATA --]]
+		
+		elseif ue_group_data.ue_type == "NSA" then
+		
+	        for _, bearer_data in ipairs(ue_group_data.bearer_set) do
+			
+                if UPLANE_DATA_WITH_TRF_GEN == "YES" and ue_group_data.trf_gen then
+				
+                    if bearer_data.default == "on" then
+                        exec('set_bearer id='..bearer_data.bearerId..' ue_group='..ue_group_data.ue_group_id..' qci='..bearer_data.qci..' pdn='..ue_group_data.pdn..' default=on trf_type=external_trf_gen dl_nat_gw='..EDAEMON_IP..' ul_nat_gw='..EDAEMON_IP)
+                    else
+                        exec('set_bearer id='..bearer_data.bearerId..' ue_group='..ue_group_data.ue_group_id..' qci='..bearer_data.qci..' pdn='..ue_group_data.pdn..'')
+                    end						
+					
+                else
+                    
+                    if bearer_data.default == "on" then
+                        exec('set_bearer id='..bearer_data.bearerId..' ue_group='..ue_group_data.ue_group_id..' qci='..bearer_data.qci..' pdn='..ue_group_data.pdn..' default=on trf_type=internal dl_nat_gw='..EDAEMON_IP..' ul_nat_gw='..EDAEMON_IP)
+                    else
+                        exec('set_bearer id='..bearer_data.bearerId..' ue_group='..ue_group_data.ue_group_id..' qci='..bearer_data.qci..' pdn='..ue_group_data.pdn..'')
+                    end
+                end
+            end
+			
+			if ue_group_data.num_ue ~= 0 then
+				for ue_id = current_ue_id,(current_ue_id+ue_group_data.num_ue-1)do 
+				
+					exec('set_ue id='..ue_id..' group='..ue_group_data.ue_group_id..' enb='..ue_group_data.ran_id..' cell='..ue_group_data.cell..' sec_key=0102030405060708090A0B0C0D0EFF00 imsi='..PLMN..':'.. NSA_IMSI + ue_id - 1)
+					exec('ue_param id='..ue_id..' dual_conn=eutra_nr')
+					exec('ue_mme_param id='..ue_id..' sgw_id='..ue_group_data.sgw_id)
+					
+					if UPLANE_DATA_WITH_TRF_GEN == "YES"  and ue_group_data.trf_gen then
+						local set_ue_trfgen_param = "set_ue_endc_trfgen_param ue="..ue_id..""
+						
+						for _, bearer_data in ipairs(ue_group_data.bearer_set) do
+							
+							if (ue_group_data.ue_trf_gen_to_use.dl_server ~= nil ) or (ue_group_data.ue_trf_gen_to_use.dl_client ~= nil ) then
+							
+								set_ue_trfgen_param = ''..set_ue_trfgen_param..' pgw='..ue_group_data.pdn..' bearerId='..bearer_data.bearerId..' dir=dl max_data_rate=1 trf_gen_client='..ue_group_data.ue_trf_gen_to_use.dl_client..'  trf_gen_server='..ue_group_data.ue_trf_gen_to_use.dl_server..''
+							
+							end
+							if (ue_group_data.ue_trf_gen_to_use.ul_server ~= nil ) or (ue_group_data.ue_trf_gen_to_use.ul_client ~= nil ) then
+	
+								set_ue_trfgen_param = ''..set_ue_trfgen_param..'  pgw='..ue_group_data.pdn..' bearerId='..bearer_data.bearerId..' dir=ul max_data_rate=1 trf_gen_client='..ue_group_data.ue_trf_gen_to_use.ul_client..'  trf_gen_server='..ue_group_data.ue_trf_gen_to_use.ul_server..''
+	
+							end
+						end
+						exec(set_ue_trfgen_param)
+					end
+				end
+			end
+		
+		else
+			print("Invaild UE type: it must be SA or NSA")
+            return
+		end
+        current_ue_id=current_ue_id+ue_group_data.num_ue
+    end
+end
+
+function qos_and_bearer_configuration()
+
+	for qos_flows_id, qos_flows_data in pairs(QOS_GROUP_DATA) do
+		exec('set_qosflow id='..qos_flows_id..' 5qi='..qos_flows_data.fiveqi..' default='..qos_flows_data.default)
+	end
+
+	for nwslice_id, nwslice_data in pairs(NWSLICE_DATA) do
+		exec('set_nwslice default='..nwslice_data.default..' id='..nwslice_id..' snssai='..nwslice_data.snssai..' qos_flows='..nwslice_data.qos_flows..' amf_region_id='..nwslice_data.amf_region_id..' plmn_list='..nwslice_data.plmn_list..'  ue='..nwslice_data.ue..'')
+	end
+end
+
+
+function run_configuration(data_file_name,duration)	
+    sys_cmd()
+    check_data_file(data_file_name)
+    require "test_sequence" 
+	
+    sim_uec_configuaration()
+	--To Configure 4G core sim
+	if SIMULATE_4G_CORE == "YES" then
+		sim_mme_configuration()
+		sim_sgw_configuration()
+		sim_pgw_configuration()
+	end
+	
+	--To Configure 4G RAN sim
+	if SIMULATE_4G_RAN == "YES" then
+		sim_enb_configuartion()
+		sim_enb_cell_configuartion()
+	end
+	
+	--To Configure 5G core sim
+	if SIMULATE_5G_CORE == "YES" then 
+		sim_amf_configuration()
+		sim_upf_configuration()
+		sim_smf_configuration()
+	end
+	
+	--To Configure 5G RAN sim
+	if SIMULATE_5G_RAN == "YES" then 
+		sim_gnb_configuartion()
+		sim_gnb_cell_configuartion()
+	end
+	
+	--To Configure REAL gNB and CELL
+	real_gnb_configuartion()
+	real_gnb_cell_configuartion()
+	--To Configure trf_gen
+	if UPLANE_DATA_WITH_TRF_GEN == "YES" then
+		sim_trf_gen_configuaration()
+	end
+	--To Configure qfi and nwslice
+	sim_ue_group_and_ue_configuration()
+	qos_and_bearer_configuration()
+
+    --To configure sequence
+    seq_configuration(duration)
+	
+    ---------------------------------------------------------------------------------------------------
+	--Cipher offload flag to distribute:ciphering=uec/distributed
+	---------------------------------------------------------------------------------------------------
+	exec('sim_param_set NR_PDCP_CIPHERING=distributed')
+	exec('sim_param_set NR_PDCP_TRUNCATE_DL_SIZE=47')
+	exec('sim_param_set NR_PDCP_BUNDLE_DL_MAX_SIZE=1200')
+	exec('sim_param_set NR_PDCP_BUNDLE_DL_TIMEOUT=100')
+	exec('sim_param_set NR_COMPRESS_PROXY_PROTO_MSGS=enabled')
+	exec('sim_param_set NR_CLUB_PROXY_PROTO_MSGS=disabled') 
+	exec('sim_param_set PAGING_BUFFER_TIMER=10 PAGING_BUFFER_VALUE=6')
+    exec('sim_param_set ENABLE_MULTIPLE_L2NRT=on')
+	exec('sim_param_set purge_buffer_on_full=on')
+	exec('sim_param_set TTI=5')
+	exec('sim_param_set RND_STATS=on PET_PROFILE=on')
+	exec('sim_param_set stop_traffic_on_ho=on')
+	exec('sim_param_set pet_5g_testing=on')
+	---------------------------------------------------------------------------------------------------
+	--DEBUG CONFIGURATION
+	---------------------------------------------------------------------------------------------------
+	exec('debug_log level=4 max_file_num=50 max_log_size=200M')
+	exec('sim_debug_log level=3 app_type=ueproxy')
+	exec('sim_param_set ENABLE_CORE_LIMIT=on')
+	exec('link_ctrl_param hb_period=5 hb_retries=5')
+	exec('cfg_end')
+	exec('set_log log_to_file=true max_file_num=55 max_log_size=200M')
+	exec('sim_start version_check=off')
+	
+	
+end
+
+function x2_connections(data_file_name)
+   
+    check_data_file(data_file_name)
+     
+	for _,x2_connect_data in ipairs(X2_CONNECTION) do
+	
+		exec('enb_x2_link_up enb='..x2_connect_data.sim_enb_id..' target='..x2_connect_data.target_gnb_id..'')
+		sleep(0.5)
+		exec("sim_log_set flush")
+	end
+end
+
+
+function check_mib_sib(data_file_name)
+    check_data_file(data_file_name)
+    
+    local file_name="egate_console.log.001"
+    local check_flag=true
+    exec('sim_log_set flush')
+    local file,err= io.open(file_name, "r")    
+	if not file then
+       print("unable to Open"..file_name, err)
+       return
+    end
+    for uec_id,_ in pairs(UEC_DATA) do
+        for _,cell_data in ipairs(GNB_CELL_DATA) do 
+            file:seek("set")
+            local sib_pattern="UEC%-"..uec_id.."%: eNB "..cell_data.gnb.." cell "..cell_data.cell_id.."%: SystemInformationBlockType"
+            local mib_pattern="UEC%-"..uec_id.."%: eNB "..cell_data.gnb.." cell "..cell_data.cell_id.."%: MasterInformationBlock%-NR Updated"
+            local mib_count,sib_count=0,0
+            for line in file:lines() do
+                if line:match(mib_pattern) then
+                    mib_count=mib_count+1
+                elseif line:match(sib_pattern) then
+                    sib_count=sib_count+1
+                end  
+                if sib_count == 5 and mib_count == 1 then
+                    print("UEC-"..uec_id..": eNB "..cell_data.gnb.." cell "..cell_data.cell_id..": MIB and SIB found")
+                    check_flag=true
+                    break
+                else
+                    check_flag=false
+                end
+            end
+            if not check_flag then
+                print("UEC-"..uec_id..": eNB "..cell_data.gnb.." cell "..cell_data.cell_id..": MIB and SIB found")
+            end
+        end
+    end
+    
+    if check_flag then
+       print("MIB SIB check: OK")
+    else
+       print("MIB SIB check: NOK")
+    end
+    exec('sim_log_set flush')
+end
+
+
+function dss_setup(data_file_name)
+        
+    check_data_file(data_file_name)
+
+    for sim_enb_id,_ in pairs(SIM_ENB_DATA) do
+        exec('enb_dss_param id='..sim_enb_id..' feature_flag=on message_sets=DMS3')
+        sleep(3)
+        exec('enb_crm_param id='..sim_enb_id..' ul_qos_load_meas_timer=200 dl_qos_load_meas_timer=200')
+        sleep(3)
+    end
+
+    for _,map_data in ipairs(DSS_ENB_TO_GNB_MAP) do
+        exec('enb_cell_param enb='..map_data.sim_enb_id..' id='..map_data.sim_enb_cell_id..' lte_nr_dss_mode=DSS_PHASE_3 antenna_ports_num=4')
+    end
+    sleep(3)
+    for _,map_data in ipairs(DSS_ENB_TO_GNB_MAP) do
+        exec('enb_cell_dss_feature enb='..map_data.sim_enb_id..' id='..map_data.sim_enb_cell_id..' nr_dl_peak_rate_increase=on superfast_allocation=on')
+    end
+    sleep(3)
+    for _,map_data in ipairs(DSS_ENB_TO_GNB_MAP) do
+        exec('enb_dss_cell_param enb='..map_data.sim_enb_id..' id='..map_data.sim_enb_cell_id..' dl_resource_sharing_algo=dl_prb_load_based')
+    end
+    sleep(3)
+    for _,map_data in ipairs(DSS_ENB_TO_GNB_MAP) do
+        exec('enb_dss_configure_partnership enb='..map_data.sim_enb_id..' cell='..map_data.sim_enb_cell_id..' dss_peer='..map_data.target_gnb_id..':'..map_data.target_gnb_cell_id..'')
+    end
+    sleep(3)
+    for _,map_data in ipairs(DSS_ENB_TO_GNB_MAP) do
+    exec('enb_crm_cell_resource_reservation enb='..map_data.sim_enb_id..' cell='..map_data.sim_enb_cell_id..'  tgt_enb='..map_data.target_gnb_id..' tgt_cell='..map_data.target_gnb_cell_id..' assigned_dl_maximum_share_to_nr=95 assigned_dl_minimum_share_to_lte=15 assigned_dl_maximum_share_to_lte=70 assigned_ul_minimum_share_to_nr=20 assigned_ul_maximum_share_to_nr=70')
+    end
+    sleep(3)
+    for _,map_data in ipairs(DSS_ENB_TO_GNB_MAP) do
+    exec('enb_dss_establish_partnership enb='..map_data.sim_enb_id..' cell='..map_data.sim_enb_cell_id..'  tgt_enb='..map_data.target_gnb_id..' tgt_cell='..map_data.target_gnb_cell_id..'')
+    end
+    sleep(3)
+    for _,map_data in ipairs(DSS_ENB_TO_GNB_MAP) do
+        exec('enb_dss_cell_resource_reservation_dl enb='..map_data.sim_enb_id..' cell='..map_data.sim_enb_cell_id..'  reset')
+    end
+    sleep(3)
+    for _,map_data in ipairs(DSS_ENB_TO_GNB_MAP) do
+        exec('enb_dss_cell_resource_reservation_ul enb='..map_data.sim_enb_id..' cell='..map_data.sim_enb_cell_id..'  reset')
+    end
+    sleep(3)
+    for _,map_data in ipairs(DSS_ENB_TO_GNB_MAP) do
+        exec('enb_dss_dl_resource_cell_reservation cell='..map_data.sim_enb_cell_id..'  enb='..map_data.sim_enb_id..' prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none min_lte_nr_dss_ratio=30 max_lte_nr_dss_ratio=95 reserved_fixed_normal_subframes=0000000000-0000000000-0000000000-0000000000-0000000000-0000000000-0000000000-0000000000')
+    end
+    sleep(3)
+    for _,map_data in ipairs(DSS_ENB_TO_GNB_MAP) do
+        exec('enb_dss_cell_resource_coordination enb='..map_data.sim_enb_id..' cell='..map_data.sim_enb_cell_id..'  tgt_enb='..map_data.target_gnb_id..' tgt_cell='..map_data.target_gnb_cell_id..' dir=DL')
+    end
+	sleep(3)
+    for _,map_data in ipairs(DSS_ENB_TO_GNB_MAP) do
+        exec('enb_dss_ul_resource_cell_reservation cell='..map_data.sim_enb_cell_id..'  enb='..map_data.sim_enb_id..' minimum_prb_share=30 maximum_prb_share=70')
+    end
+
+    sleep(3)
+    for _,map_data in ipairs(DSS_ENB_TO_GNB_MAP) do
+        exec('enb_dss_cell_resource_coordination enb='..map_data.sim_enb_id..' cell='..map_data.sim_enb_cell_id..'  tgt_enb='..map_data.target_gnb_id..' tgt_cell='..map_data.target_gnb_cell_id..'  dir=UL')
+    end
+
+    sleep(3)
+    for _,map_data in ipairs(DSS_ENB_TO_GNB_MAP) do
+        exec('enb_dss_resource_allocation enb='..map_data.sim_enb_id..' cell='..map_data.sim_enb_cell_id..'  tgt_enb='..map_data.target_gnb_id..' tgt_cell='..map_data.target_gnb_cell_id..'  dir=DL allocation_start_time=immediate dl_allocated_normal_subframes='..map_data.subframe_allocation..' dl_prb_area_allocation_list=0:0,106+1:0,106+2:0,106+3:0,106+4:0,106+5:0,106+6:0,106+7:0,106+8:0,106+9:0,106+10:0,106+11:0,106+12:0,106+13:0,106+14:0,106+15:0,106+16:0,106+17:0,106+18:0,106+19:0,106+20:0,106+21:0,106+22:0,106+23:0,106+24:0,106+25:0,106+26:0,106+27:0,106+28:0,106+29:0,106+30:0,106+31:0,106+32:0,106+33:0,106+34:0,106+35:0,106+36:0,106+37:0,106+38:0,106+39:0,106+40:0,106+41:0,106+42:0,106+43:0,106+44:0,106+45:0,106+46:0,106+47:0,106+48:0,106+49:0,106+50:0,106+51:0,106+52:0,106+53:0,106+54:0,106+55:0,106+56:0,106+57:0,106+58:0,106+59:0,106+60:0,106+61:0,106+62:0,106+63:0,106+64:0,106+65:0,106+66:0,106+67:0,106+68:0,106+69:0,106+70:0,106+71:0,106+72:0,106+73:0,106+74:0,106+75:0,106+76:0,106+77:0,106+78:0,106+79:0,106')
+    end
+    sleep(3)
+    for _,map_data in ipairs(DSS_ENB_TO_GNB_MAP) do
+        exec('enb_dss_resource_allocation enb='..map_data.sim_enb_id..' cell='..map_data.sim_enb_cell_id..'  tgt_enb='..map_data.target_gnb_id..' tgt_cell='..map_data.target_gnb_cell_id..'  dir=UL allocation_start_time=immediate ul_allocated_prb_list=0,3|5,70|103,3')
+    end
+end
+
+function x2_connections(data_file_name)
+    
+    check_data_file(data_file_name)
+    
+    for _,x2_connect_data in ipairs(X2_CONNECTION) do
+
+        exec('enb_x2_link_up enb='..x2_connect_data.sim_enb_id..' target='..x2_connect_data.target_gnb_id..'')
+        sleep(0.5)
+        exec("sim_log_set flush")
+    end
+    print("x2_connection script completed")
+end
+
+function set_multi_amf_to_register_multiue(start_amf, end_amf, plmn, start_ue, end_ue)
+    local err = {}
+    local result = {}
+    local state = {}
+    local amf_region_id = start_amf
+    local amf_set_id = start_amf + 1
+    local amf_pointer = start_amf + 1
+
+   for loop_id=start_ue, end_ue do
+        exec("ue_nr_rrc_setup_param  id="..loop_id.." registered_amf="..plmn.."|"..amf_region_id..":"..amf_set_id..":"..amf_pointer)
+        if amf_region_id >= end_amf then
+            amf_region_id = start_amf
+            amf_set_id = start_amf + 1
+            amf_pointer = start_amf + 1
+        else
+            amf_region_id = amf_region_id + 1
+            amf_set_id = amf_set_id + 1
+            amf_pointer = amf_pointer + 1
+        end
+    end
+end
+
+function set_multi_amf_to_register_multiue2(start_amf, end_amf, plmn, start_ue, end_ue)
+    local err = {}
+    local result = {}
+    local state = {}
+    local amf_region_id = start_amf
+    local amf_set_id = start_amf + 1
+    local amf_pointer = start_amf + 1
+
+   for loop_id=start_ue, end_ue do
+        exec("ue_nr_rrc_setup_param  id="..loop_id.." registered_amf="..plmn.."|"..amf_region_id..":"..amf_set_id..":"..amf_pointer.." exclude_stmsi=on s_tmsi_format=random:none:none")
+        if amf_region_id >= end_amf then
+            amf_region_id = start_amf
+            amf_set_id = start_amf + 1
+            amf_pointer = start_amf + 1
+        else
+            amf_region_id = amf_region_id + 1
+            amf_set_id = amf_set_id + 1
+            amf_pointer = amf_pointer + 1
+        end
+    end
+end
+
+function check_ng_link(data_file_name)
+    check_data_file(data_file_name)
+
+    local file_name="egate_console.log.001"
+    local check_flag=true
+    exec('sim_log_set flush')
+    local file,err= io.open(file_name, "r")
+    if not file then
+       print("unable to Open"..file_name, err)
+       return
+    end
+
+    for amf_id,_ in pairs(SIM_AMF_DATA) do
+        for gnb_id,_ in pairs(GNB_DATA) do
+            file:seek("set")
+            local ng_pattern="AMF-"..amf_id..": GNB-"..gnb_id..": [Active State::OnEnter]::NG Link to gNB="..gnb_id.." is now Active"
+            for line in file:lines() do
+                if line:find(ng_pattern,1,true) then
+                    print("Ng link between Amf-"..amf_id.." and GNB-"..gnb_id.." is OK")
+                    check_flag=true
+                    break
+                else 
+                    check_flag=true
+                end
+            end
+        end
+    end
+
+    if check_flag then
+       print("NG Link check: OK")
+    else
+       print("NG Link check: NOK")
+    end
+    exec('sim_log_set flush')
+
+end
+
+
+function enable_vip_logs()
+    exec('sim_rfm_filter disable=all')
+    exec('sim_rfm enable=CSI,ACR,OERR,IERR,VIP')
+end
+
+function vm0_print(text)
+    exec('sim_rfm_filter enable=all')
+	print(text)
+	exec('sim_rfm_filter disable=all')
+    exec('sim_rfm enable=CSI,ACR,OERR,IERR,VIP')
+end
+
+function seq_stats_disp(st, en)
+    for i = st, en do
+        exec('seq_stats id='..i)
+        sleep(0.5)
+    end
+end
+
+function ue_amf_distribustion(data_file_name)
+
+    check_data_file(data_file_name)
+    local current_ue_id=1
+    local amf_list={}
+    for amf,_ in pairs(SIM_AMF_DATA) do
+        table.insert(amf_list,tostring(amf))
+    end
+    table.sort(amf_list)
+    for _,ue_group_data in ipairs(UE_GROUP_DATA) do
+
+        if ue_group_data.ue_type == "SA" and ue_group_data.num_ue ~= 0 then
+            local amf_index=1
+            for ue_id = current_ue_id,(current_ue_id+ue_group_data.num_ue-1) do
+                if amf_index > #amf_list then
+                    amf_index=1
+                end
+                amf_instance=amf_list[amf_index]
+                if ue_group_data.random_tmsi ~= nil and ue_group_data.random_tmsi == true then
+                    exec("ue_nr_rrc_setup_param  id="..ue_id.." registered_amf="..SIM_AMF_DATA[amf_instance].plmn.."|"..SIM_AMF_DATA[amf_instance].amf_region..":"..SIM_AMF_DATA[amf_instance].amf_set..":"..SIM_AMF_DATA[amf_instance].amf_pointer.." exclude_stmsi=on s_tmsi_format=random:none:none")
+                else
+                    exec("ue_nr_rrc_setup_param  id="..ue_id.." registered_amf="..SIM_AMF_DATA[amf_instance].plmn.."|"..SIM_AMF_DATA[amf_instance].amf_region..":"..SIM_AMF_DATA[amf_instance].amf_set..":"..SIM_AMF_DATA[amf_instance].amf_pointer.."")
+                end
+                amf_index=amf_index+1
+            end
+        end
+        current_ue_id=current_ue_id+ue_group_data.num_ue
+    end
+
+end
+
+function seq_stats_disp(st, en)
+    for i = st, en do
+        exec('seq_stats id='..i)
+        sleep(0.5)
+    end
+end

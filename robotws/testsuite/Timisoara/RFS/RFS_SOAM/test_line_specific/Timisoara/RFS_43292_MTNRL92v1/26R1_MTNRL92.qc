@@ -1,0 +1,13 @@
+{    
+    "26R1.*": {
+        "Root\\Test_Sets\\26R1\\Regression\\VRF_TSR2\\VRF_TSR_T07\\CRT\\CB014051;CB013756 - AREC - RF split": {
+	        "CB014051;CB013756 - AREC - RF split": [
+                "[1][3.0] Automated_RFS_SBTS-SBTS_BTS1_BTS2_Cell_BlockUnblock from_WEBEM",
+                "[1][1.0] Automated_RFS_SBTS_SBTS__LOGS__SBTS_snapshot_from_WEBEM",
+                "[1][1.0] Automated_L3_call_with_UL_DL_Throughput",
+                "[1][2.0] Automated_RFSplit_SBTS__CM__Planned_Recommissioning_template"
+		    ]
+        }
+    }
+}
+

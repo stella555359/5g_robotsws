@@ -1,0 +1,271 @@
+*** Settings ***
+Documentation     [PURPOSE] Common keywords for Automation of Feature CB007873 sub-features G,H,GA and HA
+...
+...               Test Case Scenario author   : loic.marzin@nokia.com
+...               Test Case automation author : loic.marzin@nokia.com
+...               Test Case automation contact: loic.marzin@nokia.com
+...               Creation Date               : 28-October-2021
+...               Modified Date               : 06-October-2023
+...               Last Modified by            : loic.marzin@nokia.com
+...                    06/10/2023        Refactoring due to BOO_AP_LOO Migration
+
+
+Resource          ../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../resources/SWENG/robot/CallSetup.robot
+Variables         ../../../../resources/SWENG/python/ReadConfig.py
+Library           ../resources/python/parse_egate_log.py       WITH NAME    Stack
+
+
+*** Variables ***
+
+${Check_sCellToAddModList_onegateLogs}       FAILED
+
+
+*** Keywords ***
+
+setup 7873
+    ${yamlPath}    Set Variable    ${CURDIR}/../../../../../../custom-config/IBCA/5GC002255/SBTS00/custom_config_2255_BOOAPLOO.yaml
+    Suite Setup from scratch        yamlPathname=${yamlPath}
+    ...                             listBackupFiles=${FD_ALL}
+    ...                             keepAllUeDataInCfgFile=${True}
+
+
+teardown 7873
+    CallSetup.Empty Buffer For Egate
+    Traced sleep   10s  msg=wait 10s for flush
+    CB007873_Keywords.Collect EGATE console Logs
+	Setup.Suite Teardown       reset_ap=${True}
+
+
+Cell_Setup_SA_2_Cells_1FDD_1TDD
+    [Documentation]    Play SA Cell_setup with 2 cells 1 FDD + 1 TDD
+    [Tags]  Cell_Setup
+
+    ${timerEachCell}       Set Variable      10s
+    ${nb}                  Set Variable      2
+    CallSetup.Setup Wtsemu SA    nbCell=${nb}
+
+
+Cell_Setup_NSA_2_Cells_1FDD_1TDD
+    [Documentation]    Play SA Cell_setup with 2 cells 1 FDD + 1 TDD
+    [Tags]  Cell_Setup
+
+    ${timerEachCell}       Set Variable      10s
+    ${nb}                  Set Variable      2
+	${shouldUseLua}        Set Variable      False
+    CallSetup.WTS Setup    nbCell=${nb}    shouldUseLua=${shouldUseLua}
+
+
+UE_register_FDD_CA_Capable
+    [Documentation]    start a set of ue_register done in parameter
+
+    Dated log  Ue_id ${param.ue} is Registering
+    CallSetup.UE Register  ue=${param.ue}
+
+
+PDU_Session_FDD_CA_Capable
+    [Documentation]    start a set of PDU_Session done in parameter
+
+    Dated log  Ue_id ${param.ue} PDU session establishment on going
+    CallSetup.Launch PDU Session  ue=${param.ue}  pdu=${param.ue}  gw=${param.ue}
+    sleep   2s
+
+
+4G_Attach_FDD_CA_Capable
+    [Documentation]    start the 4G UE attach Procedure
+
+    Dated log  Ue_id ${param.ue} 4G Attach on going
+    Callsetup.UE Attach Enb  ueSetting=${param}
+    sleep   5s
+
+
+SG_Attach_FDD_CA_Capable
+    [Documentation]  start the sGNB Addition and 5G UE attach Procedure
+
+	Dated log  Ue_id ${param.ue} sGNB Addition and 5G Attach on going
+    Callsetup.UE Attach Gnb  ueSetting=${param}
+    sleep   5s
+
+
+Check_sCellToAddModList_onegateLogs
+    [Documentation]    Check_sCellToAddModList_onegateLogs
+
+    ${output}        SSH Wait For Connect and Cmd
+    ...              command=grep "sCellToAddModList" ${tl.core.dir_path}/egate_console.log
+    ...              host=${HOST_EPCSIM}
+    ${s_output}=            Strip String        ${output}
+    Run Keyword if    '${s_output}' != 'sCellToAddModList'    FAIL    no sCellToAddModList on egateLogs
+
+
+Traffic_DL_SA_FDD_CA_Capable
+    [Documentation]    * Start DL traffic for this TC
+    ...                * Max throughput per TrfId is managed
+    ...                * Traffic is done according above param.TrafficDuration
+    ...                * Traffic check is done for each UE usind DOD (definition of done) with error deviation in percent
+
+    ${ueid}          Set Variable     ${param.ue}
+    ${trf_id}        Set Variable     ${param.trf_id}
+    ${TptDL}         Set Variable     ${param.throughput}
+    ${MaxTptTrf}     Set Variable     ${param.maxThroughputPerTransfer}
+	${trfDur}        Set Variable     ${param.trfDuration}
+	${dev}           Set Variable     ${param.deviation}
+
+	Traffic.Traffic UE DL    ueSetting=${param}    throughput=${TptDL}
+	...                      maxThroughputPerTransfer=${MaxTptTrf}    duration=${trfDur}    deviation=${dev}
+
+
+Traffic_DL_UL_NSA_FDD_CA_Capable
+    [Documentation]    * Start UL / DL traffic for this TC
+    ...                * Traffic is done according above param.TrafficDuration
+    ...                * Traffic check is done for each UE usind DOD (definition of done) with error deviation in percent
+
+    ${ueid}          Set Variable     ${param.ue}
+    ${trf_id}        Set Variable     ${param.trf_id}
+    ${TptDL}         Set Variable     ${param.throughput}
+	${TptUL}         Set Variable     ${param.throughputul}
+    ${MaxTptTrf}     Set Variable     ${param.maxThroughputPerTransfer}
+	${trfDur}        Set Variable     ${param.trfDuration}
+	${dev}           Set Variable     ${param.deviation}
+
+    Traffic UE UL DL         ueSetting=${param}    ulThroughput=${TptUL}    dlThroughput=${TptDL}
+	...		                 maxThroughputPerTransfer=${MaxTptTrf}    duration=${trfDur}    deviation=${dev}
+
+Collect EGATE console Logs
+    [Documentation]    This keyword is used to collect egate_console.log from the /opt/wts/latest/ folder
+    ...                This is collected in the Test Log Folder
+    # Connect to WTS  alias=alias_wts
+    ${alias_wts}                    SSH Wait For Connect                ${HOST_EPCSIM}
+
+    Dated Log      Collecting ${tl.core.dir_path}/egate_console.log...
+    csn.download_file               remote_path=${tl.core.dir_path}/egate_console.log
+    ...                             local_path=${LOG_PATH}/egate_console.log
+    ...                             connection=${alias_wts}
+    Dated Log                  egate_console.log file stored to ${LOG_PATH}
+
+
+WTS Setup DSS
+    [Documentation]                 From sweng WTS Setup  !! maj 12/09/2023
+    ...                             Aim of this KW is to pioritize SIB processing for DSS cells vs non DSS one, when a testline is configured
+    ...                             with cells DSS and non DSS mode.
+    ...                             Cells with dss mode need dss cell_setup egate commands.
+    # ...                             Clean WTSEmu (processes, logs), restart ePC simulator (ePCSim)
+    # ...                             and configure it to establish a X2 link between eNB and gNB if gNB is configured in NSA mode.
+    # ...                             Wait for SIB-NR if not NSA and check cell setup.
+    # ...
+    # ...                             *Argument details:*
+    # ...                             - *telnet_egate_addr*: eGate VM IP address (default: dynamically retrieved)
+    # ...                             - *nbUe*: nb total of UE(s) to set in basic-setup LUA file (default value = 1)
+    # ...                             - *nbSaUe*: nb of SA UE(s) to set in basic-setup LUA file (default value = 0)
+    # ...                             - *shouldUseLua*: flag to choose between cfg or LUA basic-setup file (default value = True)
+    # ...                             - *nbCell*: number of cell to check for SystemInformationBlock-NR (default value = 0)
+    # ...                                         If nbCell=0 then checks are done for the total number of cells defined on the testline
+    # ...                             - *list_of_UE_tobe_created*: list of UEs structure to be created when using lua (default value = None)
+    # ...                                 mandatory params: ue & target_cells &{my_UE_SA}     ue=1    target_cells=2
+    # ...                             - *time_to_wait*: time to wait the SIB (default value = 5min)
+    # ...
+    # ...                             Exemple:
+    # ...                             | If nbUe = 10 and nbSaUe = 0, \ \ \ \ \ 10 NSA UE from 1 to 10, 0 SA UE
+    # ...                             | If nbUe = 10 and nbSaUe = 5, \ \ \ \ \ \ 5 NSA UE from 1 to 5, 5 SA UE from 6 to 10
+    # ...                             | If nbUe = 10 and nbSaUe = 10, \ \ \ \ \ 0 NSA UE, 10 SA UE from 1 to 10
+    [Arguments]                     ${telnet_egate_addr}=${tl.core.default_ssh_connection_details.addr}
+    ...                             ${nbUe}=1
+    ...                             ${nbSaUe}=0
+    ...                             ${shouldUseLua}=${True}
+    ...                             ${bypassSIB}=${False}
+    ...                             ${nbCell}=0
+    ...                             ${list_of_UE_tobe_created}=${None}
+    ...                             ${time_to_wait}=5min
+    ...                             ${postprocessing}=CheckDSSCellSyncFail
+
+    # there is no "['cells']['nr']" info in AIC data --> need to use of NRCELL_ID_LIST instead
+
+    IF     ${isAic}
+                            ${cell_len_1}        Get Number Of Not None Element in List   ${NRCELL_ID_LIST}
+                            ${cell_len}    Set Variable    ${cell_len_1}
+    ELSE
+                            ${cell_len_2}        Get length           ${GNB_BTS_INFO['cells']['nr']}
+                            ${cell_len}    Set Variable    ${cell_len_2}
+    END
+
+    ${cell_len}        Convert to string    ${cell_len}
+
+    ${cell_nr}         set variable if      ${nbCell}==0    ${cell_len}    ${nbCell}
+
+    set suite variable     ${cell_nr}
+    # Clean WTS from process and logs point of view
+    ${isSANSA}                   set variable if    '${NWtype}' == 'SA+NSA'    ${True}    ${False}
+    set suite variable    ${isSANSA}
+    ${isNSA}                     set variable if    '${NWtype}' == 'NSA'       ${True}    ${False}
+    set suite variable    ${isNSA}
+    ${alias}		                SSH Wait For Connect                    host=${HOST_EPCSIM}
+    Dated Log New Line              Starting WTS setup ** WTS Setup for DSS Plus nonDSS cells mod ** (WTS:IP=${HOST_EPCSIM.sshConnection.addr})
+    WTS Clear
+    # Cloud only
+    Run Keyword If                  ${TLConfig.isGnbCloud} and not ${isAic}
+    ...                             WTS Set Backhaul IP                     ${alias}
+    # If lua file is requested, then init lua config file with nb of UEs:
+    ${LuaFileName}                  Run Keyword If      ${shouldUseLua}
+    ...                                                 TxtConfig Init      nbUe=${nbUe}
+    ...                                                                     nbSaUe=${nbSaUe}
+    ...                                                                     list_of_UE_tobe_created=${list_of_UE_tobe_created}
+    ...                                         ELSE    set variable        ${EMPTY}
+    Dated Log                       LuaFileName=${LuaFileName}
+
+    IF    not ${shouldUseLua}
+                            Check For SaNsa
+    END
+    # Configure eDaemon and eGate
+    WTS Start processes             telnet_egate_addr=${telnet_egate_addr}
+    # Launching configuration
+    WTS Configure upon format       shouldUseLua=${shouldUseLua}            luaFile=${LuaFileName}
+    Dated Log                       Delay for SIBs is set to ${time_to_wait}
+    run keyword if                  not ${isNSA} and not ${bypassSIB}       wait until keyword succeeds     ${time_to_wait}    1min
+    ...                             ${postprocessing}
+
+
+CheckDSSCellSyncFail
+    [Documentation]                 Help to synchronise DSS cell_setup time to be start
+    ...                             as DSS cells need egate command for cell_setup, this KW wait information
+    ...                             from AP/WTS complaining waiting dss egate cell_setup commands.
+    ...                             WARNING: on this KW no X2link set up is done, no UE_cell setup is done (need to be done after)
+
+    CallSetup.Flush Egate Console Buffer
+    Traced sleep   3s  msg=wait 3s to flush egate memory on egate_console.log
+    ${sync_fail}                   SSH Wait For Connect and Cmd
+    ...                            command=grep 'CellSyncProcedure failed after' ${tl.core.dir_path}/egate_console.log|sort -u|wc -l
+    ...                            host=${HOST_EPCSIM}
+
+    ${SyncFailArrived}  Set Variable If  ${sync_fail.strip()} >= 0    ${True}    ${False}
+
+    [RETURN]  ${SyncFailArrived}
+
+
+Setup_DSS_Cell
+	CallSetup.WTS Set XpAP and X2 Link
+    CallSetup.DSS Partnership Creation
+    CallSetup.DSS Establish Partnership
+
+
+Check_Cell_Setup_Ok
+    [Documentation]    Check if all cells are up
+
+    Dated Log           CheckSIB
+    Check SIB Using Cell Number   nbCell=2
+
+    Traced sleep   20s        msg=To let time to Airphone to perform is cells setup  #in order to let time for cell_setup on AP
+
+    Dated Log           Check_AirPhone_APL3
+    ${output}           SSH Wait For Connect and Cmd
+	...                 command=grep -i completed /tmp/startup_l3.log
+	#...                 host=${AIRSCALE_AP.sys[0].M}
+    ...                 host=${AP_DU.sys[0].M}
+    FOR    ${i}    IN RANGE    1  3
+        Should Contain	    ${output}	 Cell Setup completed for [CELL_ID:${i}]
+    END

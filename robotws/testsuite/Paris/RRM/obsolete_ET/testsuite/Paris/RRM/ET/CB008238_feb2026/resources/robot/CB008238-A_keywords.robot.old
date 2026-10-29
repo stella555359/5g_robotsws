@@ -1,0 +1,186 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB008238 step A
+...
+...               Test Case Scenario author   : jing.tian@nokia.com
+...               Test Case Scenario contact  : jing.tian@nokia.com
+...               Test Case automation author : laurent.puchelle@nokia.com
+...               Test Case automation contact: laurent.puchelle@nokia.com
+...               Creation Date               : 05-Jan-2022
+...               Modified Date               : 05-Jan-2022
+...               Last Modified by            : laurent.puchelle@nokia.com
+...               Modification:
+...                       05-Jan-2022         | Creation
+
+
+Resource                            ./CB008238_keywords.robot
+Resource                            ../../../resources/common/TtiTrace/ttitrace.robot
+
+
+*** Variables ***
+${DL_duration}                   60
+${DL_trace_duration}             5
+
+${TputVolMargin}                 5
+
+
+*** Keywords ***
+CB008238_TC_A_01_CellSetup_actDtxOptimizedScheduler_activated_TDD_SA
+    CB008238 CellSetup            actDtxOptimzedScheduler=true    MaxRetentionDelay=15    dtxPrbThreshold=90    CallType=SA
+    ...                           actDl256Qam=false
+    CB008238 check CellSetup      actDtxOptimzedScheduler=true    MaxRetentionDelay=15    dtxPrbThreshold=90
+
+
+CB008238_TC_A_08_pkt_period_lower_than_dtxMaxRetentionDelay_20ms_FDD_NSA
+    ${MaxRetentionDelay}          Evaluate    20
+    CB008238 CellSetup            actDtxOptimzedScheduler=true    MaxRetentionDelay=${MaxRetentionDelay}    CallType=NSA
+    ...                           actDl256Qam=false
+    CB008238 Attach NSA           ueSetting=${UE_SIMPLE}
+
+    # L1/L2 capture configuration
+    ${CaptureBIP_DL}              Capture L1L2 Set Upon Config       airscale=${GNB_DU}
+    Capture Init                  ${CaptureBIP_DL}                   suffix=_A08
+
+    # TTI capture configuration
+    ${TTIdir}                     Get TTI Trace Path                 dir_suffix=A08
+
+    Dated Log New Line            ${trcColor}=== Start packets sending ${defColor}
+    ${pktPeriod}                  Evaluate    8
+    ${pktSize}                    Evaluate    100
+    ${pktBurst}                   Evaluate    1
+    Send UE DL packets            ueSetting=${UE_SIMPLE}
+    ...                           duration=0
+    ...                           period_ms=${pktPeriod}
+    ...                           size=${pktSize}
+    ...                           burst=${pktBurst}
+    ...                           shouldBeStop=${False}
+    ...                           deviation=${TputVolMargin}
+    ${timeStartTraffic}           Get Current Date
+
+    # start TTI capture
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+
+    # start L1/L2 capture
+    Callback Capture L1L2         capture=${CaptureBIP_DL}           Action=START
+
+    Traced Sleep                  ${DL_trace_duration}               msg=DL traffic capture
+
+    # stop L1/L2 capture
+    Callback Capture L1L2         capture=${CaptureBIP_DL}           Action=STOP
+
+    # stop TTI capture
+    ${TTIpcap}                    Stop TTI Traces in Streaming mode
+    ...                           tti_trace_path=${TTIdir}
+    ...                           tti_trace_filename=TTITrace_TC08
+
+    Traced Sleep                  ${DL_duration}                     msg=DL traffic
+
+    Dated Log New Line            ${trcColor}=== Stop packets sending and detach UE ${defColor}
+    ${timeStopTraffic}            Get Current Date
+    Traffic Stop                  ueSetting=${UE_SIMPLE}             dir=dl
+    UE Detach Enb                 ueSetting=${UE_SIMPLE}
+
+    Dated Log New Line            ${trcColor}=== Convert TTItrace to json and csv ${defColor}
+    ${TTIjson}                    Convert TTItrace from pcap to others
+    ...                           input_file_path=${TTIpcap}
+    ${TTIcsv}                     decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson}    num_of_events=10000
+
+    Dated Log New Line            ${trcColor}=== Check retention in TTI trace ${defColor}
+    ${nbCheck}                    checkMaxRetentionAndSIB    jsonPathName=${TTIjson}    mode=FDD    maxRetention=${MaxRetentionDelay}
+    Should Be True                ${nbCheck}>0
+
+    CB008238 get PM files
+
+    ${uDTX_OPTIMIZED}  ${uDTX_NO_BUNDLING}    CB008238 get uDTX counters
+    ${SlotsWithPDSCH}                         CB008238 get number of slot with PDSCH
+    Dated Log New Line            ${trcColor}=== Number of slot with PDSCH: ${SlotsWithPDSCH} ${defColor}
+    Dated Log New Line            ${trcColor}=== uDTX_OPTIMIZED: ${uDTX_OPTIMIZED}, uDTX_NO_BUNDLING: ${uDTX_NO_BUNDLING} ${defColor}
+
+    ${timeDiff}                   Subtract Date From Date    ${timeStopTraffic}    ${timeStartTraffic}
+    ${trafficDuration}            Convert To Integer    ${timeDiff}
+    ${DLtput}                     Evaluate       ${pktSize}*${pktBurst}*8*1000/${pktPeriod}
+    ${expectedDataVol}            Evaluate       ${DLtput}*${trafficDuration}/8
+    ${expectedDataVolMargin}      Evaluate       ${expectedDataVol} - ${expectedDataVol}*${TputVolMargin}/100
+    ${status_DL_dataVolume}       CB008238 check DL Data Volume    QCI=QCI9    expectedDataVol=${expectedDataVolMargin}
+    ${status_DL_BLER}             CB008238 check DL BLER    maxBLER=1
+
+    # uDTX_OPTIMIZED: have to take into account PDSCH slots for NSA attach
+    # uDTX_NO_BUNDLING could be equal to 1 in case of only one packet received during last retention
+    Should be True                ${uDTX_OPTIMIZED}>=(${SlotsWithPDSCH}-4) and ${uDTX_NO_BUNDLING}<=5
+    Should be True                ${status_DL_dataVolume} and ${status_DL_BLER}
+
+
+CB008238_TC_A_19_VONR_with_micro_DTX_optimized_scheduler_5QI1_FDD_SA
+    ${MaxRetentionDelay}          Evaluate    10
+    CB008238 CellSetup            actDtxOptimzedScheduler=true    MaxRetentionDelay=${MaxRetentionDelay}    CallType=SA    VoNR=true
+    ...                           actDl256Qam=false
+    &{ueSetting}                  copy dictionary    ${BASIC_UE_SA}
+    ${ueSetting.qfi}              Set Variable       3
+    ${ueSetting.throughput}       Set Variable       ${None}
+    CB008238 Attach SA            ueSetting=${ueSetting}    VoNR=true
+
+    # L1/L2 capture configuration
+    ${CaptureBIP_DL}              Capture L1L2 Set Upon Config       airscale=${GNB_DU}
+    Capture Init                  ${CaptureBIP_DL}                   suffix=_A19
+
+    # TTI capture configuration
+    ${TTIdir}                     Get TTI Trace Path                 dir_suffix=A19
+
+    Dated Log New Line            ${trcColor}=== Start VoNR with CODEC AMR-WB 18.25 ${defColor}
+    Traffic UE DL                 ueSetting=${ueSetting}
+    ...                           duration=0
+    ...                           rtp_codec=amr_wb_18_25
+    ...                           shouldBeStop=${False}
+    ...                           shouldBeCheck=${False}
+    ${timeStartTraffic}           Get Current Date
+
+    # start TTI capture
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+
+    # start L1/L2 capture
+    Callback Capture L1L2         capture=${CaptureBIP_DL}           Action=START
+
+    Traced Sleep                  ${DL_trace_duration}               msg=DL traffic capture
+
+    # stop L1/L2 capture
+    Callback Capture L1L2         capture=${CaptureBIP_DL}           Action=STOP
+
+    # stop TTI capture
+    ${TTIpcap}                    Stop TTI Traces in Streaming mode
+    ...                           tti_trace_path=${TTIdir}
+    ...                           tti_trace_filename=TTITrace_TC14
+
+    Traced Sleep                  ${DL_duration}                     msg=DL traffic
+
+    Dated Log New Line            ${trcColor}=== Stop traffic and detach UE ${defColor}
+    ${timeStopTraffic}            Get Current Date
+    Traffic Stop                  ueSetting=${ueSetting}           dir=dl
+    UE Deregister                 id=${ueSetting.ue}
+
+    Dated Log New Line            ${trcColor}=== Convert TTItrace to json and csv ${defColor}
+    ${TTIjson}                    Convert TTItrace from pcap to others
+    ...                           input_file_path=${TTIpcap}
+    ${TTIcsv}                     decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson}    num_of_events=10000
+
+    Dated Log New Line            ${trcColor}=== Check there is no retention in TTI trace ${defColor}
+    ${branchBuild}                Set Variable    ${TLConfig.topo.getBranchName()}
+    ${nbCheck}                    Run Keyword If     '${branchBuild}' == 'SBTS25R2'
+    ...                           checkNoRetentionVoNR_beforeCNI145837    jsonPathName=${TTIjson}
+    ...                           ELSE
+    ...                           checkNoRetentionVoNR    jsonPathName=${TTIjson}
+    Should Be True                ${nbCheck}>0
+
+    CB008238 get PM files
+
+    ${uDTX_OPTIMIZED}  ${uDTX_NO_BUNDLING}    CB008238 get uDTX counters
+    Dated Log New Line            ${trcColor}=== uDTX_OPTIMIZED: ${uDTX_OPTIMIZED}, uDTX_NO_BUNDLING: ${uDTX_NO_BUNDLING} ${defColor}
+
+    ${timeDiff}                   Subtract Date From Date    ${timeStopTraffic}    ${timeStartTraffic}
+    ${trafficDuration}            Convert To Integer    ${timeDiff}
+    ${DLtput}                     Evaluate       18250
+    ${expectedDataVol}            Evaluate       ${DLtput}*${trafficDuration}/8
+    ${expectedDataVolMargin}      Evaluate       ${expectedDataVol} - ${expectedDataVol}*${TputVolMargin}/100
+    ${status_DL_dataVolume}       CB008238 check DL Data Volume    QCI=QCI1    expectedDataVol=${expectedDataVolMargin}
+    ${status_DL_BLER}             CB008238 check DL BLER    maxBLER=1
+
+    Should be True                ${uDTX_OPTIMIZED}==0 and ${uDTX_NO_BUNDLING}==0
+    Should be True                ${status_DL_dataVolume} and ${status_DL_BLER}

@@ -1,0 +1,339 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  keyword of 5GC001527 feature in the case of Classical Fullstack
+...               Prerequisite : GNB and Airphone should be installed
+...               Scope : Check UE attach status with/without 256QAM configuration
+...
+...               Test Case Scenario author   : eric.delastre@nokia.com
+...               Test Case Scenario contact  : eric.delastre@nokia.com
+...               Test Case automation author : eric.delastre@nokia.com
+...               Test Case automation contact: eric.delastre@nokia.com
+...               Creation Date               : 24-April-2020
+...               Modified Date               : 24-April-2020
+...               Last Modified by            : yann.ah.herve@nokia.com
+...               Modification:
+...                       23-Oct-2023        |     Move to T+F variant
+...                       19-Sep-2024        |     Scout Data + some fixes for RF50
+
+
+Library             ../../../resources/python/luashark_tools.py
+Library             luashark_tools.analyzer       WITH NAME       analyzer
+
+Resource            ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource            ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource            ../../../../../resources/SWENG/robot/Tools.robot
+Resource            ../../../../../resources/SWENG/robot/Capture.robot
+Resource            ../../../../../resources/SWENG/robot/Container.robot
+Resource            ../../../../../resources/SWENG/robot/Setup.robot
+Resource            ../../../../../resources/SWENG/robot/Oam.robot
+Resource            ../../../../../resources/SWENG/robot/Restart.robot
+Resource            ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource            ../../../../../resources/SWENG/robot/Scf.robot
+
+Variables           ../../../../../resources/SWENG/python/ReadConfig.py
+
+*** Variables ***
+
+${nsa_asoe_ue_id}                  11
+
+*** Keywords ***
+
+TC 1527
+    [Documentation]                 Generic test for 5GC001527_B_xxx tests
+    [Arguments]                     ${param}
+    Init Sequence                   ${param}
+    Dated log                       Running Test
+    Dated log                       ${param.test_description}
+    #Step                            Set MRBTSID and NRBTSID
+    Step                            Set UE capability                      depends=Set Context_Element Manager
+    Step                            Set Context_Element Manager            depends=Set UE capability
+    Step                            Test WTS Setup                         depends=Set UE capability
+    Step                            Test Verify Cell Setup                 depends=Test WTS Setup
+    Step                            Test Start captures                    depends=Test Verify Cell Setup
+    Step                            Test Set SgNB Addition PRACH           depends=Test Verify Cell Setup
+    Step                            Test Stop captures                     depends=Test Start captures
+    Step                            Test Verify Attach                     depends=Test Set SgNB Addition PRACH
+    Step                            Test Verify Capture CORE               depends=Test Set SgNB Addition PRACH
+    Step                            Test Verify Capture CPRT               depends=Test Stop captures
+    [Teardown]                      Teardown 1527
+
+# New keyword for ORAN testing. Set UE Capability is no longer needed
+TC 1527 ORAN
+    [Documentation]                 Generic test for 5GC001527_B_xxx tests
+    [Arguments]                     ${param}
+    Init Sequence                   ${param}
+    Dated log                       Running Test
+    Dated log                       ${param.test_description}
+    #Step                            Set MRBTSID and NRBTSID
+    #Step                            Set UE capability                      depends=Set Context_Element Manager
+    Step                            Set Context_Element Manager
+    Step                            Test WTS Setup                         depends=Set Context_Element Manager
+    Step                            Test Verify Cell Setup                 depends=Test WTS Setup
+    Step                            Test Start captures                    depends=Test Verify Cell Setup
+    Step                            Test Set SgNB Addition PRACH           depends=Test Verify Cell Setup
+    Step                            Test Stop captures                     depends=Test Start captures
+    Step                            Test Verify Attach                     depends=Test Set SgNB Addition PRACH
+    Step                            Test Verify Capture CORE               depends=Test Set SgNB Addition PRACH
+    Step                            Test Verify Capture CPRT               depends=Test Stop captures
+    [Teardown]                      Teardown 1527
+
+# New keyword for ASOE. Adding a new KW is the simplest solution I have found to take ASOE varaint into account:
+# 1. As for ORAN it's useless to change UE capabilities
+# 2. We need to change IE id to 11 instead of 1 because it's the firts NSA UE with ASOE T+F variant
+# I didn't find a way to reuse existing TC 1527 KW
+TC 1527 ASOE
+    [Documentation]                 Specific KW for 5GC001527_B_xxx tests dedicated to ASOE
+    [Arguments]                     ${param}
+
+    &{ASOE_UE}=                     Copy dictionary     ${UE_SIMPLE}
+    Set To Dictionary               ${ASOE_UE}          ue          ${nsa_asoe_ue_id}
+
+    Init Sequence                   ${param}
+    Dated log                       Running Test
+    Dated log                       ${param.test_description}
+    Step                            Set Context_Element Manager
+    # Dont use LUA and also don't touch to basic_set.cfg (see keepAllUeDataInCfgFile=${True} inside Suite Setup from scratch)
+    Step                            WTS Setup                              shouldUseLua=${False}    time_to_wait=10min
+    ...                                                                    depends=Set Context_Element Manager
+    Step                            Test Verify Cell Setup                 depends=WTS Setup
+    Step                            Test Start captures                    depends=Test Verify Cell Setup
+    Step                            Test Set SgNB Addition PRACH           ue_desc=${ASOE_UE}       depends=Test Verify Cell Setup
+    Step                            Test Stop captures                     depends=Test Start captures
+    Step                            Test Verify Attach                     depends=Test Set SgNB Addition PRACH
+    Step                            Test Verify Capture CORE               depends=Test Set SgNB Addition PRACH
+    Step                            Test Verify Capture CPRT               depends=Test Stop captures
+    [Teardown]                      Teardown 1527
+
+Set UE capability
+    Backup WTS Config File
+    Set UE capa on EPCSim           ue_nr_capa_value=${param.ue_capability}
+
+Set Context_Element Manager
+#    &{modify_param1}                Create Dictionary
+#    ...                                 parameter=actDl256Qam
+#    ...                                 dist_name=${NRCELL_DIST_NAME}
+#    ...                                 value=${param.actDl256Qam}
+#    &{modify_param2}                Create Dictionary
+#    ...                                 parameter=dllaIniMcs
+#    ...                                 dist_name=${NRCELL_DIST_NAME}
+#    ...                                 value=${param.dllaIniMcs}
+#   &{modify_param3}                Create Dictionary
+#    ...                                 parameter=ullaIniMcs
+#    ...                                 dist_name=${NRCELL_DIST_NAME}
+#   ...                                 value=${param.ullaIniMcs}
+#    @{modify_param}                 Create List    ${modify_param1}   ${modify_param2}    ${modify_param3}
+    # ADT -replace below line
+    # coam_gnb_classical.Modify COAM parameters with rest API
+#    OAM Set Params
+#   ...                             ${modify_param}
+
+    ${dist_name_nrcell1}            Set Variable                        MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ${SCF_PATH_1527_DU}             OAM Get SCF File                    oam=${GNB_DU.oam}        file=SCF_Setup_1527_DU.xml
+    ${SCF_PATH_1527_CU}             OAM Get CU SCF File                 file=SCF_Setup_1527_CU.xml
+    Set Suite Variable              ${SCF_PATH_1527_DU}
+    Set Suite Variable              ${SCF_PATH_1527_CU}
+    SCF StartSession                scf_file=${SCF_PATH_1527_DU}        second_scf_file=${SCF_PATH_1527_CU}
+
+    SCF Set element                 dist_name=${dist_name_nrcell1}
+    ...                             element_name=actDl256Qam
+    ...                             element_value=${param.actDl256Qam}
+    ...                             aicListEntity=vduvcu   scope=both   bestEffort=${True}
+
+    SCF Set element                 dist_name=${dist_name_nrcell1}
+    ...                             element_name=dllaIniMcs
+    ...                             element_value=${param.dllaIniMcs}
+    ...                             aicListEntity=vduvcu   scope=both   bestEffort=${True}
+
+    SCF Set element                 dist_name=${dist_name_nrcell1}
+    ...                             element_name=ullaIniMcs
+    ...                             element_value=${param.ullaIniMcs}
+    ...                             aicListEntity=vduvcu   scope=both   bestEffort=${True}
+
+    SCF StopSession                 scf_file=${SCF_PATH_1527_DU}        second_scf_file=${SCF_PATH_1527_CU}
+    Dated Log                       Modifications completed.\n
+    Oam.OAM Perform Full Commissioning          scf_file=${SCF_PATH_1527_DU}
+    Run Keyword IF                  ${isAic}
+    ...                             Run Keywords
+    ...                                 Oam.OAM Perform Full Commissioning    scf_file=${SCF_PATH_1527_CU}    oam=${GNB_CU.oam}
+    ...                                 AND
+    ...                                 Wait Vcu And Vdu Available
+    ...         ELSE                WA Airscale Wait For Ready          ${GNB_DU}
+
+    # Necessary pause for gNB recovery before WTS Setup
+    Traced Sleep  5 minutes
+
+
+Test Start captures
+    #Test Enable Mirroring for BIP capture
+    ${CaptureCPRT}                  Capture CPRT set Upon config
+    Capture Init                    capture=${CaptureCPRT}              withTN=${True}
+    Capture Start                   capture=${CaptureCPRT}
+    Set Suite Variable              ${CaptureCPRT}
+
+Test WTS Setup
+    WTS Setup                       nbUe=1
+    # Cellsetup is now done, Sherpa can be enabled if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}         Activate Sherpa
+
+Test Verify Cell Setup
+    UE Cell Setup Check
+
+Test Set SgNB Addition PRACH
+    [Arguments]                     ${ue_desc}=${UE_SIMPLE}
+
+     ${captureCORE_Path}            run keyword IF    ${param.attach_ue_expected}
+     ...                                SgNB Addition to ENB        ueSetting=${ue_desc}      withTN=${True}
+     ...         ELSE                   SgNB Addition to ENB        ueSetting=${ue_desc}      withTN=${True}
+     ...                                                            expected_gnb_log=protocol : abstract-syntax-error-reject
+    set suite variable              ${captureCORE_Path}
+
+Test Stop captures
+    Capture Stop                    capture=${CaptureCPRT}
+
+Test Verify Attach
+    [Tags]                          Feature check
+    Check CPRT log                  Attach_ue=${param.attach_ue_expected}
+    run keyword IF                  ${param.attach_ue_expected}
+    ...                             UE Attach Check
+
+#==========   Teardown
+
+Restore Default Context 1527
+    [Documentation]                 Restores WTS file on ePCSim and SCF on gnb
+    Dated log                       Restore Default contexte
+    Restore WTS Config File
+    Dated log                       Restore Default SCF confog 256QAM
+    Set test variable               ${param}      ${A_1}
+    Set Context_Element Manager
+
+Teardown 1527
+    Produce Scout Data
+    # Stop Sherpa if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}     Sherpa.Deactivate Sherpa and Stop Collect
+    Step                            Restore Default Context 1527
+    Sleep                           600s
+    [Teardown]                      GenericTest.Display diagnosis
+
+#==========  UE PCSIM management
+
+Backup WTS Config File
+    [Documentation]                 Backup current WTS config file on ePCSim
+    ${file}                         set variable            ${tl.core.dir_path}/${tl.core.cfg_filename}
+    ${alias}                        SSH Connect             host=${HOST_EPCSIM}
+    Dated log                       On EPCSIM, backing up file ${file}
+    # Creates a copy of current XML AirphoneConfig
+    ${backup_exists}=               csn.execute             test -f ${file}.1527.backup && echo -n "okman" || echo -n "noway"
+    ...                                                     connection=${alias}
+    ${file_exists}=                 csn.execute             test -f ${file} && echo -n "okman" || echo -n "noway"
+    ...                                                     connection=${alias}
+    Run Keyword If                  '${file_exists}'=='okman' and '${backup_exists}'!='okman'
+    ...                             csn.execute             cp ${file} ${file}.1527.backup
+    ...                                                     connection=${alias}
+
+
+Restore WTS Config File
+    [Documentation]                 Restores WTS config file on ePCSim
+    ${file}                         set variable            ${tl.core.dir_path}/${tl.core.cfg_filename}
+    ${alias}                        SSH Connect             host=${HOST_EPCSIM}
+    Dated log                       On EPCSIM, restoring file ${file}
+    # Restores WTS config from previously created backup
+    ${WTS_backup_exists}=           csn.execute             test -f ${file}.1527.backup && echo -n "okman" || echo -n "noway"
+    ...                                                     connection=${alias}
+    Run Keyword If                  '${WTS_backup_exists}'=='okman'
+    ...                             csn.execute             cp ${file}.1527.backup ${file} && rm -f ${file}.1527.backup
+    ...                                                     connection=${alias}
+    Dated log                       On EPCSIM, backed up ${file} file restored
+
+Set UE capa on EPCSim
+    [Arguments]                     ${ue_nr_capa_value}=${ue_nr_capa_with_pdsch_256qam_supported}
+    Modify Field in WtsEmu Cfg File
+    ...                             field=ue_nr_capabilities    value=${ue_nr_capa_value}
+
+Check CPRT log
+    [Tags]                          Feature check
+    [Arguments]                     ${Attach_ue}=True
+    ${LogCPRT}                      Get Log                     name=CPRT
+    ${alias}                        SSH Connect                 ${LogCPRT.node.host}
+    Dated log New Line              LogCPRT.path: ${LogCPRT.path}
+    # Backup of CPRT log file:
+    ${CprtLog}                      Set variable                ${LogCPRT.path.replace('.xz','').replace('.log','')}
+    ${CprtFilename}                 SSH Cmd
+    ...                                 ls ${CprtLog}.*
+    ...                                 alias=${alias}
+    Dated log                       CPRT filename: ${CprtFilename}
+    ${isFileZipped}=                Run Keyword And Return Status   Should Contain  ${CprtFilename}  .xz
+    ${FileExtension}                set variable if             ${isFileZipped}    xz      log
+    Wait until keyword succeeds     3min    10s
+    ...                             SSH Download File
+    ...                                 host=${LogCPRT.node.host}
+    ...                                 remotePath=${CprtLog}.${FileExtension}
+    ...                                 localPath=${LOG_PATH}/${LogCPRT.rootName}.${FileExtension}
+    # Now check the 3 error cases:
+    ${err1}                         SSH Cmd
+    ...                                 xzgrep 'std::exception::what: PhyParametersFr1 should not be absent' ${LogCPRT}
+    ...                                 alias=${alias}
+    ${err2}                         SSH Cmd
+    ...                                 xzgrep 'std::exception::what: pdsch-256QAM-FR1 should not be absent' ${LogCPRT}
+    ...                                 alias=${alias}
+    ${err3}                         SSH Cmd
+    ...                                 xzgrep 'std::exception::what: Cannot decode NR_RRC_Definitions::UE_NR_Capability' ${LogCPRT}
+    ...                                 alias=${alias}
+    # Display found errors:
+    Dated Log New Line              err1=${err1}
+    Dated log New Line              err2=${err2}
+    Dated log New Line              err3=${err3}
+    run keyword IF                  ${Attach_ue}
+    ...                             Run keyword                 Should be empty         ${err1}${err2}${err3}
+    ...         ELSE                Run keyword                 Should not be empty     ${err1}${err2}${err3}
+
+Test Verify Capture CORE
+    ${filterPcap}                   analyzer.filter_pcap
+    ...                                 ${captureCORE_Path}
+    ...                                 filterName=x2ap         #ue_capa_wts_${param.test_description}
+    ...                                 filterExp=x2ap
+    ${pdmlFile}                     analyzer.pcap_to_pdml       ${filterPcap}
+    Dated Log                       PDML file=${pdmlFile}
+    Dated Log                       \tCheck if SgNBAddtitionRequest:phy-ParametersFR1 contain pdsch-256QAM-FR1: supported (0)
+    ${Status}                       Run keyword and return status
+    ...                             analyzer.check_list
+    ...                                 pdmlFile=${pdmlFile}
+    ...                                 packetName=SgNBAdditionRequest
+    ...                                 path=nr-rrc.phy_ParametersFR1_element/nr-rrc.pdsch_256QAM_FR1$
+    ...                                 value=0
+    run keyword IF                  '${param.ue256QAM}'=='True'
+    ...                             should be equal             ${status}           ${True}
+    ...         ELSE                should be equal             ${status}           ${False}
+
+    ${expected_256QAM}              set variable                pdsch-256QAM-FR1: supported (0)
+
+    Dated Log                       \tCheck if RRCReconfigurationComplete was received or not
+    run keyword IF                  '${param.attach_ue_expected}'=='True'
+    ...                             analyzer.check_list
+    ...                                 pdmlFile=${pdmlFile}
+    ...                                 packetName=SgNBReconfigurationComplete
+    ...                                 path=nr-rrc.rrcReconfigurationComplete_element$
+    ...                                 value=${EMPTY}
+    ...     ELSE                    analyzer.check_list
+    ...                                 pdmlFile=${pdmlFile}
+    ...                                 packetName=SgNBAdditionRequestReject
+    ...                                 path=x2ap.protocol$
+    ...                                 kind=showname
+    ...                                 value=protocol: abstract-syntax-error-reject (1)
+
+Test Verify Capture CPRT
+    ${filter_f1ap}                  set variable                sctp.data_payload_proto_id == 62
+    ${filterPcap}                   analyzer.filter_pcap
+    ...                                 ${captureCPRT.path}
+    ...                                 filterName=f1ap         # ue_capa_gnb_${param.test_description}
+    ...                                 filterExp=${filter_f1ap}
+    ${pdmlFile}                     analyzer.pcap_to_pdml       ${filterPcap}
+    Dated Log                       Check if UEContextSetupRequest:phy-ParametersFR1 contain pdsch-256QAM-FR1: supported (0)
+    ${Status}                       Run keyword and return status
+    ...                             analyzer.check_list
+    ...                                 pdmlFile=${pdmlFile}
+    ...                                 packetName=UEContextSetupRequest
+    ...                                 path=nr-rrc.phy_ParametersFR1_element/nr-rrc.pdsch_256QAM_FR1$
+    ...                                 value=0
+    run keyword if                  '${param.ue256QAM}'=='True'
+    ...                             should be equal             ${status}           ${True}
+    ...         ELSE                should be equal             ${status}           ${False}
+ 

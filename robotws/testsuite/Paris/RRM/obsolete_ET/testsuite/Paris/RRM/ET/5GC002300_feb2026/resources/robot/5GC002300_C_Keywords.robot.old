@@ -1,0 +1,129 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]   [SUITE PURPOSE]  specific keywords for 5GC002300-C
+...               Test Case Scenario author: ying.yw.wu@nokia.com
+...               Test Case Scenario contact: ying.yw.wu@nokia.com
+...               Test Case automation author: ying.yw.wu@nokia.com
+...               Test Case automation contact: ying.yw.wu@nokia.com
+...               Creation Date: 2022 Feb 02
+...               Modified Date: 2022 Feb 24
+...               Last Modified by: mohammed.ouahabi@nokia.com
+
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../../../resources/SWENG/robot/Container.robot
+
+Resource          ./5GC002300_Keywords.robot
+
+#Resource           taf/rfrl/common_resources/robot/preconditions.robot
+
+*** Variables ***
+
+#PM counter EIRP_SAMPLE
+${PM_Counter_EIRP_SAMPLE}     M55324C00000
+${EIRP_SAMPLE_Expected_Value_Before_Change}     3000
+${EIRP_SAMPLE_Expected_Value_After_Change}      1500
+
+#NRCELL_ID ######
+${NRCELL_ID}    1
+
+*** Keywords ***
+
+TC 2300-C
+    [Arguments]            ${params}
+    Set Suite Variable     ${params}
+    Init Sequence          ${params}
+    Critical Step          Cell Setup SANSA
+    Step                   SA UE CALL
+    Step                   sleep        argument=720s
+    Step                   Collect All PM Counters File
+    Step                   Check PM EIRP Sample        ${EIRP_SAMPLE_Expected_Value_Before_Change} 
+    Step                   Lock Cell
+    Step                   Update EIRP Window And Step Size Values      ${params}
+    Step                   Unlock Cell
+    Step                   sleep        argument=720s
+    Step                   Collect All PM Counters File
+    Step                   Check PM EIRP Sample        ${EIRP_SAMPLE_Expected_Value_After_Change} 
+
+
+Suite Setup 2300-C
+    Setup.Suite Setup From Scratch
+    Set suite variable              ${pm_files_path}      ${LOG_PATH}/PM
+    ${SCF_MODIFIED}                 Set Variable          ${SCF_SETUP_PATH}.modif
+    Copy File                       ${SCF_SETUP_PATH}     ${SCF_MODIFIED}
+    Config Update ASOE ABIO   scf_file=${SCF_MODIFIED}
+	Oam.OAM Perform Full Commissioning          scf_file=${SCF_MODIFIED}
+    WA Airscale Wait For Ready                  ${GNB_DU}
+    Restart TL
+
+Cell Setup SANSA 
+    Dated Log       "====== Cell setup SANSA"
+    CallSetup.Setup Wtsemu SA 
+    sleep    60s
+    CallSetup.WTS Set X2 Link
+
+
+SA UE CALL
+    Dated log       "====== 1 UE SA call"
+    CallSetup.UE Register
+    CallSetup.Launch PDU Session
+    Traffic.Traffic UE DL    ueSetting=${BASIC_UE_SA}    throughput=5    deviation=10                          
+    Traffic.Traffic UE UL    ueSetting=${BASIC_UE_SA}    throughput=5    deviation=10
+
+
+
+Collect All PM Counters File
+    Dated log                       The PM counters file collected from gnb will be stored under : ${pm_files_path}
+    ${latest_pm_file_name}          Counters.Collect PM files from BTS  ${pm_files_path}
+    set Suite Variable              ${LATEST_FILE}       ${latest_pm_file_name}
+    Dated log                       Latest pm counters file : ${LATEST_FILE}
+
+Check PM EIRP Sample   
+    [Arguments]             ${expected_value} 
+    [Documentation]         To retrieve the value of PM counter : M55324C00000
+    ...                     it should be in the range of ${expected_value} +/- 10
+    Dated log               "===== check PM EIRP Sample ===="
+    ${Counter_Value}=       Counters.Retrieve Latest Single Counter Value From Pm File with CellID    
+	...                  ${LATEST_FILE}      ${PM_Counter_EIRP_SAMPLE}    ${NRCELL_ID}
+    BuiltIn.Log      The last value of PM counter : ${PM_Counter_EIRP_SAMPLE} is : ${Counter_Value}
+    should be true     ${Expected_Value}-10 <= ${Counter_Value} <= ${Expected_Value}+10
+    #To add the verdict#  
+
+Lock Cell
+    Dated log               "===== Lock the cell 1 ===="
+    OAM.OAM Cell Lock    state=LOCK    cell_id=${NRCELL_ID}
+    sleep    60s
+
+Update EIRP Window And Step Size Values
+    [Arguments]        ${params}     
+    Dated log          "==== update EIRP Window And Step Size Values"   
+    # here, to call the "OAM Set Params" of SWENG Oam.robot to update 2 NIDD params as the following :
+    # EIRP control time averaging window (NRCELL.eirpControlTimeAveragingWindow)  :  change it from 1 to 2 ; 
+    # EIRP control time averaging window step size (eirpControlTimeAveragingWindowStepSize):  change it from 100 to 200 ;
+    ${nrcell_1_dist_name}     Set Variable     MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    &{modify_param1}    Create Dictionary
+    ...    parameter=eirpControlTimeAveragingWindow
+    ...    dist_name=${nrcell_1_dist_name}
+    ...    value=2
+    @{modify_param}    Create List    ${modify_param1}
+    Oam.OAM Set Params                ${modify_param}
+
+    &{modify_param2}    Create Dictionary
+    ...    parameter=eirpControlTimeAveragingWindowStepSize
+    ...    dist_name=${nrcell_1_dist_name}
+    ...    value=200
+    @{modify_param}    Create List    ${modify_param2}
+    Oam.OAM Set Params                ${modify_param}
+
+Unlock Cell
+    Dated log               "===== UnLock the cell 1 ===="
+    OAM.OAM Cell Lock    state=UNLOCK    cell_id=${NRCELL_ID}
+    sleep    60s
+ 

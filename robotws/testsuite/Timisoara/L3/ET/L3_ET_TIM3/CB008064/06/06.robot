@@ -1,0 +1,80 @@
+*** Settings ***
+Force Tags    CLOUD_5G_I_LOO_AP_LOOO    CONFIGURED    RAN_5G_TDD    RAN_5G    PY39
+...           CRT    SBTS00    NoResUsage
+
+Documentation    :copyright: Nokia
+...              :authors: Cristinel Sava
+...              :contact: cristinel.sava@nokia.com
+
+Resource    ../CB008064_Keywords.robot
+Resource    ../CaseResource/CB008064_06_ASIB_PDL_Check_CU-UP_and_CU-UP_and_DU_Trace_Session.robot
+Resource    Resource/PCMD.robot
+Resource    Resource/ERR_WRN_Check.robot
+Library     DateTime
+Library     taf.sbts.oam.coam.admin    WITH NAME    admin_cli
+Resource    Resource/pm_logs_frame_06.robot
+
+
+Suite Setup    Run Keywords    sleep    1s
+#...            AND             Setup WTS Esim Environment
+...            AND             Get Scfc File    output_filepath=${OUTPUT_DIR}/initial_commissioning.xml
+...            AND             Log to console    1 Get Scfc File
+...            AND             Get VM Password
+...            AND             Log to console    2 Get VM Password
+...            AND             Get VM IP
+...            AND             Log to console    3 Get VM IP
+...            AND             Start Vm Ethernet Interfaces
+...            AND             Log to console    4 Start Vm Ethernet Interfaces
+...            AND             Log to console    5 Start UTF sleep 20s
+...            AND             Run  utf_lab-controller start
+...            AND             sleep    20s
+#...            AND             Log to console    6 GET EMIL_LAST_FILE
+#...            AND             EMIL_LAST_FILE
+...            AND             Start Tcpdump To Get PCMD   pcmd_file=ZZ_lmp.pcap
+...            AND             Log to console    7 Start Tcpdump
+#...  AND  Wait until keyword succeeds  300  30  Find Scfc And Send Delta Commissioning  scfc_filename=delta_json_delete_TCE.json
+...            AND             Run Keyword And Ignore Error    Wait Until Keyword Succeeds    120s    30s
+                               ...    Find Scfc And Send Delta Commissioning    scfc_filename=delta_json_delete_TCE.json
+...            AND             Log to console    8 Delta Commissioning Removed pcmd objects
+...  AND  Wait until keyword succeeds  300  30  Find Scfc And Send Delta Commissioning  scfc_filename=Cell_Trace_ADD_TCE3.json
+...            AND             Log to console    9 Delta Commissioning ADD pcmd objects
+...            AND             Get Scfc File    output_filepath=${OUTPUT_DIR}/scfc_after_delta.xml
+...            AND             Log to console    10 Get Scfc File scfc_after_delta.xml
+...            AND             ERR_WRN_Check.Start BTSlogs Collection In Log Server
+...            AND             Log to console    5 Syslog Capture Start
+...            AND             Syslog Capture Start
+...            AND             Log to console    5 Syslog Capture Started
+...            AND             Reach Onair without confirmation   lua_cfg=${CURDIR}/config/basic.cfg
+...            AND             sleep    20s
+...            AND             Execute Egate Command    cmd=enb_x2_link_up enb=1 target=2
+...            AND             Log to console    11 Site UP
+...            AND             Log to console    Step2: Capture Log & Make L3 Call
+...            AND             CB008064_Keywords.Make twice L3CALL And Get ALL PCMD MSG
+...            AND             Log to console    12 Make L3CALL And Get ALL PCMD MSG
+#...            AND             CB008064_Keywords.Make L3CALL And Get ALL PCMD MSG
+...            AND             Stop Tcpdump To Get PCMD    pcmd_file=ZZ_lmp.pcap
+...            AND             sleep    20s
+...            AND             Log to console    16 Stoped Tcpdump and Get PCMD pcmd_file=ZZ_lmp.pcap
+#...            AND             Log to console    13 GET EMIL_NEWEST_FILE
+#...            AND             EMIL_NEWEST_FILE
+
+Suite Teardown    Run Keywords    Stop Vm Ethernet Interfaces
+...               AND             Send Full Commissioning    input_filepath=${OUTPUT_DIR}/initial_commissioning.xml
+...               AND             log to console    Wait until AirPhone is ready to gather logs
+...               AND             Sleep    200s
+...               AND             Stop Default Processes And Gather Logs And Compress Logs
+
+
+
+Test Teardown    Run  docker stop $(docker ps -a -q)
+
+
+*** Test Cases ***
+CB008064_06_ASIB_PDL_Check_CU-UP_and_CU-UP_and_DU_Trace_Session
+    [Documentation]   Author: cristinel.sava@nokia.com
+    [Timeout]  1h
+#    [Setup]   Case Setup: D_14
+    CB008064_06_ASIB_PDL_Check_CU-UP_and_CU-UP_and_DU_Trace_Session
+    [Teardown]   Common Test Teardown L3
+
+    sleep    1s

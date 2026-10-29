@@ -1,0 +1,195 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB012533_C
+...               Test Case Scenario author   : blandine.garnier@nokia.com
+...               Test Case Scenario contact  : blandine.garnier@nokia.com
+...               Creation Date               : 22-Nov-2023
+...               Modified Date               : 24-Sep-2024         Produce Scout Data + some RF50 fixes
+
+
+Resource          ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/CfgFilesTools.robot
+Resource          ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/KPIs.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+
+Resource          ./CB012533_keywords.robot
+
+Library            ../../../../../resources/SWENG/python/CoamParameter.py      WITH NAME     coam_parameter
+Library            taf.sbts.oam.coam.admin           WITH NAME   sbts_coam
+Library            ute_wtssim           WITH NAME    wts
+Library            taf.wts.runner              WITH NAME       wtsemu
+Library            OperatingSystem
+Library            String
+Library            BuiltIn
+Library                                         ../../../resources/python/luashark_tools.py
+Library                                         luashark_tools.analyzer       WITH NAME       analyzer
+
+*** Variables ***
+
+${gnb_alias}                      gnb_under_test
+
+
+
+&{FIELDS_cell_dlla}
+...              actDlLaDynBlerTarget=True
+...              dynamicBlerTableType=1
+...              boostSwitchBoundaryOfMcs=20
+...              targetBlerBoostFactorRange1=20
+...              targetBlerBoostFactorRange2=10
+
+&{FIELDS_modif_dlla}
+...              boostSwitchBoundaryOfMcs=28
+...              targetBlerBoostFactorRange1=100
+...              targetBlerBoostFactorRange2=1
+
+&{dict_settings_ue_1}                                                ue=51
+...                                                                  pdu=1
+...                                                                  throughput_dl=175
+...                                                                  deviation_dl=10     # Allowed % deviation for DL throughput
+...                                                                  throughput_ul=100
+...                                                                  deviation_ul=10     # Allowed % deviation for UL throughput
+...                                                                  originalCell=3
+
+@{dict_settings_all_ues}                                            ${dict_settings_ue_1}
+
+
+*** Keywords ***
+
+CB012533_C_B1_4
+    [Documentation]        Test to check that modification NIDD parameter on line is done
+    ...                    CPRT-L2 Interface, No drop
+    [Arguments]            ${param}
+
+    Init Sequence        ${param}
+    STEP                 CB012533_C Configuration               ${delta_file}            ${gnb_alias}
+    Critical Step        Restart TL
+    STEP                 CB012533 Setup Mirroring     prefix=CB012533_C_dlla
+    STEP                 CB012533 Start Capture CPRT
+    STEP                 Cell Setup
+    STEP                 CB012533 Stop Capture CPRT
+    STEP                 Check Dlla parameter      ${CAPTURE_CPRT}    ${FIELDS_cell_dlla}
+    ${listOfUes}         Build UEs list SA Multi UEs
+    STEP                 SA Attach and Start Traffic Multi UEs       ${param}    ${listOfUes}
+    STEP                 CB012533 Setup Mirroring     prefix=CB012533_C_dlla_modifonline
+    STEP                 CB012533 Start Capture CPRT
+    STEP                 Modification on line Dlla parameter
+    STEP                 CB012533 Stop Capture CPRT
+    STEP                 Check Modification on line dlla parameter   ${CAPTURE_CPRT}    ${FIELDS_modif_dlla}
+    [Teardown]           Run Keywords       Produce Scout data      AND
+    ...                                     GenericTest.Display diagnosis
+
+
+CB012533_C Configuration
+    [Documentation]               Dedicated KW to add use a delta commissioning file and configure config files
+    ...                           1 FDD cell with dlla activated + 1 FDD cell without dlla activated
+    [Arguments]                   ${delta_file}     ${gnb_alias}
+
+    # Open connection towards cOAM
+    sbts_coam.connect_to          name=${gnb_alias}
+
+    # Apply delta scf
+    coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${delta_file}
+    ...                           connection=${gnb_alias}
+    ...                           skip_parameter_relation_errors=True
+
+    OAM wait available
+
+    sbts_coam.teardown            connection=${gnb_alias}
+
+
+Check Dlla parameter
+    [Documentation]
+    ...     Actions:        Take trace CPRT-L2PS
+    ...     Checks:         Check in message l2_ps_cell_cellsetup_req the field actDlLaDynBlerTarget,
+    ...                     dynamicBlerTableType,boostSwitchBoundaryOfMcs, targetBlerBoostFactorRange1
+    ...                     and targetBlerBoostFactorRange2
+    ...     Verdict:        Check the value configured after the cell setup
+
+    [Arguments]    ${CAPTURE_CPRT}    ${FieldShowName}
+
+    Dated Log    [Checking dlla parameters]
+    Dated Log    ----> convert pcap to pdml with filter itf_l2_ps_cell_cellsetupreq
+    Dated Log    ----> pcap file : ${CAPTURE_CPRT}
+
+    ${pdml}                     analyzer.pcap_to_pdml      ${CAPTURE_CPRT.path}
+
+    ${msg_field}       Set Variable    @{FieldShowName.keys()}
+
+    Dated Log    ---->  Getting some captured value in itf_l2_ps_cell_DlSrsBmConfig
+
+    Dated log new line                 for Cell 0 NRcellIdentity
+
+    FOR     ${Field}   IN           @{msg_field}
+            ${Value}          set variable    ${FieldShowName["${Field}"]}
+            Dated Log         --- Check ${Field} = ${Value}
+            analyzer.check_exists_once     pdmlFile=${pdml}
+            ...                            packetName=itf_l2_ps_cell_cellsetupreq
+            ...                            path=${Field}
+            ...                            value=${Value}
+            ...                            kind=showname
+            ...                            test=MATCH
+    END
+    [return]    ${pdml}
+
+
+Modification on line Dlla parameter
+    [Documentation]
+     ...     Actions:        Modify parameter on line dynamicBlerTableType,
+     ...                     boostSwitchBoundaryOfMcs
+     ...                     targetBlerBoostFactorRange1
+     ...                     targetBlerBoostFactorRange2
+     ...     Checks:         No check
+     ...     Verdict:        nothing
+    Dated Log    Modify on line
+
+    sbts_coam.connect_to          name=${gnb_alias}
+    Run Keywords                  coam_parameter.perform_scf_delta_commission
+    ...                           delta_file=${delta_scf_dlla_modif}
+    ...                           connection=${gnb_alias}
+    # Wait end of commissioning
+    ...                           AND
+    ...                           OAM wait available
+    sbts_coam.teardown            connection=${gnb_alias}
+
+
+Check Modification on line dlla parameter
+    [Documentation]
+    ...     Actions:        Take trace CPRT-L2PS
+    ...     Checks:         Check in message l2_ps_cell_cellsetup_req the field actDlLaDynBlerTarget,
+    ...                     dynamicBlerTableType,boostSwitchBoundaryOfMcs, targetBlerBoostFactorRange1
+    ...                     and targetBlerBoostFactorRange2
+    ...     Verdict:        Check the new value configured after the on line modification
+
+    [Arguments]    ${CAPTURE_CPRT}    ${FieldShowName}
+    Dated Log    [Checking dlla modif on line parameters]
+    Dated Log    ----> convert pcap to pdml with filter itf_l2_ps_cell_cellreconfigurationreq
+    Dated Log    ----> pcap file : ${CAPTURE_CPRT}
+
+    ${pdml}                     analyzer.pcap_to_pdml      ${CAPTURE_CPRT.path}
+
+    ${msg_field}       Set Variable    @{FieldShowName.keys()}
+    Dated Log    ---->  Getting some captured value in itf_l2_ps_cell_cellreconfigurationreq
+    Dated log new line                 for Cell 3 NRcellIdentity
+    FOR     ${Field}   IN           @{msg_field}
+            ${Value}          set variable    ${FieldShowName["${Field}"]}
+
+            Dated Log         --- Check ${Field} = ${Value}
+            analyzer.check_exists_once     pdmlFile=${pdml}
+            ...                            packetName=itf_l2_ps_cell_cellreconfigurationreq
+            ...                            path=${Field}
+            ...                            value=${Value}
+            ...                            kind=showname
+            ...                            test=MATCH
+    END
+    [return]    ${pdml}

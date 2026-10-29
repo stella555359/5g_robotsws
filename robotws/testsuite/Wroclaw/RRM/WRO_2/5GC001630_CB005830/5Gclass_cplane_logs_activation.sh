@@ -1,0 +1,5 @@
+##cp_runtime.ini file addition, swconfig.txt flags addition for debug log level in  5G Classical deployment
+##based on: https://confluence.ext.net.nokia.com/display/CV/Pronto+logs++for+5G+releases#Prontologsfor5Greleases-Storagerules
+SSHPASS='oZPS0POrRieRtu' sshpass -e ssh toor4nsn@192.168.255.129 'touch /ffs/run/cp_runtime.ini && echo -e "[control]\nLoggingSeverity=trace" > /ffs/run/cp_runtime.ini && echo "0x590072=1 #CP-RT log level (default 1 in 19B, 2 in 20A, 0 = disable 1 = debug 2 = info 3 = warning 4 = error 5 = vip 6 = disable)" >> /ffs/run/swconfig.txt && echo "0x41001b=1 #CP-NRT log level (avaiable after 19B, default = 2, 0 = disable 1 = debug 2 = info 3 = warning 4 = error 5 = vip 6 = disable)" >> /ffs/run/swconfig.txt && crasign /ffs/run/cp_runtime.ini && rm /ffs/run/swconfig.txt.p7 && crasign /ffs/run/swconfig.txt && echo "Verification of cp_runtime.ini signature:" && craverify /ffs/run/cp_runtime.ini* && echo "Verification of swconfig.txt signature:" && craverify /ffs/run/swconfig.txt* && reboot'
+echo ***** CPlane debug logs activated on gNB *****
+

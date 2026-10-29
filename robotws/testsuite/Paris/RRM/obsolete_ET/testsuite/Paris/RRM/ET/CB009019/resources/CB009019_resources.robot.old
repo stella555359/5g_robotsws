@@ -1,0 +1,84 @@
+*** Settings ***
+
+Documentation
+...   description: CB009019
+...   last update: scout data and RF50 fixes
+
+Library     ute_tshark
+Library     ta5g_tshark
+Library     CB009019_resources.py
+Resource    ../../resources_KRK/robot/common_keywords.robot
+Resource    ../../../../resources/SWENG/robot/Setup.robot
+Library     taf.sw.scout                    WITH NAME    scout
+Library     taf.sw.reporting_portal         WITH NAME    reporting_portal
+
+
+*** Keywords ***
+Deregister UE${UE_ID} and clear up test environment
+    Stop tshark   alias=tcp_mss
+    Deregister UE  UE_ID=${UE_ID}
+    Sleep  5  need for hanging resources verification
+
+Detach UE${UE_ID} and clear up test environment
+    Stop tshark   alias=tcp_mss
+    Detach UE  UE_ID=${UE_ID}
+
+Set feature flag ${parameter} to ${value}
+    Log to console  Set feature flag ${parameter} to ${value}
+    ta_emss.Configure  {'MOC': 'NRBTS', 'ID': '1', '${parameter}': '${value}'}
+
+Start ${mbps} mbps DL data traffic on PDU${PDU_ID} for UE${UE_ID}
+    ${client_IP}=  evaluate  ${PDU_ID} + 1
+    Log to console    Check done for UE_ID=${UE_ID}
+    start iperf traffic
+    ...  server=10.0.2.1
+    ...  client=1.2.4.${client_IP}
+    ...  port=7070
+    ...  throughput=${mbps}M
+    ...  duration=3
+    ...  packet_size=1400
+    ...  ip_version=ipv4
+    ...  protocol=tcp
+    sleep  5s  reason=wait for the iperf command
+
+Start ${mbps} mbps UL data traffic for UE${UE_ID}
+    Log to console    Check done for UE_ID=${UE_ID}
+    start iperf traffic
+    ...  server=10.0.2.1
+    ...  client=72.23.0.1
+    ...  port=7070
+    ...  throughput=${mbps}M
+    ...  duration=3
+    ...  packet_size=1400
+    ...  ip_version=ipv4
+    ...  protocol=tcp
+    sleep  5s  reason=wait for the iperf command
+
+Start ${mbps} mbps DL data traffic in NSA mode for UE${UE_ID}
+    Log to console    Check done for UE_ID=${UE_ID}
+    start iperf traffic
+    ...  server=10.0.2.1
+    ...  client=4.7.254.208
+    ...  port=7070
+    ...  throughput=${mbps}M
+    ...  duration=5
+    ...  packet_size=1400
+    ...  ip_version=ipv4
+    ...  protocol=tcp
+    sleep  5s  reason=wait for the iperf command
+
+Verify value of MSS in TCP [SYN] packet
+    [Arguments]  ${MSS}  ${source}  ${destination}
+    Verify tshark
+    ...   alias=tcp_mss
+    ...   packet_filter=tcp.options.mss_val==${MSS} and tcp.flags.syn==1 and tcp.flags.ack==0 and ip.addr==${source} and ip.addr==${destination}
+    ...   pass_criteria= >=1
+    ...   timeout=20
+
+Verify value of MSS in TCP [SYN,ACK] packet
+    [Arguments]  ${MSS}  ${source}  ${destination}
+    Verify tshark
+    ...   alias=tcp_mss
+    ...   packet_filter=tcp.options.mss_val==${MSS} and tcp.flags.syn==1 and tcp.flags.ack==1 and ip.addr==${source} and ip.addr==${destination}
+    ...   pass_criteria= >=1
+    ...   timeout=20

@@ -1,0 +1,195 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Keywords for 5GC009158-G
+...               Prerequisite :
+...               Scope : keywords for 5GC009158 interaction with 5GC002558 PRB blanking
+...
+...               Test Case Scenario author   : philippe.daroux@nokia.com
+...               Test Case Scenario contact  : philippe.daroux@nokia.com
+...               Test Case automation author : philippe.daroux@nokia.com
+...               Test Case automation contact: philippe.daroux@nokia.com
+...               Creation Date               : 05-23-2022
+...               Version History   Date            Author                          Notes
+...               0.1               06-06-2022     philippe.daroux@nokia.com  Creation
+...               0.2               FB2301      ying.yw.wu@nokia.com            call the sweng interne kw 
+...                                                                             "Check Values on Operator In File" with 
+...                                                                             arg name "column_name" instead of "Column_name"
+...               0.3               FB2322      philippe.daroux@nokia.com       adaptation to new TOPO + VARIANT
+
+Library            ../../../resources/python/luashark_tools.py
+Resource          taf/rfrl/common_resources/robot/preconditions.robot
+
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../../../resources/SWENG/robot/Container.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+Resource          ./Config9158.robot
+#Resource          ../../../5GC001227/resources/robot/5GC001227-Common_keywords.robot
+#Resource          ../../../5GC001227/resources/robot/5GC001227-A-UPD006_keywords.robot
+
+Variables           ../../../../../resources/SWENG/python/Colors.py
+
+
+*** Keywords ***
+
+Suite Setup 9158
+    [Documentation]
+    ...     Conditions:     customs configurations yamlPathname
+    ...     Actions:        it performs the generic suite setup and backup the configurations files
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        suite setup is passed
+    [Arguments]             ${yamlPathname}=${EMPTY}
+
+    Setup.Suite Setup from scratch        yamlPathname=${yamlPathname}
+    ...                                   listBackupFiles=${FD_ALL}
+
+    Backup Files
+    ${scf_suite_setup_backup}         OAM Get SCF File    file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable      ${scf_suite_setup_backup}
+    Dated Log               SCF backup file = ${scf_suite_setup_backup}         
+
+TC 9158 Interworking with PRB BLANKING
+    [Documentation]         The aim of this test is to check that allocation of PRBs per cell is correct for cell with Both Edge PRB blanking
+    ...                  BaseBand Pooling Mode used is LoadMetric.
+    ...                  From Sherpa micro L1L2 traces:
+    ...                     Each cell, for DL and UL, has a guaranteed minimum amount of PRBs available.
+    ...                     Remaining PRB processing resources are shared dynamically between cells mapped to the same L1 instance depending.
+    ...                     on Gbr/noGbrRequest traffic infos.
+    ...                     cells with PRB blanking activated never get more PRBs assigned than they can use on the air interface.
+
+    [Arguments]            ${params}        ${Vendor_Param}
+    Set Suite Variable     ${params}
+    Init Sequence          ${params}
+    Step                   Set RAD Params Of 1227
+    Step                   Config1227.Vendor File Config With Specific Settings     argument=${Vendor_Param}
+    Step                   Config9158.Update 9158-G Params in OAM SCF
+    Step                   TC 1227 SA Call of 2 UEs with GBR UL DL Traffic       # Predefined CallProfile
+    Step                   Calling Panda Extract Csv function
+    Step                   Verification of PRB allocation values
+
+Verification of PRB allocation values
+    [Documentation]     Verification of PRB allocation values in (Ul/Dl)PrbPoolingAllocationSubpool and
+    ...   (Ul/Dl)PrbPoolingAllocationReport of Sherpa event45 messages
+    ...   It is assumed that NIDD FddNrCellConfigTradeoff is set to max cells (feature CB6913)
+    ...   It is assumed that:
+    ...         NIDD actPRBBlanking is set to TRUE and LOW and HIGH edge PRB blanked values set (14 in low and 12 in high) for DL and UL
+    ...         14 + 26 PRB are so blanked in UL + DL part
+    ...   Dl L1SubPoolStreamPrbCapacity (1 subpool Max Num Stream PRB) = 300 PRB
+    ...   Dl NumMinStreamPrb is the sum of streamPRB.min for all cell: 48 Prbbmin * 2 (conversion A2 prb->stream) *2 (cells) = 192
+    ...   Dl NumMaxStreamPrb is the sum of streamPRB.max for all cell:
+    ...   80(106-(12+14)Blanking) Prbmax * 2 (conversion DL A2 prb->stream) *2 (cells) = 320
+    ...   Dl NumAllocStreamPrb1 is the streamPRB allocated for selected cell (round robin) : set to 0 in LB
+    ...   Dl NumAllocStreamPrb2 is the streamPRB allocated globaly for all the other cell (Load Based) :
+    ...         Dl NumAllocStreamPrb2 = Dl L1SubPoolStreamPrbCapacity-Dl NumAllocStreamPrb1 = 300-0 =300
+    ...   Ul L1SubPoolStreamPrbCapacity (1 subpool Max Num Stream PRB) = 300 PRB
+    ...   Ul NumMinStreamPrb is the sum of streamPRB.min for all cell: 36 Prbbmin * 4 (conversion A4 prb->stream) *2 (cells) = 288
+    ...   Ul NumMaxStreamPrb is the sum of streamPRB.max for all cell:
+    ...   80(106-(12+14)Blanking) Prbmax * 4 (conversion DL A4 prb->stream) *2 (cells) = 640
+    ...   Ul NumAllocStreamPrb1 is the streamPRB allocated for selected cell (round robin) : set to 0 in LB
+    ...   Ul NumAllocStreamPrb2 is the streamPRB allocated globaly for all the other cell (Load Based) :
+    ...   Ul NumAllocStreamPrb2 = Dl L1SubPoolStreamPrbCapacity-Dl NumAllocStreamPrb1 = 300-0 =300
+    ...   UL NumMinPrbAlloc should be equal to 36, UL NumMaxPrbAlloc should be equal to 80
+    ...   DL NumMinPrbAlloc should be equal to 48, UL NumMaxPrbAlloc should be equal to 80
+    ...   ulStat_PRB_MAX should be less or equal to 27 (Prballocaed by BBRM minus 2x6 PRB for long PUCCH)-->here 39-12=27 if cell is privileged one)
+    ...   ulStat_PRB_MAX should be less or equal to 24 (Prballocaed by BBRM minus 2x6 PRB for long PUCCH)-->here 36-12=24 if cell is not privileged)
+    ...   dlStat_PRB_MAX should be less or equal to 72 (Prballocaed by BBRM minus remaining RBG)-->here 80-8=72 if cell is privileged one)
+    ...   dlStat_PRB_MAX should be less or equal to 64 (Prballocaed by BBRM minus remaining RBG)-->here 70-6=64 if cell is not privileged)
+
+    [Arguments]
+    ${file_path_Dl_PrbPollingAllocationSubpool} =      set variable    ${sherpa_output_path}/tcpdump/Dl_PrbPoolingAllocationSubpool_45_.csv
+    ${file_path_Ul_PrbPollingAllocationSubpool} =      set variable    ${sherpa_output_path}/tcpdump/Ul_PrbPoolingAllocationSubpool_45_.csv
+    ${Dl_l1SubPoolStreamPrbCapacity}    Check Regex Value In File Column    file=${file_path_Dl_PrbPollingAllocationSubpool}
+    ...                                 Column_name=l1SubPoolStreamPrbCapacity    regex_tocheck=300   # l1SubPoolStreamPrbCapacity
+    ${Check_Dl_l1SubPoolStreamPrbCapacity} =     Set Variable If   ${Dl_l1SubPoolStreamPrbCapacity}==True
+    ...                                            DL L1 SubPool capacity in stream PRB is equal to 300 for chBw=20MHz
+    ...                                            ${Dl_l1SubPoolStreamPrbCapacity}==False
+    ...                                            DL L1 SubPool capacity in stream PRB is not equal to 300 for chBw=20MHz
+    Dated Log New Line     ${Check_Dl_l1SubPoolStreamPrbCapacity}
+    should be true              ${Dl_l1SubPoolStreamPrbCapacity}==True
+    ${Ul_l1SubPoolStreamPrbCapacity}    Check Regex Value In File Column    file=${file_path_Ul_PrbPollingAllocationSubpool}
+    ...                                 Column_name=l1SubPoolStreamPrbCapacity    regex_tocheck=300   # l1SubPoolStreamPrbCapacity
+    ${Check_Ul_l1SubPoolStreamPrbCapacity} =     Set Variable If   ${Ul_l1SubPoolStreamPrbCapacity}==True
+    ...                                            UL L1 SubPool capacity in stream PRB is equal to 300 for chBw=20MHz
+    ...                                            ${Ul_l1SubPoolStreamPrbCapacity}==False
+    ...                                            UL L1 SubPool capacity in stream PRB is not equal to 300 for chBw=20MHz
+    Dated Log New Line     ${Check_Ul_l1SubPoolStreamPrbCapacity}
+    should be true              ${Ul_l1SubPoolStreamPrbCapacity}==True
+
+    ${file_path_Dl_PrbPollingAllocationReport} =      set variable    ${sherpa_output_path}/tcpdump/Dl_PrbPoolingAllocationReport_45_.csv
+    ${file_path_Ul_PrbPollingAllocationReport} =      set variable    ${sherpa_output_path}/tcpdump/Ul_PrbPoolingAllocationReport_45_.csv
+    ${Dl_NumMinPrbAlloc}    Check Regex Value In File Column    file=${file_path_Dl_PrbPollingAllocationReport}
+    ...                                 Column_name=NumMinPrbAlloc    regex_tocheck=48
+    ${Check_Dl_NumMinPrbAlloc} =     Set Variable If   ${Dl_NumMinPrbAlloc}==True
+    ...                                            DL NumMinPrbAlloc is equal to 48 for chBw=20MHz
+    ...                                            ${Dl_NumMinPrbAlloc}==False
+    ...                                            DL NumMinPrbAlloc is not equal to 48 for chBw=20MHz
+    Dated Log New Line     ${Check_Dl_NumMinPrbAlloc}
+    should be true              ${Dl_NumMinPrbAlloc}==True
+    ${Ul_NumMinPrbAlloc}    Check Regex Value In File Column    file=${file_path_Ul_PrbPollingAllocationReport}
+    ...                                 Column_name=NumMinPrbAlloc    regex_tocheck=36
+    ${Check_Ul_NumMinPrbAlloc} =     Set Variable If   ${Ul_NumMinPrbAlloc}==True
+    ...                                            UL NumMinPrbAlloc is equal to 36 for chBw=20MHz
+    ...                                            ${Ul_NumMinPrbAlloc}==False
+    ...                                            UL NumMinPrbAlloc is not equal to 36 for chBw=20MHz
+    Dated Log New Line     ${Check_Ul_NumMinPrbAlloc}
+    should be true              ${Ul_NumMinPrbAlloc}==True
+
+    ${file_path_Dl_PrbPollingAllocationReport} =      set variable    ${sherpa_output_path}/tcpdump/Dl_PrbPoolingAllocationReport_45_.csv
+    ${file_path_Ul_PrbPollingAllocationReport} =      set variable    ${sherpa_output_path}/tcpdump/Ul_PrbPoolingAllocationReport_45_.csv
+    ${Dl_NumMaxPrbAlloc}    Check Regex Value In File Column    file=${file_path_Dl_PrbPollingAllocationReport}
+    ...                                 Column_name=NumMaxPrbAlloc    regex_tocheck=80
+    ${Check_Dl_NumMaxPrbAlloc} =     Set Variable If   ${Dl_NumMaxPrbAlloc}==True
+    ...                                            DL NumMaxPrbAlloc is equal to 80 for chBw=20MHz
+    ...                                            ${Dl_NumMaxPrbAlloc}==False
+    ...                                            DL NumMaxPrbAlloc is not equal to 80 for chBw=20MHz
+    Dated Log New Line     ${Check_Dl_NumMaxPrbAlloc}
+    should be true              ${Dl_NumMaxPrbAlloc}==True
+    ${Ul_NumMaxPrbAlloc}    Check Regex Value In File Column    file=${file_path_Ul_PrbPollingAllocationReport}
+    ...                                 Column_name=NumMaxPrbAlloc    regex_tocheck=80
+    ${Check_Ul_NumMaxPrbAlloc} =     Set Variable If   ${Ul_NumMaxPrbAlloc}==True
+    ...                                            UL NumMaxPrbAlloc is equal to 80 for chBw=20MHz
+    ...                                            ${Ul_NumMaxPrbAlloc}==False
+    ...                                            UL NumMaxPrbAlloc is not equal to 80 for chBw=20MHz
+    Dated Log New Line     ${Check_Ul_NumMaxPrbAlloc}
+    should be true              ${Ul_NumMaxPrbAlloc}==True
+
+    ${file_path_macro_ulStat} =      set variable    ${sherpa_output_path}/tcpdump/macro__ulStat.csv
+    ${file_path_macro_dlStat} =      set variable    ${sherpa_output_path}/tcpdump/macro__dlStat.csv
+    ${ulStat_PRB_MAX}    Check Values on Operator In File    file=${file_path_macro_ulStat}
+    ...                                 column_name=MAX PRB     check_operator=<=     valuetocheck=3
+    ${Check_ulStat_PRB_MAX} =     Set Variable If   ${ulStat_PRB_MAX}==True
+    ...                                            The number of UL Max PRB is >= to 3
+    ...                                            ${ulStat_PRB_MAX}==False
+    ...                                            The number of UL Max PRB is not > to 3
+    Dated Log New Line     ${Check_ulStat_PRB_MAX}
+    should be true              ${ulStat_PRB_MAX}==True
+    ${dlStat_PRB_MAX}    Check Values on Operator In File    file=${file_path_macro_dlStat}
+    ...                                 column_name=MAX PRB     check_operator=>=     valuetocheck=72
+    ${Check_dlStat_PRB_MAX} =     Set Variable If   ${dlStat_PRB_MAX}==True
+    ...                                            The number of UL Max PRB is <= to 72
+    ...                                            ${dlStat_PRB_MAX}==False
+    ...                                            The number of UL Max PRB is not > to 72
+    Dated Log New Line     ${Check_dlStat_PRB_MAX}
+    should be true              ${dlStat_PRB_MAX}==True
+
+CB009158-G_keywords.End Of TC Teardown
+   [Documentation]        At the end of each TC :
+   ...                      - show the Diagnosis of the TC steps
+   ...                      - collect the gnb Snapshot
+   ...                      - if TC failed, collect also AP sosReport
+
+   Dated Log              End Of TC : start
+  Oam.OAM Get Snapshot
+   Run Keyword If Test Failed     Setup.Get Sos Report
+   GenericTest.Display Diagnosis
+   Dated Log              End of TC : end
+

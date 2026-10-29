@@ -1,0 +1,148 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE] TCs and KWs of CB012533_D
+...               Test Case Scenario author   : blandine.garnier@nokia.com
+...               Test Case Scenario contact  : blandine.garnier@nokia.com
+...               Creation Date               : 15-Jan-2024
+...               Version   Date              Author                             Notes
+...               n/a       08-Jan-2024       yann.merlin@nokia.com              Creation
+...               1.0       23-Jan-2024       yann.merlin@nokia.com              Modification
+...               2.0       21-Feb-2024       vincent.boulet@nokia.com           Parity testing to introduce dRNIC RINLINE2
+...               2.1       05-Mar-2024       vincent.boulet@nokia.com           Usage of SWENG KW to replace Get Param From Any Of SCF
+...                                                                              Chnage filter pcap to itf_l2_ps_cell_cellreconfigurationreq
+...               2.2       13-Mar-2024       vincent.boulet@nokia.com           Alignment with VRF_NPS_AUTO-37 ticket modification on filter_pcap
+...               2.3       24-Sep-2024       richard.duthu@nokia.com            Produce Scout Data
+
+Resource          ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/CfgFilesTools.robot
+Resource          ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/KPIs.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+
+Resource          ./CB012533_keywords.robot
+
+Library            ../../../../../resources/SWENG/python/CoamParameter.py      WITH NAME     coam_parameter
+Library            taf.sbts.oam.coam.admin           WITH NAME   sbts_coam
+Library            ute_wtssim           WITH NAME    wts
+Library            taf.wts.runner              WITH NAME       wtsemu
+Library            OperatingSystem
+Library            String
+Library            BuiltIn
+Library                                         ../../../resources/python/luashark_tools.py
+Library                                         luashark_tools.analyzer       WITH NAME       analyzer
+
+*** Variables ***
+
+${gnb_alias}                      gnb_under_test
+
+###  Checking data  ###
+&{actPathLoss_item}             nrCellIdentity=16385
+...                             actPathLoss_item=0
+
+&{dict_settings_ue_1}           ue=1
+...                             pdu=1
+...                             throughput_dl=175
+...                             deviation_dl=10     # Allowed % deviation for DL throughput
+...                             throughput_ul=100
+...                             deviation_ul=10     # Allowed % deviation for UL throughput
+...                             originalCell=1
+
+@{dict_settings_all_ues}        ${dict_settings_ue_1}
+
+
+*** Keywords ***
+
+CB012533_D_B1_1
+    [Documentation]       Verify that Radio Link Outage (RLO) is triggered when parameter actPathLoss is enabled.
+    ...                   actPathLoss parameter is online modifiable.
+    ...                   It shall not trigger either gNb restart or service outage when modifying the value of the parameters online
+    [Arguments]           ${param}
+    Init Sequence         ${param}
+    STEP                  CB012533 Setup Mirroring     prefix=CB012533-D_cellreconfigurationreq
+    STEP                  CB012533 Start Capture CPRT
+    STEP                  Cell Setup    cell_number=${param.nbCell}
+    ${listOfUes}          Build UEs list SA Multi UEs
+    STEP                  SA Attach and Start Traffic Multi UEs       ${param}    ${listOfUes}
+    STEP                  OAM Show FDD and TDD cell lists
+    ${param_value}        Run Keyword If    ${isAic}    Step    OAM Get Param From Any Of SCF    param=actPathLoss
+    ...                                                             current_scf=${SCF_SETUP_PATH}
+    ...                                                             dist_name=${TNRCELL_DIST_NAME_DU[0]}    #NRCELL-1
+    ...                               ELSE              Step    OAM Get Param From Any Of SCF    param=actPathLoss
+    ...                                                             current_scf=${SCF_SETUP_PATH}
+    ...                                                             dist_name=${TNRCELL_DIST_NAME[0]}    #NRCELL-1
+    STEP                  Set actPathLoss Parameter
+    STEP                  CB012533 Stop Capture CPRT
+    STEP                  Check_actPathLoss_itf_l2_ps_cell_cellreconfigurationreq        ${CAPTURE_CPRT}        ${actPathLoss_item}
+    [Teardown]            Run Keywords      Produce Scout data      AND
+    ...                                     GenericTest.Display diagnosis
+
+Set actPathLoss Parameter
+    [Documentation]      Modify some parameters in the database of the OAM set in arguments
+    ...                  The keyword returns the Commissioning status (completed, ongoing or failed)
+    ...                  - modifylist  : List of dictionaries like :
+    ...                  [{'parameter': 'actPathLoss', 'dist_name': 'MRBTS-1/NRBTS-1/NRCELL-1', 'value': 'false'}, {}, ...]
+    ...                  - oam : Oam identity (ex: ${GNB_DU.oam} or ${GNB_CU.oam}).
+    ...                  - timeout : Max delay allowed for operation. Unit is seconds
+    ${dist_name}       Set Variable    MRBTS-1/NRBTS-1/NRCELL-1
+    &{param}=    Run Keyword If    ${isAic}    Create Dictionary    parameter=actPathLoss    dist_name=${dist_name}    value=false    nodeType=Vdu
+    ...                      ELSE    Create Dictionary    parameter=actPathLoss    dist_name=${dist_name}    value=false
+    ${modiflist}       Create List
+    Append To List     ${modiflist}    ${param}
+    Run Keyword If    ${isAic}    Oam Set Params AIC    ${modiflist}
+    ...         ELSE    OAM.OAM Set Params     ${modiflist}
+
+Check_actPathLoss_itf_l2_ps_cell_cellreconfigurationreq
+    [Documentation]
+    ...     Actions:        Analysis of CPRT-L2PS messages
+    ...     Checks:         Check that actPathLoss (Boolean) is set to 0 in message itf_l2_ps_cell_cellreconfigurationreq
+    ...     Verdict:        actPathLoss is set to 0 after cellreconfiguration procedure
+    ...                     gNB shall not restart and there shall be no rservice outage in case of changing the value of the parameters online.
+    ...                     Call shall not be dropped and UL/DL Traffic remains constant
+    [Arguments]    ${CAPTURE_CPRT}    ${FieldShowName}
+    Dated Log    Checking actPathLoss_item_0 in itf_l2_ps_cell_cellreconfigurationreq structure
+    Dated Log    pcap file : ${CAPTURE_CPRT.path}
+    ${pdml}      analyzer.pcap_to_pdml      ${CAPTURE_CPRT.path}
+    Dated Log    Pdml file conversion complete.
+    # Apply a filter on a pcap file and generate a new pcap containing only selected packets
+    ${CPRT_FilteredPcap}    analyzer.filter_pcap
+    ...                     pcapInFile=${CAPTURE_CPRT.path}
+    ...                     filterName=_filtered    # filterName : name of filter to add in root name of pcap
+    ...                     filterExp=itf_l2_ps_cell_cellreconfigurationreq
+    ...                     otherFilter=-2
+    Dated Log    Filtering message itf_l2_ps_cell_cellreconfigurationreq and converting PCAP file ${CPRT_FilteredPcap} into Pdml format
+    ${pdml_filteredPcap}      analyzer.pcap_to_pdml      ${CPRT_FilteredPcap}
+    Dated Log    Pdm file saved under ${pdml_filteredPcap}
+    # comparing Items
+    ${msg_field}       Set Variable    @{FieldShowName.keys()}
+    FOR     ${Field}   IN           @{msg_field}
+            ${Value}          set variable    ${FieldShowName["${Field}"]}
+            Dated Log         --- Check ${Field} = ${Value}
+            # Check a pdml file, retrieving a particular packet and verifying a field exists at least once with a given value
+            analyzer.check_exists_once     pdmlFile=${pdml_filteredPcap}    #${pdml}         # path of pdml file to parse after filtering
+            ...                            packetName=itf_l2_ps_cell_cellreconfigurationreq  # name of packet to retrieve
+            ...                            path=${Field}                                     # regular expression of paths to retrieve
+            ...                            value=${Value}                                    # expected value
+            ...                            kind=showname      # field to compare : should be one of : "show", "showname" or "value"
+            ...                            test=MATCH         # comparison to do : one of : ==, !=, <=, >=, <, >, MATCH (for string)
+            ...                            startPacket=1      # index of starting packet to be considered
+            ...                            endPacket=-1       # index of ending packet to be considered
+    END
+    [return]    ${pdml}
+
+Delta commissioning of Json
+    [Documentation]      Dedicated KW to commission gNB with delta json file
+    [Arguments]          ${json_file}
+    sbts_coam.connect_to    name=${gnb_alias}
+    Run Keywords    coam_parameter.perform_scf_delta_commission    delta_file=${json_file}     connection=${gnb_alias}
+    ...    AND
+    ...             OAM wait available
+    sbts_coam.teardown            connection=${gnb_alias}

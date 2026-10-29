@@ -1,0 +1,184 @@
+
+/* Generated with DIA03 for creating dedicated bearer*/
+IpslVersion 2.0;
+Script CCA_server;
+Activated By Message(CCR);                       /* |<--- CCR         ----| */
+
+Var
+	msg_cca       : String;
+	msg_rar       : String;
+	RequestType   : Integer;
+	RequestNumber : Integer;
+	Sid           : String;
+	OHost         : String;
+	ORealm        : String;
+	IMSI          : String;
+	Fail          : Integer;
+	Bearer        : String;
+
+BeginScript
+	RequestType   := GetPar(CCRequestType);
+	RequestNumber := GetPar(CCRequestNumber);
+	ORealm        := GetPar(OriginRealm);
+	OHost         := GetPar(OriginHost);
+	IMSI          := GetPar(SubscriptionIdData);
+	Sid           := GetPar(SessionId);
+		If RequestType = 2  Then
+			Fail  	:= GetPar(RuleFailureCode(Last));
+			Bearer	:= GetPar(ChargingRuleName);
+		EndIf;
+	PRINT("Begin CCR script");
+
+	// default AVPs
+	msg_cca := Modify(Pool("CCA", MSG_Universal))         /* |---- CCA (common)--->| */
+		Insert c_P_ResultCode;
+		Insert c_P_OriginStateId;
+		OriginHost 			:= "5g-ipsl";
+		OriginRealm 		:= "5g.nsn.com";
+		ResultCode 			:= 2001;
+		AuthApplicationId 	:= 16777238;
+		CCRequestType 		:= RequestType;
+		CCRequestNumber 	:= RequestNumber;
+		OriginStateId 		:= 11;
+	EndModify;
+
+	msg_rar := Modify(Pool("RAR", MSG_Universal))         /* |---- RAR (common)--->| */
+		Insert c_P_OriginStateId;
+        Insert c_P_ChargingRuleInstall;
+        Insert ChargingRuleInstall.c_P_ChargingRuleDefinition;
+        Insert ChargingRuleDefinition.c_P_FlowInformation;
+        Insert FlowInformation.c_P_FlowDescription;
+        Insert ChargingRuleDefinition.c_P_FlowInformation;
+        Insert FlowInformation(2).c_P_FlowDescription;
+        Insert ChargingRuleDefinition.c_P_Precedence;
+        Insert ChargingRuleDefinition.c_P_RatingGroup;
+        Insert ChargingRuleDefinition.c_P_FlowStatus;
+        Insert ChargingRuleDefinition.c_P_ReportingLevel;
+        Insert ChargingRuleDefinition.c_P_QoSInformation;
+        Insert QoSInformation.c_P_MaxRequestedBandwidthUL;
+        Insert QoSInformation.c_P_MaxRequestedBandwidthDL;
+        Insert QoSInformation.c_P_AllocationRetentionPriority;
+        Insert QoSInformation.c_P_QoSClassIdentifier;
+		SessionId          := Sid;
+        OriginHost         := "5g-ipsl";
+        OriginRealm        := "5g.nsn.com";
+        DestinationHost    := OHost;
+        DestinationRealm   := ORealm;
+        AuthApplicationId  := 16777238;
+        OriginStateId      := 11;
+        Precedence         := 1;
+        FlowStatus         := 2 /* 2 = ENABLED */;
+        ReportingLevel     := 1 /* 1 = RATING_GROUP_LEVEL */;
+        ReAuthRequestType  := 0;
+        MaxRequestedBandwidthUL := 50000;
+        MaxRequestedBandwidthDL := 256000;
+	EndModify;
+
+/* ##############################################################################*/
+
+	/*  CCR Initial request   */
+	If  RequestType = 1  Then
+		PRINT ("Incoming Request " & IMSI);
+		If MATCH_STRING(IMSI,"262033032996933") Then
+			PRINT ("PND Request Group2 " & IMSI );
+			//Modification of msg Header; Here QCI modification of Default Bearer
+			msg_cca := Modify(msg_cca, MSG_Universal, CCA)     /* |---- CCA  Initial --->| */
+						Insert c_P_DefaultEPSBearerQoS;
+						Insert DefaultEPSBearerQoS.c_P_QoSClassIdentifier;
+						QoSClassIdentifier := 6;
+						Insert DefaultEPSBearerQoS.c_P_AllocationRetentionPriority;
+						Insert AllocationRetentionPriority.c_P_PreemptionCapability;
+						PreemptionCapability := 0 /* 0 = PRE-EMPTION_CAPABILITY_ENABLED */;
+						Insert AllocationRetentionPriority.c_P_PreemptionVulnerability;
+						PreemptionVulnerability := 0 /* 0 = PRE-EMPTION_VULNERAB_ENABLED */;
+						PriorityLevel := 6;
+			EndModify;
+			Put(msg_cca);
+			Send;
+			PRINT ("DefaultBearerSetup QCI_6" & IMSI);
+			/* Wait 0 ms to stable dedicated bearer activation */
+			StartTimer(delay, 100);	  /* start timer to simulate  */
+			WaitFor Timer(delay);		  /* a waiting time of 0 sec */
+			PRINT ("Request additionally QCI_7 for IMSI: " & IMSI);
+			GotoSubScript QCI_7_UE1;
+        EndIf;
+	EndIf;
+
+
+	/*  CCR Update request   */
+	If RequestType = 2 Then
+		If ( Fail = 10  ) Then
+			If ( Bearer = "\x48" ) Then
+				PRINT (IMSI & " QCI8 DRB release(RAF)");
+				Put(msg_cca);
+				Send;
+			ElsIf ( Bearer = "\x49" ) Then
+				PRINT (IMSI & " QCI8 DRB release(RAF)");
+				Put(msg_cca);
+				Send;
+			EndIf;
+		EndIf;
+	EndIf;
+
+
+	/*  CCA Termination request   */
+	If RequestType = 3 Then
+		PRINT (IMSI & " detached");
+		Put(msg_cca);
+		Send;
+	EndIf;
+EndScript;
+
+/* ##############################################################################*/
+
+BeginSubScript QCI_7_UE1
+	PRINT ("Setup DRB with QCI7 for UE1");
+	msg_rar := Modify(msg_rar, MSG_Universal, RAA)
+        ChargingRuleName   := "\x31";
+        RatingGroup        := 76;
+		FlowDescription    := "permit in  17 from 172.251.31.0/19 1-65535 to 10.57.162.4     47800";
+		FlowDescription(2) := "permit out 17 from 10.57.162.4     1-65535 to 172.251.31.0/19 47801";
+        PriorityLevel      := 7;
+        QoSClassIdentifier := 7;
+    EndModify;
+	Put(msg_rar);
+	Send;
+	WaitFor Message(RAA);
+	GotoSubScript QCI_8_UE1;
+EndScript;
+
+
+BeginSubScript QCI_8_UE1
+	StartTimer(delay, 300000);	  /* start timer to simulate  */
+	WaitFor Timer(delay);		  /* a waiting time of 0 sec */
+	PRINT ("Setup DRB with QCI8 for UE1");
+	msg_rar := Modify(msg_rar, MSG_Universal, RAA)
+        ChargingRuleName   := "\x32";
+        RatingGroup        := 77;
+		FlowDescription    := "permit in  17 from 172.251.31.0/19 1-65535 to 10.57.162.4     41800";
+		FlowDescription(2) := "permit out 17 from 10.57.162.4     1-65535 to 172.251.31.0/19 41801";
+        PriorityLevel      := 8;
+        QoSClassIdentifier := 8;
+    EndModify;
+	Put(msg_rar);
+	Send;
+	WaitFor Message(RAA);
+	GotoSubScript QCI_9_UE1;
+EndScript;
+
+BeginSubScript QCI_9_UE1
+	StartTimer(delay, 3000);	  /* start timer to simulate  */
+	WaitFor Timer(delay);		  /* a waiting time of 0 sec */
+	PRINT ("Setup DRB with QCI9 for UE1");
+	msg_rar := Modify(msg_rar, MSG_Universal, RAA)
+        ChargingRuleName   := "\x33";
+        RatingGroup        := 78;
+		FlowDescription    := "permit in  17 from 172.251.31.0/19 1-65535 to 10.57.162.4     49800";
+		FlowDescription(2) := "permit out 17 from 10.57.162.4     1-65535 to 172.251.31.0/19 49801";
+        PriorityLevel      := 9;
+        QoSClassIdentifier := 9;
+    EndModify;
+	Put(msg_rar);
+	Send;
+	WaitFor Message(RAA);
+EndScript;

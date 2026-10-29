@@ -1,0 +1,95 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  CB007487 - ABIP integration
+...               Scope : Performance KPIs TCs in NSA
+...               They perform loop(s) of UE(s) call with/without traffic, on a selected cell
+...
+...               Test Case Scenario author   : francois.tourlonnias@nokia.com
+...               Test Case Scenario contact  : francois.tourlonnias@nokia.com
+...               Test Case automation contact: laurent.paillasse@nokia.com
+...               Creation Date               : 2022/06/19
+...               Modified Date               : 2023/01/06
+...               Last Modified by            : francois.tourlonnias@nokia.com
+
+Resource                            ./resources/robot/BenchMarkDef.robot
+
+Force Tags                          CA_5G_SW_FR-Villarceaux    RRM
+...                                 PY36
+...                                 CLOUD_5G_I_MP_AP_KL_SANSA_FS_CPRI_CMWV_FDD     SBTS00
+...                                 CONFIGURED    5G_RAN    RAN_5G
+
+Suite Setup                         Test Suite Setup for CB007487-D_BM           #depend perfkpi
+Suite Teardown                      Test Suite Teardown for CB007487-D_BM
+Test Setup                          Test Setup for CB007487-D_BM
+Test Teardown                       BM_teardown                                  #depend perfkpi
+
+*** Variables ***
+
+
+*** Test Cases ***
+
+Benchmark_CB007487
+    [Tags]    CLOUD_5G_I_MP_AP_KL_SANSA_FS_CPRI_CMWV_FDD     SBTS00    #new topology introduction
+    ...       master_classicalbts_all
+    [Documentation]                 This TC is started to process CB007487-D with limited param modification 
+    ...                             The Benchmark list is defined in resources/BenchMarkDef.robot
+    ...
+    ...                             following are set:
+    ...                                     DL_MCS - UL_MCS - DL_Mod
+    ...
+    ...                             following stay NOT modified in the SCF 
+    ...                                     DL_MIMO=2x2    UL_Mod=64QAM    UL_MIMO=2x2    UL_MCS=Max    Encrypt=AES
+    ...
+    ...                             Note: LineUp information are collected from agent-Sim log /home/ute/testline_init_results/logs/INFO_log.txt
+    ...                                   Results are dispalyed in a csv chart
+
+    Set Suite Variable    ${LOGPATH_ORIG}        ${LOG_PATH}
+    Set Suite Variable    ${testCaseDir_ORIG}    orig_config_files_dir
+    
+    CS_Create Header Csv Test result
+    Get Orignal Configuration 7487-D_BM    ${testCaseDir_ORIG}
+    
+    Dated Log  list_BM    ${list_BM}
+    FOR    ${BM}    IN    @{list_BM}
+            Dated Log New Line
+            ...                    --- BENCHMARK ${BM}
+            Set Global Variable    ${BM}
+
+            ${LOG_PATH}           Set Variable    ${LOG_PATH}/${BM}
+            ${testCaseDir}        Set Variable    ${LOG_PATH}        # at this step LOG_PATH = testCaseDir ans is indexed to BM
+            Set Suite Variable                    ${LOG_PATH}
+            Set Suite Variable                    ${testCaseDir}
+            ${BENCHMARK_ID}       Set Variable    ${BM}
+            Set Suite Variable                    ${BENCHMARK_ID}
+            
+            Create Directory                      ${LOG_PATH}
+
+            &{dictParam}                    Create Dictionary       loopNb=1
+            ...                                                     UEnb=1
+            ...                                                     CallType=${${BM}.NRdeploymentoptions}
+            ...                                                     Cell=${${BM}.CELL}
+            ...                                                     TrafficDuration=60
+            ...                                                     DLthroughput=${${BM}.DLtp}
+            ...                                                     ULthroughput=${${BM}.ULtp}
+            ...                                                     deviation=10
+            ...                                                     shouldBeStop=False
+            ...                                                     shouldBeCheck=False
+            ...                                                     w_UE_CSI_TM_for_4_4_DL_MIMO=False
+            ...                                                     GetTtiTraceTime=10s
+            ...                                                     GetL1L2TraceTime=10s
+            ...                                                     num_of_cells_cellsetup=2
+            ...                                                     w_ue_detach=False
+            run keyword if    '${${BM}.DL_MCS}'!='666'       BM_CB007487_Testline_settings    ${${BM}}  #666 mean 5gnb swconfig without mcs info
+            BM_CB007487_L3_call       ${dictParam}    ${${BM}}
+            
+            BuiltIn.Log      \nTest ${BM} traces collection   console=yes
+            CB007487_PerfKPI_Keywords.teardownP1
+            TteardownP3
+
+            ${LOG_PATH}           Set Variable            ${LOGPATH_ORIG}
+            ${testCaseDir}        Set Variable            ${testCaseDir_ORIG}
+            Set Suite Variable                            ${LOG_PATH}
+            Set Suite Variable                            ${testCaseDir}
+            Restore Orignal Configuration 7487-D_BM       ${LOGPATH_ORIG}/${testCaseDir_ORIG}
+            BM_CleanBasicLuaFiles
+    END
+

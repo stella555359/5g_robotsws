@@ -1,0 +1,1224 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  tests for DSS feature 1586-K / 1586-J for ABIO
+...                                Created from 5GC001586-MUE.robot for ABIO / ABIP
+...                                => to change Ue Number (5 UEs instead of 3 Ues)
+...               Test Case Scenario author   : Christophe.samson@nokia.com
+...               Test Case Scenario contact  : Christophe.samson@nokia.com
+...               Test Case automation author :
+...               Test Case automation contact:
+...               Creation Date               : August 31 2023
+...               Modified Date               : August 31 2023
+...               Last Modified by            : Christophe.samson@nokia.com
+...               Last Modified by            : richard.duthu@nokia.com
+...               Last Modification           : Scout data + some fixes for RF50
+#------------------------------------------------------------------------------------------------------------------------------------[150 characters]
+
+Library         ute_wtssim           WITH NAME    wts
+Library         taf.rfrl.common_resources.python.SWConfig
+Library         ../resources/python/luashark_tools.py
+Library         ../../../resources/SWENG/python/StringTool.py
+Library         taf.epcsim
+Library         luashark_tools.analyzer       WITH NAME       analyzer
+# taf.config.scf is replaced by resources/SWENG/python/MultiScf.py
+# Library         taf.config.scf                WITH NAME       scf
+Library         taf.gnb.oam.commissioning     WITH NAME       commissioning
+Library         taf.sbts.oam.coam.admin        WITH NAME       coam
+Library         taf.collectors.pmcounters      WITH NAME     tafpmcounters
+Library         DateTime
+Library         OperatingSystem
+Library         ute_wtssim
+Library         ta5g_throughput
+Library         ta5g_egate
+
+# 5GC001586 specific
+Library         resources/python/Constants.py                     WITH NAME    MyConstants
+Library         resources/python/Common.py
+Library         resources/python/aasyslog.py
+Library         resources/python/tools.py                         WITH NAME    nps_1586_tools
+Library         ../resources/common/TtiTrace/python/ttitrace.py   WITH NAME    nps_ttitraces_tools
+Library         ../resources/DSS/python/robot_extension.py        WITH NAME    robot_extension
+
+Resource        ../../../resources/SWENG/robot/CallSetup.robot
+Resource        ../../../resources/SWENG/robot/GenericTest.robot
+Resource        ../../../resources/SWENG/robot/SetConfig.robot
+Resource        ../../../resources/SWENG/robot/Tools.robot
+Resource        ../../../resources/SWENG/robot/Traffic.robot
+Resource        ../../../resources/SWENG/robot/Counters.robot
+
+# TTI Traces resource
+Resource        ../resources/common/TtiTrace/ttitrace.robot
+
+# DSS specific
+Resource        ../resources/DSS/robot/btslog.robot
+Resource        ../resources/DSS/robot/apUDPlog.robot
+Resource        ../resources/DSS/robot/common_Dss_Keywords.robot
+Resource        ../resources/DSS/robot/common_Dss_CellSetup.robot
+Resource        ../resources/DSS/robot/common_Dss_command.robot
+Resource        ../resources/DSS/robot/common_Dss_SA_NSA.robot
+
+# 5GC001586 specific
+Resource        resources/robot/5GC001586_Kw_TestSetup.robot
+Resource        resources/robot/5GC001586_Keywords.robot
+Resource        resources/robot/5GC001586_C_Keywords.robot
+Resource        resources/robot/5GC001586_Ue_command.robot
+Resource        ../resources/DSS/robot/common_Dss_command.robot
+
+Variables       ../../../resources/SWENG/python/ReadConfig.py
+Variables       ../../../resources/SWENG/python/Colors.py
+
+# 5GC001586 specific
+Variables       resources/python/Constants.py
+Variables       resources/python/dss_scf_params.py
+Variables       resources/python/dss_SA_scf_params.py
+Variables       resources/python/NSA_scf_params.py
+
+# Tags for QC mapping
+Force Tags                          CA_5G_SW_FR-Villarceaux   RRM
+...                                 PY36
+...                                 master_classicalbts_all
+...                                 CONFIGURED    5G_RAN    RAN_5G
+
+Suite Setup         Run keywords
+...                 Fetch common OAM SW version  AND
+...                 Test Suite Setup for 1586    AND
+...                 Get gNB cell 5g On air       AND
+...                 Prepare TL for TTITraces     AND
+...                 Create Header Csv Test result
+Suite Teardown      Test suite teardown for 1586
+
+*** Variables ***
+
+# &{UE_PROFILE1}                      ue=1                                    profile=1
+# ...                                 bearer=2                                testMode=False
+# ...                                 trf_id=1
+# ...                                 burst=${None}
+# ...                                 target_gnb=2                            target_cells=1
+# ...                                 throughput=${DEFAUT_THROUGHPUT}         testModeValue=csi_report_override
+
+# &{UE_PROFILE2}                      ue=2                                    profile=1
+# ...                                 bearer=2                                testMode=False
+# ...                                 trf_id=1
+# ...                                 burst=${None}
+# ...                                 target_gnb=2                            target_cells=1
+# ...                                 throughput=${DEFAUT_THROUGHPUT}         testModeValue=csi_report_override
+
+# &{UE_PROFILE3}                      ue=3                                    profile=1
+# ...                                 bearer=2                                testMode=False
+# ...                                 trf_id=1
+# ...                                 burst=${None}
+# ...                                 target_gnb=2                            target_cells=1
+# ...                                 throughput=${DEFAUT_THROUGHPUT}         testModeValue=csi_report_override
+
+# 20 %
+${tput_deviation}       0.2
+
+# 5 %
+${ul_Qos_Load_deviation}       0.05
+
+# Patterns  pour DL ratio = 70 %
+# Fixed Normal Subframes Pattern        40000400004000040000
+# Fixed Mbsn Subframes Pattern          20008000080000800008
+# Allocated Normal Subframes            3b9ee3b9ee3b9ee3b9ee
+
+# Patterns pour DL ratio = 30 %
+# Fixed Normal Subframes Pattern    40000400004000040000
+# Fixed Mbsn Subframes Pattern      20008000080000800008
+# Allocated Normal Subframes        2888a2088a2088a20888
+# 0010100010-0010001010-0010000010-0010001010-0010000010-0010001010-0010000010-0010001000
+
+# Patterns pour DL ratio = 50 %
+# Fixed Normal Subframes Pattern    40000400004000040000
+# Fixed Mbsn Subframes Pattern      20008000080000800008
+# Allocated Normal Subframes        2b9aa2a9aa2a9aa2a8aa
+
+# SA case
+# Patterns  pour DL ratio = 70 %
+# Fixed Normal Subframes Pattern        fixedMbsfnSubframes (Bytes):  42000430004300043000
+# Fixed Mbsn Subframes Pattern          fixedNormalSubframes (Bytes): 20008000082000800008
+# Allocated Normal Subframes                                          9FFFB4FFBC7FBCF7BCFF
+
+${PATTERN_DL_70_SA_1}       1001101110-1111101010-0100101110-1110101100-0111101110-1111001110-0111101110-0111101110
+${PATTERN_DL_70_SA}         0001101110-0111101010-0000101110-0110101100-0011101110-0111001110-0011101110-0111101110
+${PATTERN_DL_70_SA_OK}      0011100010-0111101110-0011100010-0111101110-0011100010-0111101110-0011100010-0111101110
+
+# DL Pattern %
+${PATTERN_DL_12_PRACH12}    0010000000-0001001000-0000000000-0000001000-0000000000-0000001000-0000000000-0000001000
+${PATTERN_DL_12_PRACH13}    0010000010-0000000010-0010000000-0000000010-0010000000-0000000010-0010000000-0000000010
+${PATTERN_DL_30}            0010100010-0010001010-0010000010-0010001010-0010000010-0010001010-0010000010-0010001000
+${PATTERN_DL_50}            0010101110-0110101010-0010101010-0110101010-0010101010-0110101010-0010101010-0010101010
+${PATTERN_DL_70}            0011101110-0111101110-0011101110-0111101110-0011101110-0111101110-0011101110-0111101110
+
+@{P_INTERNAL_CELL_DIST_ID}
+
+*** Test Cases ***
+
+# prepare the testline
+TestLine_preparation
+    [Tags]    FULL_RUN     10MHZ   CRT   1586J1   1586J2
+    ...       CRT
+    5GC001586_Kw_TestSetup.Test Line Preparation for NSA Only    ${TestDSS10Mhz_1586_M1}
+    5GC001586_Kw_TestSetup.Test Line Preparation                 ${TestDSS10Mhz_1586_M1}
+    5GC001586_Kw_TestSetup.Test Line Preparation for scf         ${TestDSS10Mhz_1586_M1}
+
+#######################
+# for 1586-J1 case
+#######################
+
+###################
+# for 20Mhz case
+###################
+
+TC_testsetup_1586-J_20MHZ
+    [Tags]    FULL_RUN   FULL_CALL  20MHZ   1586J1
+    ...       CRT
+    Test Setup 1586 J    ${TestDSS20Mhz_1586_J_DL_RATIO_70}
+
+
+# 2022/01/05 : add TC for RCA https://jiradc.ext.net.nokia.com/browse/MNRCA-44864
+[2.0]5GC001586_TC_05_5UEs_20MHZ_1586_J_TEST_M55308C18002_MAX_SCHED_UE_PUSCH
+    [Tags]    FULL_RUN  TC5  FULL_CALL  20MHZ    1586J1
+    ...       CRT
+    [Documentation]     TC5 1586-J1 BW= 20MHz, 5Ues, DL/UL RATIO = 70%, K2max = 6, dssMaxNumberOfDlDcis = 1,
+    ...                 test of MAX_SCHED_UE_PUSCH PM counter (M55308C18002)
+    [Setup]   Run Keywords    set Suite Variable    ${testCaseDir}    None      AND
+    ...       common_Dss_Keywords.Get testcase log directory    AND
+    ...       5GC001586_Keywords.Clean Up Env                   AND
+    ...       common_Dss_Keywords.Prepare Test Name             AND
+    ...       set Suite Variable    ${ul_expect_tput_value}           71                                   AND
+    ...       5GC001586_Keywords.Create Header Csv Test result  AND
+    ...       common_Dss_Keywords.Start Tcpdump on TestPc    interface=eth3    option=-s0 sctp or icmp     AND
+    ...       robot_extension.Run Keyword And Warn On Failure   apUDPlog.Start To Capture Iphy Udplog
+    ...                                                            target_dir=${testCaseDir}/ap_udpsyslogs    AND
+    ...       depends     TC_testsetup_1586-J_20MHZ
+
+    ${tc_name}    Set variable    TestLine_preparation
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    Run keyword if     '${tc_status}'!='PASS'   Run Keywords
+    ...                          5GC001586_Kw_TestSetup.Test Line Preparation for NSA Only    ${TestDSS20Mhz_1586_J_DL_RATIO_70}   AND
+    ...                          5GC001586_Kw_TestSetup.Test Line Preparation    ${TestDSS20Mhz_1586_J_DL_RATIO_70}    AND
+    ...                          5GC001586_Kw_TestSetup.Test Line Preparation for scf    ${TestDSS20Mhz_1586_J_DL_RATIO_70}
+    ${tc_name}    Set variable    TC_testsetup_1586-J_20MHZ
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    Run keyword if    '${tc_status}'!='PASS'
+    ...           Test Setup 1586 J    ${TestDSS20Mhz_1586_J_DL_RATIO_70}
+    ${msg}   Catenate   "TC5 1586-J1: sw release used [${convert_version}], BW = 20MHz, 5Ues, DL/UL RATIO = 70%, K2max = 6,
+    ...                  dssMaxNumberOfDlDcis = 1, test of MAX_SCHED_UE_PUSCH PM counter - M55308C18002"
+    Log Test description  ${msg}
+    Test case setup     ${TestDSS20Mhz_1586_J_DL_RATIO_70}
+    Test specific setup 1586 J1     ${TestDSS20Mhz_1586_J_DL_RATIO_70}
+    Update K2max with     rdExtendK2Max=6
+    ${actIncreasedFdmUsersPerSlot_initial}=    get actIncreasedFdmUsersPerSlot from SCF
+    ${actIncreasedFdmUsersPerSlot_initial_lower}=     evaluate    '${actIncreasedFdmUsersPerSlot_initial}'.lower()
+    # SCF parameter NRBTS.NRCELL.actIncreasedFdmUsersPerSlot is False means feature CB006667 is deasctivated
+    Set Specifc Scf Param actIncreasedFdmUsersPerSlot with "false" value and update into "${TestDSS20Mhz_1586_J_DL_RATIO_70}"
+    Dated log       DL pattern into TestParam is ${TestDSS20Mhz_1586_J_DL_RATIO_70.seq.dl_allocated_normal_subframes}
+    ${tti_trace_used_previously}   set variable   ${UL_TPUT_CHECK_BASED_TTITRACE}
+    Set global variable    ${UL_TPUT_CHECK_BASED_TTITRACE}   1
+    robot_extension.Run Keyword And Warn On Failure     btslog.Start Btslog
+    dss_call_5Ue_using_ute_wtssim   ${TestDSS20Mhz_1586_J_DL_RATIO_70}   TC5_5UEs_1586J1_ON_20MHZ   ${msg}
+    ...                             expect_tput_value=${ul_expect_tput_value}   w_stopTraffic=False   w_stopWTS=False
+    # get 1s TTI trace
+    ${tti_trace_path}      Get TTI traces 2     time=1s     event_nr_max=10000    w_convert_pcap_to_excelCsv=False
+    # Sleep 15 mn in case of GP overlap - Traffic is still ongoing
+    dated log    Wait 15 minutes for counters GP overlap
+    ${status}  ${msg}=        robot_extension.Run Keyword And Warn On Failure        robot_extension.Run Specific Custom KW
+    ...                                  5GC001586_Ue_command.Display PDSCH and PUSCH ue_stats_nr for 3 Ues using ute_wtssim
+    ...                                              CallType=NSA
+    ...                                              DlTput=0
+    ...                                              UlTput=${ul_expect_tput_value}
+    ...                                              alias=TC5_5UEs_1586J1_ON_20MHZ
+    dated log    End of Wait 15 minutes for counters GP overlap
+    # Traced Sleep   15 minutes     msg=counters GP overlap
+    # Collect PM counter M55308C18002 : Maximum number of Scheduled (FDM and MU-MIMO) UEs on PUSCH per slot
+    Get pm counter M55308C18002
+    Check if M55308C18002 is "4"
+    common_Dss_Keywords.Check Tput over GP period   nb_cell=1    dl_expected_tput=0    ul_expected_tput=${ul_expect_tput_value}
+    # check 2 UE PUSCH sched in ul slot ....
+    # 17/01/2022 : Acceptance criteria based on counter are enough + sfn anf fn not allways at same column in csv !!!
+    Run Keyword and Ignore Error     Check UL Per Slot Ue Numbers   tti_csv_dir=${tti_trace_path}   number=2
+    [Teardown]    Run Keywords         Set global variable    ${UL_TPUT_CHECK_BASED_TTITRACE}    ${tti_trace_used_previously}      AND
+    ...             robot_extension.Run Keyword And Warn On Failure   Extract L2-PS/src/sgnl/psCell/CellSetupLogger from Syslogs    AND
+    ...             Set Specifc Scf Param actIncreasedFdmUsersPerSlot with "${actIncreasedFdmUsersPerSlot_initial_lower}" value   AND
+    ...             Update actIncreasedFdmUsersPerSlot with   ${TestDSS20Mhz_1586_J_DL_RATIO_70}   ${actIncreasedFdmUsersPerSlot_initial_lower}  AND
+    ...             common_Dss_Keywords.Collect PM Counters file coam   target_dir=${testCaseDir}     AND
+    ...             common_Dss_Keywords.Stop Tcpdump on TestPc    interface=eth3    target_dir=${testCaseDir}   AND
+    ...             robot_extension.Run Keyword And Warn On Failure    btslog.Stop Btslog    target_dir=${testCaseDir}   AND
+    ...             robot_extension.Run Keyword And Warn On Failure    apUDPlog.Stop Capture Iphy Udplog                 AND
+    ...             robot_extension.Run Keyword And Warn On Failure    5GC001586_Ue_command.Stop WTS     egate_alias=TC5_5UEs_1586J1_ON_20MHZ   AND
+    ...             Teardown 1586-J      ${TestDSS20Mhz_1586_J_DL_RATIO_70}    TC5_5UEs_1586J1_ON_20MHZ
+
+
+#######################
+# END for 1586-J1 case
+#######################
+
+*** Keywords ***
+# robocop: off=unused-argument
+# robocop: off=possible-variable-overwriting
+
+[1][1.0] 5GC001586_TC_03_5UEs_20MHZ_1586-J1_with_Acceptance_criteria
+    [Tags]    FULL_RUN  TC3  FULL_CALL  20MHZ    1586J1     CRT
+    [Documentation]     TC3 1586-J1 BW= 20MHz, 5Ues, DL/UL RATIO = 70%, K2max = 6, dssMaxNumberOfDlDcis = 1
+    # [Setup]   Run Keywords    set Suite Variable    ${testCaseDir}    None      AND
+    # ...       common_Dss_Keywords.Get testcase log directory    AND
+    # ...       5GC001586_Keywords.Clean Up Env                   AND
+    # ...       common_Dss_Keywords.Prepare Test Name             AND
+    # ...       set Suite Variable    ${ul_expect_tput_value}           71                                   AND
+    # ...       5GC001586_Keywords.Create Header Csv Test result    AND
+    # ...       common_Dss_Keywords.Start Tcpdump on TestPc    interface=eth3    option=-s0 sctp or icmp     AND
+    # ...       robot_extension.Run Keyword And Warn On Failure   apUDPlog.Start To Capture Iphy Udplog
+    # ...                                                            target_dir=${testCaseDir}/ap_udpsyslogs    AND
+    # ...       depends     TC_testsetup_1586-J_20MHZ
+    ${tc_name}    Set variable    TestLine_preparation
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    Run keyword if     '${tc_status}'!='PASS'   Run Keywords
+    ...                          5GC001586_Kw_TestSetup.Test Line Preparation for NSA Only    ${TestDSS20Mhz_1586_J_DL_RATIO_70}   AND
+    ...                          5GC001586_Kw_TestSetup.Test Line Preparation    ${TestDSS20Mhz_1586_J_DL_RATIO_70}    AND
+    ...                          5GC001586_Kw_TestSetup.Test Line Preparation for scf    ${TestDSS20Mhz_1586_J_DL_RATIO_70}
+    ${tc_name}    Set variable    TC_testsetup_1586-J_20MHZ
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    Run keyword if    '${tc_status}'!='PASS'
+    ...           Test Setup 1586 J    ${TestDSS20Mhz_1586_J_DL_RATIO_70}
+    ${msg}   Catenate   "TC3 1586-J1: sw release used [${convert_version}], BW = 20MHz, 5Ues, DL/UL RATIO = 70%, K2max = 6, dssMaxNumberOfDlDcis = 1"
+    Log Test description  ${msg}
+    Test case setup     ${TestDSS20Mhz_1586_J_DL_RATIO_70}
+    Test specific setup 1586 J1     ${TestDSS20Mhz_1586_J_DL_RATIO_70}
+    Update K2max with     rdExtendK2Max=6
+    Dated log       DL pattern into TestParam is ${TestDSS20Mhz_1586_J_DL_RATIO_70.seq.dl_allocated_normal_subframes}
+    ${tti_trace_used_previously}   set variable   ${UL_TPUT_CHECK_BASED_TTITRACE}
+    Set global variable    ${UL_TPUT_CHECK_BASED_TTITRACE}   1
+    dss_call_5Ue_using_ute_wtssim   ${TestDSS20Mhz_1586_J_DL_RATIO_70}   TC3_5UEs_1586J1_ON_20MHZ   ${msg}  expect_tput_value=${ul_expect_tput_value}
+    [Teardown]    Run Keywords         Set global variable    ${UL_TPUT_CHECK_BASED_TTITRACE}    ${tti_trace_used_previously}        AND
+    ...              robot_extension.Run Keyword And Warn On Failure   Extract L2-PS/src/sgnl/psCell/CellSetupLogger from Syslogs    AND
+    ...                                common_Dss_Keywords.Stop Tcpdump on TestPc    interface=eth3    target_dir=${testCaseDir}     AND
+    ...                                robot_extension.Run Keyword And Warn On Failure   apUDPlog.Stop Capture Iphy Udplog           AND
+    ...                                Teardown 1586-J      ${TestDSS20Mhz_1586_J_DL_RATIO_70}    TC3_5UEs_1586J1_ON_20MHZ
+
+[1][1.0] TC4_5UEs_20MHZ_1586-J1_OFF
+    [Tags]    FULL_RUN  TC4  FULL_CALL  20MHZ    1586J1
+    ...       CRT
+    [Documentation]     TC4 1586-J1 BW= 20MHz, DL/UL RATIO = 70%, K2max = 0xffff, dssMaxNumberOfDlDcis = 1
+    # [Setup]   Run Keywords    set Suite Variable    ${testCaseDir}    None      AND
+    # ...       common_Dss_Keywords.Get testcase log directory    AND
+    # ...       5GC001586_Keywords.Clean Up Env                   AND
+    # ...       common_Dss_Keywords.Prepare Test Name             AND
+    # ...       depends     TC_testsetup_1586-J_20MHZ
+    ${tc_name}    Set variable    TC_testsetup_1586-J_20MHZ
+    ${tc_status}    getTcStatusByName    name=${tc_name}
+    Run keyword if    '${tc_status}'!='PASS'
+    ...           Test Setup 1586 J    ${TestDSS20Mhz_1586_J_DL_RATIO_70}
+    ${msg}   Catenate  "TC4 1586-J1: sw release used [${convert_version}], BW = 20MHz, 5UEs, DL/UL RATIO = 70%, K2max = 0xffff, "
+    ...                " dssMaxNumberOfDlDcis = 1"
+    Log Test description     ${msg}
+    Test case setup     ${TestDSS20Mhz_1586_J_DL_RATIO_70}
+    Test specific setup 1586 J1     ${TestDSS20Mhz_1586_J_DL_RATIO_70}
+    Update K2max with     rdExtendK2Max=0xffff
+    Dated log       DL pattern into TestParam is ${TestDSS20Mhz_1586_J_DL_RATIO_70.seq.dl_allocated_normal_subframes}
+    dss_call_5Ue_using_ute_wtssim   ${TestDSS20Mhz_1586_J_DL_RATIO_70}   TC4_5UEs_1586J1_ON_20MHZ    ${msg}
+    [Teardown]    Teardown 1586-J      ${TestDSS20Mhz_1586_J_DL_RATIO_70}    TC4_5UEs_1586J1_ON_20MHZ
+
+Start capture Backhaul XP for CellSetup DSS
+    ${capture_BH_GNB}=             set Backhaul Capture                     prefix=BH.XP.CellSetup
+    set test variable              ${capture_BH_GNB}
+    ${capture_BH_GNB}=             Initialize Filter XP message Capture     capture=${capture_BH_GNB}
+    common_Dss_Keywords.Start capture Backhaul XP for DSS New               capture=${capture_BH_GNB}   suffix=DssCellSetup
+
+Stop capture for Backhaul XP CellSetup DSS
+    common_Dss_Keywords.Stop capture for Backhaul XP DSS New     capture=${capture_BH_GNB}   w_pdml=False
+    ...                                                          lua_path=/home/ute/tools/luashark/generated_luashark-9.1800.330/luashark.lua
+    ...                                                          suffix=DssCellSetup
+
+TC 1586-J CellSetup 2
+    [Documentation]                Generic test for 1586-C: test purpose is to setup X2, Xp and DSS
+    [Arguments]                    ${param}     ${alias}=default
+    Init Sequence                  ${param}
+    5GC001586_Ue_command.Setup WTS and wait for S1 link     ssh_alias=WTS_${alias}
+    Step                      5GC001586_Ue_command.Start WTS                       argument=${alias}
+    Step                      5GC001586_Ue_command.Check wts in active state       argument=${alias}     depends=5GC001586_Ue_command.Start WTS
+    Step                      Start capture Backhaul XP for CellSetup DSS
+    Step                      5GC001586_Ue_command.Wait Xp link Up                 argument=${alias}     depends=5GC001586_Ue_command.Start WTS
+    Step                      5GC001586_Ue_command.X2Ap link Setup                 argument=${alias}     depends=5GC001586_Ue_command.Start WTS
+    Step                      common_Dss_command.DSS_CRM_Cell_Setup     argument=${alias}        depends=5GC001586_Ue_command.Wait Xp link Up
+    Step                      Stop capture for Backhaul XP CellSetup DSS
+    # Wait gNB cell 5g On air with globalCellId=1
+    Critical Step             common_Dss_CellSetup.Wait gNB cell 5g On air      globalCellId=1
+    Critical Step             5GC001586_Ue_command.Verify AP Classical Cell Setup
+    [Teardown]               GenericTest.Display diagnosis
+
+TC 1586-J CellSetup
+    [Documentation]                Generic test for 1586-C: test purpose is to setup X2, Xp and DSS
+    [Arguments]                    ${param}     ${alias}=default
+    Init Sequence                  ${param}
+    common_Dss_Keywords.Start WTS         egate_alias=${alias}    shouldUseLua=${False}
+    Step                           5GC001586_Keywords.Wait Xp link Up     argument=${alias}        depends=common_Dss_Keywords.Start WTS
+    Step                           common_Dss_command.X2Ap link Setup     argument=${alias}        depends=common_Dss_Keywords.Start WTS
+    Step                           5GC001586_Keywords.DSS_Cell_Setup      argument=${alias}        depends=5GC001586_Keywords.Wait Xp link Up
+    # Wait gNB cell 5g On air with globalCellId=1
+    Critical Step                  common_Dss_CellSetup.Wait gNB cell 5g On air     globalCellId=1
+    Critical Step                  5GC001586_Ue_command.Verify AP Classical Cell Setup
+    [Teardown]               GenericTest.Display diagnosis
+
+Fetch common OAM SW version
+    [Documentation]    :
+    ...    Only used by KW "Fetch Current gNB SW Version"
+    ...    [PRIVATE]
+    [Arguments]    ${gnb_id}=0  ${bts_host}=${EMPTY}
+    ${bts_host}=  Set Variable if  '${bts_host}'=='${EMPTY}'  ${tl.gnbs[${gnb_id}].cu.oam_http_connection_details.addr}  ${bts_host}
+    admin.connect_to    bts_host=${bts_host}    name=gnb
+    ${gnb_sw_version}=    admin.get_sw_version    connection=gnb
+    admin.teardown    connection=gnb
+    ${gnb_sw_version}=    nps_1586_tools.reform_coam_sw_version    ${gnb_sw_version}
+    set global variable    ${TLConfig.release.name}      ${gnb_sw_version}
+    [Return]    ${gnb_sw_version}
+
+Get TTI traces
+    Dated Log         Start TTI Traces in Streaming Mode
+    ttitrace.Start TTI Traces in Streaming Mode      filter_bitmap2=0x0
+    Traced Sleep    1s      msg=Waiting for TTI Traces
+    Dated log         Stop TTI Traces in Streaming Mode...
+    ttitrace.Stop TTI Traces in Streaming Mode      tti_trace_path=${testCaseDir}
+    Dated log         Decode TTI Traces...
+    nps_ttitraces_tools.decode_tti_traces_using_TtitraceReaderEvtDec    desired_storage_directory=${testCaseDir}    num_of_events=10000
+
+Get TTI traces 2
+    [Arguments]     ${time}=1s    ${event_nr_max}=10000   ${w_convert_pcap_to_excelCsv}=True
+    ${tm}    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}    .
+    Dated Log         Start TTI Traces in Streaming Mode
+    ttitrace.Start TTI Traces in Streaming Mode      filter_bitmap2=0x0
+    Traced Sleep    ${time}      msg=Waiting for TTI Traces
+    Dated log         Stop TTI Traces in Streaming Mode...
+    ${tti_trace_path}=     ttitrace.Stop TTI Traces in Streaming Mode    tti_trace_path=${testCaseDir}/TtiTrace-${time}-${tm}
+    Dated log         Decode TTI Traces...
+    nps_ttitraces_tools.decode_tti_traces_using_TtitraceReaderEvtDec       desired_storage_directory=${testCaseDir}/TtiTrace-${time}-${tm}
+    ...                                                                    num_of_events=${event_nr_max}
+    run keyword if   '${w_convert_pcap_to_excelCsv}'=='True'    run keywords
+    ...               Dated log    Convert TTI trace from pcap to excelCsv...    AND
+    ...               Run keyword and continue on failure     ttitrace.Convert TTI trace from pcap to excelCsv     input_file_path=${tti_trace_path}
+    ...                                                                    output_file_path=${testCaseDir}/TtiTrace-${time}-${tm}
+    [return]     ${testCaseDir}/TtiTrace-${time}-${tm}
+
+Get NumOfLayers from TTI traces
+    [Arguments]           ${resultDir}      ${UeList}
+    ${NumOfLayers_UeId1}    set variable    None
+    ${NumOfLayers_UeId2}    set variable    None
+    ${NumOfLayers_UeId3}    set variable    None
+    ${Ue_index}    Set Variable    ${1}
+    FOR  ${ueId}   IN   @{UeList}
+        ${samples_value}     nps_1586_tools.get_numOfLayers     ${resultDir}    ${ueId}   method="Expand array item Field"
+        Set test variable  ${NumOfLayers_UeId${Ue_index}}  ${samples_value}
+        ${Ue_index}    Evaluate    ${Ue_index}+1
+    END
+    [return]   ${NumOfLayers_UeId1}  ${NumOfLayers_UeId2}  ${NumOfLayers_UeId3}
+
+Get aggregationLevel from TTI traces
+    [Arguments]           ${resultDir}      ${UeList}
+    ${aggregationLevel_UeId1}   set variable    None
+    ${aggregationLevel_UeId2}   set variable    None
+    ${aggregationLevel_UeId3}   set variable    None
+    ${Ue_index}    Set Variable    ${1}
+    FOR  ${ueId}   IN   @{UeList}
+        ${samples_value}     nps_1586_tools.get_aggregationLevel     ${resultDir}    ${ueId}
+        Set test variable  ${aggregationLevel_UeId${Ue_index}}  ${samples_value}
+        ${Ue_index}    Evaluate    ${Ue_index}+1
+    END
+    [return]   ${aggregationLevel_UeId1}  ${aggregationLevel_UeId2}  ${aggregationLevel_UeId3}
+
+Check UL Per Slot Ue Numbers
+    [Arguments]    ${tti_csv_dir}    ${number}
+    ${file_name}    Set Variable    ${tti_csv_dir}/msg_all.csv
+    ${result}    Set Variable    ${False}
+    ${result}    Verify UL Per Slot Ue Numbers In Target File    ${file_name}    ${number}
+    Should Be True    ${result}==${True}
+
+Verify UL Per Slot Ue Numbers In Target File
+    [Arguments]    ${tti_csv_name}    ${number}
+    [Documentation]    tti csv file contains all msg, please refer to 'decode tti traces' in tools.py for more infos
+    ${times}    Evaluate    ${number}-1
+    ${full_pattern}=   Catenate   SEPARATOR=   ulFdSchedData;eventHeader;onAirTime;sfn;(?P<sfn>\\d+);slot;(?P<slot>\\d+).+\\n(?:ulFdSchedData;
+    ...                                        eventHeader;onAirTime;sfn;(?P=sfn);slot;(?P=slot).+\\n){${times}}
+    ${full_patt}    Set Variable    ${full_pattern}
+    ${rnti_patt}    Set Variable    ulFdSchedData;eventHeader;onAirTime;sfn;\\d+;slot;\\d+;rnti;(?P<rnti>\\d+)
+    ${content}    OperatingSystem.Get File    ${tti_csv_name}
+    ${matches}    String.Get Regexp Matches    ${content}    ${full_patt}
+    ${check_result}    Set Variable    ${False}
+    FOR    ${item}    IN    @{matches}
+        ${rnti_vals}    String.Get Regexp Matches    ${item}    ${rnti_patt}    rnti
+        ${count}    Evaluate    len(set(${rnti_vals}))
+        ${check_result}    Run Keyword And Return Status    Should Be Equal As Integers    ${count}    ${number}
+        Exit For Loop If    ${check_result}==${True}
+    END
+    [Return]    ${check_result}
+
+Verify UE tput as expected
+    [Documentation]
+    [Arguments]    ${tput_value}    ${expect_tput_value}    ${deviation}=${tput_deviation}
+    run keyword if    ${expect_tput_value}==${0}    run keywords
+    ...    should be true    ${tput_value}>=0    AND   return from keyword
+
+    ${min}    evaluate    ${expect_tput_value}*(1-${deviation})
+    ${max}    evaluate    ${expect_tput_value}*(1+${deviation})
+    ${is_tput_as_expected}    evaluate    ${min} <= ${tput_value} <= ${max}
+    ${msg}=     Run Keyword If     '${is_tput_as_expected}'=='True'
+    ...    Catenate     \t${green} UL Tput for all Ues REACHED: expected = ${expect_tput_value} Mbps,
+    ...                            current = ${tput_value} Mbps ${normal}
+    ...    ELSE
+    ...    Catenate     \t${red} UL Tput for all Ues NOT REACHED: expected = ${expect_tput_value} Mbps,
+    ...                          current = ${tput_value} Mbps ${normal}
+    Log to Console         ${msg}
+    should be true    '${is_tput_as_expected}'=='True'    Tput is not as expected!
+
+Verify UL Qos Load Ind as expected
+    [Documentation]
+    [Arguments]    ${ul_qos_load_value}    ${expect_ul_qos_load_value}    ${deviation}=${ul_Qos_Load_deviation}
+    run keyword if    ${expect_ul_qos_load_value}==${0}    run keywords
+    ...    should be true    ${ul_qos_load_value}>=0    AND   return from keyword
+
+    ${min}    evaluate    ${expect_ul_qos_load_value}*(1-${deviation})
+    ${max}    evaluate    ${expect_ul_qos_load_value}*(1+${deviation})
+    ${is_ul_qos_load_as_expected}    evaluate    ${min} <= ${ul_qos_load_value} <= ${max}
+    Run Keyword If                  '${is_ul_qos_load_as_expected}'=='True'
+    ...    Log to Console            \t${green} Average UL DSS Ratio REACHED: expected = 100 % , current = ${ul_qos_load_value} % ${normal}
+    ...    ELSE
+    ...    Log to Console            \t${red} Average UL DSS RATIO NOT REACHED: expected = 100 %, current = ${ul_qos_load_value} % ${normal}
+    should be true    '${is_ul_qos_load_as_expected}'=='True'    UL Qos load Indication is not as expected!
+
+TC 1586-j 5gCall and Ul Traffic with 5 Ues using ute_wtssim
+    [Documentation]                Test purpose is to test 5g DSS Call
+    [Arguments]          ${param}      ${alias}=default     ${msg}=""     ${expect_tput_value}=0    ${w_stopTraffic}=True      ${w_stopWTS}=True
+    Init Sequence                  ${param}
+    ${throughput_for_ue1}   set variable    0
+    ${throughput_for_ue2}   set variable    0
+    ${throughput_for_ue3}   set variable    0
+    ${throughput_for_ue4}   set variable    0
+    ${throughput_for_ue5}   set variable    0
+    ${avg_ul_MeasuredNgbrNnbrLoad}   set variable    0
+    TC 1586-J CellSetup 2             ${param}   alias=${alias}
+    Dated log         dss 5gCall and UL Traffic with 4Ues
+    Dated log     =========> LTE Attach on ue_id=${UE_PROFILE1.ue}
+    5GC001586_Ue_command.LTE Attach        ${UE_PROFILE1.ue}     alias=${alias}
+    Dated log     =========> 5g Attach on ue_id=${UE_PROFILE1.ue}
+    ${output}=   5GC001586_Ue_command.5G Attach         ${UE_PROFILE1}      alias=${alias}
+    Step      5GC001586_Ue_command.5G Ue Attach Check     ${output}
+    Dated log     =========> NSA Start UL Traffic on ue_id=${UE_PROFILE1.ue} with ${param.seq.ul_throughput}M
+    5GC001586_Ue_command.NSA Start UL Traffic   ue_id=${UE_PROFILE1.ue}
+    ...                                         bearer_id=${UE_PROFILE1.bearer}
+    ...                                         mbps=${param.seq.ul_throughput}
+    ...                                         trf_id=${UE_PROFILE1.trf_id}       alias=${alias}
+
+    Dated log     =========> LTE Attach on ue_id=${UE_PROFILE2.ue}
+    5GC001586_Ue_command.LTE Attach        ${UE_PROFILE2.ue}     alias=${alias}
+    Dated log     =========> 5g Attach on ue_id=${UE_PROFILE2.ue}
+    ${output}=   5GC001586_Ue_command.5G Attach         ${UE_PROFILE2}      alias=${alias}
+    Step      5GC001586_Ue_command.5G Ue Attach Check     ${output}
+    Dated log     =========> NSA Start UL Traffic on ue_id=${UE_PROFILE2.ue} with ${param.seq.ul_throughput}M
+    5GC001586_Ue_command.NSA Start UL Traffic   ue_id=${UE_PROFILE2.ue}
+    ...                                         bearer_id=${UE_PROFILE2.bearer}
+    ...                                         mbps=${param.seq.ul_throughput}
+    ...                                         trf_id=${UE_PROFILE2.trf_id}       alias=${alias}
+
+    Dated log     =========> LTE Attach on ue_id=${UE_PROFILE3.ue}
+    5GC001586_Ue_command.LTE Attach        ${UE_PROFILE3.ue}     alias=${alias}
+    Dated log     =========> 5g Attach on ue_id=${UE_PROFILE3.ue}
+    ${output}=   5GC001586_Ue_command.5G Attach         ${UE_PROFILE3}      alias=${alias}
+    Step      5GC001586_Ue_command.5G Ue Attach Check     ${output}
+    Dated log     =========> NSA Start UL Traffic on ue_id=${UE_PROFILE3.ue} with ${param.seq.ul_throughput}M
+    5GC001586_Ue_command.NSA Start UL Traffic   ue_id=${UE_PROFILE3.ue}
+    ...                                         bearer_id=${UE_PROFILE3.bearer}
+    ...                                         mbps=${param.seq.ul_throughput}
+    ...                                         trf_id=${UE_PROFILE3.trf_id}       alias=${alias}
+
+    Dated log     =========> LTE Attach on ue_id=${UE_PROFILE4.ue}
+    5GC001586_Ue_command.LTE Attach        ${UE_PROFILE4.ue}     alias=${alias}
+    Dated log     =========> 5g Attach on ue_id=${UE_PROFILE4.ue}
+    ${output}=   5GC001586_Ue_command.5G Attach         ${UE_PROFILE4}      alias=${alias}
+    Step      5GC001586_Ue_command.5G Ue Attach Check     ${output}
+    Dated log     =========> NSA Start UL Traffic on ue_id=${UE_PROFILE4.ue} with ${param.seq.ul_throughput}M
+    5GC001586_Ue_command.NSA Start UL Traffic   ue_id=${UE_PROFILE4.ue}
+    ...                                         bearer_id=${UE_PROFILE4.bearer}
+    ...                                         mbps=${param.seq.ul_throughput}
+    ...                                         trf_id=${UE_PROFILE4.trf_id}       alias=${alias}
+
+    Dated log     =========> LTE Attach on ue_id=${UE_PROFILE5.ue}
+    5GC001586_Ue_command.LTE Attach        ${UE_PROFILE5.ue}     alias=${alias}
+    Dated log     =========> 5g Attach on ue_id=${UE_PROFILE5.ue}
+    ${output}=   5GC001586_Ue_command.5G Attach         ${UE_PROFILE5}      alias=${alias}
+    Step      5GC001586_Ue_command.5G Ue Attach Check     ${output}
+    Dated log     =========> NSA Start UL Traffic on ue_id=${UE_PROFILE5.ue} with ${param.seq.ul_throughput}M
+    5GC001586_Ue_command.NSA Start UL Traffic   ue_id=${UE_PROFILE5.ue}
+    ...                                         bearer_id=${UE_PROFILE5.bearer}
+    ...                                         mbps=${param.seq.ul_throughput}
+    ...                                         trf_id=${UE_PROFILE5.trf_id}       alias=${alias}
+
+    Traced Sleep    60s
+
+    ${text}=    Catenate    get ul throughput for ue (0x${UE_PROFILE1.ue}, 0x${UE_PROFILE2.ue}, 0x${UE_PROFILE3.ue},
+    ...                                   0x${UE_PROFILE4.ue}, 0x${UE_PROFILE5.ue})
+    Dated log     =========> ${text}
+    ${throughput_for_ue1}=    nps_1586_tools.get_bearer_stats   ue=0x${UE_PROFILE1.ue}   bearer=${UE_PROFILE1.bearer}    direction=ul  alias=${alias}
+    dated log     ul throughput for ue1 is ${throughput_for_ue1} Mbps
+    ${throughput_for_ue2}=    nps_1586_tools.get_bearer_stats   ue=0x${UE_PROFILE2.ue}   bearer=${UE_PROFILE2.bearer}    direction=ul  alias=${alias}
+    dated log     ul throughput for ue2 is ${throughput_for_ue2} Mbps
+    ${throughput_for_ue3}=    nps_1586_tools.get_bearer_stats   ue=0x${UE_PROFILE3.ue}   bearer=${UE_PROFILE3.bearer}    direction=ul  alias=${alias}
+    dated log     ul throughput for ue3 is ${throughput_for_ue3} Mbps
+    ${throughput_for_ue4}=    nps_1586_tools.get_bearer_stats   ue=0x${UE_PROFILE4.ue}   bearer=${UE_PROFILE4.bearer}    direction=ul  alias=${alias}
+    dated log     ul throughput for ue4 is ${throughput_for_ue4} Mbps
+    ${throughput_for_ue5}=    nps_1586_tools.get_bearer_stats   ue=0x${UE_PROFILE5.ue}   bearer=${UE_PROFILE5.bearer}    direction=ul  alias=${alias}
+    dated log     ul throughput for ue5 is ${throughput_for_ue5} Mbps
+    ${all_throughput_for_ue}     evaluate
+    ...                      ${throughput_for_ue1}+${throughput_for_ue2}+${throughput_for_ue3}+${throughput_for_ue4}+${throughput_for_ue5}
+    dated log     ul throughput for all ue is ${all_throughput_for_ue} Mbps
+
+    Run Keyword if       '${UL_TPUT_CHECK_BASED_TTITRACE}'=='1'         Get TTI traces
+    ${resultDir}=     common_Dss_Keywords.Get Testcase Log Directory
+    ${TbSizeAvg}      Run Keyword if  '${UL_TPUT_CHECK_BASED_TTITRACE}'=='1'    nps_1586_tools.Get TbSize Avg      ${resultDir}
+    ...                           ELSE     set variable   {0}
+    ${UeList}         Run Keyword if  '${UL_TPUT_CHECK_BASED_TTITRACE}'=='1'    nps_1586_tools.get_rntis_from_ulFdSchedData          ${resultDir}
+    ...                           ELSE     set variable    ${empty}
+    ${NumOfLayers_UeId1}  ${NumOfLayers_UeId2}  ${NumOfLayers_UeId3}   Run Keyword if  '${UL_TPUT_CHECK_BASED_TTITRACE}'=='1'
+    ...                                                                                Get NumOfLayers from TTI traces   ${resultDir}    ${UeList}
+    ${aggregationLevel_UeId1}  ${aggregationLevel_UeId2}  ${aggregationLevel_UeId3}    Run Keyword if  '${UL_TPUT_CHECK_BASED_TTITRACE}'=='1'
+    ...                                                                                Get aggregationLevel from TTI traces  ${resultDir}  ${UeList}
+
+    Start capture Backhaul for DSS
+    Traced Sleep    1s      msg=Waiting for Xp pcap traces
+    ${XpPdmlFile}    Stop capture Backhaul for DSS
+    Dated log             Point AF_PATH and ENB_BUILD to local luashark XP package
+    Point AF_PATH to local luashark XP package
+    Point ENB_BUILD to local luashark XP package
+    Dated log                       Check UL Qos Load Indication MeasuredNgbrNnbrLoad ...
+    ${status}   ${avg_ul_MeasuredNgbrNnbrLoad}=   Run Keyword and Ignore Error   5GC001586_Keywords.Check UL Qos Load Indication MeasuredNgbrNnbrLoad
+    ...                                                                                              ${XpPdmlFile}
+    ...                                                                                              value=100
+    ...                                                                                              with_verdict=False
+
+    ${UeId1}=    Run Keyword if  '${UL_TPUT_CHECK_BASED_TTITRACE}'=='1'   set variable     ${UeList}[0]
+    ...                      ELSE      set variable     None
+    ${UeId2}=    Run Keyword if  '${UL_TPUT_CHECK_BASED_TTITRACE}'=='1'   set variable     ${UeList}[1]
+    ...                      ELSE      set variable     None
+    ${UeId3}=    Run Keyword if  '${UL_TPUT_CHECK_BASED_TTITRACE}'=='1'   set variable     ${UeList}[2]
+    ...                      ELSE      set variable     None
+    ${UeId4}=    Run Keyword if  '${UL_TPUT_CHECK_BASED_TTITRACE}'=='1'   set variable     ${UeList}[3]
+    ...                      ELSE      set variable     None
+    ${UeId5}=    Run Keyword if  '${UL_TPUT_CHECK_BASED_TTITRACE}'=='1'   set variable     ${UeList}[4]
+    ...                      ELSE      set variable     None
+
+    # "TC; BW; Ue1; Ue2; Ue3; Ue Tput Sum; tbSize Avg; NumOfLayers; aggregationLevel; avg_ul_MeasuredNgbrNnbrLoad; desciption "
+    ${text}   catenate     ${TEST_NAME};  ${param.seq.bandwidth};  ${throughput_for_ue1};
+    ...           ${throughput_for_ue2};  ${throughput_for_ue3};  ${throughput_for_ue4}; ${throughput_for_ue5}; ${all_throughput_for_ue};
+    ...            ${TbSizeAvg}; ${NumOfLayers_UeId1} [rnti=${UeId1}];  ${NumOfLayers_UeId2} [rnti=${UeId2}]; ${NumOfLayers_UeId3} [rnti=${UeId3}];
+    ...           ${aggregationLevel_UeId1} [rnti=${UeId1}];  ${aggregationLevel_UeId2} [rnti=${UeId2}]; ${aggregationLevel_UeId3} [rnti=${UeId3}];
+    ...           ${avg_ul_MeasuredNgbrNnbrLoad};  ${msg}; ${current_sw_version_for_lua_gNB};
+    Dated log             ${text}
+    Log Test results      ${text}
+
+    Run Keyword if    '${w_stopTraffic}'=='True'     5GC001586_Ue_command.NSA Stop Traffic     ue_id=${UE_PROFILE1.ue}
+    ...                                       bearer_id=${UE_PROFILE1.bearer}
+    ...                                       dir=ul
+    ...                                       trf_id=${UE_PROFILE1.trf_id}      alias=${alias}
+    Run Keyword if    '${w_stopTraffic}'=='True'     5GC001586_Ue_command.NSA Stop Traffic     ue_id=${UE_PROFILE2.ue}
+    ...                                       bearer_id=${UE_PROFILE2.bearer}
+    ...                                       dir=ul
+    ...                                       trf_id=${UE_PROFILE2.trf_id}      alias=${alias}
+    Run Keyword if    '${w_stopTraffic}'=='True'     5GC001586_Ue_command.NSA Stop Traffic     ue_id=${UE_PROFILE3.ue}
+    ...                                       bearer_id=${UE_PROFILE3.bearer}
+    ...                                       dir=ul
+    ...                                       trf_id=${UE_PROFILE3.trf_id}      alias=${alias}
+    Run Keyword if    '${w_stopTraffic}'=='True'     5GC001586_Ue_command.NSA Stop Traffic     ue_id=${UE_PROFILE4.ue}
+    ...                                       bearer_id=${UE_PROFILE4.bearer}
+    ...                                       dir=ul
+    ...                                       trf_id=${UE_PROFILE4.trf_id}      alias=${alias}
+    Run Keyword if    '${w_stopTraffic}'=='True'     5GC001586_Ue_command.NSA Stop Traffic     ue_id=${UE_PROFILE5.ue}
+    ...                                       bearer_id=${UE_PROFILE5.bearer}
+    ...                                       dir=ul
+    ...                                       trf_id=${UE_PROFILE5.trf_id}      alias=${alias}
+
+    Dated log     =========> Test if Expected ul Tput For all Ues is reached
+    ${expect_tput}=    Evaluate    float(${expect_tput_value})
+    Verify UE tput as expected      tput_value=${all_throughput_for_ue}    expect_tput_value=${expect_tput}
+
+    Dated log     =========> Test if Expected ul Qos Load Indication is reached
+    # 100 %
+    ${expect_UL_Qos_load_Ind_value}    set variable    100
+    ${expect_UL_Qos_load_Ind}=    Evaluate    float(${expect_UL_Qos_load_Ind_value})
+    Verify UL Qos Load Ind as expected      ul_qos_load_value=${avg_ul_MeasuredNgbrNnbrLoad}    expect_ul_qos_load_value=${expect_UL_Qos_load_Ind}
+
+    [Teardown]           run Keywords     GenericTest.Display diagnosis   AND
+    ...                                    Run Keyword if   '${w_stopWTS}' == 'True'    5GC001586_Ue_command.Stop WTS     egate_alias=${alias}
+
+
+TC 1586-j Stop Ul Traffic on 5 Ues
+    [Documentation]                Test purpose is to stop ul traffic
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+
+    Traffic Stop                    ueSetting=${UE_PROFILE1}      dir=ul
+    Traffic Stop                    ueSetting=${UE_PROFILE2}      dir=ul
+    Traffic Stop                    ueSetting=${UE_PROFILE3}      dir=ul
+    Traffic Stop                    ueSetting=${UE_PROFILE4}      dir=ul
+    Traffic Stop                    ueSetting=${UE_PROFILE5}      dir=ul
+    [Teardown]           GenericTest.Display diagnosis
+
+Set SCF prachConfigurationIndex
+    [Arguments]          ${prachConfigurationIndex}
+    Dated log New Line                       NRCELL_DIST_NAME=${NRCELL_DIST_NAME}
+#      TestParam is ${testParam}
+# MRBTS-69/NRBTS-2/NRCELL-1/NRDSSLTE-1
+
+    &{modify_param}    Create Dictionary
+    ...    parameter=prachConfigurationIndex
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ...    value=${prachConfigurationIndex}
+
+    @{modify_param}    Create List    ${modify_param}
+
+    BuiltIn.Log      \nParameters to modify:\n @{modify_param}   console=yes
+    OAM Set Params    modify_param=@{modify_param}
+
+Set SCF dssMaxNumberOfDlDcis
+    [Arguments]          ${dssMaxNumberOfDlDcis}
+    Dated log New Line                       NRCELL_DIST_NAME=${NRCELL_DIST_NAME}
+
+    &{modify_param1}    Create Dictionary
+    ...    parameter=dssMaxNumberOfDlDcis
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1/NRDSSLTE-1
+    ...    value=${dssMaxNumberOfDlDcis}
+
+    @{modify_param}    Create List    ${modify_param1}
+
+    BuiltIn.Log      \nParameters to modify:\n @{modify_param}   console=yes
+    OAM Set Params    modify_param=@{modify_param}
+
+Update rdDssUlDciAggregationThreshold with
+   [Arguments]                    ${rdDssUlDciAggregationThreshold}=15
+    ${cprt_rdDssUlDciAggregationThreshold}=   Run Keyword If  '${branch}' == '20A'  create dictionary   field=0x590093
+    ...                                                                                                 value=${rdDssUlDciAggregationThreshold}
+    ...   ELSE      create dictionary     field=0x590095      value=${rdDssUlDciAggregationThreshold}
+
+    ${swconfig_gnb}=                 Create List           ${cprt_rdDssUlDciAggregationThreshold}
+    Set Fields in swconfig DU       param_list=${swconfig_gnb}
+
+# ${SWCONFIG_FILE}                    swconfig.txt
+#${SWCONFIG_PATH}                    /ffs/run/${SWCONFIG_FILE}
+Private Set Fields in swconfig DU
+    [Documentation]                 Generic service to set a list of parameters into swconfig file
+    ...                             param_list should be a list od dictionaries, each containing a "field" and a "value"
+    [Arguments]                     ${param_list}                           ${host}=192.168.255.129
+    ${local_file}                   set variable                            ${LOG_PATH}/swconfig.txt
+    ${remote_file}                  set variable                            /ffs/run/swconfig.txt
+    # 21092022 : bypassed for the moment
+    # ${alias}                        SSH Wait For Connect                    host=${host}
+   ${alias}=  Wait until keyword succeeds     10 min     10 sec
+    ...     common_Dss_Keywords.Connect to gNB Common Unit  gnb_id=0  du_id=0    comu_id=0
+    csn.download_file               remote_path=${remote_file}
+    ...                             local_path=${local_file}
+    ...                             connection=${alias}
+
+    # Adding newline at the end of the file to avoid appending data on the same line
+    # (this happens if the last line does not have newline char at the end)
+    run                             echo "" >> ${local_file}
+
+    setFieldsInFile                 srcFile=${local_file}                   paramList=${param_list}
+    csn.upload_file                 local_path=${local_file}
+    ...                             remote_path=${remote_file}
+    ...                             connection=${alias}
+    SSH Exec                        command=crasign ${remote_file}           alias=${alias}
+
+Update K2max with
+   [Arguments]                    ${rdExtendK2Max}=5
+    # ${l2ps_rdExtendK2Max_0x580226}=       create dictionary                  field=0x580226          value=${RadParam_rdExtendK2Max_0x580226}
+    ${l2ps_rdExtendK2Max}=   Run Keyword If  '${branch}' == '20A'  create dictionary  field=0x580226  value=${rdExtendK2Max}
+    ...    ELSE     create dictionary      field=0x580221          value=${rdExtendK2Max}
+
+    ${swconfig_gnb}=                 Create List           ${l2ps_rdExtendK2Max}
+    # 21092022 : bypassed  for the moment
+    # Set Fields in swconfig DU       param_list=${swconfig_gnb}
+    Private Set Fields in swconfig DU      param_list=${swconfig_gnb}
+
+Update DSS DL pattern with
+   [Arguments]                    ${testParam}     ${dl_allocated_normal_subframes}
+
+   ${testParam_dss}                 Tools.Dictionary Get              ${testParam}
+   ${testParam_dss.seq.dl_allocated_normal_subframes}      set Variable     ${dl_allocated_normal_subframes}
+   set suite variable    ${testParam_dss}
+   [Return]      ${testParam_dss}
+
+Save swconfig file used
+  [Arguments]                    ${testParam}
+    # Get swconfig file that will be used during 1586 tests
+    ${alias_gnb}                    SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${LOG_PATH}/swconfig_used_for_1586_J_${testParam.seq.bandwidth}_Tests.txt
+    ...                             connection=${alias_gnb}
+    Run Keyword And Ignore Error  OperatingSystem.Move File  ${LOG_PATH}/swconfig_used_for_1586_J_${testParam.seq.bandwidth}_Test.txt  ${testCaseDir}
+    Dated Log                  Current 1586-J swconfig file stored to ${testCaseDir}/swconfig_used_for_1586_J_${testParam.seq.bandwidth}_Test.txt
+    # Save current SCF file used during test cases
+    ${current_scf_file}             OAM Get SCF File            dir=${testCaseDir}     file=SCF_used_for_1586_J_${testParam.seq.bandwidth}_Test.xml
+    Set Suite Variable              ${current_scf_file}
+    Dated Log                  Current 1586 SCF file stored to ${current_scf_file}
+
+Prepare TL for TTITraces
+    [Documentation]    :
+    ...    This keyword helps to download and install MULTI packages needed for TTITraces
+    ...
+    nps_ttitraces_tools.install_multidynamic_if_needed
+    # nps_1586_tools.install_multidynamic_if_needed_local_version
+
+Log Test description
+  [Arguments]                    ${text}
+    Run Keyword And Ignore Error    OperatingSystem.touch    ${testCaseDir}/TestDescription_${SUITE_NAME}_${TEST_NAME}.txt
+    Run Keyword And Ignore Error    OperatingSystem.run      echo ${text} > ${testCaseDir}/TestDescription_${SUITE_NAME}_${TEST_NAME}.txt
+
+# "TC; BW; Ue1; Ue2; Ue3; Ue Tput Sum; tbSize Avg; NumOfLayers; aggregationLevel; avg_ul_MeasuredNgbrNnbrLoad; desciption "
+Create Header Csv Test result
+  [Arguments]                    ${text}=""
+    ${text}    catenate   "TC Name; BW; Ue1(Mbps); Ue2(Mbps); Ue3(Mbps); Ue Tput Sum(Mbps); tbSize Avg (bits); NumOfLayers; NumOfLayers;"
+    ...                   "NumOfLayers; aggregationLevel; aggregationLevel; aggregationLevel; avg_ul_MeasuredNgbrNnbrLoad %; description; "
+    ...                   "Sw version;"
+    Run Keyword And Ignore Error    OperatingSystem.touch    ${LOG_PATH}/TestResults_${SUITE_NAME}.csv
+    Run Keyword And Ignore Error    OperatingSystem.run      echo ${text} > ${LOG_PATH}/TestResults_${SUITE_NAME}.csv
+    set suite variable      ${csv_file_results}       ${LOG_PATH}/TestResults_${SUITE_NAME}.csv
+
+Log Test results
+  [Arguments]                    ${text}
+    Run Keyword And Ignore Error    OperatingSystem.run      echo "${text}" >> ${LOG_PATH}/TestResults_${SUITE_NAME}.csv
+
+dss_call_5Ue_using_ute_wtssim
+    [Arguments]        ${testParam}     ${alias}=default    ${msg}=""   ${expect_tput_value}=0    ${w_stopTraffic}=True     ${w_stopWTS}=True
+    Init Sequence      ${testParam}
+    5GC001586_Ue_command.Kill previous WTS services
+    5GC001586_Keywords.Restart     OwnTLReset=${False}     GNBCallback=5GC001586_Keywords.Set Reset Loop Counter
+    Dated Log         Start Bip and Xp capture for 1586...
+    Start capture Bip and Xp for 1586     prefix=XP.L1L2Bip.5gCall
+    Dated Log         Dss Cellsetup with DL pattern ${testParam.seq.dl_allocated_normal_subframes}...
+    TC 1586-j 5gCall and Ul Traffic with 5 Ues using ute_wtssim           ${testParam}     ${alias}    ${msg}    ${expect_tput_value}
+    ...                                                                   ${w_stopTraffic}   ${w_stopWTS}
+    [Teardown]    Stop and collect all needed traces     ${testParam}
+    ...                                                  w_snapshot=true
+    ...                                                  w_pcap=true
+    ...                                                  w_Trace=false
+    ...                                                  w_stopTraffic=false
+
+dss_call_5Ue_using_ute_wtssim_OLD
+    [Arguments]                    ${testParam}     ${alias}=default    ${msg}=""   ${expect_tput_value}=0    ${w_stopTraffic}=True
+    Init Sequence                  ${testParam}
+    5GC001586_Ue_command.Kill previous WTS services
+    5GC001586_Keywords.Restart     OwnTLReset=${False}     GNBCallback=5GC001586_Keywords.Set Reset Loop Counter
+    Dated Log         Start Bip and Xp capture for 1586...
+    Start capture Bip and Xp for 1586
+    Dated Log         Dss Cellsetup with DL pattern ${testParam.seq.dl_allocated_normal_subframes}...
+    TC 1586-j 5gCall and Ul Traffic with 5 Ues using ute_wtssim           ${testParam}     ${alias}    ${msg}    ${expect_tput_value}
+    ...                                                                   ${w_stopTraffic}
+    [Teardown]    Stop and collect all needed traces     ${testParam}
+    ...                                                  w_snapshot=true
+    ...                                                  w_pcap=true
+    ...                                                  w_Trace=false
+    ...                                                  w_stopTraffic=false
+
+Get Decimal Value
+    [Arguments]                     ${str}
+    @{groups}                       Get Regexp Matches                      ${str}
+    ...                                 0[x]0+([0-9a-f]+)                   1
+    ${res}                          Convert To Integer                      @{groups}[0]
+    #Dated log                       ${res}
+    [return]                        ${res}
+
+Stop and collect all needed traces
+   [Arguments]       ${testParam}       ${w_snapshot}=true      ${w_pcap}=true    ${w_Trace}=true    ${w_stopTraffic}=true
+    run Keyword if    '${w_stopTraffic}' == 'true'      run Keywords      Dated Log     Stop UL Traffic on 5 Ues...      AND
+    ...                                                                   TC 1586-j Stop Ul Traffic on 5 Ues     ${testParam}
+    run Keyword if    '${w_Trace}' == 'true'      run Keywords       Dated log         Stop TTI Traces in Streaming Mode...   AND
+    ...                                                              ttitrace.Stop TTI Traces in Streaming Mode     tti_trace_path=${testCaseDir}
+    run Keyword if    '${w_pcap}' == 'true'    run Keywords       Dated Log         Stop capture for 1586...     AND
+    ...                                                           Stop capture Bip and Xp for 1586
+    ${msg}=   run Keyword if    '${w_pcap}' == 'true'
+    ...                   Catenate      dss pcap file ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.path} generated and copied into ${testCaseDir}
+    ...                   ELSE     set Variable    None
+    run Keyword if    '${w_pcap}' == 'true'         Dated Log     ${msg}
+    run Keyword if    '${w_Trace}' == 'true'      run Keywords      Dated log         Decode TTI Traces...      AND
+    ...         nps_ttitraces_tools.decode_tti_traces_using_TtitraceReaderEvtDec       desired_storage_directory=${testCaseDir}
+    # ...                                                                     num_of_events=None
+    run Keyword if    '${w_snapshot}' == 'true'    Dated Log New Line         Get gNB snapshot...
+    ${status}  ${snapshot_path}=  run Keyword if   '${w_snapshot}' == 'true'  Run Keyword And Ignore Error  5GC001586_Keywords.Get GNB Logs from Coam
+    run Keyword if    '${w_snapshot}' == 'true'    run Keywords
+    ...                                       Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${snapshot_path}   AND
+    ...                                       Run Keyword And Ignore Error    OperatingSystem.Move File    ${snapshot_path}    ${testCaseDir}   AND
+    ...                                       Dated Log     gNB snapshot ${snapshot_path} generated and copied into ${testCaseDir}
+    Save swconfig file used       ${testParam}
+
+Wait for counters
+    [Arguments]         ${sleep_timer}=5 min
+    Dated log           Wait ${sleep_timer} for counters.
+    Traced Sleep   ${sleep_timer}     msg=counters GP overlap
+
+Get pm counters 1586J2
+    5GC001586_Keywords.Collect PM Counters File
+    # M55308C19001 (AL1) (no variation)
+    # M55308C19002(PM for AL2)
+    # M55308C19003 (PM for AL4)
+    # M55308C19004 (AL8)(no variation)
+    @{counters}  Create list  M55308C19001  M55308C19002  M55308C19003  M55308C19004
+    FOR  ${counter}   IN   @{counters}
+        ${samples_value}     Retrieve Latest Single Counter Value From Pm File
+        ...                   pm_path=${LATEST_FILE}
+        ...                   counter_name=${counter}
+        Set test variable  ${${counter}}  ${samples_value}
+    END
+
+Check M55308C19002
+    ${bool} =   Set variable if    0 < ${M55308C19002}    ${TRUE}    ${FALSE}
+    Run keyword if      ${bool}
+    ...                 Log to console  *** M55308C19002 is not equal to 0
+    ...                 ELSE  Fail  msg=*** M55308C19002 is equal to 0
+
+Check M55308C19003
+    ${bool} =   Set variable if    0 < ${M55308C19003}    ${TRUE}    ${FALSE}
+    Run keyword if      ${bool}
+    ...                 Log to console  *** M55308C19003 is not equal to 0
+    ...                 ELSE  Fail  msg=*** M55308C19003 is equal to 0
+
+Check if M55308C19001 is 0
+    ${bool} =   Set variable if    '0' == '${M55308C19001}'    ${TRUE}    ${FALSE}
+    Run keyword if      ${bool}
+    ...                 Log to console  *** M55308C19001 is equal to 0
+    ...                 ELSE  Fail  msg=*** M55308C19001 is not equal to 0
+
+Check if M55308C19004 is 0
+    ${bool} =   Set variable if    '0' == '${M55308C19004}'    ${TRUE}    ${FALSE}
+    Run keyword if      ${bool}
+    ...                 Log to console  *** M55308C19004 is equal to 0
+    ...                 ELSE  Fail  msg=*** M55308C19004 is not equal to 0
+
+# 95635+95635 = 2 Ue PDCCH with 70% DL Ratio pattern
+# Check 95635+95635=M55308C19002+M55308C19003
+# 2022/01/12 : Updated with 100915+109227 = 2 Ue PDCCH with 70% DL Ratio pattern
+# Check 100915+109227=M55308C19002+M55308C19003
+Check M55308C19002+M55308C19003
+    ${sum}=    Evaluate   ${M55308C19002}+${M55308C19003}
+    ${min}=   Evaluate    (100915+109227) * (100 - 15) / 100
+    ${max}=   Evaluate    (100915+109227) * (100 + 15) / 100
+    ${status}=      Evaluate       ${min} <= ${sum} <= ${max}
+    BuiltIn.Log          *** M55308C19002: ${M55308C19002}           console=yes
+    BuiltIn.Log          *** M55308C19003: ${M55308C19003}           console=yes
+    Dated log    sum M55308C19002+M55308C19003 = ${sum} min=${min} max=${max} status is ${status}
+    Run keyword if      ${status}
+    ...                 Log to console  *** Counter M55308C19002 and M55308C19003 value are acceptable
+    ...                 ELSE  Fail  msg=*** Counter M55308C19002 and M55308C19003 values are not acceptable
+
+Get pm counter M55308C18002
+    5GC001586_Keywords.Collect PM Counters File
+    # M55308C18002 : Maximum number of Scheduled (FDM and MU-MIMO) UEs on PUSCH per slot
+    @{counters}  Create list  M55308C18002   M55319C06009   M55319C06009   M55319C00001
+    FOR  ${counter}   IN   @{counters}
+        ${samples_value}     Retrieve Latest Single Counter Value From Pm File
+        ...                   pm_path=${LATEST_FILE}
+        ...                   counter_name=${counter}
+        Set test variable  ${${counter}}  ${samples_value}
+    END
+
+Check if M55308C18002 is "${nbrUe_per_UlSlot}"
+    ${bool} =   Set variable if    '${nbrUe_per_UlSlot}' == '${M55308C18002}'    ${TRUE}    ${FALSE}
+    Run keyword if      ${bool}
+    ...                 Log to console  *** M55308C18002 is equal to ${nbrUe_per_UlSlot}
+    ...                 ELSE  Fail  msg=*** M55308C18002 is not equal to ${nbrUe_per_UlSlot}
+
+
+Test case setup
+    [Arguments]         ${testParam}
+
+    # SCF.xml is used by procedure verifyFeatureActivation
+    ${test_scf_file}             OAM Get SCF File            dir=${testCaseDir}      file=SCF.xml
+    Set Suite Variable              ${test_scf_file}
+    Dated Log                  Current 1586 SCF file stored to ${test_scf_file}
+    Run Keyword And Ignore Error    OperatingSystem.Copy File    ${test_scf_file}     ${LOG_PATH}
+
+Test specific setup 1586 J1
+    [Arguments]         ${testParam}
+    Log to Console like Next Step     0     Test Specific Setup 1586 J ${testParam.seq.bandwidth}
+
+    # iPHY gscn update depending of chBwDl
+    Dated Log      iPHY gscn update with ${testParam.scfFile.nrcell.gscn} : chBwDl=${testParam.scfFile.nrcellfdd.chBwDl}
+    common_Dss_Keywords.Set Context_AP IPHY    ${testParam}
+
+    # default configuration is 10MHz case , nothing to do in this case
+    Run Keyword If   '${testParam.seq.bandwidth}'!='10MHz'   common_Dss_Keywords.Modify Bandwidth Parameters for WTS   ${testParam}
+
+
+Test Setup 1586 J
+    [Arguments]         ${testParam}
+
+    Log to Console like Next Step     0     Test Setup 1586 J ${testParam.seq.bandwidth}
+
+    run keyword       5GC001586_Kw_TestSetup.Upload 1586-J Configuration
+
+    run keyword and ignore error      common_Dss_Keywords.Remove RAD param for Link Adaptation on swconfig if present
+
+    # intialize  cellDepType with scf value
+    ${testParam.Context.cellDepType}=   5GC001586_Kw_TestSetup.get cellDepType from SCF
+    # eNBid = 2 and gNBId = 1 if SANSA
+    run Keyword if     '${testParam.Context.cellDepType}' == 'SA+NSA'    update eNbId and gNBId In Context   ${testParam}   2   1
+    ${testParam.scfFile.nrdsslte.eNodeBId}     set variable      ${testParam.Context.eNBId}
+
+    # need to adapt minNrDssRatio for SA !!!!
+    # computed sfn = 21% in case of SA and = 11% in case of NSA
+    # ${testParam.scfFile.lteNrDssDlRatio.minNrDssRatio}   Run Keyword If   '${testParam.Context.cellDepType}' == 'SA+NSA'   set variable   25
+
+    Run Keyword If                 '${SHOULD_UPDATE_SCF_AND_RAD}' == '1'      5GC001586_Kw_TestSetup.Set SCF 1586 M1  ${testParam}
+    Run Keyword If                 '${SHOULD_UPDATE_SCF_AND_RAD}' == '1'      Modify 1586 searchSpaceDedicated related Parameters    ${testParam}
+    # 04/07/2022 : WA for PR638673
+    # Need to desactivate the dynamic UL Overload Control functionality introduced by feature CB006784-5G-A
+    # => WA for PR638673 : the gain of 1586-J1 can be seen with 3 UEs only if dynamic UL Overload Control functionality is desactivated
+    # Beware that SHOULD_UPDATE_RAD=0 by default (CRT test)
+    ${1586_swconfig_gnb}=      Run Keyword If        '${SHOULD_UPDATE_SCF_AND_RAD}' == '1'      Set 1586 J Specific RAD     ${testParam}
+    Run Keyword If                 '${SHOULD_UPDATE_SCF_AND_RAD}' == '1'      5GC001586_Kw_TestSetup.Set Specific RAD & scf parameters  ${testParam}
+    ...                                                                                                                      ${1586_swconfig_gnb}
+
+    # iPHY gscn update depending of chBwDl
+    Dated Log      iPHY gscn update with ${testParam.scfFile.nrcell.gscn} : chBwDl=${testParam.scfFile.nrcellfdd.chBwDl}
+    common_Dss_Keywords.Set Context_AP IPHY    ${testParam}
+
+    # default configuration is 10MHz case , nothing to do in this case
+    Run Keyword If   '${testParam.seq.bandwidth}'!='10MHz'   common_Dss_Keywords.Modify Bandwidth Parameters for WTS   ${testParam}
+
+    ${isOAMRebooted}    Run Keyword If       '${SHOULD_UPDATE_SCF_AND_RAD}' == '1'       SSH Was OAM Rebooted       ${GNB_DU}     timeout=60
+
+    # Save current SCF file used during test cases
+    ${current_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF_used_for_1586_J_${testParam.seq.bandwidth}_Tests.xml
+    Set Suite Variable              ${current_scf_file}
+    Dated Log New Line         Current 1586-J SCF file stored to ${current_scf_file}
+
+    # Get swconfig file that will be used during 1586-M tests
+    # 21092023 => Bypassed for the moment !!!
+    # ${alias_gnb}                    SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    ${alias_gnb}=  Wait until keyword succeeds     10 min     10 sec
+    ...     common_Dss_Keywords.Connect to gNB Common Unit  gnb_id=0  du_id=0    comu_id=0
+    csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${LOG_PATH}/swconfig_used_for_1586_J_${testParam.seq.bandwidth}_Tests.txt
+    ...                             connection=${alias_gnb}
+    Dated Log                  Current 1586-J swconfig file stored to ${LOG_PATH}/swconfig_used_for_1586_J_${testParam.seq.bandwidth}_Tests.txt
+
+    # Get EPC file configuration that will be used during 1586-M tests
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/basic_wts_used_for_1586_J_${testParam.seq.bandwidth}_Tests.cfg
+    ...                             connection=${alias_epc}
+
+    # Get AP configuration file that will be used during 1586-M tests
+    ${ap_configfile}                Get XML AirPhoneConfig Path
+    run Keyword if      '${ap_configfile}' != '${empty}'     csn.download_file       remote_path=${tl.core.dir_path}/${ap_configfile}
+    ...                             local_path=${LOG_PATH}/ApOamConfig_used_for_1586_J_${testParam.seq.bandwidth}_Tests.xml
+    ...                             connection=${alias_epc}
+
+    Dated Log  Current 1586-J basic file ${tl.core.cfg_filename} stored to ${LOG_PATH}/basic_wts_used_for_1586_J_${testParam.seq.bandwidth}_Test.cfg
+    Dated Log  Current 1586-J ApOamConfig file stored to ${LOG_PATH}/ApOamConfig_used_for_1586_J_${testParam.seq.bandwidth}_Tests.xml
+
+Teardown 1586-J
+    [Arguments]            ${testParam}      ${alias}=${HOST_EPCSIM.alias}
+
+    BuiltIn.Log      \nTest ${TEST_NAME} 1586 ending   console=yes
+    Produce Scout Data
+
+    # get Alarm at the end of the test and store it into a file
+    Dated log New Line  OAM Get Active Alarms to Save into file
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+
+    ${active_alarms}     OAM Get Active Alarms                   oam=${GNB_DU.oam}    textFormat=${False}
+
+    ${len}    Get Length    ${active_alarms}
+    ${alarm_id_list}    Create List
+    ${alarm_name_list}    Create List
+    ${faultId}=     set variable if    ${isAiC}        fault_id
+    ...                                                faultId
+    ${faultName}=     set variable if    ${isAiC}      fault_name
+    ...                                                faultName
+    FOR    ${i}    IN RANGE    ${len}
+          ${tmp_id}    Get From Dictionary    ${active_alarms[${i}]}    ${faultId}
+          ${tmp_name_id}    Get From Dictionary    ${active_alarms[${i}]}    ${faultName}
+          Append To List    ${alarm_id_list}    ${tmp_id}
+          Append To List    ${alarm_name_list}    ${tmp_name_id}
+    # Dated log     Active alarms: alarm_id_list=${alarm_id_list}
+    # Dated log     Active alarms: alarm_name_list=${alarm_name_list}
+    END
+    Append To File    ${testCaseDir}/OAM_Alarms_After_${TEST_NAME}.txt     Active Alarms Id List:\n${alarm_id_list}\n\n
+    Append To File    ${testCaseDir}/OAM_Alarms_After_${TEST_NAME}.txt     Active Alarms Name List:\n${alarm_name_list}\n\n
+
+    OAM Disconnect                          ${GNB_DU.oam}
+
+    Run Keyword And Ignore Error     Collect EGATE console Logs
+
+    # Save current SCF file used during test cases
+    ${current_scf_file}             OAM Get SCF File            dir=${testCaseDir}      file=SCF_used_for_1586_${testParam.seq.bandwidth}_Tests.xml
+    Set Suite Variable              ${current_scf_file}
+    Dated Log New Line         Current 1586 SCF file stored to ${current_scf_file}
+
+    # Get swconfig file used during 1586-M tests
+    ${alias_gnb}                    SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${testCaseDir}/swconfig_used_for_1586_${testParam.seq.bandwidth}_Tests.txt
+    ...                             connection=${alias_gnb}
+    Dated Log                  Current 1586 swconfig file stored to ${testCaseDir}/swconfig_used_for_1586_${testParam.seq.bandwidth}_Tests.txt
+
+    # Get EPC file configuration used during 1586-M tests
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${testCaseDir}/basic_wts_used_for_1586_${testParam.seq.bandwidth}_Tests.cfg
+    ...                             connection=${alias_epc}
+
+    # Get AP configuration file used during 1586-M tests
+    ${ap_configfile}                Get XML AirPhoneConfig Path
+    run Keyword if      '${ap_configfile}' != '${empty}'     csn.download_file         remote_path=${tl.core.dir_path}/${ap_configfile}
+    ...                             local_path=${testCaseDir}/ApOamConfig_used_for_1586_${testParam.seq.bandwidth}_Tests.xml
+    ...                             connection=${alias_epc}
+
+    ${msg}=   Catenate    Current 1586-J basic file ${tl.core.cfg_filename} stored
+    ...                      to ${testCaseDir}/basic_wts_used_for_1586_${testParam.seq.bandwidth}_Tests.cfg
+    Dated Log    ${msg}
+    Dated Log  Current 1586-J ApOamConfig file stored to ${testCaseDir}/ApOamConfig_used_for_1586_${testParam.seq.bandwidth}_Tests.xml
+    # Restore WTS cfg file name
+    Run Keyword If   '${Param.seq.bandwidth}'!='10MHz'    restoreFilename
+    ${subdirectory}=    common_Dss_Keywords.Prepare Logs Directory Path    subdir=WTS
+    run Keyword and ignore error     wts.collect_egate_log_files    unzip=${False}    subdirectory=${subdirectory}    alias=${alias}
+    wts.teardown_all_aliases_for_egate
+    wts.teardown_all_aliases_for_edaemon
+    robot_extension.Run Keyword And Warn On Failure   Extract egate_command   dir=${testCaseDir}  egate_console=egate_console.log
+    # check here that there is no DSS alarm at the end of the test
+    Check Dss active Alarm Should not be present
+    Collect Logs if needed   ${alias}
+    set Suite Variable    ${testCaseDir}    None
+
+Check BTS status in WEM for cOAM
+    [Documentation]   This keyword is used to Check BTS status in WEM for cOAM.
+    ...    author: Ch SAMSON
+    [Arguments]     ${cell_id}=0
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+    ${bts_status}=    coam.get_bts_statuses    timeout=30    connection=${GNB_DU.oam.httpAlias}
+    Dated log      =======> Current bts status is ${bts_status}
+    should be equal    ${bts_status['operationalState']}     Enabled         ignore_case=true
+    Should Contain Any      ${bts_status['proceduralState']}    configured   OnAir     msg=ENB is not on air, Current status is ${bts_status}
+    ...                                                                                ignore_case=true
+    should be equal    ${bts_status['blockingState']}       Unblocked            ignore_case=true
+
+    ${cell_info}=    coam.get_cells_info    cell_type=nr    timeout=30    connection=${GNB_DU.oam.httpAlias}
+    Dated log      =======> Current cell(s) info is ${cell_info}
+    FOR    ${elem}    IN    @{cell_info}
+#    ${cell_info}=    set variable   ${cell_info[${cell_id}]['status']}
+        Should be equal    ${elem['status']['operationalState']}    Enabled    ignore_case=true
+        Should be equal    ${elem['status']['proceduralStatus']}    configured    ignore_case=true
+        Should be equal    ${elem['status']['administrativeState']}    Unlocked    ignore_case=true
+    END
+
+    OAM Disconnect                  ${GNB_DU.oam}
+
+Restart TL wo WTS clear
+    [Documentation]                 Entry point for the restart of a TL, Classical only , without WTS clear
+    [Arguments]                     ${GNBCallback}=None                     ${APCallback}=None
+    ...                             ${isOAMRebooted}=False
+    Private Restart Gnb Classical           GNBCallback=${GNBCallback}          APCallback=${APCallback}
+    ...                             isOAMRebooted=${isOAMRebooted}
+
+
+reset TL if BTS not OnAir
+    [Arguments]  ${connection}=${GNB_DU.oam}
+    ${aliasGNB}                     OAM Connect                             ${connection}
+    ${bts_status}=  coam.get_bts_statuses   connection=${connection.httpAlias}
+    OAM Disconnect                  ${GNB_DU.oam}
+    Dated log     BTS procedural state is now: ${bts_status["proceduralState"]}
+    ${gnb_status}=     evaluate    '${bts_status["proceduralState"]}'.lower()
+    Run Keyword If  '${gnb_status}'!='OnAir'.lower() and '${gnb_status}'!='Configured'.lower()
+    ...          Run Keywords       Log To Console  \n BTS procedural state is now: ${bts_status["proceduralState"]} ==> Reset TL     AND
+    ...                             Restart TL wo WTS clear     AND
+    ...                             run keyword and ignore error        5GC001586_Kw_TestSetup.Upload 1586 Configuration          AND
+    ...                             run keyword and ignore error        common_Dss_Keywords.Start WTS        egate_alias_default   AND
+    ...                             run keyword and ignore error        common_Dss_command.X2Ap link Setup     egate_alias_default
+
+
+Get gNB cell 5g On air
+    [Documentation]       get gNB 5g cell On air
+    Return From Keyword If    "${WAIT_5G_CELL_ONAIR}" == "0"
+    common_Dss_Keywords.Log to Console like Next Step     0     Get gNB 5g cell OnAir
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+    ${bts_status}=  coam.get_bts_statuses   connection=${GNB_DU.oam.httpAlias}
+    OAM Disconnect                  ${GNB_DU.oam}
+    Log To Console  \n BTS procedural state is now: ${bts_status["proceduralState"]}
+    ${gnb_status}=     evaluate    '${bts_status["proceduralState"]}'.lower()
+    Return From Keyword If    '${gnb_status}'=='OnAir'.lower() or '${gnb_status}'=='Configured'.lower()
+    run keyword and ignore error        5GC001586_Kw_TestSetup.Upload 1586 Configuration
+    run keyword and ignore error        common_Dss_Keywords.Start WTS        egate_alias_default
+    run keyword and ignore error        common_Dss_command.X2Ap link Setup     egate_alias_default
+    run keyword and ignore error        wait until keyword succeeds    2min    30s      Check BTS status in WEM for cOAM
+    Dated log new line         =======> Restart TL if needed to get Cell Is OnAir/Configured
+    run keyword and ignore error        reset TL if BTS not OnAir
+    run keyword and ignore error        wait until keyword succeeds    5min    30s      Check BTS status in WEM for cOAM
+
+Check BTS and Cell status in WEM for cOAM On Air
+    [Documentation]   This keyword is used to Check BTS status in WEM for cOAM.
+    ...    author: Ch SAMSON
+    [Arguments]     ${cell_id}=0
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+    ${bts_status}=    coam.get_bts_statuses    timeout=30    connection=${GNB_DU.oam.httpAlias}
+    Dated log      =======> Current bts status is ${bts_status}
+    should be equal         ${bts_status['operationalState']}     Enabled         ignore_case=true
+    Should Contain Any      ${bts_status['proceduralState']}      OnAir     msg=ENB is not on air, Current status is ${bts_status['proceduralState']}
+    ...                                                                     ignore_case=true
+    should be equal         ${bts_status['blockingState']}        Unblocked       ignore_case=true
+
+    ${cell_full_info}=    coam.get_cells_info    cell_type=nr    timeout=30    connection=${GNB_DU.oam.httpAlias}
+    ${cell_info}=    set variable   ${cell_full_info[${cell_id}]['status']}
+    Dated log      =======> Current cell(s) info is ${cell_info}
+    Should be equal    ${cell_info['operationalState']}     Enabled      ignore_case=true
+    Should be equal    ${cell_info['proceduralStatus']}     configured   ignore_case=true
+    Should be equal    ${cell_info['administrativeState']}  Unlocked     ignore_case=true
+
+    OAM Disconnect                  ${GNB_DU.oam}
+    ${msg}=   Catenate    Cell${cell_id} operationalState=${cell_info['operationalState']}, proceduralStatus=${cell_info['proceduralStatus']}
+    ...                   administrativeState=${cell_info['administrativeState']}
+    Dated log    ${msg}
+
+Verify cell setup with COAM to remove
+    [Documentation]     : [PRIVATE]
+    ...     Verify Specific Cell status and BTS Cell setup status
+    ...
+    ...     cell_id:   Id of cell,
+    ...     timeout:   Time to wait for positive procedure result
+    ...
+    [Arguments]     ${oam_alias}    ${cell_id}=0   ${timeout}=30
+    ${cell_status}=    coam.get_cells_info    cell_type=nr     timeout=${timeout}    connection=${oam_alias}
+    ${P_internal_cell_dist_id}=  Set Variable   ${cell_status[${cell_id}]['id']['internal']}
+    ${cell_status}=    Set variable  ${cell_status[${cell_id}]['status']}
+    Should be equal    ${cell_status['operationalState']}         Enabled         ignore_case=true
+    Should be equal    ${cell_status['proceduralStatus']}         configured      ignore_case=true
+    Should be equal    ${cell_status['blockingState']}            Unblocked       ignore_case=true
+    Should Contain Any    ${cell_status['usageState']}            Active          ignore_case=true
+    Should be equal    ${cell_status['administrativeState']}      Unlocked        ignore_case=true
+    ${bts_status}=     coam.get_bts_statuses    timeout=${timeout}    connection=${oam_alias}
+    Should be equal    ${bts_status['operationalState']}          Enabled         ignore_case=true
+    Should be equal    ${bts_status['proceduralState']}           OnAir     msg=GNB is not on air, Current status is ${bts_status['proceduralState']}
+    ...                                                                     ignore_case=true
+    Should be equal    ${bts_status['blockingState']}             Unblocked       ignore_case=true
+
+    ${msg}=   Catenate    Cell ${cell_id} [${P_internal_cell_dist_id}], operationalState=${cell_status['operationalState']},
+    ...                   proceduralStatus=${cell_status['proceduralStatus']},
+    ...                   administrativeState=${cell_status['administrativeState']},
+    ...                   blockingState=${cell_status['blockingState']},
+    ...                   usageState=${cell_status['usageState']}
+    Dated log    ${msg}
+    Dated log    BTS procedural state is now: ${bts_status['proceduralState']}
+    [Return]  ${P_internal_cell_dist_id}
+
+Verify that cells are onair with COAM to remove
+    [Documentation]     [PRIVATE]
+    [Arguments]      ${oam_alias}   ${num_of_cells}=1
+    FOR    ${cell_id}    IN RANGE    ${num_of_cells}
+        ${_internal_cell_dist_id}=  Verify cell setup with COAM   oam_alias=${oam_alias}   cell_id=${cell_id}
+        Append to list  ${P_INTERNAL_CELL_DIST_ID}     ${_internal_cell_dist_id}
+    END
+
+Wait gNB cell 5g On air to remove
+    [Documentation]       Wait gNB cell 5g On air
+    [Arguments]     ${num_of_cells}=1
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+    # wait until keyword succeeds    5min    20s      Check BTS and Cell status in WEM for cOAM On Air   cell_id=${cell_id}
+    wait until keyword succeeds    5min    20s      Verify that cells are onair with COAM   oam_alias=${GNB_DU.oam.httpAlias}
+    ...                                                                                     num_of_cells=${num_of_cells}
+    [Teardown]         OAM Disconnect                  ${GNB_DU.oam}
+

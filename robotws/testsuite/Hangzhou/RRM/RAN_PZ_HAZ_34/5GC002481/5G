@@ -1,0 +1,104 @@
+*** Settings ***
+Documentation     author: Jack zeng
+...                 contact: jack.zeng@nokia-sbell.com
+...                 squad group: SG_03
+...                 feature : 5GC000786
+
+Resource    ../../Resources/5GC002481_common_keyword.robot
+
+Suite Setup    Run Keywords
+...            Prepare gNB with cell on air status    gnb_index=${1}    2ndgnb_index=${0}    AND
+...            Run Keyword And Ignore Error    locked LTE cell    LNcell_id=${0}
+
+Suite Teardown    Run Keyword If Any Tests Failed    5GC002481_common_keyword.Common Suite Teardown for COAM
+...   gnb_index=${1}    2ndgnb_index=${0}
+
+*** Variables ***
+${gnb_path}           /tmp/
+${tl_scf_file_name}    786_A32.xml
+${interface1}    any
+${nglogname1}    786A032.pcap
+${nglogname2}    786A032RLF.pcap
+${enb_instance}    ${tl.enbs[0].instance_id}
+${gnb_filter}    ngap.procedureCode == 26 and ngap.fiveQI == 1
+${gnb_filter1}    f1ap.Cause == 0
+${gnb_filter2}    ngap.Cause == 0
+${phone_number}    18001006429
+${template_file}    sip
+*** Test Cases ***
+[1]5GC002481_5GC000786_A_032_FDD_VoNR_call_drop_when_RLF_trigger
+    [Documentation]    Test case describes the vonr call drop due to RLF
+    [Tags]    SBTS00    QC_57065        5GC002481
+    [Setup]
+    RUN KEYWORD IF    '${L3call_status}'=='False'    Prepare gNB with cell on air status    gnb_index=${1}    2ndgnb_index=${0}
+    5GC002481_common_keyword.Adjust eNB1_RU Attenuation to 120 for trunk
+    5GC002481_common_keyword.Adjust gNB1_RU HBTE Attenuation to 120
+    run keyword and ignore error    5GC002481_common_keyword.Check UE1 exist
+    Prepare env with UE
+    run keyword and ignore error    power_ue.UE Detach    ue_type=huawei    ue_index=${0}
+    run keyword and ignore error    power_ue.UE Detach    ue_type=huawei    ue_index=${1}
+    Start Capture Wireshark Logs on gNB    nglogname=${nglogname1}    interface=${interface}    gnb_index=${1}
+    Check phone attach successfully on SA env two times    gnb_index=${1}
+    Make a call on UE(dial +6688 on UE)
+    Stop Capture Wireshark Logs on gNB    nglogname=${nglogname1}    gnb_index=${1}
+    Start Capture Wireshark Logs on gNB    nglogname=${nglogname2}    interface=${interface1}    gnb_index=${1}
+    5GC002481_common_keyword.Adjust HBTE Attenuation to 100
+    sleep    20s
+    Stop Capture Wireshark Logs on gNB    nglogname=${nglogname2}    gnb_index=${1}
+    Check IE wireshark log for VONR setup    logname=${nglogname1}    message_filter=${gnb_filter}
+    Check IE wireshark log for RLF    logname=${nglogname2}    message_filter=${gnb_filter1}
+    Check IE wireshark log for UE release    logname=${nglogname2}    message_filter=${gnb_filter2}
+    check sip message
+    [Teardown]    Run Keyword And Ignore Error     Recovery 786 A32
+
+*** Keywords ***
+Recovery 786 A32
+    Adjust the HBTE Attenuation Value to normal
+    power_ue.UE Detach    ue_type=huawei    ue_index=${0}
+    power_ue.UE Detach    ue_type=huawei    ue_index=${1}
+    run keyword and ignore error    coam.teardown    connection=gnb1
+
+Lock gnb1 cell2
+    Connect to gnb coam via ssl    bts_host=${LOCAL_MASTER_IP}    connection=gnb1
+    coam.lock_cell    dist_name=${distname_id_1}/NRCELL-2    connection=gnb1
+    coam.teardown    connection=gnb1
+    sleep    10s
+
+check sip in ue log
+    [Arguments]    ${csv_num}=${1}
+    ${file_num}    Run    ls -l ${LOG_PATH} |grep ".csv"|wc -l
+    should be true     ${file_num}>1
+    ${sip_prack}     Run    cat ${LOG_PATH}UE${csv_num}.csv |grep "IMS_SIP_PRACK 200" | cut -d "," -f 6
+    should be equal    ${sip_prack}    "IMS_SIP_PRACK 200"
+    ${sip_update}     Run    cat ${LOG_PATH}UE${csv_num}.csv |grep "IMS_SIP_UPDATE 200" | cut -d "," -f 6
+    should be equal   ${sip_update}    "IMS_SIP_UPDATE 200"
+    ${sip_invite}     Run    cat ${LOG_PATH}UE${csv_num}.csv |grep "IMS_SIP_INVITE->OK" | cut -d "," -f 6
+    should be equal   ${sip_invite}    "IMS_SIP_INVITE->OK 200"
+    ${sip_bye}     Run    cat ${LOG_PATH}UE${csv_num}.csv |grep "IMS_SIP_BYE->OK 200" | cut -d "," -f 6
+    should be equal   ${sip_bye}    "IMS_SIP_BYE->OK 200"
+
+
+check sip message
+    5GC002481_common_keyword.Adjust eNB1_RU Attenuation to 120 for trunk
+    5GC002481_common_keyword.Adjust gNB1_RU HBTE Attenuation to 120
+    5GC002481_common_keyword.Reboot UE    ue_index=${0}
+    5GC002481_common_keyword.Reboot UE    ue_index=${1}
+    run keyword and ignore error    5GC002481_common_keyword.Check UE exist
+    Run Keyword And Ignore Error    Run    rm -rf ${LOG_PATH}UE*
+    open pionner
+    spark.require_platform    ue_alias=UE_0    index=1
+    sleep    5s
+    enable svc date
+    enable svc date    ue_index=${1}
+    786 UEs attach    gnb_index=${1}
+    spark.Start Log     ue_alias=UE_0
+    sleep    5s
+    Make a VoNR call separately    phone_number=${phone_number}
+    sleep    15s
+    hang up VoNR call
+    sleep    5s
+    spark.stop log   logname=${LOG_PATH}    ue_alias=UE_0    filter=${template_file}
+    check sip in ue log
+    check sip in ue log    csv_num=${2}
+    spark.disconnect_ues     ue_alias=UE_0
+    [Teardown]    close Pioneer

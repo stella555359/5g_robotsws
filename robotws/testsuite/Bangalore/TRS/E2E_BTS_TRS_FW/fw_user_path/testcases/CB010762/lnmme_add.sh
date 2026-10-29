@@ -1,0 +1,10 @@
+sudo ip a a 10.0.6.1/24 dev eth3
+sudo ip a a 10.0.6.17/24 dev eth3
+sudo ip a a 10.0.6.33/24 dev eth3
+sudo ip a a 10.0.6.49/24 dev eth3
+sudo ip a a 10.0.6.65/24 dev eth3
+sudo ip a a 10.0.6.81/24 dev eth3
+sudo ip a a 10.0.6.93/24 dev eth3                
+sudo ip a a 10.0.6.117/24 dev eth3
+sudo ip a a 10.0.6.129/24 dev eth3
+sudo ip a a 10.0.6.105/24 dev eth3

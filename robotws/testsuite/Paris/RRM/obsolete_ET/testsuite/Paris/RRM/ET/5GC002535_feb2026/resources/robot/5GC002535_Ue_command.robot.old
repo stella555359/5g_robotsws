@@ -1,0 +1,301 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for 5GC001586 feature FDD tests cases
+...                         using only ute_wtssim library
+...
+...               Automation author           : christophe.samson@nokia.com
+...               Automation contact          : christophe.samson@nokia.com
+...               Creation Date               : 7-Febrary-2021
+...               Modified Date               : 7-Febrary-2021
+...               Last Modified by            : christophe.samson@nokia.com
+
+Library         taf.transport.ssh    WITH NAME    ssh
+Library         ute_wtssim
+
+Resource          ../../../../../resources/SWENG/robot/Connect.robot
+
+*** Keywords ***
+
+Start WTS
+    [Documentation]    Author: Vasileios Papoutsis
+    [Arguments]    ${egate_alias}=egate    ${edaemon_alias}=edaemon
+    ute_wtssim.setup_egate      egate_port=${tl.core.egate_port}
+    ...                         host_ip=${tl.core.default_ssh_connection_details.addr}
+    ...                         tool_dir=${tl.core.dir_path}
+    ...                         alias=${egate_alias}
+    ...                         ssh_user=ute
+    ...                         ssh_pass=ute
+    # egate_port=${tl.core.egate_port}    tool_dir=${tl.core.dir_path}    alias=${egate_alias}   ssh_user=ute  ssh_pass=ute
+    ute_wtssim.setup_edaemon    edaemon_port=${tl.core.edaemon_port}
+    ...                         host_ip=${tl.core.default_ssh_connection_details.addr}
+    ...                         tool_dir=${tl.core.dir_path}
+    ...                         alias=${edaemon_alias}
+    # edaemon_port=${tl.core.edaemon_port}    tool_dir=${tl.core.dir_path}    alias=${edaemon_alias}    ssh_user=ute  ssh_pass=ute
+    ute_wtssim.execute_egate_command_and_wait_for_data    cmd=sim_info    alias=${egate_alias}
+    ${outputStr}=    ute_wtssim.execute_egate_command_and_wait_for_data    cmd=sim_state_disp    alias=${egate_alias}
+    ${match}    ${value}=    Run keyword and ignore error    Should contain    ${outputStr}    The state is ACTIVE
+    Run keyword if    '${match}'=='PASS'
+    ...    BuiltIn.Log    WTS is already ACTIVE!    console=True
+    ...    ELSE
+    ...    ute_wtssim.execute_egate_command_and_wait_for_data    cmd='cfg file=${tl.core.cfg_filename}'
+    ...    pass_regexp=S1 link is Up
+    ...    timeout=30minutes
+    ...    alias=${egate_alias}
+
+Stop WTS
+    [Documentation]    Author: Vasileios Papoutsis
+    [Arguments]    ${resultDir}=None    ${egate_alias}=egate    ${edaemon_alias}=edaemon
+    ${resultDir}=    Run Keyword If    '${resultDir}'=='None'    testline.Get Testcase Log Directory
+    ...    ELSE    Set Variable    ${resultDir}
+    ute_wtssim.collect_egate_log_files    unzip=${False}    subdirectory=${resultDir}    alias=${egate_alias}
+    ute_wtssim.teardown_egate    alias=${egate_alias}
+    ute_wtssim.teardown_edaemon    alias=${edaemon_alias}
+
+
+Remove WTS logs
+    [Documentation]    Author: Vasileios Papoutsis
+    [Arguments]    ${ssh_alias}=WTS
+    ${ssh_alias}=   connect.Connect to Core     alias=${ssh_alias}
+    ssh.send_command    command=sudo rm ${tl.core.dir_path}/*.log*
+    ...    timeout=${20}
+    ...    connection=${ssh_alias}
+    ssh.disconnect    connection=${ssh_alias}
+
+Setup WTS and wait for S1 link
+    [Documentation]    Author: Vasileios Papoutsis
+    [Arguments]    ${ssh_alias}=WTS
+    BuiltIn.Log    Setup WTS and wait S1 link    console=True
+    ute_wtssim.start_wts_applications    egate_port=${tl.core.egate_port}
+    ...    edaemon_ports=${tl.core.edaemon_port}
+    ...    cfg_file=${tl.core.cfg_filename}
+    ...    timeout=60s
+    ...    tool_dir=${tl.core.dir_path}
+    ...    alias=${ssh_alias}
+    # ute_wtssim.start_wts_services    timeout=60s
+    # ...    alias=${ssh_alias}
+    ${outputStr}=    ute_wtssim.execute_egate_command_and_wait_for_data    cmd=info
+    ...    pass_regexp=S1 link is Up
+    ...    timeout=30minutes
+    ...    alias=${ssh_alias}
+    BuiltIn.Log    S1 link is up!    console=True
+
+Connect to Core
+    [Documentation]    :Author: Soenke Kullberg
+    ...     setup ssh connection core and returns connection handle/alias
+    ...     KW sould be called without arguments
+    ...
+    ...     :param alias: (optional) alias used for ssh connection
+    ...
+    ...     :return alias: alias for ssh connection to OAM
+    ...
+    [Arguments]    ${alias}=ssh-core
+    ssh.Connect_to      hostname=${tl.core.default_ssh_connection_details.addr}
+    ...                 username=${tl.core.default_ssh_connection_details.username}
+    ...                 password=${tl.core.default_ssh_connection_details.password}
+    ...                 alias=${alias}
+    [Return]    ${alias}
+
+Kill edaemon
+    [Documentation]    Author: Vasileios Papoutsis
+    [Arguments]    ${alias}
+    ssh.send_command    command=sudo netstat -anp | grep edaemon | awk '{print $7}'
+    ...    timeout=${10}
+    ...    connection=${alias}
+    ${edaemon_pid}=    ssh.read_output    connection=${alias}
+    ${edaemon_pid}=    Fetch from left    ${edaemon_pid}    marker=/
+    ssh.send_command    command=sudo kill -9 ${edaemon_pid}
+    ...    timeout=${10}
+    ...    connection=${alias}
+
+Kill previous WTS services
+    [Documentation]    Author: Vasileios Papoutsis
+    [Arguments]    ${ssh_alias}=WTS
+    BuiltIn.Log    Kill previous WTS services    console=True
+    ${ssh_alias}=   5GC002535_Ue_command.Connect to Core     alias=${ssh_alias}
+    ssh.send_command    command=sudo netstat -anp | grep edaemon
+    ...    timeout=${10}
+    ...    connection=${ssh_alias}
+    ${output}=    ssh.read_output    connection=${ssh_alias}
+    ${length}=    Get length    ${output}
+    Run keyword if    '${length}'>'${0}'
+    ...    5GC002535_Ue_command.Kill edaemon    alias=${ssh_alias}
+    ssh.send_command    command=sudo netstat -anp | grep egate
+    ...    timeout=${10}
+    ...    connection=${ssh_alias}
+    ${output}=    ssh.read_output    connection=${ssh_alias}
+    ${length}=    Get length    ${output}
+    Run keyword if    '${length}'>'${0}'
+    ...    ssh.send_command    command=sudo pkill -9 -f './egate.* --port ${tl.core.egate_port}'
+    ...    timeout=${10}
+    ...    connection=${ssh_alias}
+    ssh.disconnect    connection=${ssh_alias}
+    BuiltIn.Log    Previous WTS services are killed!    console=True
+
+Verify AP Classical Cell Setup
+	${output}           SSH Wait For Connect and Cmd
+	...                 command=grep complete /tmp/startup_l3.log
+	...                 host=${AP_DU.sys[0].M}
+    should contain	    ${output}	                Cell Setup completed
+	Dated log           Cell Setup AP OK on L3 logs
+
+LTE Attach
+    [Arguments]    ${ue_id}
+    ${output}    ute_wtssim.Execute Egate Command And Wait For Data    ue_attach id\=${ue_id} profile\=1
+    ...    pass_regexp=UE IS ACTIVE    timeout=1min
+
+5G Attach
+    [Arguments]    ${ue_profile}
+    ${pattern}    Set Variable    reported successful RA
+    ${output}    ute_wtssim.Execute Egate Command And Wait For Data
+    ...    ue_dc_enb_start ue\=${ue_profile.ue} target_gnb\=2 target_cells\=1 bearer\=${ue_profile.bearer} type\=split_scg
+    ...    pass_regexp=${pattern}    timeout=1min
+    # [Return]    ${output}
+
+NSA Start UL Traffic
+    [Arguments]    ${ue_id}    ${bearer_id}    ${mbps}    ${trf_id}=1
+    [Documentation]    This keyword is to start traffic on eGate.
+    ...    Expected output is: "UE IS ACTIVE" on eGate.
+    ...    | Input Parameters | Man. | Description |
+    ...    | ue_id | Yes | ue id |
+    ...    | bearer_id | Yes | bearer_id |
+    ...    | mbps | Yes | mbps |
+    ...    | trf_id | No | trf_id, default is 1 |
+    ...    Example:
+    ...    | NSA Start UL Traffic | 1 | 2 | 10 |
+    Log To Console    start UL traffic [ue=${ue_id}]...
+    ute_wtssim.Execute Egate Command
+    ...    cmd=trf_data_start ue\=${ue_id} id\=${bearer_id} dir=ul mbps\=${mbps} trf_id\=${trf_id}
+    Sleep    5s    reason=wait UL traffic is stable
+
+NSA Stop Traffic
+    [Arguments]    ${ue_id}    ${bearer_id}    ${dir}    ${trf_id}=1
+    [Documentation]    This keyword is to stop traffic on eGate.
+    ...    | Input Parameters | Man. | Description |
+    ...    | ue_id | Yes | ue id |
+    ...    | bearer_id | Yes | bearer_id |
+    ...    | dir | Yes | ul or dl |
+    ...    | trf_id | No | trf_id, default is 1 |
+    ...    Example:
+    ...    | NSA Stop Traffic | 1 | 2 | dl |
+    Log To Console    stop ${dir} traffic [ue=${ue_id}]...
+    ute_wtssim.Execute Egate Command    cmd=trf_data_stop ue\=${ue_id} id\=${bearer_id} dir\=${dir} trf_id\=${trf_id}
+
+X2Ap link Setup
+    [Arguments]                 ${alias}=EPCSIM
+    Log to console  \n***Activate eNBSim with X2Ap interface with alias=${alias}***
+    ute_wtssim.execute egate command and wait for data    cmd=enb_x2_link_up enb=1 target=2
+    ...                                                   pass_regexp=X2AP Link .* is up    timeout=60   alias=${alias}
+    # sometimes the link falls, and come back again after 4-5 seconds, so we add a sleep here
+    Traced sleep    10s
+    Log to console  \n***Activate eNBSim with X2AP interface completed ***
+
+Xp link Setup
+    [Arguments]                 ${alias}=EPCSIM
+    Log to console  \n***Activate eNBSim with XpAp interface with alias=${alias}***
+    ute_wtssim.execute egate command    cmd=enb_xp_param id=1 ignore_xp=off xp_listening_socket=on    alias=${alias}
+    ute_wtssim.execute egate command    cmd=enb_xp_param id=1 xp_peers=2    alias=${alias}
+    ute_wtssim.execute egate command and wait for data    cmd=enb_xp_link_up enb=1 target=2
+    ...                                                   pass_regexp=XpAP Link .* is up   timeout=120  alias=${alias}
+    # sometimes the link falls, and come back again after 4-5 seconds, so we add a sleep here
+    Traced sleep    10s
+    Log to console  \n***Activate eNBSim with XpAp interface completed ***
+
+DSS DL Cell Resource Allocation
+    [Arguments]     ${dl_allocated_normal_subframes}=0011101110-0111101110-0011101110-0111101110-0011101110-0111101110-0011101110-0111101110
+    ...             ${alias}=default
+    sleep   5
+
+    ${msg}    Catenate    DSS DL Cell Resource Allocation with allocation_start_time=immediate and
+    ...                    dl_allocated_normal_subframes=${dl_allocated_normal_subframes} with alias=${alias}
+    Dated Log New Line      ${msg}
+
+    ${cmd}    Catenate      enb_dss_resource_allocation enb=1 cell=1 tgt_enb=2 tgt_cell=1 dir=DL allocation_start_time=immediate
+    ...                        dl_allocated_normal_subframes=${dl_allocated_normal_subframes}
+    ute_wtssim.execute egate command    cmd=${cmd}     alias=${alias}
+    # wts.execute egate command    cmd=enb_dss_resource_allocation enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    #       dir=DL allocation_start_time=immediate
+    #       dl_allocated_normal_subframes=0011101110-0111101110-0011101110-0111101110-0011101110-0111101110-0011101110-0111101110
+    log to console  \n***DSS DL Cell Resource Allocation completed***
+
+DSS UL Cell Resource Allocation
+    [Arguments]                 ${ULNbrOfPrb}=0x00000023     ${msg1FrequencyStart}=4      ${alias}=default
+    sleep   5
+    # wts.execute egate command    cmd=enb_dss_resource_allocation enb=1 cell=1 tgt_enb=2
+     #          tgt_cell=1 dir=UL allocation_start_time=immediate ul_allocated_prb_list=4,27
+
+    ${ULNbrOfPrb_decimal}              toDecimalStr     ${ULNbrOfPrb}
+
+    ${msg1FrequencyStart_decimal}       toDecimalStr     ${msg1FrequencyStart}
+
+    ${msg}    Catenate     DSS UL Cell Resource Allocation with msg1FrequencyStart=${msg1FrequencyStart_decimal} and
+    ...                        NbrOfPRB=${ULNbrOfPrb_decimal} with alias=${alias}
+    Dated Log New Line     ${msg}
+
+    ${cmd}    Catenate    enb_dss_resource_allocation enb=1 cell=1 tgt_enb=2 tgt_cell=1 dir=UL allocation_start_time=immediate
+    ...                    ul_allocated_prb_list=${msg1FrequencyStart_decimal},${ULNbrOfPrb_decimal}
+    # wts.execute egate command    cmd=enb_dss_resource_allocation enb=1 cell=1 tgt_enb=2 tgt_cell=1 dir=UL
+    #                  allocation_start_time=immediate ul_allocated_prb_list=4,35
+    ute_wtssim.execute egate command    cmd=${cmd}   alias=${alias}
+
+    log to console  \n***DSS UL Cell Resource Allocation completed***
+
+DSS_Cell_Setup
+#     [Arguments]                 ${testParam}=Param    ${alias}=default
+     [Arguments]                 ${alias}=default
+
+    Log to console  \n***DSS Phase-II CellSetup BW=${Param.seq.bandwidth} with alias=${alias}***
+
+    ute_wtssim.execute egate command    cmd=enb_dss_param id=1 feature_flag=on message_sets=V1,DMS2    alias=${alias}
+    Sleep   2
+    ute_wtssim.execute egate command    cmd=enb_cell_param enb=1 id=1 lte_nr_dss_mode=DL_CRS_TDM_UL_FDM    alias=${alias}
+    Sleep   2
+    ute_wtssim.execute egate command    cmd=enb_dss_configure_partnership enb=1 cell=1 dss_peer=2:1    alias=${alias}
+    sleep   2
+    # ${cmd}    Catenate    enb_dss_resource_allocation enb\=1 cell\=1 tgt_enb\=2 tgt_cell\=1
+    # ...    allocation_start_time\=20:50 allocated_mbsfn_subframes\=111111111111111111111111
+
+    ${cmd}    Catenate    enb_crm_cell_resource_reservation enb=1 cell=1 tgt_enb=2 tgt_cell=1 assigned_dl_minimum_share_to_nr=15
+    ...         assigned_dl_maximum_share_to_nr=70 assigned_dl_minimum_share_to_lte=15 assigned_dl_maximum_share_to_lte=70
+    ...         assigned_ul_minimum_share_to_nr=20 assigned_ul_maximum_share_to_nr=70
+
+    # wts.execute egate command    cmd=enb_crm_cell_resource_reservation enb=1 cell=1 tgt_enb=2 tgt_cell=1 assigned_dl_minimum_share_to_nr=15
+    #                     assigned_dl_maximum_share_to_nr=70 assigned_dl_minimum_share_to_lte=15 assigned_dl_maximum_share_to_lte=70
+    #                    assigned_ul_minimum_share_to_nr=20 assigned_ul_maximum_share_to_nr=70     alias=${alias}
+    ute_wtssim.execute egate command      cmd=${cmd}    alias=${alias}
+
+    # to simulate the EN DSS UL QoS LOAD INDICATION Timer = 80ms sent into DL coord rsp
+    # Dated Log New Line        enb_crm_param updated with ul_qos_load_meas_timer=${Param.seq.qos_load_meas_timer}
+    # ...                          and dl_qos_load_meas_timer=${Param.seq.qos_load_meas_timer}
+    ${cmd}    Catenate    enb_crm_param id=1 ul_qos_load_meas_timer=${Param.seq.qos_load_meas_timer}
+    ...                                      dl_qos_load_meas_timer=${Param.seq.qos_load_meas_timer}
+    Dated Log New Line       ${cmd}
+    # wts.execute egate command    cmd=enb_crm_param id=1 ul_qos_load_meas_timer=${Param.seq.qos_load_meas_timer}
+    #                              dl_qos_load_meas_timer=${Param.seq.qos_load_meas_timer}        alias=${alias}
+    ute_wtssim.execute egate command      cmd=${cmd}      alias=${alias}
+
+    # sleep   5
+    # increase the sleeping time betwenn cell resource resernation and dss estab partnership => 10 s instead of 5 s
+    # sometimes, the XP dont came up at the first time !!!
+    # 19:55:06.872 19:55:06.871 [37;41mACR[0m: ENB-1: Failed to connect to ENB-2 over SCTP: 9 -
+    #  ...       system connect() error. errno=99 (Cannot assign requested address)
+    # 19:55:06.872 19:55:06.871 [37;41mACR[0m: ENB-1: Failed to connect to GNB-2 (10.0.1.111:32742[0]) over SCTP
+    sleep    30
+    ute_wtssim.execute egate command    cmd=enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1     alias=${alias}
+
+    # wts.execute egate command and wait for data cmd=enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    # ...     pass_regexp=CRM Partnership Creation timeout=15
+    sleep   10
+
+    5GC001586_Ue_command.DSS DL Cell Resource Allocation    ${Param.seq.dl_allocated_normal_subframes}    ${alias}
+
+    # DSS UL Cell Resource Allocation     ${ULNbrOfPrb}
+    # DSS UL Cell Resource Allocation     ${testParam.seq.ULNbrOfPrb}    ${testParam.scfFile.nrcell.msg1FrequencyStart}
+    # Param variable is visible under the test suite
+    5GC001586_Ue_command.DSS UL Cell Resource Allocation     ${Param.seq.ULNbrOfPrb}    ${Param.scfFile.nrcell.msg1FrequencyStart}   ${alias}
+
+    sleep    10
+
+    log to console  \n***DSS CELLSETUP BW=${Param.seq.bandwidth} completed***
+
+
+
+

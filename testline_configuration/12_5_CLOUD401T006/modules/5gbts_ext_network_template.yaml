@@ -1,0 +1,185 @@
+# Copyright (c) Nokia 2017
+
+heat_template_version: 2016-10-14
+description: Template for creating external network with instance spesific configuration parameters
+
+parameters:
+  index:
+    description: Instance index to use to fetch spesific parameters from params list
+    type: number
+  dns_forwarders:
+    description: Comma separated list of servers to forward queries to
+    type: comma_delimited_list
+  vnf_name:
+    type: string
+    description: 5gbts vnf name
+    default: 5GBTS
+    constraints:
+      - length: {min: 1, max: 38}
+        description: ( VNF NAME must be length <1-38>)
+  external_networks:
+    description: List of instance spesific parameters for each network to create
+    type: json
+  dual_stack:
+    type: string
+    description: configure single network or dual network
+    default: disabled
+    constraints:
+      - allowed_values: [disabled, enabled]
+
+conditions:
+  net_signal_condition:
+    or:
+      - equals:
+        - get_param: dual_stack
+        - disabled
+      - equals:
+        - {get_param: [external_networks, {get_param: index}, name]}
+        - oam
+      - equals:
+        - {get_param: [external_networks, {get_param: index}, name]}
+        - tracing
+  net_dual_condition:
+    and:
+      - equals:
+        - get_param: dual_stack
+        - enabled
+      - or:
+        - equals:
+          - {get_param: [external_networks, {get_param: index}, name]}
+          - fronthaul
+        - equals:
+          - {get_param: [external_networks, {get_param: index}, name]}
+          - backhaul
+        - equals:
+          - {get_param: [external_networks, {get_param: index}, name]}
+          - x2
+
+resources:
+  net:
+    type: OS::Neutron::Net
+    properties:
+      admin_state_up: true
+      name:
+        if:
+          - equals:
+            - {get_param: dual_stack}
+            - disabled
+          - str_replace:
+              template: $vnf-$net_net-v$version
+              params:
+                $vnf: {get_param: vnf_name}
+                $net: {get_param: [external_networks, {get_param: index}, name]}
+                $version: {get_param: [external_networks, {get_param: index}, ip_ver]}
+          - str_replace:
+              template: $vnf-$net_net-v$version$version_v6
+              params:
+                $vnf: {get_param: vnf_name}
+                $net: {get_param: [external_networks, {get_param: index}, name]}
+                $version: {get_param: [external_networks, {get_param: index}, ip_ver]}
+                $version_v6: {get_param: [external_networks, {get_param: index}, ip_v6_ver]}
+      shared: true
+      value_specs:
+        if:
+          - equals:
+            - {get_param: [external_networks, {get_param: index}, sid]}
+            - 0
+          - provider:physical_network: {get_param: [external_networks, {get_param: index}, provider]}
+            provider:network_type: {get_param: [external_networks, {get_param: index}, net_type]}
+          - provider:physical_network: {get_param: [external_networks, {get_param: index}, provider]}
+            provider:network_type: {get_param: [external_networks, {get_param: index}, net_type]}
+            provider:segmentation_id: {get_param: [external_networks, {get_param: index}, sid]}
+
+  subnet:
+    type: OS::Neutron::Subnet
+    condition: net_signal_condition
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$net_subnet-v$version
+          params:
+            $vnf: {get_param: vnf_name}
+            $net: {get_param: [external_networks, {get_param: index}, name]}
+            $version: {get_param: [external_networks, {get_param: index}, ip_ver]}
+      cidr: {get_param: [external_networks, {get_param: index}, cidr]}
+      network_id: {get_resource: net}
+      dns_nameservers: {get_param: [dns_forwarders]}
+      enable_dhcp: false
+      ip_version: {get_param: [external_networks, {get_param: index}, ip_ver]}
+      gateway_ip: {get_param: [external_networks, {get_param: index}, gateway]}
+      allocation_pools:
+        -
+          start: {get_param: [external_networks, {get_param: index}, start]}
+          end: {get_param: [external_networks, {get_param: index}, end]}
+
+  subnet_v4_dual:
+    type: OS::Neutron::Subnet
+    condition: net_dual_condition
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$net_subnet-v$version-dual
+          params:
+            $vnf: {get_param: vnf_name}
+            $net: {get_param: [external_networks, {get_param: index}, name]}
+            $version: {get_param: [external_networks, {get_param: index}, ip_ver]}
+            $version_v6: {get_param: [external_networks, {get_param: index}, ip_v6_ver]}
+      cidr: {get_param: [external_networks, {get_param: index}, cidr]}
+      network_id: {get_resource: net}
+      dns_nameservers: {get_param: [dns_forwarders]}
+      enable_dhcp: false
+      ip_version: {get_param: [external_networks, {get_param: index}, ip_ver]}
+      gateway_ip: {get_param: [external_networks, {get_param: index}, gateway]}
+      allocation_pools:
+        -
+          start: {get_param: [external_networks, {get_param: index}, start]}
+          end: {get_param: [external_networks, {get_param: index}, end]}
+
+  subnet_v6_dual:
+    type: OS::Neutron::Subnet
+    condition: net_dual_condition
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$net_subnet-v$version_v6-dual
+          params:
+            $vnf: {get_param: vnf_name}
+            $net: {get_param: [external_networks, {get_param: index}, name]}
+            $version: {get_param: [external_networks, {get_param: index}, ip_ver]}
+            $version_v6: {get_param: [external_networks, {get_param: index}, ip_v6_ver]}
+      cidr: {get_param: [external_networks, {get_param: index}, cidr_v6]}
+      network_id: {get_resource: net}
+      dns_nameservers: {get_param: [dns_forwarders]}
+      enable_dhcp: false
+      ip_version: {get_param: [external_networks, {get_param: index}, ip_v6_ver]}
+      gateway_ip: {get_param: [external_networks, {get_param: index}, gateway_v6]}
+      allocation_pools:
+        -
+          start: {get_param: [external_networks, {get_param: index}, start_v6]}
+          end: {get_param: [external_networks, {get_param: index}, end_v6]}
+
+outputs:
+  net_uuid:
+    description: Network with uuid
+    value:
+      if:
+        - equals:
+          - {get_param: dual_stack}
+          - disabled
+        - str_replace:
+            template: |
+              $vnf-$net_net-v$version: $uuid
+            params:
+              $vnf: {get_param: vnf_name}
+              $net: {get_param: [external_networks, {get_param: index}, name]}
+              $version:  {get_param: [external_networks, {get_param: index}, ip_ver]}
+              $uuid: {get_resource: net}
+        - str_replace:
+            template: |
+              $vnf-$net_net-v$version$version_v6: $uuid
+            params:
+              $vnf: {get_param: vnf_name}
+              $net: {get_param: [external_networks, {get_param: index}, name]}
+              $version:  {get_param: [external_networks, {get_param: index}, ip_ver]}
+              $version_v6: {get_param: [external_networks, {get_param: index}, ip_v6_ver]}
+              $uuid: {get_resource: net}

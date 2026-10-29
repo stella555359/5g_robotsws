@@ -1,0 +1,920 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]   [SUITE PURPOSE]  specific keywords for Beamforming 5GC002300
+...               Test Case Scenario author:
+...               Test Case Scenario contact:
+...               Test Case automation author:
+...               Test Case automation contact:
+...               Creation Date:
+...               Modified Date:19/01/2022
+...               Last Modified by: ying.yw.wu@nokia.com
+
+Library           taf.sbts.oam.coam.admin   WITH NAME   coam
+Library           taf.gnb.oam.coam.vdu.interface.Vdu    WITH NAME    vdu
+Library           taf.gnb.oam.coam.cu.interface.cu      WITH NAME    cu
+
+# multiscf is needed for VRAN2.0
+#Library           ../../../../../resources/SWENG/python/MultiScf.py      WITH NAME   multiscf
+Library           ../../../../../resources/SWENG/python/OldMultiScf.py      WITH NAME   oldmultiscf
+
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+#Resource          ../../../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../../../resources/SWENG/robot/OldScf.robot
+Resource          ../../../../../resources/SWENG/robot/Container.robot
+
+Resource           taf/rfrl/common_resources/robot/preconditions.robot
+
+*** Variables ***
+${latest_pm_file_name}
+
+${local_capture_file_master}   ${EMPTY}
+${local_capture_file_slave}    ${EMPTY}
+${dist_name2}       MRBTS-1/NRBTS-1/NRCELL-1
+
+#PM counter : EIRP Samples Value:0 if feature Off
+${TC_B_2_PM_Counter_Id}     M55324C00000
+${TC_B_2_PM_Counter_Expected_Value}  0
+
+#PM Counter TC B-3
+${TC_B_3_PM_Counter_Id}     M55324C00110
+${TC_B_3_PM_Counter_Expected_Value}  0
+
+#PM Counter TC B-5
+${TC_B_5_PM_Counter_Id}     M55324C00306
+${TC_B_5_PM_Counter_Expected_Value}  0
+
+${NRCELL_ID}    1
+
+
+*** Keywords ***
+
+return BtsType and BoardType
+    return from Keyword if      ${isAiC}        AiC         None
+    ${bbOrSysBoardType}	        Call Method     ${GNB_DU}   getBBBoardType
+    ${bbOrSysBoardType}	        run Keyword if   '${bbOrSysBoardType}'=='None'  Call Method     ${GNB_DU}   getSysBoardType
+    ...      ELSE                                                               set variable    ${bbOrSysBoardType}
+    ${BtsType}=                 set variable    Classical
+    [return]    ${BtsType}      ${bbOrSysBoardType}
+
+
+Commissioning SCF
+    [Tags]                          INIT_AND_TEST
+    [Arguments]                     ${ScfFile}              ${oam}=${GNB_DU.oam}
+    Dated log                       Commisioning SCF : ${ScfFile}
+    File should exist               ${ScfFile}              SCF file ${ScfFile} not found
+    OAM Perform Full Commissioning  scf_file=${ScfFile}     oam=${oam}
+    OAM wait available              oam=${oam}
+
+
+Suite Setup 2300
+    #Setup.Suite Setup From Scratch
+    Setup.Suite Setup from scratch            listBackupFiles=${FD_ALL}
+    ...                                       keepAllUeDataInCfgFile=${True}
+    Dated Log               default_test_strategy : SHOULD_BE_COMMISSIONED_GNB_FIRST = ${SHOULD_BE_COMMISSIONED_GNB_FIRST}
+    Set suite variable      ${pm_files_path}        ${LOG_PATH}/PM
+    ${SCF_MODIFIED}         Set Variable            ${SCF_SETUP_PATH}.modif
+    Copy File               ${SCF_SETUP_PATH}       ${SCF_MODIFIED}
+    ${SCF_CU_MODIFIED}      Set Variable if         ${isAiC}        ${SCF_CU_SETUP_PATH}.modif
+    ...                                                             ${EMPTY}
+    run Keyword if          ${isAiC}                    Copy File       ${SCF_CU_SETUP_PATH}    ${SCF_CU_MODIFIED}
+    ${BtsType}              ${bbOrSysBoardType}=        return BtsType and BoardType
+    Dated log               BtsType=${BtsType} and bbOrSysBoardType=${bbOrSysBoardType}
+    Run Keyword If          '${BtsType}'=='Classical' and '${bbOrSysBoardType}'=='ASOE'
+    ...                     Config Update ASOE ABIO     scf_file=${SCF_MODIFIED}
+    ...    ELSE IF          '${BtsType}'=='Classical' and '${bbOrSysBoardType}'=='ABIO'
+    ...                     Config Update ASOE ABIO     scf_file=${SCF_MODIFIED}
+    ...    ELSE IF          '${BtsType}'=='AiC'
+    ...                     Config Update AiC           scf_file=${SCF_MODIFIED}    scf_file_CU=${SCF_CU_MODIFIED}
+    ...    ELSE             Config Update               scf_file=${SCF_MODIFIED}
+    Run Keyword If          '${SHOULD_BE_COMMISSIONED_GNB_FIRST}' == '1'
+    ...                     run Keywords    Dated log       =====> Start DU Scf Commissioning
+    ...                                     AND
+    ...                                     Commissioning SCF     ${SCF_MODIFIED}   oam=${GNB_DU.oam}
+    ...       ELSE          Dated log     gNB DU not Commissioning because SHOULD_BE_COMMISSIONED_GNB_FIRST==0
+    Run Keyword If          '${SHOULD_BE_COMMISSIONED_GNB_FIRST}' == '1' and ${isAiC}
+    ...                     run Keywords    Dated log       =====> Start CU Scf Commissioning
+    ...                                     AND
+    ...                                     Commissioning SCF     ${SCF_CU_MODIFIED}        oam=${GNB_CU.oam}
+    ...    ELSE IF          ${isAiC}        Dated log     gNB CU not Commissioning because SHOULD_BE_COMMISSIONED_GNB_FIRST==0
+    # add set online btsName
+    # Set online btsName for AiC and Classical            btsType=${btsType}
+    Restart TL
+    WTS Setup               nbUe=1      shouldUseLua=${False}
+    # run Keyword if          not ${isAiC}                Cell Setup
+    ${TEST NAME}            set variable                Suite Setup 2300
+    set suite variable      ${TEST NAME}
+    Call Setup and Traffic
+    set suite variable      ${Collect_TCB_DONE}         ${False}
+    set suite variable      ${Collect_TCD_DONE}         ${False}
+    set suite variable      ${Collect_TCAEG_DONE}       ${False}
+
+
+Get Beam Flag
+    # no BB board for ASOE
+    Return From Keyword If     '${GNB_DU.sys[0].M.boardType}'=='ASOE'
+    ...                        false
+    ${flag}=                   Set Variable if         '${GNB_DU.bb[0].M.boardType}'=='ABIL'
+    ...                        true    false
+    [Return]                   ${flag}
+
+
+Config Update ASOE ABIO
+    [Arguments]               ${scf_file}
+    OldScf.SCF StartSession   scf_file=${scf_file}
+    ${dist_name}              Set Variable    MRBTS-1/NRBTS-1/NRCELL-1
+    OldScf.SCF Set element    dist_name=${dist_name}    element_name=actEirpControl   element_value=true
+    OldScf.SCF Set element    dist_name=${dist_name}    element_name=externalAntennaGain    element_value=30
+    OldScf.SCF Set element    dist_name=${dist_name}    element_name=eirpControlTimeAveragingWindow   element_value=1
+    OldScf.SCF Set element    dist_name=${dist_name}    element_name=mcsIndexForArtificialLoad   element_value=20
+    OldScf.SCF Set element    dist_name=${dist_name}    element_name=pMax   element_value=320
+    OldScf.SCF Set element    dist_name=${dist_name}    element_name=ssPbchBlockPower   element_value=6
+    OldScf.SCF Set element    dist_name=${dist_name}    element_name=antennaMechanicalDowntilt   element_value=30
+    OldScf.SCF Set element    dist_name=${dist_name}    element_name=targetTotalLoad   element_value=100
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=minGuaranteedBudgetRatio   element_value=50
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=minGuaranteedBudgetRatioMode
+    ...                               element_value=actualEirpBudgetRatio
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=minSignificantNormalizedBeamGain   
+    ...                               element_value=-13
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=numOfSegmentAzimuthEdges   element_value=3
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=numOfSegmentElevationEdges   element_value=5
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=schedulWeightFactorEnabled   
+    ...                               element_value=false
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentAzimuthEdge0      element_value=-60
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentAzimuthEdge1      element_value=0
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentAzimuthEdge2      element_value=60
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentElevationEdge0    element_value=40
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentElevationEdge1    element_value=10
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentElevationEdge2    element_value=0
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentElevationEdge3    element_value=-10
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentElevationEdge4    element_value=-40
+    OldScf.SCF Remove list            dist_name=${dist_name}    list_name=eirpControlPowerReductionFactorList
+    OldScf.SCF Add list               dist_name=${dist_name}    list_name=eirpControlPowerReductionFactorList
+    ${eirpControlPowerList}     Create List     0   0   0   0   0   -120   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+    OldScf.SCF Add elements to list   dist_name=${dist_name}    list_name=eirpControlPowerReductionFactorList   elements=${eirpControlPowerList}
+    ${dist_name}                Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/${NRCELL_GRP}
+    OldScf.SCF Set element      dist_name=${dist_name}    element_name=ssBurstSetPeriod   element_value=20
+    ${dist_name}                Set Variable    MRBTS-1/MNL-1/MNLENT-1/PMCADM-1
+    OldScf.SCF Set element      dist_name=${dist_name}    element_name=reportingIntervalPm   element_value=5min
+    ${dist_name}                Set Variable    MRBTS-1/NRBTS-1/NRPMRNL-1
+    OldScf.SCF Set element      dist_name=${dist_name}    element_name=miNrCellAvailability   element_value=5min
+    OldScf.SCF Set element      dist_name=${dist_name}    element_name=miNrCellUtilization    element_value=5min
+    OldScf.SCF StopSession      scf_file=${scf_file}
+    Dated Log                   ----> Modifications completed.\n
+
+
+add list_name to SCF
+    [Arguments]             ${scf_file_path}    ${dist_name}        ${list_name}
+    ...                     ${LIST_ITEMS_PARAMS_TO_ADD}=${EMPTY}    ${nodeType}=Classical
+    log to console          Add ${list_name} to SCF
+    oldmultiscf.Load scf    ${scf_file_path}
+    ${dist_name_}           set variable    ${dist_name}
+    ${result}               oldmultiscf.is_list_in_object   dist_name=${dist_name_}
+    ...                                                     list_name=${list_name}
+    ...                                                     nodeType=${nodeType}
+    run keyword if          ${result}==True     oldmultiscf.remove_list_from_scf
+    ...                                             dist_name=${dist_name_}
+    ...                                             list_name=${list_name}
+    ...                                             nodeType=${nodeType}
+    oldmultiscf.add list to scf    dist_name=${dist_name_}   list_name=${list_name}   nodeType=${nodeType}
+    FOR    ${item}    IN        @{LIST_ITEMS_PARAMS_TO_ADD}
+                            oldmultiscf.add item to list
+        ...                         dist_name=&{item}[dist_name]    list_name=&{item}[list_name]
+        ...                         elements=&{item}[elements]      nodeType=&{item}[nodeType]
+    END
+    oldmultiscf.Save scf    ${scf_file_path}    nodeType=${nodeType}
+    [Return]                ${scf_file_path}
+
+
+add Elt List to SCF
+    [Arguments]             ${scf_file_path}    ${dist_name}        ${list_name}
+    ...                     ${LIST_ITEMS_PARAMS_TO_ADD}=${EMPTY}    ${nodeType}=Classical
+    log to console          Add ${list_name} to SCF
+    oldmultiscf.Load scf    ${scf_file_path}
+    ${dist_name_}           set variable        ${dist_name}
+    ${result}               oldmultiscf.is_list_in_object   dist_name=${dist_name_}
+    ...                                                     list_name=${list_name}
+    ...                                                     nodeType=${nodeType}
+    run keyword if          ${result}==True    oldmultiscf.remove_list_from_scf
+    ...                                             dist_name=${dist_name_}
+    ...                                             list_name=${list_name}
+    ...                                             nodeType=${nodeType}
+    oldmultiscf.add list to scf    dist_name=${dist_name_}   list_name=${list_name}   nodeType=${nodeType}
+    FOR    ${item}    IN    @{LIST_ITEMS_PARAMS_TO_ADD}
+                            oldmultiscf.Add Elements To List
+        ...                         dist_name=&{item}[dist_name]    list_name=&{item}[list_name]
+        ...                         elements=&{item}[elements]      nodeType=&{item}[nodeType]
+    END
+    oldmultiscf.Save scf    ${scf_file_path}    nodeType=${nodeType}
+    [Return]                ${scf_file_path}
+
+
+add Param to Modify Param list
+   [Arguments]      ${value}    ${dist_name}    ${p_name}    ${nodeType}    ${ListParamterToModify}
+   &{params}        Create Dictionary  dist_name=${dist_name}
+   ...                               p_name=${p_name}
+   ...                               value=${value}
+   ...                               nodeType=${nodeType}
+   Append To List   ${ListParamterToModify}    ${params}
+   # Dated log      ListParamterToModify=${ListParamterToModify}
+   [return]         ${ListParamterToModify}
+
+
+Modify ListParams to scf
+    [Documentation]         Modify List param. report error If not present
+    [Arguments]             ${parameters_lists}   ${scf_file_path}     ${scf_file_path_cu}=${EMPTY}
+    oldmultiscf.Load scf    ${scf_file_path}
+    run Keyword if      '${scf_file_path_cu}'!='${EMPTY}'   oldmultiscf.Load scf   ${scf_file_path_cu}
+    FOR    ${item}    IN    @{parameters_lists}
+        ${res}    oldmultiscf.is_element_in_object    dist_name=&{item}[dist_name]    p_name=&{item}[p_name]   nodeType=&{item}[nodeType]
+        Run Keyword If    '${res}'=='True'     oldmultiscf.modify_scf_element    value=&{item}[value]   &{item}
+        ...      ELSE                          oldmultiscf.add element to scf
+        ...          value=&{item}[value]   dist_name=&{item}[dist_name]    p_name=&{item}[p_name]    nodeType=&{item}[nodeType]
+    END
+    oldmultiscf.Save scf    ${scf_file_path}      nodeType=Vdu
+    run Keyword if          '${scf_file_path_cu}'!='${EMPTY}'   oldmultiscf.Save scf   ${scf_file_path_cu}     nodeType=Vcu
+
+
+Config Update AiC
+    [Documentation]         oldmultiscf is mandatory
+    [Arguments]             ${scf_file}     ${scf_file_CU}=${EMPTY}
+    File should exist       ${ScfFile}      DU SCF file ${ScfFile} not found
+    File should exist       ${scf_file_CU}  CU SCF file ${scf_file_CU} not found
+    oldmultiscf.load scf    ${scf_file}
+    run Keyword if      '${scf_file_CU}'!='${EMPTY}'       oldmultiscf.Load scf    ${scf_file_CU}
+    ${nrbts_version_scf}     oldmultiscf.get_mo_attribute     MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}     version   nodeType=Vdu
+    Dated Log           ----> Version of NRBTS is ${nrbts_version_scf}
+    ${dist_name}         Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    @{ListCellParamterToModify}=        create list
+    @{ListParamterToModify}=            create list
+    ${ListCellParamterToModify}=        add Param to Modify Param list
+    ...    value=true
+    ...    dist_name=${dist_name}
+    ...    p_name=actEirpControl
+    ...    nodeType=Vdu
+    ...    ListParamterToModify=${ListParamterToModify}
+    ${ListCellParamterToModify}=        add Param to Modify Param list
+    ...    value=30
+    ...    dist_name=${dist_name}
+    ...    p_name=externalAntennaGain
+    ...    nodeType=Vdu
+    ...    ListParamterToModify=${ListParamterToModify}
+    ${ListCellParamterToModify}=        add Param to Modify Param list
+    ...    value=1
+    ...    dist_name=${dist_name}
+    ...    p_name=eirpControlTimeAveragingWindow
+    ...    nodeType=Vdu
+    ...    ListParamterToModify=${ListParamterToModify}
+    ${ListCellParamterToModify}=        add Param to Modify Param list
+    ...    value=1
+    ...    dist_name=${dist_name}
+    ...    p_name=mcsIndexForArtificialLoad
+    ...    nodeType=Vdu
+    ...    ListParamterToModify=${ListParamterToModify}
+    ${ListCellParamterToModify}=        add Param to Modify Param list
+    ...    value=320
+    ...    dist_name=${dist_name}
+    ...    p_name=pMax
+    ...    nodeType=Vdu
+    ...    ListParamterToModify=${ListParamterToModify}
+    ${ListCellParamterToModify}=        add Param to Modify Param list
+    ...    value=6
+    ...    dist_name=${dist_name}
+    ...    p_name=ssPbchBlockPower
+    ...    nodeType=Vdu
+    ...    ListParamterToModify=${ListParamterToModify}
+    ${ListCellParamterToModify}=        add Param to Modify Param list
+    ...    value=30
+    ...    dist_name=${dist_name}
+    ...    p_name=antennaMechanicalDowntilt
+    ...    nodeType=Vdu
+    ...    ListParamterToModify=${ListParamterToModify}
+    ${ListCellParamterToModify}=        add Param to Modify Param list
+    ...    value=100
+    ...    dist_name=${dist_name}
+    ...    p_name=targetTotalLoad
+    ...    nodeType=Vdu
+    ...    ListParamterToModify=${ListParamterToModify}
+    ${dist_name}        Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/${NRCELL_GRP}
+    ${ListCellParamterToModify}=        add Param to Modify Param list
+    ...    value=20
+    ...    dist_name=${dist_name}
+    ...    p_name=ssBurstSetPeriod
+    ...    nodeType=Vdu
+    ...    ListParamterToModify=${ListParamterToModify}
+    ${dist_name}        Set Variable    MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/PMCADM-1
+    ${ListCellParamterToModify}=        add Param to Modify Param list
+    ...    value=5min
+    ...    dist_name=${dist_name}
+    ...    p_name=reportingIntervalPm
+    ...    nodeType=VcuVdu
+    ...    ListParamterToModify=${ListParamterToModify}
+    ${dist_name}        Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRPMRNL-1
+    ${ListCellParamterToModify}=        add Param to Modify Param list
+    ...    value=5min
+    ...    dist_name=${dist_name}
+    ...    p_name=miNrCellAvailability
+    ...    nodeType=VcuVdu
+    ...    ListParamterToModify=${ListParamterToModify}
+    ${ListCellParamterToModify}=    add Param to Modify Param list
+    ...    value=5min
+    ...    dist_name=${dist_name}
+    ...    p_name=miNrCellUtilization
+    ...    nodeType=Vdu
+    ...    ListParamterToModify=${ListParamterToModify}
+    Dated log                   =====> ListParamterToModify=${ListCellParamterToModify}
+    Modify ListParams to scf    ${ListCellParamterToModify}
+    ...                         scf_file_path=${ScfFile}
+    ...                         scf_file_path_cu=${scf_file_CU}
+    ${dist_name}            Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    &{elt}=                 Create Dictionary
+    ...                             minGuaranteedBudgetRatio=50
+    ...                             minGuaranteedBudgetRatioMode=actualEirpBudgetRatio
+    ...                             minSignificantNormalizedBeamGain=-13
+    ...                             numOfSegmentAzimuthEdges=0
+    ...                             numOfSegmentElevationEdges=0
+    ...                             schedulWeightFactorEnabled=false
+    ${param}=   Evaluate  {'dist_name': '${dist_name}','list_name': 'eirpControl','elements': &{elt},'nodeType': 'Vdu'}
+    @{params}=   Create List         ${param}
+    add list_name to SCF        scf_file_path=${scf_file}
+    ...                         dist_name=${dist_name}
+    ...                         list_name=eirpControl
+    ...                         LIST_ITEMS_PARAMS_TO_ADD=${params}
+    ...                         nodeType=Vdu
+    ${eirpControlPowerList}     Create List     0
+    ${list_name_}=              set variable    eirpControlPowerReductionFactorList
+    ${param}=   Evaluate  {'dist_name': '${dist_name}','list_name': '${list_name_}','elements': ${eirpControlPowerList},'nodeType': 'Vdu'}
+    @{params}=   Create List    ${param}
+    add Elt List to SCF         scf_file_path=${scf_file}
+    ...                          dist_name=${dist_name}
+    ...                         list_name=eirpControlPowerReductionFactorList
+    ...                         LIST_ITEMS_PARAMS_TO_ADD=${params}
+    ...                         nodeType=Vdu
+    Dated Log                    ----> Modifications completed
+    Dated log                   [vDU SCF : ${scf_file}]
+    Dated log                   [vCU SCF : ${scf_file_CU}].\n
+
+
+Config Update
+    [Arguments]                 ${scf_file}
+
+    OldScf.SCF StartSession     scf_file=${scf_file}
+    # ${nrbts_version_scf}      oldmultiscf.get_mo_attribute     MRBTS-1/NRBTS-1     version    nodeType=Classical
+    # Dated Log                  ----> Version of NRBTS is ${nrbts_version_scf}
+    ${dist_name}                Set Variable    MRBTS-1/NRBTS-1/NRCELL-1
+    # set the flag according to test line type
+    ${beam_flag}=               Get Beam Flag
+    OldScf.SCF Set element      dist_name=${dist_name}    element_name=actBeamforming   element_value=${beam_flag}
+    OldScf.SCF Set element      dist_name=${dist_name}    element_name=actEirpControl   element_value=true
+    OldScf.SCF Set element      dist_name=${dist_name}    element_name=eirpControlTimeAveragingWindow   element_value=1
+    OldScf.SCF Set element      dist_name=${dist_name}    element_name=mcsIndexForArtificialLoad   element_value=20
+    OldScf.SCF Set element      dist_name=${dist_name}    element_name=pMax   element_value=320
+    OldScf.SCF Set element      dist_name=${dist_name}    element_name=ssPbchBlockPower   element_value=6
+    OldScf.SCF Set element      dist_name=${dist_name}    element_name=antennaMechanicalDowntilt   element_value=30
+    OldScf.SCF Set element      dist_name=${dist_name}    element_name=targetTotalLoad   element_value=100
+    OldScf.SCF Set element      dist_name=${dist_name}    element_name=type0SearchSpaceConfigurationIndex   element_value=5
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=beamSet     element_name=basicBeamSet     element_value=beamSet_6
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=beamSet     element_name=leftEdgeAngle    element_value=60
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=beamSet     element_name=lowerEdgeAngle   element_value=120
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=beamSet     element_name=nrBtsBeamRefinementP2   element_value=false
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=beamSet     element_name=rightEdgeAngle   element_value=60
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=beamSet     element_name=tiltOffset       element_value=0
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=beamSet     element_name=upperEdgeAngle   element_value=60
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsBeamMgmt     element_name=csirsBmMgmtDensity   element_value=density3
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsBeamMgmt     element_name=csirsBmMgmtReIndex   element_value=0
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsBeamMgmt     element_name=csirsBmMgmtSubband
+    ...                                                                                     element_value=belowSSPBCHBlock
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsForTracking     element_name=firstRE   element_value=0
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsForTracking     element_name=numUeSupportedTrsOverall
+    ...                                                         element_value=128
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsForTracking     element_name=numUeSupportedTrsPerCarrier
+    ...                                                                                         element_value=32
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsForTracking     element_name=rbAllocation   element_value=BWP
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=csirsForTracking     element_name=startRB   element_value=0
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=minGuaranteedBudgetRatio   element_value=50
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=minGuaranteedBudgetRatioMode
+    ...                                                                                   element_value=actualEirpBudgetRatio
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=minSignificantNormalizedBeamGain
+    ...                                                                                   element_value=-13
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=numOfSegmentAzimuthEdges   element_value=3
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=numOfSegmentElevationEdges   element_value=5
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=schedulWeightFactorEnabled
+    ...                                                                                   element_value=false
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentAzimuthEdge0   element_value=-60
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentAzimuthEdge1   element_value=0
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentAzimuthEdge2   element_value=60
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentElevationEdge0   element_value=40
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentElevationEdge1   element_value=10
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentElevationEdge2   element_value=0
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentElevationEdge3   element_value=-10
+    OldScf.SCF Set element in List    dist_name=${dist_name}    list_name=eirpControl     element_name=segmentElevationEdge4   element_value=-40
+    OldScf.SCF Remove list            dist_name=${dist_name}    list_name=eirpControlPowerReductionFactorList
+    OldScf.SCF Add list               dist_name=${dist_name}    list_name=eirpControlPowerReductionFactorList
+    ${eirpControlPowerList}     Create List     0   0   0   0   0   -120   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
+    OldScf.SCF Add elements to list     dist_name=${dist_name}    list_name=eirpControlPowerReductionFactorList   elements=${eirpControlPowerList}
+    ${dist_name}                        Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/${NRCELL_GRP}
+    OldScf.SCF Set element              dist_name=${dist_name}    element_name=numberOfTransmittedSsBlocks   element_value=6 beams
+    OldScf.SCF Set element              dist_name=${dist_name}    element_name=ssBurstSetPeriod   element_value=20
+    OldScf.SCF Remove list              dist_name=${dist_name}    list_name=beamIndexListForArtificialLoad
+    OldScf.SCF Add list                 dist_name=${dist_name}    list_name=beamIndexListForArtificialLoad
+    ${beamIndexListForArtificialLoad}   Create List               1
+    OldScf.SCF Add elements to list     dist_name=${dist_name}    list_name=beamIndexListForArtificialLoad
+    ...                                                             elements=${beamIndexListForArtificialLoad}
+    ${dist_name}                        Set Variable    MRBTS-1/MNL-1/MNLENT-1/PMCADM-1
+    OldScf.SCF Set element              dist_name=${dist_name}    element_name=reportingIntervalPm   element_value=5min
+    ${dist_name}                        Set Variable    MRBTS-1/NRBTS-1/NRPMRNL-1
+    OldScf.SCF Set element              dist_name=${dist_name}    element_name=miNrCellAvailability   element_value=5min
+    OldScf.SCF Set element              dist_name=${dist_name}    element_name=miNrCellUtilization    element_value=5min
+    OldScf.SCF StopSession              scf_file=${scf_file}
+    Dated Log                            ----> Modifications completed.\n
+
+
+Get Testline Name
+    ${ret}                  ${testline_name}=   OperatingSystem.Run And Return Rc And Output    hostname|sed 's/-/_/g'
+    BuiltIn.Log             Testline Name: ${testline_name}      console=${True}
+    BuiltIn.Log             Testline init file is /home/ute/testline_configuration/${testline_name}/    console=${True}
+    Set Suite Metadata      Testline Name       ${testline_name}
+    Set global variable     ${testline_name}
+    [return]                ${testline_name}
+
+
+Set online btsName for AiC and Classical
+    [Arguments]                 ${btsType}=Classical
+    Dated log New Line          NRCELL_DIST_NAME=${NRCELL_DIST_NAME}
+    Get Testline Name
+    ${btsNameClassical}=        Catenate    Classical NPS - 2300 - ${testline_name}
+    &{modify_param_Classical}   Create Dictionary
+    ...                             parameter=btsName
+    ...                             dist_name=MRBTS-${MRBTS_ID}
+    ...                             value=${btsNameClassical}
+    ...                             nodeType=Classical
+    ${btsNameCU}=               Catenate    CU NPS - 2300 - ${testline_name}
+    &{modify_param_CU}          Create Dictionary
+    ...                             parameter=btsName
+    ...                             dist_name=MRBTS-${MRBTS_ID}
+    ...                             value=${btsNameCU}
+    ...                             nodeType=vCU
+    ${btsNameDU}=               Catenate    DU NPS - 2300 - ${testline_name}
+    &{modify_param_DU}          Create Dictionary
+    ...                         parameter=btsName
+    ...                         dist_name=MRBTS-${MRBTS_ID}
+    ...                         value=${btsNameDU}
+    ...                         nodeType=vDU
+    @{modify_params}            Create List
+    run Keyword if              '${btsType}' == 'Classical'
+    ...                             Append to list   ${modify_params}    ${modify_param_Classical}
+    ...  ELSE                       run Keywords    Append to list   ${modify_params}    ${modify_param_CU}
+    ...                                         AND
+    ...                                             Append to list   ${modify_params}    ${modify_param_DU}
+    BuiltIn.Log                 \n${btsType} Parameters to modify:\n @{modify_params}   console=yes
+    OAM Set Params AIC          modify_param=@{modify_params}
+
+
+Cell Setup
+    ${LOG_CPIF}                 Get Log                                 name=CPIF
+    ${alias}                    SSH Connect                             ${LOG_CPIF.node.host}
+    ${output}                   SSH Cmd
+    ...                         cat ${LOG_CPIF.path} | grep "X2 link is connected"
+    ...                         alias=${alias}
+    Should Contain              ${output}                               X2 link is connected
+
+
+Call Setup and Traffic
+    SgNB Addition to ENB        ueSetting=${UE_SIMPLE}
+    UE Attach Check
+    Traffic UE DL               throughput=5
+    ...                         duration=30s
+    ...                         shouldBeStop=False
+    ...                         deviation=5
+
+
+Collect Counters TC B
+    Run keyword unless          ${Collect_TCB_DONE}    Traced Sleep    13 minutes     msg=counters to be generated
+    Run keyword unless          ${Collect_TCB_DONE}    5GC002300_Keywords.Collect PM Counters File
+    set suite variable          ${Collect_TCB_DONE}    ${True}
+
+
+Collect Counters TC D
+    Run keyword unless          ${Collect_TCD_DONE}    Traced Sleep    13 minutes     msg=counters to be generated
+    Run keyword unless          ${Collect_TCD_DONE}    5GC002300_Keywords.Collect PM Counters File
+    set suite variable          ${Collect_TCD_DONE}    ${True}
+
+
+Collect Counters TC A E G
+    Run keyword unless          ${Collect_TCAEG_DONE}   Traced Sleep    13 minutes     msg=counters to be generated
+    Run keyword unless          ${Collect_TCAEG_DONE}   5GC002300_Keywords.Collect PM Counters File
+    set suite variable          ${Collect_TCAEG_DONE}   ${True}
+
+
+Test suite teardown
+#    coam.teardown    connection=coam_admin
+    ece_fastReg.disconnect_all_connections
+    #common_frt.Kill Previous services on LTEEMU
+    common_frt.Connect to LTEEMU    alias=lteemu
+    ${output}    common_frt.Ssh Execute With Timeout    sudo pkill -9 edaemon;sudo pkill -9 egate;sudo pkill -9 sim_enb    connection=lteemu
+    ${output}    common_frt.Ssh Execute With Timeout    cd ${tl.core.dir_path}; rm -f *log*    connection=lteemu
+    #OperatingSystem.Remove Directory     ${TMP_PATH}/Sherpa_logs    recursive=True
+
+
+Change in commissioning
+    [Documentation]                 Generic test for 5GC002300 tests
+    [Arguments]                     ${param}
+    GenericTest.Init Sequence       ${param}
+    Set MRBTSID and NRBTSID
+    Set Context_Element Manager     ${param}
+
+
+Change in commissioning act Eirp
+    [Documentation]                 Generic test for 5GC002300 tests
+    [Arguments]                     ${param}
+    GenericTest.Init Sequence       ${param}
+    Set Context_Element Manager eirpControl     ${param}
+
+
+Change in commissioning minGuaranteedBudgetRatio
+    [Documentation]                 Generic test for 5GC002300 tests
+    [Arguments]                     ${param}
+    GenericTest.Init Sequence       ${param}
+    Set MRBTSID and NRBTSID
+    Set Context_Element Manager minGuaranteedBudgetRatio     ${param}
+
+
+Change Cell Grid
+    [Documentation]                 Generic test for 5GC002300 tests
+    [Arguments]                     ${param}
+    GenericTest.Init Sequence       ${param}
+    Set MRBTSID and NRBTSID
+    Set Cell Grid                   ${param}
+
+
+Set MRBTSID and NRBTSID
+    coam.connect to     bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+    &{bts_info}         coam.Get Bts Info       connection=coam_admin
+    ${mrbtsID} =        Get From Dictionary     ${bts_info}     mrbtsID
+    Run                 echo ${bts_info} >/tmp/bts_info.txt
+    ${nrbtsID}          Run    grep -oE "NRBTS-[0-9]+" /tmp/bts_info.txt | awk -F '-' '{print $2}' | awk 'NR==1'
+    ${dist_name} =      Set Variable    MRBTS-${mrbtsID}/NRBTS-${nrbtsID}/NRCELL-1
+    ${ch_dist_name} =   Set Variable    MRBTS-${mrbtsID}/NRBTS-${nrbtsID}/NRCELL-1/NRCELL_FDD-1
+    Set Suite Variable  ${dist_name}
+    Dated log           ${dist_name}
+    Set Suite Variable  ${ch_dist_name}
+
+
+Set Cell Grid
+    [Documentation]     Set Parameters of Cell grid to be changed
+    [Arguments]         ${param}
+    &{parametersCell}   Create Dictionary   segmentAzimuthEdge0=${param.segmentAzimuthEdge0}
+    ...                                     segmentAzimuthEdge1=${param.segmentAzimuthEdge1}
+    ...                                     segmentAzimuthEdge2=${param.segmentAzimuthEdge2}
+    ...                                     numOfSegmentAzimuthEdges=${param.numOfSegmentAzimuthEdges}
+    &{eirpcontrolstructure1}    Evaluate    {'dist_name': '${dist_name2}','parameter': 'eirpControl','value':[&{parametersCell}]}
+    &{parametersListPRB}    Create Dictionary
+    ...                                 dist_name=${dist_name2}
+    ...                                 parameter=eirpControlPowerReductionFactorList
+    ...                                 value=${param.eirpControlPowerReductionFactorList}
+    @{param_list}       Create List     ${eirpcontrolstructure1}   ${parametersListPRB}   #${parametersListPRB}
+    Dated log           Parameters to modify:\n ${param_list}
+    OAM Set Params      ${param_list}
+
+
+Set Context_Element Manager
+    [Arguments]         ${param}
+    #&{modify_param1}    Create Dictionary
+    #...    parameter=actEirpControl
+    #...    dist_name=${dist_name2}
+    #...    value=${param.actEirpControl}
+    &{modify_param2_pre}    Create Dictionary
+    ...    minSignificantNormalizedBeamGain=${param.minSignificantNormalizedBeamGain}
+    ...    segmentAzimuthEdge0=${param.segmentAzimuthEdge0}
+    &{modify_param2}    Evaluate    {'dist_name': '${dist_name2}','parameter': 'eirpControl','value':[&{modify_param2_pre}]}
+    &{modify_param3}    Create Dictionary
+    ...    parameter=eirpControlPowerReductionFactorList
+    ...    dist_name=${dist_name2}
+    ...    value=${param.eirpControlPowerReductionFactorList}
+    @{modify_param}     Create List     #${modify_param1}
+    ...                                 ${modify_param2}   ${modify_param3}
+    Dated log           Parameters to modify:\n ${modify_param}
+    OAM Set Params      ${modify_param}
+
+
+Set Context_Element Manager eirpControl
+    [Arguments]         ${param}
+    &{modify_param1}    Create Dictionary
+    ...    parameter=actEirpControl
+    ...    dist_name=${dist_name2}
+    ...    value=${param.actEirpControl}
+    @{modify_param}     Create List    ${modify_param1}
+    Dated log           Parameters to modify:\n ${modify_param}
+    OAM Set Params      ${modify_param}
+
+
+Set Context_Element Manager TimeAveragingWindow
+    [Arguments]             ${param}
+    &{modify_param_pre}     Create Dictionary
+    ...    eirpControlTimeAveragingWindow=${param.eirpControlTimeAveragingWindow}
+    &{modify_param1}        Evaluate    {'dist_name': '${dist_name2}','parameter': 'eirpControl','value':[&{modify_param_pre}]}
+    @{modify_param}         Create List    ${modify_param1}
+    Dated log               Parameters to modify:\n ${modify_param}
+    OAM Set Params          ${modify_param}
+
+
+Set Context_Element Manager minGuaranteedBudgetRatio
+    [Arguments]             ${param}
+    &{modify_param_pre}    Create Dictionary
+    ...    minGuaranteedBudgetRatio=${param.minGuaranteedBudgetRatio}
+    &{modify_param1}    Evaluate    {'dist_name': '${dist_name}','parameter': 'eirpControl','value':[&{modify_param_pre}]}
+    @{modify_param}     Create List    ${modify_param1}
+    Dated log           Parameters to modify:\n ${modify_param}
+    OAM Set Params      ${modify_param}
+
+
+Check Cell on Air
+    coam.connect to     bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+    &{bts_info}         coam.Get Bts Statuses    connection=coam_admin
+    Should Be Equal     ${bts_info['proceduralState']}    onAir    ignore_case=true
+
+
+logout OAM
+    [Arguments]         ${alias}=${GNB_DU.oam}
+    ${status}           ${message}      run keyword and ignore error    OAM Disconnect      ${alias}
+    run Keyword if      '${status}' == 'FAIL'   Log to console    Keyword logout OAM ${alias} failed
+
+
+Get VDU Cell Number
+    [Arguments]         ${vdu_index}=0    ${gnb_index}=0
+    # NRCELL_DN_LIST_DU is a global variable provided by AF
+    ${status}           ${message}=     Run Keyword And Ignore Error    Variable Should Exist    ${NRCELL_DN_LIST_DU}
+    @{defaultList}=     Create List     MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    Run Keyword If      "${status}"=="FAIL"     Set Global Variable     ${NRCELL_DN_LIST_DU}   ${defaultList}
+    ${cell_number}      Set Variable            ${NRCELL_DN_LIST_DU.__len__()}
+    [Return]            ${cell_number}
+
+
+vDU Check All Cells Status Should Be Onair
+    [Arguments]         ${vdu_index}=0    ${gnb_index}=0
+    [Documentation]     vDU Verify Cells Status Should Be Onair With Expected Cell Number
+    ...    | Input Parameters | Man. | Description |
+    ...    | vdu_index | No. | specify which vdu needs to be check if the testline configed multi vdus |
+    ...    | gnb_index | No. | specify which vdu needs to be check if the testline configed multi vdus |
+    ...
+    ...    | Return Value | Description |
+    ...    | None | NA |
+    ...
+    ...    Example
+    ...    | vDU Verify Cells Status Should Be Onair With Expected Cell Number |
+    ...
+    ${cell_number}      Get VDU Cell Number     gnb_index=${gnb_index}
+    ${aliasGNB}         OAM Connect             ${GNB_DU.oam}
+    ${vdu_cells_summary}=    vdu.get_vdu_cells_summary    vdu_connection=${aliasGNB}
+    Dated log           vdu_cells_summary=${vdu_cells_summary}
+    ${msg}=             set variable   Check All Cells Status Should Be Onair Failed
+    ${msg_err}=         Catenate    ${msg} => vDU_disabled_cell_amount=${vdu_cells_summary['basic_cells_summary']['operational_state']['disabled']}
+    Should Be Equal As Numbers      ${vdu_cells_summary['basic_cells_summary']['operational_state']['disabled']}  0  msg=${msg_err}  values=False
+    ${msg_err}=         Catenate    ${msg} => vDU_locked_cell_amount=${vdu_cells_summary['basic_cells_summary']['administrative_state']['locked']}
+    Should Be Equal As Numbers      ${vdu_cells_summary['basic_cells_summary']['administrative_state']['locked']}  0  msg=${msg_err}  values=False
+    ${msg_err}=         Catenate    SEPARATOR=   ${msg} => vDU_shutting_down_cell_amount=
+    ...                             ${vdu_cells_summary['basic_cells_summary']['administrative_state']['shutting_down']}
+    Should Be Equal As Numbers  ${vdu_cells_summary['basic_cells_summary']['administrative_state']['shutting_down']}  0  msg=${msg_err}  values=False
+    ${msg_err}=         Catenate    ${msg} => vDU_on_line_cell_amount=${vdu_cells_summary['availability_status']['on_line']}
+    ${on_line}          set variable    ${vdu_cells_summary['availability_status']['on_line']}
+    should be true      ${on_line}==${cell_number}   ${msg_err}
+    [Teardown]          logout OAM      alias=${GNB_DU.oam}
+
+
+Check ASP L2PS
+    [Arguments]             ${Pattern}
+    KWTest_FRT_Cloud_l1ByPass.Connect to DU
+    KWTest_FRT_Cloud_l1ByPass.Connect to gNB ABIL MASTER
+    ${output}               csn.execute     ls -lrt /tmp | grep ASP-123A_startup.zip    connection=gNB_ABIL_MASTER
+    ${len}                  Get Length      ${output}
+    Run Keyword If          ${len} != 0     csn.execute
+    ...                                     unzip -o -d /tmp /tmp/ASP-123A_startup.zip  connection=gNB_ABIL_MASTER
+    ${output}               common_frt.Ssh Execute With Timeout
+    ...                         grep "${Pattern}" /tmp/ASP-123A_startup.log    connection=gNB_ABIL_MASTER
+    Should Not Be Empty     ${output}
+
+
+Check ASP L2PS for 1329
+    ${LogL2RT}              Container.Get Log                       name=L2RT
+    #RDH - Aug-2022 : Code put in comment until issue is fixed
+    #    ${alias}                SSH Connect                             ${LogL2RT.node.host}
+    #    ${ZipLog}               Set variable                            ${LogL2RT.path.replace('.log','.zip')}
+    #RDH - Aug-2022 : Workaround to be removed as soon as issue is fixed
+    ${alias}                SSH Connect                             ${GNB_DU.bb[0].M}
+    Dated log               Hardcoded alias is : ${alias}
+    ${ZipLog}               Set variable                            /tmp/node_L2RT20/tmp/ASP-2730_startup.zip
+    ${StdLog}               Set variable                            /tmp/node_L2RT20/tmp/ASP-2730_startup.log
+    Dated log               Hardcoded Stdlog is : ${StdLog}
+    Dated log               Hardcoded Ziplog is : ${ZipLog}
+    #RDH - Aug-2022 : End of Workaround
+
+    Dated log               Check ASP:ZIPLOG=${ZipLog}
+    ${output}               SSH Cmd
+    ...                     ls -lrt ${ZipLog}                       alias=${alias}
+    ${len}                  Get Length                              ${output}
+    Run Keyword If          ${len} != 0
+    ...                     SSH Cmd
+    ...                     unzip -o -d $(dirname ${ZipLog}) ${ZipLog}      alias=${alias}
+    #YW - FB2217 : traces in 22R4 branch 
+    ${output_1}             SSH Cmd
+    #...                     grep "transmittedPowerMaxBeam:[1-2]00" ${StdLog}
+	...                     grep "transmittedPowerMaxBeam:" ${StdLog}
+    ...                     alias=${alias}
+    ${len_1}                Get Length                              ${output_1}
+    Dated Log       output_1 : ${output_1}
+    #YW - FB2217 : traces in trunk
+    ${output_2}             SSH Cmd
+    #...                     grep "maxTxPowerPerCCmW:[1-2]00" ${StdLog}
+	...                     grep "maxTxPowerPerCCmW:" ${StdLog}
+    ...                     alias=${alias}
+    ${len_2}                Get Length                              ${output_2}
+    Dated Log       output_2 : ${output_2}
+    Should Be True          (${len_1} != 0) or (${len_2} != 0)       
+    # Should Not Be Empty     ${output}
+
+
+#Captures and Pcap processing
+Modify_Commissioning_minSignificantNormalizedBeamGain_13dB_16dB
+    @{eirpControlPowerReductionFactorList}     Create List     0  0  0  0  0  0  -120  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+    &{eirpControlPowerReductionFactorDictionary}    Create Dictionary    eirpControlPowerReductionFactorList=${eirpControlPowerReductionFactorList}
+    Set To Dictionary           ${B_3}    &{eirpControlPowerReductionFactorDictionary}
+    Change in commissioning     ${B_3}
+
+
+Start Capture CPRT
+    ${CaptureCPRT}                  Capture CPRT Set Upon Config            airscale=${GNB_DU}
+    Capture Init                    ${CaptureCPRT}
+    Capture Start                   ${CaptureCPRT}
+    Set Suite Variable              ${CaptureCPRT}
+
+
+Stop Capture CPRT
+    Capture Stop                    ${CaptureCPRT}
+
+
+Check_actEIRP_Flags_In_L2_PS_Cell_Reconf_Req
+    [Documentation]                 Check in a pcap file that in itf_l2_ps_cell_cellreconfigurationreq the Eirp Elements are
+    ...                             upgraded
+    [Arguments]                     ${pcapFile}
+    Dated Log new line              Convert pcap to pdml
+    ${pdmlFile}=                    analyzer.pcap_to_pdml       ${pcapFile}
+    ${actEirpControl}               set variable                itf_l2_ps_cell_CellReconfigurationReq.actEirpControl.actEirpControl-Items
+    ${prefix}                       set variable                powerReductionFactor
+    ${powerReduction}               set variable                itf_l2_ps_cell_CellReconfigurationReq.values.values-Items
+    #Check that actEirpControl is 0x00 (Eirp deactivated)
+    Dated Log                       Search in l2_ps_cell_CellReconfigurationReq: ${actEirpControl} MATCH 01
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_CellReconfigurationReq
+    ...                             path=${actEirpControl}$
+    ...                             value=00
+    ...                             kind=value
+    ...                             test=MATCH
+
+
+Check_PRF_Flags_In_L2_PS_Cell_Reconf_Req
+    [Documentation]                 Check in a pcap file that in itf_l2_ps_cell_cellreconfigurationreq the Eirp Elements are
+    ...                             upgraded
+    [Arguments]                     ${pcapFile}
+    Dated Log new line              Convert pcap to pdml
+    ${pdmlFile}=                    analyzer.pcap_to_pdml               ${pcapFile}
+    ${powerReductionFactor}         set variable                        itf_l2_ps_cell_CellReconfigurationReq.powerReductionFactor-Length
+    #Check that PRF is present
+    Dated Log                       Search in l2_ps_cell_CellreconfReq : ${powerReductionFactor} MATCH ^powerReductionFactor*
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_cellreconfigurationreq
+    ...                             path=${powerReductionFactor}
+    ...                             value=^powerReductionFactor*
+    ...                             kind=showname
+    ...                             test=MATCH
+
+
+Check_TimeAveragingWindow_Flags_In_L2_PS_CellSetup_Req
+    [Documentation]                 Check in a pcap file that in itf_l2_ps_cell_setup_req the Eirp Elements are
+    ...                             upgraded
+    [Arguments]                     ${pcapFile}
+    Dated Log new line              Convert pcap to pdml
+    ${pdmlFile}=                    analyzer.pcap_to_pdml   ${pcapFile}
+    ${timeAveragingWindow}          set variable            itf_l2_ps_cell_CellSetupReq.timeAveragingWindowDimensioning.timeAveragingWindow
+    #Check that PRF is present
+    Dated Log                       Search in l2_ps_cell_CellSetupReq : ${timeAveragingWindow} MATCH ^timeAveragingWindow*
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_CellSetupReq
+    ...                             path=${timeAveragingWindow}
+    ...                             value=^timeAveragingWindow*
+    ...                             kind=showname
+    ...                             test=MATCH
+
+
+Check_minGuaranteedBudgetRatio_Cell_Reconf_Req
+    [Documentation]                 Check in a pcap file that in itf_l2_ps_cell_cellreconfigurationreq the Eirp Elements are
+    ...                             upgraded
+    [Arguments]                     ${pcapFile}    ${minGuaranteedBudget}
+    Dated Log new line              Convert pcap to pdml
+    ${pdmlFile}=                    analyzer.pcap_to_pdml          ${pcapFile}
+    ${minGuaranteedBudgetRatio}     set variable        itf_l2_ps_cell_CellReconfigurationReq.minGuaranteedBudgetRatio.minGuaranteedBudgetRatio-Items
+    #Check that PRF is present
+    Dated Log                       Search in l2_ps_cell_cellreconfigurationreq  : ${minGuaranteedBudgetRatio} MATCH ^minGuaranteedBudgetRatio*
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_CellReconfigurationReq
+    ...                             path=${minGuaranteedBudgetRatio}
+    ...                             value=${minGuaranteedBudget}
+    ...                             kind=value
+    ...                             test=MATCH
+
+
+#Counters Keywords
+Collect PM Counters File
+    Dated log                       The PM counters file collected from gnb will be stored under : ${pm_files_path}
+    ${latest_pm_file_name}          Counters.Collect PM files from BTS  ${pm_files_path}
+    set Suite Variable              ${LATEST_FILE}       ${latest_pm_file_name}
+    Dated log                       Latest pm counters file : ${LATEST_FILE}
+
+
+5GC002300_PMCounterCheck_Expected_Value
+    [Arguments]         ${Counter_Id}           ${Expected_Value}
+    &{expected_dict}    Create Dictionary       counter=${Counter_Id}   obj=NRCELL    objId=${NRCELL_ID}
+    # ClassicalBTS case:
+    ${Counter_Value}=   Run Keyword If          not ${isAiC}    Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                                         ${LATEST_FILE}      ${Counter_Id}    ${NRCELL_ID}
+    Run Keyword If      not ${isAiC}            Run Keywords
+    ...                                         BuiltIn.Log     The last value of PM counter ${Counter_Id} is : ${Counter_Value}
+    ...                                         AND
+    ...                                         should be equal as integers     ${Expected_Value}    ${Counter_Value}
+    # VRAN2.0 case:
+    ${mycomparison}=    Set Variable            '=='
+    Run Keyword If      ${isAic}                Traced Sleep    duration=5min
+    ...                                                         msg=VRAN as it needs sometime more time
+    ${foundOrNot}       Run Keyword If          ${isAic}
+    ...                 Counters.Check At Least One Value Is In Criteria From Pm Files For Object With ID on vDU
+    ...                 ${Expected_Value}       ${mycomparison}         &{expected_dict}
+    Run Keyword If      ${isAiC}                should be true          ${foundOrNot}
+
+
+5GC002300_PMCounterCheck_greater_than_Expected_Value
+    [Arguments]         ${Counter_Id}    ${Expected_Value}
+    BuiltIn.Log         Eirp Control Segment Check in latest pm file: ${LATEST_FILE} the value of ${Counter_Id}
+    ${Counter_Value}=   Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                 ${LATEST_FILE}      ${Counter_Id}    ${NRCELL_ID}
+    BuiltIn.Log         The last value of PM counter : ${Counter_Id} is : ${Counter_Value}
+    should be true      ${Counter_Value} > ${Expected_Value}
+
+
+5GC002300_PMCounterCheck_greater_than_and_equal_to
+    [Arguments]         ${Counter_Id_1}    ${Counter_Id_2}
+    BuiltIn.Log         Eirp Control Segment Check in latest pm file: ${LATEST_FILE} the value of ${Counter_Id_1}
+    ${PM_Counter_1_Value}=    Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                       ${LATEST_FILE}      ${Counter_Id_1}    ${NRCELL_ID}
+    BuiltIn.Log         The last value of PM counter : ${Counter_Id_1} is : ${PM_Counter_1_Value}
+    ${PM_Counter_2_Value}=    Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                       ${LATEST_FILE}       ${Counter_Id_2}    ${NRCELL_ID}
+    BuiltIn.Log         The last value of PM counter : ${Counter_Id_2} is : ${PM_Counter_2_Value}
+    should be true      ${PM_Counter_1_Value} >= ${PM_Counter_2_Value}
+
+
+5GC002300_PMCounterCheck_Compare_Counters
+    [Arguments]         ${Counter_Id_1}    ${Counter_Id_2}
+    BuiltIn.Log         Eirp Control Segment Check in latest pm file: ${LATEST_FILE} the value of ${Counter_Id_1}
+    ${PM_Counter_1_Value}=    Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                       ${LATEST_FILE}      ${Counter_Id_1}    ${NRCELL_ID}
+    BuiltIn.Log         The last value of PM counter : ${Counter_Id_1} is : ${PM_Counter_1_Value}
+    ${PM_Counter_2_Value}=      Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                         ${LATEST_FILE}      ${Counter_Id_2}     ${NRCELL_ID}
+    BuiltIn.Log         The last value of PM counter : ${Counter_Id_2} is : ${PM_Counter_2_Value}
+    run keyword if      '${Counter_Id_2}'=='M55324C00705'
+    ...                     should be true      ${PM_Counter_1_Value} >= ${PM_Counter_2_Value}/3000
+    ...     ELSE IF     '${Counter_Id_2}'=='M55324C00802'
+    ...                     should be true      ${PM_Counter_1_Value} >= ${PM_Counter_2_Value}/3000
+    ...     ELSE        should be true          ${PM_Counter_1_Value} == ${PM_Counter_2_Value}
+
+
+5GC002300_PMCounterCheck_Compare_Counters_Average
+    [Arguments]     ${Counter_Id_1}    ${Counter_Id_2}  ${Counter_Id_3}
+    BuiltIn.Log     Eirp Control Segment Check in latest pm file: ${LATEST_FILE} the value of ${Counter_Id_1}
+    ${PM_Counter_1_Value}=    Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                       ${LATEST_FILE}      ${Counter_Id_1}    ${NRCELL_ID}
+    BuiltIn.Log     The last value of PM counter : ${Counter_Id_1} is : ${PM_Counter_1_Value}
+    ${PM_Counter_2_Value}=    Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                       ${LATEST_FILE}       ${Counter_Id_2}    ${NRCELL_ID}
+    BuiltIn.Log     The last value of PM counter : ${Counter_Id_2} is : ${PM_Counter_2_Value}
+    ${PM_Counter_3_Value}=    Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                       ${LATEST_FILE}       ${Counter_Id_3}    ${NRCELL_ID}
+    BuiltIn.Log     The last value of PM counter : ${Counter_Id_3} is : ${PM_Counter_3_Value}
+    ${ave_1}=       Evaluate  ${PM_Counter_1_Value}/${PM_Counter_3_Value}
+    ${ave_2}=       Evaluate  ${PM_Counter_2_Value}/${PM_Counter_3_Value}
+    ${diff}=        Evaluate  ${ave_1} - ${ave_2}
+    BuiltIn.log     The diff between the two averraged values : ${diff}
+    should be true  -2 <= ${diff}/1000 <= 2
+
+
+5GC002300_PMCounterCheck_Compare_Counters_Max_Average
+    [Arguments]     ${Counter_Id_1}    ${Counter_Id_2}  ${Counter_Id_3}
+    BuiltIn.Log     Eirp Control Segment Check in latest pm file: ${LATEST_FILE} the value of ${Counter_Id_1}
+    ${PM_Counter_1_Value}=    Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+	...                       ${LATEST_FILE}      ${Counter_Id_1}    ${NRCELL_ID}
+    BuiltIn.Log     The last value of PM counter

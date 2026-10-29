@@ -1,0 +1,330 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]
+...                  == CB011028-D Test suite ==
+...                  - The aim is to check IWK between PRB pooling and RIM Framework-0 configured on all cells.
+...                  - RIM configuration is the same on all cells.
+...                  - The test verify behavior of BWP configurations with PRB Pooling scenarios when RACH is not present in the
+...                    Power saving BWP.
+...                  - UEs supporting PS-BWP are configured with PS-BWP without RACH config.
+...                  == Prerequisite ==
+...                  - gNB configured with 4 Cells & RU detected. Physical cells id are 50, 51, etc.
+...                  == Scope ==
+...                  - call setup - nGBR traffic several Ues
+...                  == Info ==
+...                  - Test Case Scenario author   : christophe.samson@nokia.com
+...                  - Creation Date               : 09-12-2023
+...                  - Modified Date               : 09-12-2023
+...                  - Last Modified by            : christophe.samson@nokia.com
+...                  - Version   Date          Author                                   Notes
+...                  - 0.1       09-12-2023    christophe.samson@nokia.com              Creation
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Libraries
+Library      taf.transport.ssh                                   WITH NAME          ssh
+Library      taf.sbts.oam.coam.admin.interface
+Library      taf.sbts.oam.coam.admin                             WITH NAME          coam
+Library      taf.collectors.tcpdump                              WITH NAME          tcpdump
+Library      taf.collectors.core                                 WITH NAME          core
+Library      ute_wtssim
+Library      taf.config.wts                                      WITH NAME          wts
+
+# Libraries SWENG
+Library         ../../../resources/SWENG/python/StringTool.py
+
+# Libraries CB011028
+Library      resources/python/Constants-CB011028-D.py            WITH NAME          MyConstants
+
+# Resources CB011028
+Resource     ./resources/robot/CB011028-Common-Keywords.robot
+Resource     ./resources/robot/CB011028-D-Keywords.robot
+Resource     ./resources/robot/CB011028-D-Test-Template-Keywords.robot
+
+Variables    ./resources/python/Constants-CB011028-D.py
+
+# Suites and Tests setup and teardown
+Suite Setup       Suite Setup CB011028-D-Common
+...                    test_dictParam=${dictParam}
+# ...                    yamlPathname=${CURDIR}/../../../../../custom-config/${feature path}${custom_config_file}
+...               yamlPathname=${CURDIR}/../../../../../custom-config/${feature path ASOE}${custom_config_file_ASOE}
+Suite Teardown    Suite Teardown CB011028-D-Common
+Test Setup        Test Setup for CB011028-Common
+Test Teardown     Test Teardown for CB011028-Common
+
+*** Variables ***
+
+# for ABIP
+${feature path}                          POOLING/CB009890/CLOUD_5G_I_MP_AP_LOOO_SANSA_FS_ECPRI_CMWV_TDD_3Cells/
+${custom_config_file}                    config_ABIP_DL_CL_MIMO_4x4_3Cells_AP_3ABIO_FeatA_MIMO_DL.yaml
+
+# for ASOE
+${feature path ASOE}                     POOLING/CB011028/CLOUD_5G_O_E_AP_LO_SANSA_FS_ECPRI_CMWV_TDD_4Cells/
+# ${custom_config_file_ASOE}               config_ASOE_DL_CL_MIMO_8x8_4Cells_BeamSet_6_AP_2ABIO.yaml
+${custom_config_file_ASOE}               config_ASOE_DL_CL_MIMO_8x8_4Cells_BeamSet_6_AP_2ABIO_woBSR.yaml
+
+${relative_json_path}                                               ${CURDIR}/CB011028_D_data_tests.json
+
+${TestSharkTool}                                                    MC_SHARK
+
+&{dictParam}                                                        w_Basic_Call_to_Setup_Wtsemu=${True}
+...                                                                 w_enable_sherpa_Traces=True
+...                                                                 w_check_9890_using_sherpa=False
+...                                                                 w_GetTtiTrace=True
+...                                                                 w_convert_TtiPcap_to_excelCsv=False
+...                                                                 w_GetL1L2Bip=False
+...                                                                 w_generic_capture=True
+...                                                                 w_CaptureCORE=${False}
+...                                                                 w_CaptureL1L2=${False}
+...                                                                 w_CaptureCPRT=${True}
+...                                                                 w_ue_detach=False
+...                                                                 w_GetBtsLog=True
+...                                                                 w_DISPLAY_ue_stats_nr_15min=False
+
+# capture Time setting
+&{CAPTURE}                                                          GetTtiTraceTime=1s
+...                                                                 Getl1l2TraceTime=1s
+...                                                                 GetSherpaTraceTime=1s
+...                                                                 GetTtiTraceNumOfEvent=5000
+
+&{dictExpectedValues}                                               expected_avg_total_prbs_spool1=546
+...                                                                 expected_avg_total_prbs_spool2=78
+...                                                                 expected_avg_total_prbsstream_spool1=2100
+...                                                                 expected_avg_total_prbsstream_spool2=300
+
+# tests settings
+&{C_Cell}                                                           dir=DL
+...                                                                 totalNbOfUe=6                 # total number of ue's to configure
+...                                                                 totalNbOfCell=3               # total number of cell used for ue's dispatching
+...                                                                 targetGnb=2                   # gnb target id
+...                                                                 captureDuration=0             # capture duration during traffic starting phase
+...                                                                 duration=3                    # traffic duration during declaration phase
+...                                                                 deviation=10                  # allowed deviation for throughput
+
+# ue's settings
+&{dict_settings_ue_1}                                               originalCell=1                # original cell for call establishment
+...                                                                 DL_throughput=150             # throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 DL_throughput_GBR=10          # throughput GBR is not supported
+...                                                                 UL_throughput=0               # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 protocol=udp
+...                                                                 packet_size=1350
+...                                                                 cqi=15
+...                                                                 ri=3
+
+&{dict_settings_ue_2}                                               originalCell=2
+...                                                                 DL_throughput=100
+...                                                                 DL_throughput_GBR=10
+...                                                                 UL_throughput=0               # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 protocol=udp
+...                                                                 packet_size=1350
+...                                                                 cqi=15
+...                                                                 ri=3
+
+&{dict_settings_ue_3}                                               originalCell=3
+...                                                                 DL_throughput=100
+...                                                                 DL_throughput_GBR=10
+...                                                                 UL_throughput=0               # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 protocol=udp
+...                                                                 packet_size=1350
+...                                                                 cqi=15
+...                                                                 ri=3
+
+&{dict_settings_ue_4}                                               originalCell=1                # original cell for call establishment
+...                                                                 DL_throughput=150             # throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 DL_throughput_GBR=10          # throughput GBR is not supported
+...                                                                 UL_throughput=0               # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 protocol=udp
+...                                                                 packet_size=1350
+...                                                                 cqi=15
+...                                                                 ri=3
+
+&{dict_settings_ue_5}                                               originalCell=2
+...                                                                 DL_throughput=100
+...                                                                 DL_throughput_GBR=10
+...                                                                 UL_throughput=0               # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 protocol=udp
+...                                                                 packet_size=1350
+...                                                                 cqi=15
+...                                                                 ri=3
+
+&{dict_settings_ue_6}                                               originalCell=3
+...                                                                 DL_throughput=100
+...                                                                 DL_throughput_GBR=10
+...                                                                 UL_throughput=0               # UL throughput nonGBR for ue or ${NO_THROUGHPUT}
+...                                                                 protocol=udp
+...                                                                 packet_size=1350
+...                                                                 cqi=15
+...                                                                 ri=3
+
+&{dict_settings_ue_default}                                         originalCell=1
+...                                                                 DL_throughput=900
+...                                                                 DL_throughput_GBR=0           # throughput GBR is not supported
+...                                                                 UL_throughput=0
+...                                                                 protocol=udp
+...                                                                 packet_size=1350
+...                                                                 cqi=15
+...                                                                 ri=3
+
+
+@{dict_settings_3_ues}                                              ${dict_settings_ue_1}
+...                                                                 ${dict_settings_ue_2}
+...                                                                 ${dict_settings_ue_3}
+
+@{dict_settings_all_ues}                                            ${dict_settings_ue_1}
+...                                                                 ${dict_settings_ue_2}
+...                                                                 ${dict_settings_ue_3}
+...                                                                 ${dict_settings_ue_4}
+...                                                                 ${dict_settings_ue_5}
+...                                                                 ${dict_settings_ue_6}
+
+# vendor's setting
+
+# BB pool mode : Load-metric based
+# bbL1SpPrbInitCapacity settings :
+#	        <item>
+#	          <p name="bbHwVariant">ABIO</p>
+#	          <p name="csSize">48</p>
+#	          <p name="direction">DL</p>
+#	          <p name="l1PoolType">NR_L1_Loki_TDD_FR1_eCPRI_IQF_Asymm</p>
+#	          <p name="maxNumLayerPrbL1Sp">1200</p>
+#	          <p name="maxNumStreamPrbL1Sp">1200</p>
+#	          <p name="maxNumWbStreamPrbL1Sp">600</p>
+#	        </item>
+
+&{Vendor_IWK_CB8940-L_CB7113}                                       bbHwVariant=ABIO
+...                                                                 maxNumLayerPrbL1Sp=1200
+...                                                                 maxNumStreamPrbL1Sp=1200
+...                                                                 maxNumWbStreamPrbL1Sp=600
+...                                                                 maxNumScheUePdschL1Pool=None
+...                                                                 maxNumScheUePdschL1Sp=None
+...                                                                 maxNumDlSubcellL1Pool=6
+...                                                                 maxNumDlSubcellL1Sp=4
+...                                                                 maxNumUlSubcellL1Pool=6
+...                                                                 maxNumUlSubcellL1Sp=4
+...                                                                 ul_maxNumLayerPrbL1Sp_csSize32=410
+...                                                                 ul_maxNumStreamPrbL1Sp_csSize32=820
+...                                                                 ul_maxNumWbStreamPrbL1Sp_csSize32=None
+...                                                                 ul_maxNumLayerPrbL1Sp_csSize48=None
+...                                                                 ul_maxNumStreamPrbL1Sp_csSize48=None
+...                                                                 ul_maxNumWbStreamPrbL1Sp_csSize48=None
+...                                                                 ul_maxNumLayerPrbL1Sp_csSize64=820
+...                                                                 ul_maxNumStreamPrbL1Sp_csSize64=1640
+...                                                                 ul_maxNumWbStreamPrbL1Sp_csSize64=None
+
+*** Test Cases ***
+### SA
+
+PRV_CB011028_TC_2_wDLMIMO_ASOE
+    [Documentation]
+    ...     Conditions:     it is based on the configuration ${C_Cell}
+    ...                     GNB is configured with profile CB006915-N#1 CFG#4
+    ...                     CFG#4	"Three cells are configured on each BB board -
+    ...                              3x100MHz 8DL-4UL streams NR TDD FR1 BF cell"
+    ...                              Cell1 & Cell3 in L1SubPool1
+    ...                              Cell2 in L1SubPool2
+    ...                     TDD Frame Structure is set to semi static
+    ...                       NRBTS/NRCELL/tddFrameStructure. frameStructureType = semiStatic
+    ...                       NRBTS/NRCELL/tddFrameStructure. guardPeriodLength = 2Symbols
+    ...                       NRBTS/NRCELL/tddFrameStructure. ulDlDataSlotRatio = 1/4
+    ...                     Preparation of the TL is needed first
+    ...                         actDlSrsBm is activated
+    ...                         srsForBeamMgmt at Cell level
+    ...                              <list name="srsForBeamMgmt">
+    ...                                   <item>
+    ...                                   <p name="bSRS">2</p>
+    ...                                   <p name="cSRS">63</p>
+    ...                                   <p name="srsPowerThresholdForDlBm">-1200</p>
+    ...                                   <p name="srsTypeAllocForDlBm">antenna switching or codebook</p>
+    ...                                   <p name="srsUePeriodicity">slots40</p>
+    ...                                   </item>
+    ...                              </list>
+    ...                        actUeCsirsCoexistCellCsirs = TRUE
+    ...                    In egate, you need to activate the Srs mode : cfg file modified by KW
+    ...                                                       "Update Basic Configuration File for actDlSrsBm Test Mode"
+    ...                      cell_srs_beam_pos_nr profile_id=1 num_of_ue_positions=4 azimuth=-70,-19,20,70
+    ...                      cell_testmode_set_nr cell_id=1 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate
+    ...                      cell_testmode_set_nr cell_id=2 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate
+    ...                      cell_testmode_set_nr cell_id=3 gnb=2 testmode=cell_srs_beam_pos profile_id=1 action=activate
+    ...                    Test with 6 Ues (2Ues per Cells)
+    ...                     Ue1, Ue3 and Ue5 ue_srs_beam_pos init_pos0 srsMode=fixed
+    ...                     Ue2, Ue4 and Ue6 ue_srs_beam_pos init_pos3 srsMode=fixed
+    ...                    Ue settings defined into ${relative_json_path} json file
+    ...     Checks / Verdict:
+    ...                     Check that nb of dlSubCell per L1pool and L1Spool dont exceed maxNumDlSubcellL1Pool and maxNumDlSubcellL1Sp
+    ...                               defined in Vendor File
+    ...                                     NRBTS\bbPoolCapacity\maxNumDlSubcellL1Pool for ASOE: 5
+    ...                                     NRBTS\bbPoolCapacity\maxNumDlSubcellL1Sp for ASOE: 4
+    ...                     Based on dlTdSchedSubcellData,numAllocCellPrbDl , check prbstreamcapa as expected
+    ...                      for subpool1 and subpoll2
+    ...                     Calls for multi ues and PRB pooling are passed / no Dtx / no Dl Bler
+    [Tags]  EXCLUDE_CRT
+    Set To Dictionary       ${C_Cell}    totalNbOfUe       4
+    TC CB011078 D  ${C_Cell}    ${dictParam}    ${Vendor_IWK_CB8940-L_CB7113}    ${dict_settings_all_ues}    nrCell=3
+    ...          kw Set RAD Params=Set RAD Params for 11028-D
+    ...          kw NIDD Set=Set CB009890-A NIDD PARAMETERS with dlMUMIMO
+    ...          kw NIDD Check=Check CB009890-A NIDD PARAMETERS with dlMUMIMO
+    ...          kw Set TestMode=Update Basic Configuration File for actDlSrsBm Test Mode with azimuth=-70,-19,20,70 for 4cells
+    ...          kw Specific Set TestMode Before Attach=Override and Activate Ue SRS Beam pos profile 2 for all ${C_Cell.totalNbOfUe} Ues
+    ...          kw Specific Set TestMode After Attach=Override and Activate UE CSI profile for all ${C_Cell.totalNbOfUe} Ues
+    ...          NIDD_11028_PARAMS=${NIDD_11028_w_CB008940_CB007113_DLMIMO_PARAMS_ASOE}
+    ...          kw Specific Check=Check RimRs CB011028 Based l1L2 Bip
+    ...          kw Check SCF parameters=verify_SCF_Paramaters
+    ...          Kw TestLine Preparation=TL_Preparation_CB011028_SCF_CB006915_CFG_1_4Cells_woBSR_wRIMRs
+    # ...          Kw TestLine Preparation=TL_Preparation_CB011028_SCF_CB006915_CFG_1_4Cells_woBSR_wRIMRs_wPSBWP
+    ...          Json test configuration=${relative_json_path}
+
+# PRV_test
+#     [Tags]  EXCLUDE_CRT
+#      # [Setup]   Run Keywords    set Suite Variable    ${testCaseDir}    None      AND
+     # ...                       Get testcase log directory
+     # Check RimRs CB011028 Based l1L2 Bip
+     ## ...              /home/ute/csamson/TRACES/L1L2Bip.wDLTput.CB011028_TC_1_wDLMIM.2023-09-14-16_08_44.570.pcap
+     # ...              /home/ute/csamson/TRACES/L1L2Bip.wDLTput.CB011028_TC_1_wDLMIM.2023-09-15-09:48:28.636.pcap
+
+    # Run keyword and continue on failure     Check PRB Assignment CB011028-D FdSched NbrPrb Based TtiTrace
+    # ...                                                                     FilePcap=ttitrace_streaming.pcap
+    # ...                                                                     ttitracepath=/home/ute/csamson/TRACES
+
+#     set suite variable    ${sherpa_output_path}    /home/ute/csamson/TRACES/
+#     Run keyword and continue on failure      Verification of Number PRB Allocated within PRB Pooling Report with RIM-RS
+#     ...                                                             num_min_prb=48
+#     ...                                                             num_max_prb=546
+#     ...                                                             prereq_data=${COL_NAME_NRCELLID}
+#     ...                                                             prereq_value=0x4001
+#     ...                                                             direction=Dl
+#     Run keyword and continue on failure      Verification of Number PRB Allocated within PRB Pooling Report with RIM-RS
+#     ...                                                             num_min_prb=96
+#     ...                                                             num_max_prb=273
+#    ...                                                             prereq_data=${COL_NAME_NRCELLID}
+#    ...                                                             prereq_value=0x4002
+#    ...                                                             direction=Dl
+
+# PRV_TL_Preparation_ASOE
+#     [Tags]  EXCLUDE_CRT
+#     TL_Preparation_CB011028_SCF_CB006915_CFG_1_4Cells_woBSR_wRIMRs_wPSBWP     output_scf=${test_scf_file}
+
+PRV_apply_custom_config
+      [Tags]  EXCLUDE_CRT
+      dated log    only to apply custom config
+
+*** Keywords ***
+
+Set CB011028-D NIDD PARAMETERS with ulMUMIMO
+    [Arguments]    ${list}=${NIDD_11028_D_w_CB008940_CB007113_PARAMS_ASOE}
+    Set CB009890 NIDD PARAMETERS VERSION 3     ${list}
+    ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    Set Suite Variable           ${test_scf_file}
+
+Check CB011028-D NIDD PARAMETERS with ulMUMIMO
+   [Arguments]    ${list}=${NIDD_11028_D_w_CB008940_CB007113_PARAMS_ASOE}
+   Check CB009890 NIDD PARAMETERS VERSION 3     ${list}
+
+Set CB009890-A NIDD PARAMETERS with dlMUMIMO
+    [Arguments]    ${list}=${NIDD_11028_w_CB008940_CB007113_DLMIMO_PARAMS_ABIP}
+    Set CB009890 NIDD PARAMETERS VERSION 3     ${list}
+    ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    Set Suite Variable           ${test_scf_file}
+
+Check CB009890-A NIDD PARAMETERS with dlMUMIMO
+   [Arguments]    ${list}=${NIDD_11028_w_CB008940_CB007113_DLMIMO_PARAMS_ABIP}
+   Check CB009890 NIDD PARAMETERS VERSION 3     ${list}

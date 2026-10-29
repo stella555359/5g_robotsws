@@ -1,0 +1,60 @@
+*** kpis_definition.py:
+
+def replace_pattern_if_cell_dist_names_defined(cls):
+    def _modify_init(original_init):
+        def new_init(self, **kwargs):
+            cell_dist_names = kwargs.pop('cell_dist_names', None)
+            original_init(self, **kwargs)
+            if cell_dist_names is not None:
+                dn_pattern = r'$|'.join(cell_dist_names) + r'$'
+
+                logging.info(self.start_point)
+                logging.info(self.end_point)
+                start_point_is_datetime_obj = isinstance(self.start_point, datetime.datetime)
+                if not start_point_is_datetime_obj:
+                    self.start_point.pattern = dn_pattern
+                    self.start_point.compiled_pattern = re.compile(dn_pattern)
+
+                self.end_point.pattern = dn_pattern
+                self.end_point.compiled_pattern = re.compile(dn_pattern)
+        return new_init
+    cls.__init__ = _modify_init(cls.__init__)
+    return cls
+
+
+@replace_pattern_if_cell_dist_names_defined
+@append_status_with_degraded_if_serial_console_connected
+class KPI3(KPI):
+    def __init__(self, start_point_timestamp, technologies=None):
+        start_point_timestamp = get_timestamp_in_datetime_format(start_point_timestamp)
+        super(KPI3, self).__init__(
+            start_search_after=start_point_timestamp,
+            start_point=start_point_timestamp,
+            end_point=ChangeEvent(index=Index.FIRST, status=CellStatuses.UP, pattern=DistNamePatterns.CELL_INFO),
+            technologies=technologies,
+            min_start_and_end_point_offset=30,
+        )
+
+    def _validate_entries(self):
+        self._validate_endpoints()
+
+
+
+
+*** interface.py:
+
+    def calculate_kpi3(self, ims_file_path, start_point_timestamp, merge_ims_files=False, cell_dist_names=None):
+        """
+        Calculate KPI3 - Power-On BTS Startup.
+        Start Point: BTS Power ON
+        End Point: First Cell Up
+
+        :param str, list ims_file_path: Path to IMS file(or list of ims paths).
+        :param datetime, str start_point_timestamp: Start Point timestamp as datetime object or
+                as string in ISO format eg: '2022-05-19T12:00:15.699000'
+        :param bool merge_ims_files:  True/False - merge all IMS files into one IMS file before calculations.
+        :return list: calculated results for single KPI
+        """
+        kpi_params = {'kpi3': {'start_point_timestamp': start_point_timestamp, 'cell_dist_names': cell_dist_names}}
+        return self.calculate_kpis(kpi_names=['kpi3'], kpi_params=kpi_params, ims_file_path=ims_file_path,
+                                   merge_ims_files=merge_ims_files)

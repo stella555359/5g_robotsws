@@ -1,0 +1,2241 @@
+*** Settings ***
+
+Documentation     [PURPOSE] Set of keywords used for  5GC002640 feature CA Multi CC tests AB
+...               Last Modification           : 18-Sep-2024 : Scout data + some fixes for RF50
+
+Library         BuiltIn
+Library         DateTime
+
+Library         taf.sbts.oam.coam.admin         WITH NAME     coam
+Library         taf.ul.oam.selenium_coam        WITH NAME     selenium_coam
+Library         taf.config.scf                  WITH NAME     cscf
+Library         taf.gnb.oam.commissioning       WITH NAME     commissioning
+Library         taf.collectors.pmcounters       WITH NAME     tafpmcounters
+Library         taf.epcsim
+Library         OperatingSystem
+Library         taf.wts.runner                  WITH NAME    wtsemu
+
+
+Library         taf.rfrl.common_resources.python.SWConfig
+Library         ../../../resources/python/luashark_tools.py
+
+Library         ../../../../../resources/SWENG/python/OsTool.py
+
+Library                                                        taf.analyzer.pmcounter       WITH NAME    check_pm
+Library                                                        ../UlmMarkt/connect.py
+Resource                                                       ../UlmMarkt/testline.robot
+
+
+Resource        ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource        ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource        ../../../../../resources/SWENG/robot/Traffic.robot
+Resource        ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource        ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource        ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource        ../../../../../resources/SWENG/robot/Scf.robot
+Resource        ../../../../../resources/SWENG/robot/Setup.robot
+Resource        ../../../../../resources/SWENG/robot/CfgFilesTools.robot
+Resource        taf/rfrl/common_resources/robot/coam.robot
+Resource         ../../../../../resources/SWENG/robot/Sherpa.robot
+
+Resource         ../../../resources/robot/ConfigCollector_Keywords.robot
+
+Resource        5GC002640_Config_Keywords.robot
+
+Variables       ../../../../../resources/SWENG/python/ReadConfig.py
+
+Resource        ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource        ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource        ../../../../../resources/SWENG/robot/GnbXmlTools.robot
+
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+
+
+*** Variables ***
+@{filter_protocol}            ARP    UDP   ICMP   TCP
+${TRF_ongoing}                ${False}
+${enable_sherpa}              ${False}
+
+#help to see deeper DSS egate logs
+${debugDSS}          ${False}
+${debugArg}          ${False}
+
+#help to not check airphone cell_setup on egate !!!
+${bypassX2Setup}      ${False}
+
+@{CellList}	          1    2    3    4    5    6
+@{nonDSS_CellList}	  1    2    4    5    6
+
+*** Keywords ***
+
+Test Teardown 5GC002640
+    [Documentation]    Stop eventual Sherpa traces
+    ...                Stop Traffic (even if already done for Failed cases not leading to normal traffic stop
+    ...                collect Sos Report if a TC is failed or if the user need traces ForceDebugDataCollection
+    ...
+
+    Dated log                       Test teardown 5GC002640: start
+    Produce Scout Data
+
+    Dated log                       traffic ongoing? : ${TRF_ongoing}
+    Run Keyword If                  ${TRF_ongoing}         Traffics Stop    ${param.UEList}
+    Dated log                       enable_sherpa : ${enable_sherpa}
+    Run Keyword If                  ${enable_sherpa}     Run Keywords
+    ...                             Dated log            SHERPA STOP AND COLLECTION ongoing
+    ...                             AND
+    ...                                                  Deactivate Sherpa and Stop Collect
+
+    # commented as this part is done on automaticTeardown=FirstFail
+    # Run Keyword If                                       ${ForceDebugDataCollection}   Get Sos Report
+    # Run Keyword If                                       ${ForceDebugDataCollection}   Get Snapshot
+    # wtsemu.Reset Wtsemu Cfg
+    Dated log                                             Test teardown 5GC002640: end
+
+
+TC 2640-AB_00 SA
+    [Documentation]     Used for small developpent test
+    [Arguments]         ${param}
+
+    Init Sequence       ${param}
+
+    Critical Step                   RestartTLab
+    Step                            Set_sCellDeactivationTimerGNB    argument=${param.sCellDeactivationTimerGNB}
+    GenericTest.Display diagnosis
+
+TC 2640-AB_01 SA
+    [Documentation]     Generic test for SANSA 3CC Cellsetup
+    [Arguments]         ${param}
+
+    ${enable_sherpa}             set variable           ${False}   #This TC not need Sherpa, this setting is present as Jenchins may set Sherpa
+    Dated log                    enable_sherpa : ${enable_sherpa}
+    Init Sequence                ${param}
+
+    Critical Step                RestartTLab
+    Critical Step                Start Mirroring And Traces AP
+    Critical Step                Start Mirroring And Traces gNB
+    Critical Step                WTS_Cell_Setup
+    Critical Step                Stop Mirroring And Traces gNB
+    Critical Step                Stop Mirroring And Traces AP
+    Critical Step                carrierAggregationSupportList set to 600
+    Critical Step                Check 5gnb still Cell on Air
+    GenericTest.Display diagnosis
+
+
+TC 2640-AB_02 SA
+    [Documentation]     Generic test for SANSA 3CC Cellsetup
+    [Arguments]         ${param}
+
+    ${enable_sherpa}             set variable           ${False}   #This TC not need Sherpa, this setting is present as Jenchins may set Sherpa
+    Init Sequence                ${param}
+
+    #See Golden Critical Step                Commission SCF From Config Folder
+    Critical Step                RestartTLab
+    Critical Step                carrierAggregationSupportList set to 600
+    Step                         weightForSCellSelection          argument=${param.NrRelweightForSCellSelection_List}
+    Critical Step                WTS_Cell_Setup
+    Step                         UE_register_Local                argument=${param.UEList}
+    Step                         PDU_Session                      argument=${param.UEList}    depends=UE_register_Local
+    Critical Step                Check_sCellToAddModList_onegateLogs
+    Step                         Check_sCellIndex_onegateLogs    argument=${param.NrRel_TargetedbyWeight_List}
+    GenericTest.Display diagnosis
+
+
+TC 2640-AB_03 SA
+    [Documentation]     Generic test for SANSA 3CC Cellsetup
+    [Arguments]         ${param}
+
+    Init Sequence       ${param}
+    ${enable_sherpa}             set variable           ${False}   #This TC not need Sherpa, this setting is present as Jenchins may set Sherpa
+
+    #See Golden Critical Step                Commission SCF From Config Folder
+    Critical Step                RestartTLab
+    Critical Step                carrierAggregationSupportList set to 600
+    Step                         weightForSCellSelection          argument=${param.NrRelweightForSCellSelection_List}
+    Step                         Set_NRREL_info                   argument=${param.NrRel_TC3_setting}
+    Step                         Update UeNrCapa In WTS Cfg multi UE    argument=${param.UEList}
+    # Critical Step                Start Mirroring And Traces AP    depends=weightForSCellSelection
+    # Critical Step                Start Mirroring And Traces gNB
+    Critical Step                WTS_Cell_Setup
+    Run Keyword If               ${enable_sherpa}                 Activate Sherpa
+    Step                         UE_register_Local                argument=${param.UEList}
+    Step                         PDU_Session                      argument=${param.UEList}    depends=UE_register_Local
+    # Critical Step                Stop Mirroring And Traces gNB
+    # Critical Step                Stop Mirroring And Traces AP
+    Critical Step                Check_sCellToAddModList_onegateLogs
+    Step                         Check_sCellIndex_onegateLogs    argument=${param.NrRel_TargetedbyWeight_List}
+    GenericTest.Display diagnosis
+
+
+TC 2640-AB_04 SA
+    [Documentation]     Generic test for SANSA 3CC Cellsetup
+    ...                 "activated_successfully_at_airphone" message on egate is not seen at the  begining but after
+    ...                 a moment. It is the reason why we attempt to find it each minutes on a 10min period
+    ...                 This lead to see some red tags on html.log but without incidences to the test up to green one
+    [Arguments]         ${param}
+
+    Init Sequence       ${param}
+
+    Critical Step                   RestartTLab
+    Critical Step                   carrierAggregationSupportList set to 600
+    Step                            weightForSCellSelection          argument=${param.NrRelweightForSCellSelection_List}
+    Step                            Set_iniNumSCellsToActivate       argument=${param.iniNumSCellsToActivate}
+    Step                            Set_sCellActivationMethod        argument=${param.sCellActivationMethod}
+    Critical Step                   WTS_Cell_Setup
+    Run Keyword If                  ${enable_sherpa}                 Activate Sherpa
+    Step                            UE_register_Local                argument=${param.UEList}
+    Step                            PDU_Session                      argument=${param.UEList}    depends=UE_register_Local
+    Step                            Traffic                          argument=${param.UEList}    depends=PDU_Session
+    Critical Step                   Check_sCellToAddModList_onegateLogs                          depends=Traffic
+    Step                            Check_sCellIndex_onegateLogs    argument=${param.NrRel_TargetedbyWeight_List}    depends=Traffic
+    #Warning first attempt may be failed !!!
+    wait until keyword succeeds     10min    60s    Check_activated_successfully_at_airphone_onegateLogs
+    Step                            Traffics Stop    argument=${param.UEList}    depends=Traffic
+    GenericTest.Display diagnosis
+
+
+
+TC 2640-AB_07 SA
+    [Documentation]     This TC set on the fly several marameters
+    ...                 carrierAggregationSupportList / weightForSCellSelection / iniNumSCellsToActivate
+    ...                 sCellActivationMethod         / Set_sCellActivationMethod
+    ...                 restart the test line
+    ...                 start a SA L2 call on 1 ue_id3 CA capable
+    ...                 Start UL & DL traffic for a short time
+    ...                 check sCellToAddModList & sCellIndex on egate_logs
+    ...                 Stop traffic DL only
+    ...                 check sCellIndex 1 & 2 are deactivated on egate log
+    ...                 stop all traffic
+    [Arguments]         ${param}
+
+    Init Sequence       ${param}
+    TestSuiteFolderCreation    step=Config_TestStart_
+    Collect_Configfiles        step=Config_TestStart_
+
+
+    Critical Step                   carrierAggregationSupportList set to 600
+    Step                            weightForSCellSelection          argument=${param.NrRelweightForSCellSelection_List}
+    Step                            Set_iniNumSCellsToActivate       argument=${param.iniNumSCellsToActivate}
+    Step                            Set_sCellDeactivationTimerGNB    argument=${param.sCellDeactivationTimerGNB}
+    Step                            Set_sCellActivationMethod        argument=${param.sCellActivationMethod}
+
+    Restart TL
+
+    TestSuiteFolderCreation    step=configReady_
+    Collect_Configfiles        step=configReady_
+
+    # Critical Step                   WTS_Cell_Setup
+    Critical Step                   WTS Setup for DSS Plus nonDSS cells    shouldUseLua=${False}    postprocessing=Check_Cell_SetupIs_Ok_on_AirPhone
+
+    Run Keyword If                  ${enable_sherpa}                 Activate Sherpa
+    Step                            UE_register_Local                argument=${param.UEList}
+    Step                            PDU_Session                      argument=${param.UEList}    depends=UE_register_Local
+    Step                            Traffic                          argument=${param.UEList}    depends=PDU_Session
+    sleep     60s
+    Step                            Traffics Check                   argument=${param.UEList}    depends=Traffic
+    Critical Step                   Check_sCellToAddModList_onegateLogs                          depends=Traffic
+    Step                            Check_sCellIndex_onegateLogs    argument=${param.NrRel_TargetedbyWeight_List}    depends=Traffic
+
+    # Critical Step                Start Mirroring And Traces AP
+    # Critical Step                Start Mirroring And Traces gNB
+
+    Traffics Stop                   ${param.UEList}    dl
+    sleep     30s
+
+    # Critical Step                Stop Mirroring And Traces gNB
+    # Critical Step                Stop Mirroring And Traces AP
+
+    Step                            Traffics Stop    argument=${param.UEList}    depends=Traffic
+    sleep     20s
+    Check_sCellIndex_onegateLogs    ${param.NrRel_TargetedbyWeight_List}   actdeact=deactivated
+    GenericTest.Display diagnosis
+
+
+TC 2640-AB_08 SA
+    [Documentation]
+    ...       This TC check the DL traffic on 3 bearers : 1 default Bearer, 1  VONR signaling and 1 bearer VONR traffc
+    ...       For 2640 feature with 1 Pcell and 2 Scell
+    ...       Step :
+    ...            1) modify commissioning
+    ...            2) Cell Steup 6 cells 4 FDD and 2 TDD
+    ...            3) UE register in SA
+    ...            4) Setup PDU session for UE : defaut bearer 5QI-6
+    ...            5.1) modify PDU session for UE : adding signaling VONR bearer 5QI-1
+    ...            5.2) modify PDU session for UE : adding data VONR bearer 5QI-5
+    ...            6) start trafic for the 3 bearers
+    ...                 300Mbs DL 10Mbs UL for BE=5QI-6/QOS6
+    ...                 tcp default for signaling VONR=5QI-1/QOS5
+    ...                 codec amr_wb_18_25 for data VONR=5QI-5/QOS1
+    ...            6) wait 10 minute to have the counters and check it :
+    ...                 Check Legacy Counters DL for QOS1, 5 and 6
+    ...                     QOS1 must be egal to 721+/-1 for the codec amr_wb_18_25 in 5 minute
+    ...                     QOS5 must be egal to 618+/-1 for the tcp without data rate in 5 minute
+    ...                     QOS6 must be in range 11235000 and 11348000 in 5min : 301.15 Mbs +/- 0.5%
+    ...                 Check Primary+Secondary Path Counters for QOS1, 5 and 6
+    ...                     QOS1 for primary path must be null : GBR bearer are not CA eligible
+    ...                     QOS1 for Secondary path must be null : GBR bearer are not CA eligible
+    ...                 for NO-GBR bearer due to bufferBased activation the DL data are sent to the 3 paths P-CELL and S-CELLs
+    ...                     QOS5 for Primary + Secondary path must be eagal to Legacy QOS5
+    ...                     QOS6 for Primary + Secondary path must be eagal to Legacy QOS6
+    ...            7) stop all trafic and detach UE
+    ...            8) Teardown
+    ...
+    ...       Manual Run : load the PM filter counter file testsuite/Paris/RRM/ET/5GC002640/resources/config/PM_Counters_filters_for_AB_TC08.xml
+    ...                    in WEBUI to see the counters values
+    [Arguments]         ${param}
+
+    Init Sequence       ${param}
+    TestSuiteFolderCreation    step=Config_TestStart_
+    Collect_Configfiles        step=Config_TestStart_
+
+    Critical Step                   carrierAggregationSupportList set to 600
+    Step                            weightForSCellSelection          argument=${param.NrRelweightForSCellSelection_List}
+    Step                            Set_iniNumSCellsToActivate       argument=${param.iniNumSCellsToActivate}
+    Step                            Set_sCellDeactivationTimerGNB    argument=${param.sCellDeactivationTimerGNB}
+    Step                            Set_sCellActivationMethod        argument=${param.sCellActivationMethod}
+
+    Restart TL
+
+    TestSuiteFolderCreation    step=configReady_
+    Collect_Configfiles        step=configReady_
+
+    # Critical Step                   WTS_Cell_Setup
+    Critical Step                   WTS Setup for DSS Plus nonDSS cells    shouldUseLua=${False}    postprocessing=Check_Cell_SetupIs_Ok_on_AirPhone
+    Run Keyword If                  ${enable_sherpa}                 Activate Sherpa
+    Step                            UE_register_Local                argument=${param.UEList}
+    Step                            PDU_Session                      argument=${param.UEList}    depends=UE_register_Local
+    Step                            Add_VONR_PDU                     argument=${param.UEList}    depends=UE_register_Local
+    Step                            Traffic_VONR                     argument=${param.UEList}    depends=PDU_Session
+    Critical Step                   Check_sCellToAddModList_onegateLogs                          depends=Traffic
+    Step                            Check_sCellIndex_onegateLogs    argument=${param.NrRel_TargetedbyWeight_List}    depends=Traffic
+    Step                            Check_DL_Trafic_VONR
+    Step                            Traffics VONR Stop              argument=${param.UEList}
+    GenericTest.Display diagnosis
+
+TC 8533-AB401
+    [Documentation]
+    ...                 This TC start on  IBCA/5GC002640/scfc-AB.xml and set on the fly several parameters :
+    ...                 carrierAggregationSupportList / weightForSCellSelection / iniNumSCellsToActivate
+    ...                 sCellActivationMethod         / Set_sCellActivationMethod
+    ...                 restart the test line
+    ...                 call setup with FDD – TDD FR1 DL CA 4CC (F+F+T+T) for the single UE with dynamic flow control,
+    ...                 data split over PCell and 3 SCells, with blind SCells addition
+    ...                 and buffer based SCells activation without beamforming on TDD FR1 SCells
+    ...                 SA call setup is done on 3 step
+    ...                 step1 few DL traffic so no Scell activation
+    ...                 step2 increase of DL TP but not very important => only 2 Scell will be activated at the same time
+    ...                 step3 heavy DL traffic is set so a third Scell will be activated in complement
+    ...
+    ...                 - PMCounters are correctly updated :
+    ...                      M55316C03003 PSCELL_UE_3_ACT_SCELL_DL
+    ...                      M55316C03003 MAX_PSCELL_UE_3_ACT_SCELL_DL
+    ...                 - RDcounters are with correct value :
+    ...                      SUCC_ACSI_PUSCH           # M55303CRD63000
+    ...                      SUCC_PCSI_PUCCH_FORMAT3   # M55303CRD60001
+
+    [Arguments]         ${param}
+
+    Init Sequence       ${param}
+    DdatedLog  params---> :${param}
+    TestSuiteFolderCreation    step=Config_TestStart_
+    Collect_Configfiles        step=Config_TestStart_
+
+    #economy as redo on 5GC002640-5G-F_Settings               Critical Step                   RestartTLab
+# - NRBTS/NRDU.actInterNumerologyCa = True
+# - NRBTS/NRDU.flexibleCAMode = 2 (ConfigurationIndependent)
+# - NRBTS/NRDU.actConnectedModeMobilityCA = True
+
+    Critical Step                   carrierAggregationSupportList set to 600
+    Step                            maxNumScellsDlFr1                                    argument=${param.maxNumScellsDl}
+    Step                            weightForSCellSelection                              argument=${param.NrRelweightForSCellSelection_List}
+    Step                            actAperCsi                                           argument=${param.NrRelactAperCsi_List}
+    Step                            Set_iniNumSCellsToActivate                           argument=${param.iniNumSCellsToActivate}
+    Step                            Set_sCellActivationMethod                            argument=${param.sCellActivationMethod}
+    Step                            Set_sCellDeactivationTimerGNB                        argument=${param.sCellDeactivationTimerGNB}
+    Step                            PM_StatisticsInterval                                argument=${param.PM_TimerGNB}
+    Critical Step                   5GC002640-5G-F_Settings
+
+    TestSuiteFolderCreation    step=configReady_
+    Collect_Configfiles         step=configReady_
+
+    Critical Step                   WTS_Cell_Setup
+
+    Run Keyword If                   ${enable_sherpa}                 Activate Sherpa
+
+    Critical Step                   UE_register_Local                ${param.UEList}
+    Critical Step                   PDU_Session                      ${param.UEList}
+    Critical Step                   Check 5gnb still Cell on Air
+    Critical Step                   Check_sCellIndex_onegateLogs     ${param.NrRel_TargetedbyWeight_List}
+
+    ${Trafic_step}    set variable    step1
+    datedLog  ---> Trafic_step :${Trafic_step}
+    Critical Step                   Traffic                          ${param.UEList}    ${Trafic_step}
+    Critical Step                   Check_sCellToAddModList_onegateLogs
+    #on this step we put 0 for occurency param to not mismatch with TC 2640-AB_04 SA
+    ${passed}=                      Run Keyword And Return Status    Check_activated_successfully_at_airphone_onegateLogs_V2    occurency=0
+    #Runs the given keyword with the given arguments if condition is false.
+    #on step1 passed need to be false so continue
+    Run Keyword If                  '${passed}' == '${true}'     FAIL    Check_activated_successfully_at_airphone_onegateLogs_V2
+    ...                                                  has failed Scell shouldn't be active ate this step
+    sleep    20s
+
+    ${Trafic_step}    set variable    step2
+    datedLog  ---> Trafic_step :${Trafic_step}
+    Critical Step                   Traffic                          ${param.UEList}    ${Trafic_step}
+    Step                            Check_sCellIndex_onegateLogs    argument=${param.NrRel_TargetedbyWeight_List_step2}
+    sleep    30s
+    Critical Step                   Check_sCellToAddModList_onegateLogs
+    Critical Step                   Check_activated_successfully_at_airphone_onegateLogs_V2    occurency=2    samemilisecond=samemilisecond
+    ...                             deviation=${param.deviation}    # ajout deviation
+
+    ${Trafic_step}    set variable    step3
+    datedLog  ---> Trafic_step :${Trafic_step}
+    Critical Step                   Traffic                          ${param.UEList}    ${Trafic_step}
+    Step                            Check_sCellIndex_onegateLogs    argument=${param.NrRel_TargetedbyWeight_List_step2}
+    Critical Step                   Check_sCellToAddModList_onegateLogs
+    wait until keyword succeeds     10min    60s    Check_activated_successfully_at_airphone_onegateLogs_V2
+    ...                             occurency=3    samemilisecond=NOTsamemilisecond    deviation=${param.deviation}    # ajout deviation
+
+
+    Run Keyword If                  ${enable_sherpa}     Run Keywords
+    ...                             Dated log            SHERPA STOP AND COLLECTION ongoing
+    ...                             AND
+    ...                                                  Deactivate Sherpa and Stop Collect
+
+    # - Coutners are correctly updated : PSCELL_UE_3_ACT_SCELL_DL & MAX_PSCELL_UE_3_ACT_SCELL_DL
+    Dated Log   Pause to get the next PM period
+    # Dated Log   ( to be set to 20mn if impossibility to change anymore first&Second LevelSchedulerStatisticsInterval )
+    sleep   900
+    Dated Log   Pause ended
+
+    Dated Log   Check PM Counters for 3Scell
+    Critical Step                   IBCA Collect PM Counters File
+    5GC008533_PMCounterCheck_In_A_Range        ${PM_Counter_PSCell UEs with 3 activated SCells in DL}    270    330    # increase tolerance
+    5GC008533_PMCounterCheck_Expected_Value    ${Maximum amount of PSCell UEs with 3 activated SCells in DL}    1
+
+    Dated Log   Check RD Counters for Primry Scell
+    Critical Step                   IBCA Collect RD Counters File
+    GenericTest.Display diagnosis
+
+TC 8533-AB5
+    [Documentation]     This TC set on the fly several marameters
+    ...                 carrierAggregationSupportList / weightForSCellSelection / iniNumSCellsToActivate
+    ...                 sCellActivationMethod         / Set_sCellActivationMethod
+    ...                 restart the test line
+    ...                 Step1 : Set gNB and AP configurations
+    ...                 Step 2 : Perform gNB commissioning
+
+    [Arguments]         ${param}
+
+    Init Sequence       ${param}
+    DdatedLog  params---> :${param}
+    TestSuiteFolderCreation     step=TestStart
+    Collect_Configfiles         step=TestStart
+    #economy as redo on 5GC002640-5G-F_Settings               Critical Step                   RestartTLab
+# - NRBTS/NRDU.actInterNumerologyCa = True
+# - NRBTS/NRDU.flexibleCAMode = 2 (ConfigurationIndependent)
+# - NRBTS/NRDU.actConnectedModeMobilityCA = True
+    Critical Step                   carrierAggregationSupportList set to 600
+    # Step                            maxNumScellsDl                   argument=${param.maxNumScellsDl}
+    Step                            maxNumScellsDlFr1                argument=${param.maxNumScellsDlFr1}
+    Step                            weightForSCellSelection          argument=${param.NrRelweightForSCellSelection_List}
+    Step                            Set_iniNumSCellsToActivate       argument=${param.iniNumSCellsToActivate}
+
+    Step                            Set_sCellActivationMethod        argument=${param.sCellActivationMethod}
+    Step                            Set_sCellDeactivationTimerGNB    argument=${param.sCellDeactivationTimerGNB}
+
+    Critical Step                   5GC002640-5G-8533AB5_Settings
+    TestSuiteFolderCreation     step=configReady
+    Collect_Configfiles         step=configReady
+
+    # Critical Step                   WTS_Cell_Setup
+    Critical Step                   5GC002640-5G-F_Cell_Setup
+    #Prendre un SCF DSS + PRB Clanking (type custom_config_2640-F_TC3 )!!
+    # Critical Step                   DSS_CRM_Cell_Setup_Phase3_8533
+    #Critical Step                   5GC002640-5G-F_UE_DSS_CA_ScellActivation_ueRegister_traffic
+
+    Run Keyword If                   ${enable_sherpa}                 Activate Sherpa
+
+    Critical Step                   UE_register_Local                ${param.UEList}
+    Critical Step                   PDU_Session                      ${param.UEList}
+
+    Critical Step                   Check 5gnb still Cell on Air
+    Critical Step                   Check_sCellToAddModList_onegateLogs
+    Critical Step                   Check_sCellIndex_onegateLogs     ${param.NrRel_TargetedbyWeight_List}
+
+    Critical Step                   Traffic                          ${param.UEList}
+
+    sleep     ${param.TrafficDuration}
+    Critical Step                   Traffics Check                   ${param.UEList}
+
+    # Check_activated_successfully_at_airphone_onegateLogs_V2 need improvment to be able to check this
+    # Critical Step                   Check_activated_successfully_at_airphone_onegateLogs_V2    occurency=3    samemilisecond=samemilisecond
+
+    Run Keyword If                  ${enable_sherpa}     Run Keywords
+    ...                             Dated log            SHERPA STOP AND COLLECTION ongoing
+    ...                             AND
+    ...                                                  Deactivate Sherpa and Stop Collect
+    GenericTest.Display diagnosis
+
+#****************************** Keywords not for configuration topic ***************************************
+
+#****************************** Keywords for RD counters ***************************************
+IBCA Collect RD Counters File
+    [Documentation]                 KW to get counters and store in specific directory with day date
+    ${date}                          Get Current Date
+    ${date_in_dir_name}              Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_rd}                   Set Variable         ${LOG_PATH}/RD_${date_in_dir_name}
+    BuiltIn.Log              The RD counters file collected from gnb will be stored under : ${log_path_rd}
+    #Collect and Verify RD Counters    counter_value=1    cell_id=3
+    ${rd_files}=   Collect RD Counters
+    RD Counter Verification    counter_files=${rd_files}    counter_names=${RD_COUNTERS_name}
+    ...                        counter_v=${RD_COUNTERS_value}    cell_id=3
+
+
+Collect RD Counters
+    ${alias_gnb}                    SSH Wait For Connect                 ${GNB_DU.entryCard[0]}
+    ${RD_counter_dir}=   Extract gz file    file_pattern=/tmp/RD.BTS-1*.gz    connection=${alias_gnb}
+    [Return]    ${RD_counter_dir}
+
+
+Extract gz file
+    [Documentation]    :Author: Jing Liang
+    ...
+    [Arguments]    ${file_pattern}    ${connection}
+    ${target_dir}=    testline.Get Testcase Log Directory
+    ${target_dir_rd_counters}=    Set variable    ${target_dir}/gnb_rd_counters
+    Set Suite Variable    ${target_dir_rd_counters}
+    Create directory    ${target_dir_rd_counters}
+    ${file_path}=    Get File Path on Target    file_pattern=${file_pattern}    connection=${connection}
+    ${KINFE_PACKAGE.folder}    ${KINFE_PACKAGE.filename}=    Split String From Right    ${file_path}    separator=/    max_split=1
+    Set Test Variable    ${source_file}    /tmp/${KINFE_PACKAGE.filename}
+    ssh.execute    gunzip -c ${source_file} > /tmp/RD.BTS_counters.xml    connection=${connection}
+    ssh.Download File   /tmp/RD.BTS_counters.xml   ${target_dir_rd_counters}/RD.BTS_counters.xml    connection=${connection}
+    [Return]    ${target_dir_rd_counters}
+
+
+Get File Path on Target
+    [Documentation]    :Author: Jing Liang
+    ...    copied from /ebs/ftourlon/FRT/robotws/testsuite/Ulm/resources/Common/util.robot
+    ...
+    ...    :param file_pattern:  file location and pattern, e.g. /ffs/run/swpool/OAM/psconfig_*.txz
+    ...    :param connection:  alias name
+    ...
+    ...    :returns file_path:
+    [Arguments]    ${file_pattern}    ${connection}
+    ${output}=    ssh.execute    ls ${file_pattern}    connection=${connection}
+    ${file_path}=    Strip String    ${output}
+    [Return]    ${file_path}
+
+
+RD Counter Verification
+    [Arguments]   ${counter_files}  ${counter_names}  ${counter_v}=1  ${cell_id}=1
+    ${idx}    Set Variable    0
+    FOR  ${counter}  IN  @{counter_names}
+       ${counter_value}    Set Variable    ${counter_v[${idx}]}
+       ${idx}=             Evaluate        ${idx} + ${1}
+       Dated Log  >>> check ${counter} <<<
+	   Check RD counter value equal   ${counter_value}   ${counter_files}   ${counter}   NRBTS-1/NRCELL-${cell_id}
+    END
+
+Check RD counter value equal
+    [Documentation]   adapted from Check PM counter value equal:Author: Giangiacomo Guglielmini
+    ...        checks that the value of a counter in the last reporting period is equal to a given value
+    ...
+    ...        :param expected_value is the value compared to counter value
+    ...        :param pm_files_location is the path to PM files
+    ...        :param pi_id is the PM counter ID e.g. M55112C03001
+    ...        :param moc is the class including the counter e.g. NRCELL-1
+    ...               it is NOT necessary to give the full moc e.g. MRBTS-1113/NRBTS-1113/NRCELL-1
+    [Arguments]    ${expected_value}   ${pm_files_location}   ${pi_id}    ${moc}
+    ${pi_value}=   Get RD counter value   ${pm_files_location}   ${pi_id}    ${moc}
+    ${pi_value}=   convert to integer    ${pi_value}
+    ${expected_value}=   convert to integer    ${expected_value}
+    #FTS should be equal  ${pi_value}   ${expected_value}     PM Counter ${pi_id} expected to be == ${expected_value} but is ${pi_value}
+    Dated Log  Dod: Is ${pi_value} > ${expected_value}
+    Run Keyword if   '${pi_value}'>'${expected_value}'    Dated Log  RD counter is ok upper than ${expected_value}
+    ...    ELSE                                           Dated Log  RD counter is NOT ok as no upper than ${expected_value} ( obtained ${pi_value} )
+
+Get RD counter value
+    [Documentation]   adapted from Get PM counter value:Author: Giangiacomo Guglielmini
+    ...        get the value of a counter in the last reporting period
+    ...
+    ...        :param pm_files_location is the path to PM files
+    ...        :param pi_id is the PM counter ID e.g. M55112C03001
+    ...        :param moc is the class including the counter e.g. NRCELL-1
+    ...               it is NOT necessary to give the full moc e.g. MRBTS-1113/NRBTS-1113/NRCELL-1
+    [Arguments]    ${pm_files_location}   ${pi_id}    ${moc}
+    ${pi_list}=  Create List
+    ...  ${pi_id}
+    ${PM_report_dict_list}=  check_pm.get_pi_value
+    ...  pi_list=${pi_list}
+    ...  pi_dir=${pm_files_location}
+    ...  pi_file_pattern=RD.BTS*
+    ${last_report}    Get From List   ${PM_report_dict_list}     -1
+    ${pi_dict}   Get Dictionary Values   ${last_report}
+    ${first_pi}    Get From List   ${pi_dict}     0
+    ${cell_dict_list}   Get Dictionary Values   ${first_pi}
+    ${cell_dict}   Get From List   ${cell_dict_list}     0
+    ${moc_list}   get dictionary keys   ${cell_dict}
+    ${full_moc}    Set Variable     empty
+    FOR  ${key}  IN   @{moc_list}
+       ${key_is_moc}  Run Keyword And Return Status    Should Contain  ${key}   ${moc}
+       ${full_moc}  Set Variable If   ${key_is_moc}   ${key}    ${full_moc}
+    END
+    ${pi_value}     Get From Dictionary      ${cell_dict}    ${full_moc}
+    BuiltIn.Log    ${pi_id} value: ${pi_value}   console=${P_console}
+    [Return]    ${pi_value}
+
+
+
+#****************************** Keywords for PM counters ***************************************
+IBCA Collect PM Counters File
+    [Documentation]                 KW to get counters and store in specific directory with day date
+
+    ${date}                          Get Current Date
+    ${date_in_dir_name}              Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                   Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+    BuiltIn.Log              The PM counters file collected from gnb will be stored under : ${log_path_pm}
+    ${pm_latest}                    Counters.Collect PM files from BTS    ${log_path_pm}
+    set Suite Variable              ${LATEST_FILE}       ${pm_latest}
+    set Suite Variable              ${log_path_pm}
+    BuiltIn.Log     Latest pm counters file : ${LATEST_FILE}
+
+
+5GC002640_PMCounterCheck_In_A_Range
+     [Documentation]   Check the value of a counter is in range of MinRange and MaxRage
+    ...                before using this Keyword you must call 5GC002255_Keywords.Collect PM Counters File
+    ...                with arguments
+    ...                ${Counter_Id1}: name of the counter (ex : M55311C01001)
+    ...                &{MinRange}: min value of the counter
+    ...                &{MaxRange}: max value of the counter
+    [Arguments]         ${Counter_Id1}         ${MinRange}         ${MaxRange}
+    ${val}=    Counters.Retrieve Latest Single Counter Value From Pm File           ${LATEST_FILE}        ${Counter_Id1}
+    Dated Log           [5GC002640_PMCounterCheck_In_A_Range] Value of ${Counter_Id1} = ${val}
+    should be true      ${MinRange} <= ${val} <= ${MaxRange}
+5GC002640_PMCounterCheck_Expected_Value
+     [Documentation]   Check the value of a counter is egal to an exepted value
+    ...                before using this Keyword you must call 5GC002255_Keywords.Collect PM Counters File
+    ...                with arguments
+    ...                ${Counter_Id1}: name of the counter (ex : M55311C01001)
+    ...                &{ExpValue}: value expected
+    [Arguments]         ${Counter_Id1}         ${ExpValue}
+    ${val}=    Counters.Retrieve Latest Single Counter Value From Pm File           ${LATEST_FILE}        ${Counter_Id1}
+    Dated Log           [5GC002640_PMCounterCheck_Expected_Value] Value of ${Counter_Id1} = ${val}
+    should be true      ${val} == ${ExpValue}
+
+5GC008533_PMCounterCheck_Expected_Value
+     [Documentation]   Check the value of a counter is egal to an exepted value
+    ...                before using this Keyword you must call 5GC002255_Keywords.Collect PM Counters File
+    ...                with arguments
+    ...                ${Counter_Id1}: name of the counter (ex : M55311C01001)
+    ...                &{ExpValue}: value expected
+    [Arguments]         ${Counter_Id1}         ${ExpValue}
+    #${val}=    Counters.Retrieve Latest Single Counter Value From Pm File           ${LATEST_FILE}        ${Counter_Id1}
+    ${val}=    Counters.Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}        ${Counter_Id1}    3
+    Dated Log           [5GC008533_PMCounterCheck_Expected_Value] Value of ${Counter_Id1} = ${val}
+    should be true      ${val} == ${ExpValue}
+
+5GC008533_PMCounterCheck_In_A_Range
+     [Documentation]   Check the value of a counter is in range of MinRange and MaxRage
+    ...                before using this Keyword you must call 5GC002255_Keywords.Collect PM Counters File
+    ...                with arguments
+    ...                ${Counter_Id1}: name of the counter (ex : M55311C01001)
+    ...                &{MinRange}: min value of the counter
+    ...                &{MaxRange}: max value of the counter
+    [Arguments]         ${Counter_Id1}         ${MinRange}         ${MaxRange}
+    # ${val}=    Counters.Retrieve Latest Single Counter Value From Pm File           ${LATEST_FILE}        ${Counter_Id1}
+    ${val}=    Counters.Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}    ${Counter_Id1}    3
+    Dated Log           [5GC002640_PMCounterCheck_In_A_Range] Value of ${Counter_Id1} = ${val}
+    should be true      ${MinRange} <= ${val} <= ${MaxRange}
+
+5GC002640_PMCounterCheck_Sum_eqal
+     [Documentation]   Check the sum of 2 first counters are egal to the third counter with range 1
+    ...                before using this Keyword you must call 5GC002255_Keywords.Collect PM Counters File
+    ...                with arguments
+    ...                ${Counter_Id1}: name of the first counter (ex : M55311C01001)
+    ...                ${Counter_Id2}: name of the second counter (ex : M55311C01002)
+    ...                ${Counter_Id3}: name of the third counter (ex : M55311C01003)
+    [Arguments]         ${Counter_Id1}         ${Counter_Id2}         ${Counter_Id3}
+    ${val1}=    Counters.Retrieve Latest Single Counter Value From Pm File           ${LATEST_FILE}        ${Counter_Id1}
+    Dated Log           [5GC002640_PMCounterCheck_Sum_eqal] Value of ${Counter_Id1} = ${val1}
+    ${val2}=    Counters.Retrieve Latest Single Counter Value From Pm File           ${LATEST_FILE}        ${Counter_Id2}
+    Dated Log           [5GC002640_PMCounterCheck_Sum_eqal] Value of ${Counter_Id2} = ${val2}
+    ${val3}=    Counters.Retrieve Latest Single Counter Value From Pm File           ${LATEST_FILE}        ${Counter_Id3}
+    Dated Log           [5GC002640_PMCounterCheck_Sum_eqal] Value of ${Counter_Id3} = ${val3}
+    should be true      (${val3} -1) <=(${val1} + ${val2}) <= (${val3} +1)
+
+RestartTLab
+    [Documentation]   Download basic setup for AB TC
+
+    Basic_delivery        ${basicChosenAB}
+    Restart TL
+
+WTS_Cell_Setup
+    [Documentation]   Kill olds egte/edeamon job and start new one Checking SIB for 6 cell
+
+    CallSetup.Setup Wtsemu SA    nbCell=6
+
+Check 5gnb still Cell on Air
+    [Documentation]   Used to verivy 5gnb is still onAir
+
+    coam.connect to   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+    &{bts_info}    coam.Get Bts Statuses    connection=coam_admin
+    Should Be Equal    ${bts_info['proceduralState']}    onAir    ignore_case=true
+
+Check_Cell_SetupIs_Ok_on_AirPhoneDSSnonDSSMixtCase
+    [Documentation]    Check if all cells are up on Airphone side
+
+    Dated Log           Check_Cell_SetupIs_Ok_on_AirPhone
+
+    ${output}           SSH Wait For Connect and Cmd
+	...                 command=grep -i completed /tmp/startup_l3.log
+	#...                 host=${AIRSCALE_AP.sys[0].M}
+    ...                 host=${AP_DU.sys[0].M}
+
+    FOR    ${i}    IN    @{nonDSS_CellList}
+        Dated Log  is Cell Setup completed for [CELL_ID:${i}] done ?
+        Should Contain	    ${output}	 Cell Setup completed for [CELL_ID:${i}]
+    END
+
+Check_Cell_SetupIs_Ok_on_AirPhone
+    [Documentation]    Check if all cells are up on Airphone side
+
+    Dated Log           Check_Cell_SetupIs_Ok_on_AirPhone
+
+    Dated Log           CheckSIB
+    Check SIB Using Cell Number   nbCell=6
+
+    Traced sleep   20s        msg=To let time to Airphone to perform is cells setup  #in order to let time for cell_setup on AP
+
+    Dated Log           Check_AirPhone_APL3
+    ${output}           SSH Wait For Connect and Cmd
+	...                 command=grep -i completed /tmp/startup_l3.log
+	#...                 host=${AIRSCALE_AP.sys[0].M}
+    ...                 host=${AP_DU.sys[0].M}
+    FOR    ${i}    IN RANGE    1  7
+        Should Contain	    ${output}	 Cell Setup completed for [CELL_ID:${i}]
+    END
+
+
+
+UEC-1:Establishedconnection_check
+    [Documentation]    check the presence of following partern for all cells
+    ...                UEC-1: Established connection with proxy to eNB 1 cell  1-6 ... TECHNOLOGY = nr
+    [Arguments]    ${NbCell}=1
+
+
+    ${pattern1}=   set variable   UEC-1: Established connection with proxy to eNB
+    ${pattern2}=   set variable   TECHNOLOGY = nr
+    CallSetup.Flush Egate Console Buffer
+    Sleep   1s
+    ${output}=     OperatingSystem.run    grep "${pattern1}" ${tl.core.dir_path}/egate_console.log | grep "${pattern2}"| wc -l
+    # ${output}        SSH Wait For Connect and Cmd
+    # ...              command=grep "${pattern1}" ${tl.core.dir_path}/egate_console.log | grep "${pattern2}"| wc -l
+    # ...              host=${HOST_EPCSIM}
+    Dated Log   number of UEC-1: Established connection with proxy to eNB  >${output}<
+    should be true   "${output}"=="${NbCell}"
+
+
+UE_register_Local
+    [Documentation]    start a set of UE_register_Local done in parameter
+    ...                see dictionary definition above
+    [Arguments]    ${ue_list_de_dico}
+
+    Wait Until Keyword Succeeds 	8 min 	5 sec 	UEC-1:Establishedconnection_check    NbCell=6
+    # Sleep    180s
+    DdatedLog  Arguments 1: ${ue_list_de_dico}
+    FOR     ${ue_desc}                                            IN                     @{ue_list_de_dico}
+            ${ueid}=                                              Get From Dictionary    ${ue_desc}    ue
+            Dated log                                             id ${ueid} is Registering
+            CallSetup.UE Register                                 ue=${ueid}
+    END
+
+PDU_Session
+    [Documentation]    start a set of PDU_Session done in parameter for all ue in ue_list_de_dico list
+    ...                see dictionary definition above
+
+    [Arguments]    ${ue_list_de_dico}
+
+    DdatedLog    Arguments 1: ${ue_list_de_dico}
+    FOR    ${ue_desc}                                           IN                      @{ue_list_de_dico}
+            ${ueid}=                                            Get From Dictionary    ${ue_desc}    ue
+            Dated log                                           id ${ueid} PDU session establishment on going
+            CallSetup.Launch PDU Session                        ue=${ueid}  pdu=${ueid}  gw=${ueid}
+    END
+    sleep   2s
+
+Check_activated_successfully_at_airphone_onegateLogs_V2
+    [Documentation]    Check "activated successfully at airphone" on egate console Logs
+    ...                to validate we need almost only ${occurency} answers and if answers need to be seen on the
+    ...                the same milisec or not
+    ...
+    ...  Users of this KW :
+    ...  !======================+==================================================+==============================================!
+    ...  ! Test                 !  activated_successfully_at_airphone_onegateLogs  ! need 2 know if occ are in the same milisecond!
+    ...  !======================+==================================================+==============================================!
+    ...  ! TC 2640-AB_04 SA     !  this TC check only if present at least one time !  no                                          !
+    ...  !======================+==================================================+==============================================!
+    ...  ! TC 8533-AB401 Step1  !  this TC check if there is 0 occurency           !  no                                          !
+    ...  !======================+==================================================+==============================================!
+    ...  ! TC 8533-AB401 Step2  !  this TC check if there is 2 occurency           !  in the same millisec                        !
+    ...  !======================+==================================================+==============================================!
+    ...  ! TC 8533-AB401 Step3  !  this TC check if there is 3 occurency           !  if the 2 first are in the same millisec     !
+    ...  !                      !                                                  !  if the 2 last  are in different millisec    !
+    ...  !======================+==================================================+==============================================!
+
+    [Arguments]    ${occurency}=1    ${samemilisecond}=${none}    ${deviation}=0
+    # ajout deviation
+    Dated log   Check_activated_successfully_at_airphone_onegateLogs_V2 arguments: >${occurency}< >${samemilisecond}< >${deviation}<
+    CallSetup.Flush Egate Console Buffer
+    Traced sleep   3s  msg=wait 3s to flush egate memory on egate_console.log
+    ${pattern}=      set variable    activated successfully at airphone
+    Dated log    pattern: ${pattern}
+    ${output}        SSH Wait For Connect and Cmd
+    ...              command=grep "${pattern}" ${tl.core.dir_path}/egate_console.log
+    ...              host=${HOST_EPCSIM}
+    Dated log    output:  ${output}
+
+    Should Not Be Empty             ${output}
+    CallSetup.Flush Egate Console Buffer
+    Traced sleep   3s  msg=wait 3s to flush egate memory on egate_console.log
+    ${output}        SSH Wait For Connect and Cmd
+    ...              command=grep "${pattern}" ${tl.core.dir_path}/egate_console.log
+    ...              host=${HOST_EPCSIM}
+
+    Dated log       === check res answer ===
+    Dated log       res answer:  ${output}
+
+    Run keyword if    '${occurency}'=='0'    Fail    we find an occurency on this period
+
+    ${dod}=    Run keyword if    '${occurency}'=='2'    subCheckmilisec_V2    samemilisecond=${samemilisecond}    between_occ=1-2
+    ...                                                                       deviation=${deviation}
+    ${dod}=    Run keyword if    '${occurency}'=='3'    subCheckmilisec_V2    samemilisecond=${samemilisecond}    between_occ=2-3
+    ...                                                                       deviation=${deviation}
+    #${occurency}'=='0' is TC AB04 case
+    Run keyword if    '${occurency}'=='0'and'${dod}'=='${false}'    Fail    check if occurency are on same millisec fail
+
+Check_activated_successfully_at_airphone_onegateLogs
+    [Documentation]    Check "activated successfully at airphone" on egate console Logs
+    ...                to validate we need almost 1 only answer. If 2 answers are present they need to not be
+    ...                at the same milisec
+    ...
+    [Arguments]    ${samemilisecond}=${none}
+    CallSetup.Flush Egate Console Buffer
+    Traced sleep   3s  msg=wait 3s to flush egate memory on egate_console.log
+    ${pattern}=      set variable    activated successfully at airphone
+    Dated log    pattern: ${pattern}
+    ${output}        SSH Wait For Connect and Cmd
+    ...              command=grep "${pattern}" ${tl.core.dir_path}/egate_console.log
+    ...              host=${HOST_EPCSIM}
+    Dated log    output:  ${output}
+
+    Should Not Be Empty             ${output}
+    CallSetup.Flush Egate Console Buffer
+    Traced sleep   3s  msg=wait 3s to flush egate memory on egate_console.log
+    ${output}        SSH Wait For Connect and Cmd
+    ...              command=grep "${pattern}" ${tl.core.dir_path}/egate_console.log
+    ...              host=${HOST_EPCSIM}
+
+    Dated log       === check res answer ===
+    Dated log       res answer:  ${output}
+    ${passed}    ${info}      Run Keyword And Ignore Error       Should Contain X Times    ${output}    ${pattern}    2
+    Dated log       dbg1 passed : ${passed}
+    ${subCheckmilisec_shouldnotmatch}=    Run keyword if    '${passed}'=='PASS'     Run Keyword And Return Status    subCheckmilisec
+    ...                           ELSE                    Should Contain X Times    ${output}    ${pattern}    1
+
+    #on 2640            the 2 first Scell need to NOT be activated in the same millisecond
+    #on 8533AB401 step2 the 2 first Scell need to be activated in the same millisecond
+    #
+    # summary chart
+    #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # Cases            i                       :    2640   : 8533AB401 :
+    #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # The 2 Scell are not in the same millisec :    good   : not good  :
+    # The 2 Scell are     in the same millisec :  not good :   good    :
+    #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    #=> we need to FAIL not good cases
+
+    #!= none => samemilisecond /    #== none => 2640
+    Run Keyword If    '${subCheckmilisec_shouldnotmatch}' == '${true}' and '${samemilisecond}'!='${none}'    FAIL    subCheckmilisec
+    ...    ELSE IF    '${subCheckmilisec_shouldnotmatch}' == '${false}' and '${samemilisecond}'=='${none}'    FAIL    subCheckmilisec
+
+subCheckmilisec
+    [Documentation]   sub KW of Check_activated_successfully_at_airphone_onegateLogs
+    ...               return  true if NOT in the same millisec
+    ${output}    SSH Wait For Connect and Cmd
+    ...          command=grep "activated successfully at airphone" ${tl.core.dir_path}/egate_console.log | awk -F " " '{print $2}'
+    ...          host=${HOST_EPCSIM}
+    Dated log     grep result:  ${output}
+    ${first}=     Get Line      ${output}    0
+    ${second}=    Get Line      ${output}    1
+    ${rest}    ${lastf} =       Split String From Right    ${first}     .    1
+    ${rest}    ${lasts} =       Split String From Right    ${second}    .    1
+    ${shouldnotmatch}=          Run Keyword And Return Status    Should Not Match            ${lastf}    ${lasts}
+    return    ${shouldnotmatch}
+
+subCheckmilisec_V2
+    [Documentation]   sub KW of Check_activated_successfully_at_airphone_onegateLogs
+    ...               return  boolean sos_match according arguments
+    ...
+    ...               in ${output} we will find only grep result like below from egate_console.log
+    ...               15:20:25.944 15:20:25.944 INF: UEC-1: L2: <DL CHANNEL> [UeId:2,SubcellId:33] SCellIndex 1 activated successfully at airphone.
+    ...               15:20:25.944 15:20:25.944 INF: UEC-1: L2: <DL CHANNEL> [UeId:2,SubcellId:32] SCellIndex 2 activated successfully at airphone.
+    [Arguments]    ${samemilisecond}=${none}    ${between_occ}=1-2    ${deviation}=0
+    Dated log   subCheckmilisec_V2 arguments: >${samemilisecond}<>${between_occ}<>${deviation}<
+
+    ${output}    SSH Wait For Connect and Cmd
+    ...          command=grep "activated successfully at airphone" ${tl.core.dir_path}/egate_console.log | awk -F " " '{print $2}'
+    ...          host=${HOST_EPCSIM}
+
+
+    Dated log     grep result:  ${output}
+
+    # modif pour ajout deviation
+#    ${lastf}    Set Variable    1111
+#    ${lasts}    Set Variable    2222
+#    ${lastt}    Set Variable    3333
+
+    ${first}=     Get Line      ${output}    0     #collect in a variable of the first occurency
+    ${second}=    Get Line      ${output}    1     #    "                        second  "
+    ${third}=     Run Keyword If    '${between_occ}'=='2-3'    Get Line      ${output}    2
+
+
+    # modif pour ajout deviation
+    ${diff12}=       Run Keyword If    '${between_occ}'=='1-2'    Subtract Time From Time    ${second}    ${first}
+    ...                          ELSE    Set Variable    2222
+    ${diff23}=       Run Keyword If    '${between_occ}'=='2-3'    Subtract Time From Time    ${third}    ${second}
+    ...                          ELSE    Set Variable    3333
+#work in the variable to kept only the millisec part of each occurency
+#    ${rest}    ${lastf} =       Run Keyword If    '${between_occ}'=='1-2'    Split String From Right    ${first}     .    1
+#    ${rest}    ${lasts} =       Split String From Right    ${second}    .    1
+#    ${rest}    ${lastt} =       Run Keyword If    '${between_occ}'=='2-3'    Split String From Right    ${third}     .    1
+
+    #DOD
+    Dated log  first ${first} second ${second} third(ifany) ${third}
+    Dated log  diff12 ${diff12} diff23(ifany) ${diff23}
+#    Dated log  first ${lastf} second ${lasts} third(ifany) ${lastt}
+
+    # Modif pour ajout deviation
+    Run Keyword If    '${between_occ}'=='1-2'and'${samemilisecond}'=='samemilisecond'and'${deviation}'<'${diff12}'
+    ...                                                                       Fail    1-2 are not in the same millisec
+    ...    ELSE IF    '${between_occ}'=='2-3'and'${samemilisecond}'=='NOTsamemilisecond'and'${diff23}'<'${deviation}'
+    ...                                                                       Fail    2-3 are in the same millisec
+#    Run Keyword If    '${between_occ}'=='1-2'and'${samemilisecond}'=='samemilisecond'and'${lastf}'!='${lasts}'
+#    ...                                                                       Fail    1-2 are not in the same millisec
+#    ...    ELSE IF    '${between_occ}'=='2-3'and'${samemilisecond}'=='samemilisecond'and'${lasts}'=='${lastt}'
+#    ...                                                                       Fail    2-3 are in the same millisec
+
+Check_sCellToAddModList_onegateLogs
+    [Documentation]    Check sCellToAddModList on egate console Logs
+
+    CallSetup.Flush Egate Console Buffer
+    Traced sleep   3s  msg=wait 3s to flush egate memory on egate_console.log
+    Grep and check in file          host=${HOST_EPCSIM}             file=${tl.core.dir_path}/egate_console.log
+    ...                             grep=sCellToAddModList          pattern=sCellToAddModList
+
+Check_sCellIndex_onegateLogs
+    [Documentation]   Check sCellIndex and targeted physCellId messages in egate console log :
+    ...
+    ...                     sCellToAddModList
+    ...                     {
+    ...                       {
+    ...                         sCellIndex 1,   <<<<<<<<<<<<<<<<<
+    ...                         sCellConfigCommon
+    ...                         {
+    ...                           physCellId 50, <<<<<<<<<<<<<<<<
+    ...
+    ...     and so one ...
+    ...
+    ...            DOD  need to find physCell id 51 & 50 (order not important)
+    ...            sCellIndex 1 or 2 (combination not important)
+    ...
+    ...            &{NrRel_TargetedbyWeight_List}    NRCELL-1=50    NRCELL-2=51
+    ...
+    ...            actdeact is an aoptional arg to check if sCellIndex is activated or deactivated
+    [Arguments]    ${ScellEngaged}    ${actdeact}=${None}
+
+    DdatedLog  Arguments 1: ${ScellEngaged}
+    DdatedLog  Arguments 2: ${actdeact}
+    CallSetup.Flush Egate Console Buffer
+    Traced sleep   3s  msg=wait 3s to flush egate memory on egate_console.log
+    ${count}=    Set Variable    ${0}
+    FOR     ${idx}                          IN                              @{ScellEngaged}
+            DdatedLog   idx : ${idx}
+            ${count}=                     Evaluate                        ${count} + ${1}
+            ${phyid}=                     Get From Dictionary             ${ScellEngaged}    ${idx}
+            Run Keyword If                '${actdeact}'=='${None}'
+            ...                           Grep and check in file          host=${HOST_EPCSIM}             file=${tl.core.dir_path}/egate_console.log
+            ...                           grep=sCellIndex                 pattern=sCellIndex ${count}
+            ...  ELSE
+            ...                           Grep and check in file          host=${HOST_EPCSIM}             file=${tl.core.dir_path}/egate_console.log
+            ...                           grep=SCellIndex                 pattern=SCellIndex ${count} ${actdeact}   #attention SC... uppercase
+            Run Keyword If                '${actdeact}'=='${None}'             #this part is played only if only one parameter is present
+            ...                           Grep and check in file          host=${HOST_EPCSIM}             file=${tl.core.dir_path}/egate_console.log
+            ...                           grep=physCellId                 pattern=physCellId ${phyid}
+    END
+
+Cqi_Param
+    [Documentation]    DO NOT USED ANYMORE set cqi PARAMETER FOR  EACH ue on the 2 cell
+    ...                see dictionary definition above
+    [Arguments]    ${ue_list_de_dico}
+
+    Dated log  Arguments 1: ${ue_list_de_dico}
+    FOR    ${ue_desc}    IN      @{ue_list_de_dico}
+            ${ueid}=         Get From Dictionary    ${ue_desc}    ue
+            Dated log  Ue_id ${ueid} CQI settings
+            wtsemu.ue_cqi_param    id=${ueid}    scell=0    on=nr    nr_ri_mode=fixed    nr_ri=1
+            wtsemu.ue_cqi_param    id=${ueid}    scell=1    on=nr    nr_ri_mode=fixed    nr_ri=1
+    END
+
+Traffic
+    [Documentation]    * Start DL traffic for this TC
+    ...                see dictionary definition above
+    ...                * Traffic is done according above param.TrafficDuration
+    [Arguments]    ${ue_list_de_dico}    ${step}=${EMPTY}
+
+    #Cqi_Param    ${ue_list_de_dico}   #Not used anymore
+    DdatedLog  Arguments 1: ${ue_list_de_dico}
+    FOR    ${ue_desc}                                        IN                     @{ue_list_de_dico}              #@{Dico_ue_list}
+            ${ueid}=                                         Get From Dictionary    ${ue_desc}    ue                   #ue
+            ${trf_id}=                                       Get From Dictionary    ${ue_desc}    trf_id
+            ${TptDL}=                                        Get From Dictionary    ${ue_desc}    traffDL${step}
+            ${TptUL}=                                        Get From Dictionary    ${ue_desc}    traffUL${step}
+            Dated log  Ue_id ${ueid} start traffic to ${TptDL} Mbps DL
+            trfdl  ue=${ueid}    pdu=${ueid}    qfi=1    mbps=${TptDL}
+            Dated log  Ue_id ${ueid} start traffic to ${TptUL} Mbps UL
+            wtsemu.trf_data_start      ue=${ueid}    pdu=${ueid}    qfi=1    dir=ul
+            ...                        trf_id=${trf_id}    mbps=${TptUL}
+    END
+
+trfdl
+    [Documentation]    As loop in loop is not possible in Robot this is
+    ...                a sub KW of Traffic KW in charge to start traffic
+    ...                Huge traffic is possible up to  3500 Mbps In DL :
+    ...                175 Mbps maximum is possible by trf_id, egate limit to 20 Trf_id, Maximum traffic rate
+    ...                is so theoricaly 175 (max Mbps by trf_id) x nb max trf_id (20) 3500 Mbps on DL
+    [Arguments]    ${ue}=1    ${pdu}=1    ${qfi}=1    ${mbps}=22
+
+    Dated log   Args_trf: ue ${ue} pdu ${pdu} qfi ${qfi} mbps ${mbps}
+    ${trfid}     set variable    1
+    FOR    ${i}    IN RANGE    9999999
+            # Dated log  mbps ${mbps}
+            Dated log  trf_id ${trfid}
+            ${complement}          Evaluate                ${mbps} - 175    #175 is the maximum DL TP by trf_id
+            #Dated log  complement ${complement}
+            Run Keyword If         ${complement}>0 and ${mbps}>=175
+                ...                                        wtsemu.trf_data_start       ue=${ue}    pdu=${pdu}    qfi=${qfi}    dir=dl
+                ...                                                                    trf_id=${trfid}    mbps=175
+                ...     ELSE IF    ${mbps}>0 and ${mbps}<=175
+                ...                                        wtsemu.trf_data_start       ue=${ue}    pdu=${pdu}    qfi=${qfi}    dir=dl
+                ...                                                                    trf_id=${trfid}    mbps=${mbps}
+                ...     ELSE                               Exit For Loop
+            ${mbps}     set variable    ${complement}
+            ${trfid}   Evaluate        ${trfid} + 1
+            Run Keyword If    ${trfid} > 19    Exit For Loop       #Trf_id max = 20
+            sleep   2s   #to no let start traffic too quickly
+    END
+
+trf_stop_DL
+    [Documentation]    * Stop DL traffic for all ue in ${ue_list_de_dico} list
+    [Arguments]    ${ue_list_de_dico}
+
+    DdatedLog  Argument 1 TS dl: ${ue_list_de_dico}
+    FOR    ${ue_desc}    IN      @{ue_list_de_dico}
+            ${ueid}=         Get From Dictionary    ${ue_desc}      ue
+            wtsemu.trf_data_stop    ue=${ueid}    pdu=${ueid}    qfi=1    dir=dl
+    END
+
+trf_stop_UL
+    [Documentation]    * Stop UL traffic for all ue in ${ue_list_de_dico} list
+    [Arguments]    ${ue_list_de_dico}
+
+    FOR    ${ue_desc}    IN      @{ue_list_de_dico}
+
+        ${ueid}=         Get From Dictionary    ${ue_desc}      ue
+        wtsemu.trf_data_stop    ue=${ueid}    pdu=${ueid}    dir=ul
+    END
+
+Traffics Check
+    [Documentation]    This KW check for each TP if Average traffic
+    ...                is on ${deviation_in_percent} range 50% as default value
+    ...                for all ue in the list ${ue_list_de_dico}
+    [Arguments]    ${ue_list_de_dico}  ${deviation_in_percent}=50
+
+    DdatedLog  Arguments 1: ${ue_list_de_dico}
+    DdatedLog  Arguments 2: ${deviation_in_percent}
+
+    Dated log  Traffic_Check with ${deviation_in_percent} deviation possible
+
+    FOR    ${ue_desc}        IN      @{ue_list_de_dico}
+            ${ueid}=         Get From Dictionary    ${ue_desc}      ue
+            ${trf_id}=       Get From Dictionary    ${ue_desc}      trf_id
+            ${TptDL}=        Get From Dictionary    ${ue_desc}      traffDL
+            ${TptUL}=        Get From Dictionary    ${ue_desc}      traffUL
+
+            Dated log  Ue_id ${ueid}  traffic check with ${TptDL} Mbps DL
+            DOD  ue=${ueid}  pdu=${ueid}  qfi=1  trf_id=${trf_id}  dir=dl  expected_data_rate=${TptDL}  deviation_in_percent=${deviation_in_percent}
+            DOD  ue=${ueid}  pdu=${ueid}  qfi=1  trf_id=${trf_id}  dir=ul  expected_data_rate=${TptUL}  deviation_in_percent=${deviation_in_percent}
+    END
+
+DOD
+    [Documentation]    This is the DOD Traffic check mechanisum foe 1 ue
+    ...                is on ${deviation_in_percent} range 5% as default value
+    [Arguments]    ${ue}=1    ${pdu}=1    ${qfi}=1    ${trf_id}=1    ${dir}=dl
+    ...            ${expected_data_rate}=5    ${deviation_in_percent}=5
+
+    Dated log  Arg: ue:${ue} pdu:${pdu} qfi:${qfi} tref_id:${trf_id} dir:${dir} expected:${expected_data_rate} deviation:${deviation_in_percent}
+
+    wtsemu.bearer_stats_clear       ue=${ue}    pdu=${pdu}    qfi=${qfi}    dir=bi            #bi is Ul and Dl
+
+    #${average_out}=    UteWts.Get Average Traffic Rate    ue=${ue}    pdu=${pdu}    qfi=${qfi}    trf_id=${trf_id}    dir=${dir}
+    sleep   15s    #to let Berear_stat buffer collect again
+    wtsemu.Bearer Stats             ue=${ue}
+    ...                             dir=${dir}                        #trf_id=${trf_id}
+    ...                             qfi=${qfi}                        pdu=${pdu}
+
+    CallSetup.Flush Egate Console Buffer
+    Traced sleep   3s  msg=wait 3s to flush egate memory on egate_console.log
+    ${status}    ${output}     Run Keyword And Ignore Error            wtsemu.read_wtsemu_output_until
+    ...                        expected=Average packet interval        timeout=20
+    ${output}=                 Get Lines Containing String             ${output}          Average data rate
+    ${output}=                 Replace String      ${output}      Average data rate       ${EMPTY}
+    @{words}=                  Split String        ${output}      (
+    ${average_out}=            Strip String        ${words[0]}
+    should not be empty     ${average_out}
+    Dated log  average_out: ${average_out}
+    ${average}    Convert To Integer    ${average_out}
+    ${MEGA}=    Set Variable      1000000
+    ${average_rate}=    Evaluate      ${average} / ${MEGA}
+    ## compare with expected data rate with percentage
+    ${min}=             Evaluate                                ${expected_data_rate} * (100 - ${deviation_in_percent}) / 100
+    ${max}=             Evaluate                                ${expected_data_rate} * (100 + ${deviation_in_percent}) / 100
+    ${statusError}=     Evaluate                                ${min} <= ${average_rate}
+    ${statusWarn}=      Evaluate                                ${average_rate} <= ${max}
+    ${statusStr}        Set variable if                         '${statusError}'=='True'
+    ...                 REACHED                                 NOT REACHED
+    ${statusStr}        Set variable if                         '${statusWarn}'=='True'
+    ...                 ${statusStr}                            EXCEEDED
+    Dated Log           Average data rate in ${dir} trf_id=${trf_id} for ${statusStr}: expected = ${expected_data_rate}, current = ${average_rate}
+    Run Keyword If      '${statusError}'!='True'                 Fail    Data rate failure
+    [Return]    ${statusStr}
+
+Traffics Stop
+    [Documentation]    * Stop DL & UL  (used on normal way and in Teardown)
+    [Arguments]    ${ue_list_de_dico}    ${dir}=both
+
+    Dated log  Arguments 1: ${ue_list_de_dico}
+    Dated log  Arguments 2: ${dir}
+    Run keyword if    '${dir}'=='both' or '${dir}'=='dl'     trf_stop_DL   ${ue_list_de_dico}
+    ...               ELSE                                   trf_stop_UL   ${ue_list_de_dico}
+
+    ${TRF_ongoing}=    Set Variable If   ${TRF_ongoing} == ${True}    ${False}    ${True}  #astuce set to Dalse and not none see Builtin
+    Dated log  TRAFFIC STOPPED TRF_ongoing set to ${TRF_ongoing}
+
+
+# - - - VONR CORNER - - -
+Add_VONR_PDU
+    [Documentation]    Add VONR bearers (QFI:2 fiveQI:5 and QFI:3 fiveQI:1)
+    ...                see dictionary definition above
+    [Arguments]    ${ue_list_de_dico}
+
+    DdatedLog  Arguments 1: ${ue_list_de_dico}
+    FOR    ${ue_desc}                                           IN                      @{ue_list_de_dico}
+            ${ueid}=                                            Get From Dictionary    ${ue_desc}    ue
+            Dated log                                           id ${ueid} PDU session modify adding FIVEQi-5 BEARER
+            CallSetup.UE PDU Session Modify                     ue=${ueid}  pdu=${ueid}  qfta=2  by=amf
+            Dated log                                           id ${ueid} PDU session modify adding FIVEQi-1 BEARER
+            sleep                                               1s
+            CallSetup.UE PDU Session Modify                     ue=${ueid}  pdu=${ueid}  qfta=3  by=amf
+    END
+    sleep   2s
+Traffic_VONR
+    [Documentation]    * Start DL and UL traffic for this TC
+    ...                * Traffic DL/UL are on 3 bearers
+    ...                * As 175 Mbps maximum is possible by trf_id, this TC is able to complete on a second trf_id
+    ...                Maximum traffic rate is so 350 Mbps on DL
+    ...                * Traffic is INFINITE
+    [Arguments]    ${ue_list_de_dico}
+
+    Dated log  dicogeneral ${ue_list_de_dico}
+    FOR    ${ue_desc}                                        IN                        @{ue_list_de_dico}              #@{Dico_ue_list}
+            ${ueid}=                                         Get From Dictionary    ${ue_desc}    ue                   #ue
+            ${TptDL}=                                        Get From Dictionary    ${ue_desc}    traffDL
+            ${TptUL}=                                        Get From Dictionary    ${ue_desc}    traffUL
+
+            ${complement}           Evaluate             ${TptDL} - 175
+            Fill UE Property    ${ueid}
+            Dated log  UE_profiles_list ${UE_profiles_list}
+            Dated log  Ue_id ${ueid} start traffic to ${TptDL} Mbps DL on FIVEQi-6 BEAER
+            Run Keyword If   ${TptDL} <= 175
+            ...              Traffic.Traffic UE DL    ueSetting=${UE_profiles_list}[0]    throughput=${TptDL}
+            ...                                 maxThroughputPerTransfer=300        shouldBeStop=False     shouldBeCheck=False
+            ...                                 duration=1s
+            ...     ELSE     Run Keywords
+            ...              Dated log        Traffic need more than more 175 Mbps so need on second trf_id ${complement} Mbps              AND
+            ...              Traffic.Traffic UE DL    ueSetting=${UE_profiles_list}[0]    throughput=175
+            ...                                 maxThroughputPerTransfer=300        shouldBeStop=False     shouldBeCheck=False
+            ...                                 duration=1s                                                                                 AND
+            ...              Traffic.Traffic UE DL    ueSetting=${UE_profiles_list}[2]    throughput=${complement}
+            ...                                 maxThroughputPerTransfer=300        shouldBeStop=False     shouldBeCheck=False
+            ...                                 duration=1s
+            Dated log  Ue_id ${ueid} start traffic TCP DL on FIVEQi-5 BEARER
+            ${UE_profiles_list[4].throughput}   Set Variable                                    ${None}
+            Traffic.Traffic UE DL               ueSetting=${UE_profiles_list}[4]                protocol=tcp
+            ...                                 shouldBeCheck=False   shouldBeStop=False     duration=1s
+            Dated log  Ue_id ${ueid} start traffic amr_wb_18_25 DL on FIVEQi-1 BEARER
+            ${UE_profiles_list[6].throughput}   Set Variable                                    ${None}
+            Traffic.Traffic UE DL               ueSetting=${UE_profiles_list}[6]                rtp_codec=amr_wb_18_25
+            ...                                 shouldBeCheck=False   shouldBeStop=False     duration=1s
+            Dated log  Ue_id ${ueid} start traffic to ${TptUL} Mbps UL
+            Traffic.Traffic UE UL    ueSetting=${UE_profiles_list}[1]    throughput=${TptUL}
+            ...                                 maxThroughputPerTransfer=300        shouldBeStop=False     shouldBeCheck=False
+            ...                                 duration=1s
+            Dated log  Ue_id ${ueid} start traffic TCP UL on FIVEQi-5 BEARER
+            Traffic.Traffic UE UL               ueSetting=${UE_profiles_list}[5]                protocol=tcp
+            ...                                 shouldBeCheck=False   shouldBeStop=False     duration=1s
+            Dated log  Ue_id ${ueid} start traffic amr_wb_18_25 UL on FIVEQi-1 BEARER
+            ${UE_profiles_list[7].throughput}   Set Variable                                    ${None}
+            Traffic.Traffic UE UL               ueSetting=${UE_profiles_list}[7]                rtp_codec=amr_wb_18_25
+            ...                                 shouldBeCheck=False   shouldBeStop=False     duration=1s
+            ${TRF_ongoing}=    Set Variable If   ${TRF_ongoing} == ${False}    ${True}    ${False}
+            Dated log  TRF_ongoing?: ${TRF_ongoing}
+    END
+Check_DL_Trafic_VONR
+    [Documentation]    see documentation in Keywords TC 2640-AB_08 SA
+    ...                For calcualting the PM values for Traffic in Defaut bearer
+    ...                You can use the EXEL file \\eseefsn50.emea.nsn-net.net\rotta4internal\5G_3\paris-saclay\FEATURE_2640\CALCUL_TPUT_2640.xlsx
+
+    Dated Log   Pause 10 mn to get the next PM period
+    sleep   600s
+    Dated Log   Pause ended
+    IBCA Collect PM Counters File
+    # Check LEAGACY RLC Counters
+    Dated Log   Check Legacy Counters for QOS1, 5 and 6
+    5GC002640_PMCounterCheck_In_A_Range    ${PM_Counter_DL_RLC_PDU_volume_QOS1}    720    722
+    5GC002640_PMCounterCheck_In_A_Range    ${PM_Counter_DL_RLC_PDU_volume_QOS5}    617    619
+    5GC002640_PMCounterCheck_In_A_Range    ${PM_Counter_DL_RLC_PDU_volume_QOS6}    11192000    11305000    #300 0.5% #301Mbps 11235000    11348000
+    # Check RLC Counters for CA primary path and secondary path
+    Dated Log   Check Primary+secondary Path Counters for QOS1
+    5GC002640_PMCounterCheck_Expected_Value    ${PM_Counter_DL_RLC_PDU_volume_primary_QOS1}    0
+    5GC002640_PMCounterCheck_Expected_Value    ${PM_Counter_DL_RLC_PDU_volume_secondary_QOS1}    0
+    Dated Log   Check Primary+secondary Path Counters for QOS5
+    5GC002640_PMCounterCheck_Sum_eqal    ${PM_Counter_DL_RLC_PDU_volume_primary_QOS5}
+    ...                                                     ${PM_Counter_DL_RLC_PDU_volume_secondary_QOS5}
+    ...                                                     ${PM_Counter_DL_RLC_PDU_volume_QOS5}
+    Dated Log   Check Primary+secondary Path Counters for QOS6
+    5GC002640_PMCounterCheck_Sum_eqal    ${PM_Counter_DL_RLC_PDU_volume_primary_QOS6}
+    ...                                                     ${PM_Counter_DL_RLC_PDU_volume_secondary_QOS6}
+    ...                                                     ${PM_Counter_DL_RLC_PDU_volume_QOS6}
+
+Traffics VONR Stop
+    [Documentation]    Stop Traffic DL & UL for 3 bearers VONR
+    ...                and detach UE
+    [Arguments]    ${ue_list_de_dico}
+
+    FOR    ${ue_desc}                                        IN                        @{ue_list_de_dico}
+            ${ueid}=                                         Get From Dictionary    ${ue_desc}    ue
+            ${TptDL}=                                        Get From Dictionary    ${ue_desc}    traffDL
+
+            Fill UE Property    ${ueid}
+            @{DL_UE_profiles_list}    Create List    ${UE_profiles_list}[0]  ${UE_profiles_list}[4]   ${UE_profiles_list}[6]
+            run keyword IF     '${TptDL}' > '175'     APPEND TO LIST     ${DL_UE_profiles_list}     ${UE_profiles_list}[2]
+
+            Traffic.Traffic Stop UEs    ${DL_UE_profiles_list}    dir=dl
+            @{UL_UE_profiles_list}    Create List    ${UE_profiles_list}[1]  ${UE_profiles_list}[5]   ${UE_profiles_list}[7]
+
+            Traffic.Traffic Stop UEs    ${UL_UE_profiles_list}    dir=ul
+
+            sleep   1s
+            CallSetup.UE Deregister     id=${ueid}
+    END
+    ${TRF_ongoing}=    Set Variable     ${False}
+    Dated log  TRAFFIC STOPPED TRF_ongoing set to ${TRF_ongoing}
+
+#****************************** Keywords for capture traces***************************************
+Start Mirroring And Traces gNB
+    [Documentation]      Start Mirroring (present for debug purpose)
+
+    ${capture_gnb_x2}      Capture CORE Set Upon Config
+    ${capture_gnb_l1l2}    Capture L1L2 Set Upon Config
+    ${capture_gnb_l3l2}    Capture CPRT Set Upon Config
+
+    # ADT - add filter for capture_gnb_x2
+    ${filter F1AP}                  Get Filter For F1AP                     ${capture_gnb_x2}
+    ${filter X2AP}                  Get Filter For X2AP                     ${capture_gnb_x2}
+    ${capture_gnb_x2.filter}        set variable                            ${filter F1AP} or ${filter X2AP}
+
+    # ${capture_gnb_l3l2.filter}       Get Filter To Exclude protocols    capture=${capture_gnb_l3l2}    protocolList=${filter_protocol}
+
+    ${capture_gnb_l3l2.filter}       Get Filter To Exclude protocols    capture=${capture_gnb_l3l2}    protocolList=${filter_protocol}
+    ${capture_gnb_l1l2.filter}       Get Filter To Exclude protocols    capture=${capture_gnb_l1l2}    protocolList=${filter_protocol}
+
+    Capture Init         ${capture_gnb_x2}        suffix=_X2_backhaul
+    Capture Init         ${capture_gnb_l1l2}      suffix=_filter_protocol
+    Capture Init         ${capture_gnb_l3l2}      suffix=_L3L2_filter_protocol
+
+    Set Suite Variable    ${capture_gnb_x2}
+    Set Suite Variable    ${capture_gnb_l1l2}
+    Set Suite Variable    ${capture_gnb_l3l2}
+    Dated Log    -----> Starting capture X2 in gNB.\n
+    Capture Start         ${capture_gnb_x2}
+    Dated Log    -----> Starting capture L2L1 in gNB.\n
+    Capture Start         ${capture_gnb_l1l2}
+    Dated Log    -----> Starting capture L3L2 in gNB.\n
+    Capture Start         ${capture_gnb_l3l2}
+
+Stop Mirroring And Traces gNB
+    [Documentation]      Stop Mirroring (present for debug purpose)
+
+    Dated Log    [Stopping Mirroring And Traces gNB]
+    Capture Stop    ${capture_gnb_l1l2}
+    Dated Log    -----> Traces L2L1 saved under ${capture_gnb_l1l2.path}\n
+    Capture Stop    ${capture_gnb_x2}
+    Dated Log    -----> Traces X2 saved under ${capture_gnb_x2.path}\n
+    Capture Stop    ${capture_gnb_l3l2}
+    Dated Log    -----> Traces L2L3 saved under ${capture_gnb_l3l2.path}\n
+
+Start Mirroring And Traces AP
+    [Documentation]      Start Mirroring (present for debug purpose)
+
+    Dated Log    [Starting Mirroring And Traces Airphone]
+    ${capture_ap_l1l2}    Capture L1L2 Set Upon Config    ${AP_DU}
+    ${capture_ap_l1l2.filter}      Get Filter To Exclude protocols   capture=${capture_ap_l1l2}
+    ...                                                              protocolList=${filter_protocol}
+    Capture Init         ${capture_ap_l1l2}     suffix=_filter_protocol
+    Set Suite Variable    ${capture_ap_l1l2}
+    Dated Log    -----> Starting capture L2L1 in Airphone.\n
+    Capture Start         ${capture_ap_l1l2}
+
+Stop Mirroring And Traces AP
+    [Documentation]      Stop Mirroring (present for debug purpose)
+
+    Dated Log    [Stopping Mirroring And Traces Airphone]
+    Capture Stop    ${capture_ap_l1l2}
+    Dated Log    -----> Airpone L2L1 traces saved under ${capture_ap_l1l2.path}\n
+
+#****************************** Keywords for DEBUG************************************************
+Fill UE Property
+    [Documentation]    TO FILL
+    ...                index paire de UE_profiles_list => profile DL
+    ...                index impaire de UE_profiles_list => profile UL
+    [Arguments]    ${ueid}
+
+    &{basic2}    copy dictionary    ${BASIC_UE_SA}
+    &{basic3}    copy dictionary    ${BASIC_UE_SA}
+    &{basic4}    copy dictionary    ${BASIC_UE_SA}
+    &{basic5}    copy dictionary    ${BASIC_UE_SA}
+    &{basic6}    copy dictionary    ${BASIC_UE_SA}
+    &{basic7}    copy dictionary    ${BASIC_UE_SA}
+    &{basic8}    copy dictionary    ${BASIC_UE_SA}
+    @{UE_profiles_list}     Create List      ${BASIC_UE_SA}     ${basic2}     ${basic3}     ${basic4}
+    ...                                      ${basic5}          ${basic6}     ${basic7}     ${basic8}
+    FOR    ${index}    IN RANGE     1    9
+        ${elem}               set variable      ${UE_profiles_list}[${index-1}]
+        ${elem.ue}            Set Variable      ${ueid}
+        ${elem.pdu}           Set Variable      ${ueid}
+        ${elem.qfi}           Set Variable If
+        ...      ${index}==1       1
+        ...      ${index}==2       1
+        ...      ${index}==3       1
+        ...      ${index}==4       1
+        ...      ${index}==5       2
+        ...      ${index}==6       2
+        ...      ${index}==7       3
+        ...      ${index}==8       3
+        ${elem.trf_id}        Set Variable      ${index}
+    END
+    Dated log  Fill UE Property_UE_profiles_list :${UE_profiles_list}
+    Set Suite Variable       ${UE_profiles_list}
+
+# - - - - - - - - - - - - - - - - - - - - KW -F - - - - - - - - - - - - - - - - - - - - - -#
+# - - - - - - - - - - - - - - - - - - - - KW -F - - - - - - - - - - - - - - - - - - - - - -#
+# - - - - - - - - - - - - - - - - - - - - KW -F - - - - - - - - - - - - - - - - - - - - - -#
+
+    Init Variables
+    Get Original Configuration
+
+Init Variables
+    &{MIRROR_L2_GNB}                create dictionary
+    ...                             sport1=21                               sport2=29
+    ...                             dport=3                                 host=${GNB_DU.sys[0].M}
+    Set Suite Variable              ${MIRROR_L2_GNB}
+    ${slaveHost}                    Call method
+    ...                             ${GNB_DU}                               getSysSlaveHost
+    ${CAPTURE_L2_GNB}               newCapture
+    ...                                 host=${slaveHost}
+    ...                                 interface=etha01
+    ...                                 prefix=L2Traces
+    ${CAPTURE_L2_GNB.withTN}        Set Variable                            ${True}
+    Set Suite Variable              ${CAPTURE_L2_GNB}
+
+    # Set Suite Variable              ${basicChosenAB}     testsuite/Paris/RRM/ET/5GC002640/resources/config/basic_setup_fts.cfg
+    # Set Suite Variable              ${basicChosenTC3}    testsuite/Paris/RRM/ET/5GC002640/resources/config/basic_setup_ftsTC03.cfg
+
+
+Get Original Configuration
+    [Documentation]      KW used to get the current gNB configuration: swconfig, WTS
+
+    # Get EPC file configuration:
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/basic_wts_ori.cfg
+    ...                             connection=${alias_epc}
+
+    # Get EPC xml configuration:
+    ${file}                         Get XML AirPhoneConfig Path
+    Return From Keyword if          '${file}'=='${EMPTY}'          #Exit if APconfig not exist
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${file}
+    ...                             local_path=${LOG_PATH}/AP_Config_ori.xml
+    ...                             connection=${alias_epc}
+
+Put back original config files
+    [Documentation]      KW used to put back TL configuration: swconfig, WTS
+
+    # Get EPC file configuration:
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.upload_file                 remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/basic_wts_ori.cfg
+    ...                             connection=${alias_epc}
+
+    # Get EPC xml configuration:
+    ${file}                         Get XML AirPhoneConfig Path
+    Return From Keyword if          '${file}'=='${EMPTY}'          #Exit if APconfig not exist
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.upload_file                 remote_path=${tl.core.dir_path}/${file}
+    ...                             local_path=${LOG_PATH}/AP_Config_ori.xml
+    ...                             connection=${alias_epc}
+
+# DSS_CMD
+#     [Documentation]      (FORECASTED not used ongoing) KW helping to send and log on console dss command not yet used
+#     [Arguments]          @{varargs}    &{kwargs}      #les non named vont dans la suite @{varargs} les named argument vont dans le dico &{kwargs}
+#     ${msg}    set variable     ${EMPTY}
+#     FOR    ${k}    IN    @{kwargs.keys()}
+#            ${msg}     CATENATE     ${msg}   ${space}${space}${k}=${kwargs['${k}']}
+#     END
+#     # log to console    ----> ${varargs[0]} ${msg} <----
+#     Dated Log    ----> ${varargs[0]} ${msg}
+#     ${msg}     CATENATE     wtsemu.${varargs[0]}    ${space}${space}${msg}
+#     Dated Log      ${msg}
+#     Run Keyword    ${msg}
+
+DSS_CMD
+    [Documentation]      (FORECASTED not used ongoing) KW helping to send and log on console dss command not yet used
+    [Arguments]          @{varargs}    &{kwargs}      #les non named vont dans la suite @{varargs} les named argument vont dans le dico &{kwargs}
+    # ${msg}    set variable     ${EMPTY}
+    # FOR    ${k}    IN    @{kwargs.keys()}
+    #        ${msg}     CATENATE     ${msg}   ${space}${space}${k}=${kwargs['${k}']}
+    # END
+    # # log to console    ----> ${varargs[0]} ${msg} <----
+    Dated Log    ----> wtsemu.${varargs[0]} &{kwargs}
+    # ${msg}     CATENATE     wtsemu.${varargs[0]}    ${space}${space}${msg}
+    # Dated Log      ${msg}
+    Run Keyword    wtsemu.${varargs[0]}    &{kwargs}
+
+
+DSS_CRM_Cell_Setup_Phase3_bdf    #brut de fonderie
+    [Documentation]      KW used to set DSS Cell setup on primary Cell
+
+    wtsemu.enb_xp_param                           id=1    ignore_xp=off    xp_listening_socket=on
+    Sleep   2s
+    wtsemu.enb_xp_param                           id=1    xp_peers=2
+    Sleep   2s
+    wtsemu.enb_xp_link_up                         enb=1    target=2
+    Sleep   2s
+
+    wtsemu.enb_x2_link_up                         enb=1    target=2
+    Sleep   2s
+
+    wtsemu.enb_dss_param                          id=1    feature_flag=on    message_sets=V1,DMS3
+    Sleep   2s
+    wtsemu.enb_cell_param                         enb=1    id=1    lte_nr_dss_mode=DSS_PHASE_3    antenna_ports_num=2
+    Sleep   2s
+    wtsemu.enb_cell_dss_feature                   enb=1    id=1    nr_dl_peak_rate_increase=on
+    Sleep   2s
+    wtsemu.enb_cell_dss_feature                   enb=1    id=1    superfast_allocation=on
+    Sleep   2s
+    #wtsemu.enb_dss_cell_param                     enb=1    id=1    dl_resource_sharing_algo=dl_buffer_level_based
+    wtsemu.enb_cell_dss_param                     enb=1    id=1    dl_resource_sharing_algo=dl_buffer_level_based
+    Sleep   2s
+
+    wtsemu.enb_dss_configure_partnership          enb=1    cell=1    dss_peer=2:3
+    Sleep   2s
+
+    wtsemu.enb_crm_cell_resource_reservation      enb=1    cell=1    tgt_enb=2    tgt_cell=3    assigned_dl_minimum_share_to_nr=30
+    ...                                           assigned_dl_maximum_share_to_nr=100    assigned_dl_minimum_share_to_lte=15
+    ...                                           assigned_dl_maximum_share_to_lte=70    assigned_ul_minimum_share_to_nr=20
+    ...                                           assigned_ul_maximum_share_to_nr=70
+    Sleep   2s
+    wtsemu.enb_crm_param                          id=1    ul_qos_load_meas_timer=200    dl_qos_load_meas_timer=200
+    sleep    30s
+
+    wtsemu.enb_dss_establish_partnership           enb=1    cell=1    tgt_enb=2    tgt_cell=3
+    sleep   10s
+
+    #wtsemu.enb_dss_cell_resource_reservation_dl    enb=1    cell=1    reset
+    wtsemu.enb_dss_dl_cell_resource_reservation    enb=1    cell=1    #reset
+    Sleep   2s
+    #wtsemu.enb_dss_cell_resource_reservation_ul    enb=1    cell=1    reset
+    wtsemu.enb_dss_ul_cell_resource_reservation    enb=1    cell=1    #reset
+    Sleep    2s
+
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1    prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    wtsemu.enb_dss_dl_cell_resource_reservation    cell=1    enb=1    prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    Sleep    2s
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1 reserved_fixed_normal_subframes=1000010001-1000010001-1000010001-1000010001-
+    #...                                                                                            1000010001-1000010001-1000010001-1000010001
+    wtsemu.enb_dss_dl_cell_resource_reservation    cell=1    enb=1
+    ...           reserved_fixed_normal_subframes=1000010001-1000010001-1000010001-1000010001-1000010001-1000010001-1000010001-1000010001
+    Sleep    2s
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1 min_lte_nr_dss_ratio=30    max_lte_nr_dss_ratio=100
+    wtsemu.enb_dss_dl_cell_resource_reservation    cell=1    enb=1    min_lte_nr_dss_ratio=30    max_lte_nr_dss_ratio=100
+    Sleep    2s
+
+    wtsemu.enb_dss_cell_resource_coordination      enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=DL
+    Sleep    2s
+    wtsemu.enb_dss_ul_cell_resource_reservation    enb=1    cell=1    minimum_prb_share=30    maximum_prb_share=70
+    Sleep    2s
+    wtsemu.enb_dss_cell_resource_coordination      enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=UL
+    Sleep    2s
+    wtsemu.enb_crm_status                          enb=1    cell=1
+    sleep    3m
+
+    wtsemu.enb_dss_resource_allocation            enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=DL
+    ...                                           allocation_start_time=immediate
+    ...             dl_allocated_normal_subframes=0011101000-0111101110-0011101000-0111101110-0011101000-0111101110-0011101000-0111101110
+    Sleep    2s
+    wtsemu.enb_dss_resource_allocation            enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=UL
+    ...                                           allocation_start_time=immediate    ul_allocated_prb_list=1,35
+    Sleep    2s
+    wtsemu.enb_crm_status                         enb=1    cell=1
+    Sleep    2s
+
+DSS_CRM_Cell_Setup_Phase3_Blanking_bdf    #brut de fonderie
+    [Documentation]      KW used to set DSS Cell setup on primary Cell
+
+    wtsemu.enb_xp_param                           id=1    ignore_xp=off    xp_listening_socket=on
+    Sleep   2s
+    wtsemu.enb_xp_param                           id=1    xp_peers=2
+    Sleep   2s
+    wtsemu.enb_xp_link_up                         enb=1    target=2
+    Sleep   2s
+
+    wtsemu.enb_x2_link_up                         enb=1    target=2
+    Sleep   2s
+
+    wtsemu.enb_dss_param                          id=1    feature_flag=on    message_sets=V1,DMS3
+    Sleep   2s
+    wtsemu.enb_cell_param                         enb=1    id=1    lte_nr_dss_mode=DSS_PHASE_3    antenna_ports_num=2
+    Sleep   2s
+    wtsemu.enb_cell_dss_feature                   enb=1    id=1    nr_dl_peak_rate_increase=on
+    Sleep   2s
+    wtsemu.enb_cell_dss_feature                   enb=1    id=1    superfast_allocation=on
+    Sleep   2s
+    #wtsemu.enb_dss_cell_param                     enb=1    id=1    dl_resource_sharing_algo=dl_buffer_level_based
+    wtsemu.enb_cell_dss_param                     enb=1    id=1    dl_resource_sharing_algo=dl_buffer_level_based
+    Sleep   2s
+
+    wtsemu.enb_dss_configure_partnership          enb=1    cell=1    dss_peer=2:3
+    Sleep   2s
+
+    wtsemu.enb_crm_cell_resource_reservation      enb=1    cell=1    tgt_enb=2    tgt_cell=3    assigned_dl_minimum_share_to_nr=30
+    ...                                           assigned_dl_maximum_share_to_nr=100    assigned_dl_minimum_share_to_lte=15
+    ...                                           assigned_dl_maximum_share_to_lte=70    assigned_ul_minimum_share_to_nr=20
+    ...                                           assigned_ul_maximum_share_to_nr=70
+    Sleep   2s
+    wtsemu.enb_crm_param                          id=1    ul_qos_load_meas_timer=200    dl_qos_load_meas_timer=200
+    sleep    30s
+
+    wtsemu.enb_dss_establish_partnership           enb=1    cell=1    tgt_enb=2    tgt_cell=3
+    sleep   10s
+
+    #wtsemu.enb_dss_cell_resource_reservation_dl    enb=1    cell=1    reset
+    wtsemu.enb_dss_dl_cell_resource_reservation    enb=1    cell=1    #reset
+    Sleep   2s
+    #wtsemu.enb_dss_cell_resource_reservation_ul    enb=1    cell=1    reset
+    wtsemu.enb_dss_ul_cell_resource_reservation    enb=1    cell=1    #reset
+    Sleep    2s
+
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1    prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    wtsemu.enb_dss_dl_cell_resource_reservation    cell=1    enb=1    prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    Sleep    2s
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1 reserved_fixed_normal_subframes=1000010001-1000010001-1000010001-1000010001-
+    #...                                                                                            1000010001-1000010001-1000010001-1000010001
+    wtsemu.enb_dss_dl_cell_resource_reservation    cell=1    enb=1
+    ...           reserved_fixed_normal_subframes=1000010001-1000010001-1000010001-1000010001-1000010001-1000010001-1000010001-1000010001
+    Sleep    2s
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1 min_lte_nr_dss_ratio=30    max_lte_nr_dss_ratio=100
+    wtsemu.enb_dss_dl_cell_resource_reservation    cell=1    enb=1    min_lte_nr_dss_ratio=30    max_lte_nr_dss_ratio=100
+    Sleep    2s
+
+    wtsemu.enb_dss_cell_resource_coordination      enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=DL
+    Sleep    2s
+    wtsemu.enb_dss_ul_cell_resource_reservation    enb=1    cell=1    minimum_prb_share=30    maximum_prb_share=70
+    Sleep    2s
+    wtsemu.enb_dss_cell_resource_coordination      enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=UL
+    Sleep    2s
+    wtsemu.enb_crm_status                          enb=1    cell=1
+    sleep    3m
+
+    wtsemu.enb_dss_resource_allocation            enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=DL
+    ...                                           allocation_start_time=immediate
+    ...             dl_allocated_normal_subframes=0011101000-0111101110-0011101000-0111101110-0011101000-0111101110-0011101000-0111101110
+    Sleep    2s
+    #FOR PRBlanking
+    wtsemu.enb_dss_resource_allocation            enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=UL
+    ...                                           allocation_start_time=immediate    ul_allocated_prb_list=11,35
+    Sleep    2s
+    wtsemu.enb_crm_status                         enb=1    cell=1
+    Sleep    2s
+
+# DSS_CRM_Cell_Setup_Phase3_8533
+#     Dated Log    \n *** DSS_CRM_Cell_Setup_Phase3_8533 *** \n
+
+#     Dated Log    ====> DSS_CRM_Cell_Setup_Phase3_new id=1 cell=1 tgt_cell=3 ul_allocated_prb_list=11,35
+#     DSS_CRM_Cell_Setup_Phase3_new    id=1    cell=1    tgt_cell=3    ul_allocated_prb_list=11,35
+
+#     Dated Log    ====> DSS_CRM_Cell_Setup_Phase3_new id=2 cell=2 tgt_cell=5 ul_allocated_prb_list=1,35
+#     DSS_CRM_Cell_Setup_Phase3_new    id=2    cell=2    tgt_cell=5    ul_allocated_prb_list=1,35
+
+#     Dated Log    ====> DSS_CRM_Cell_Setup_Phase3_new id=3 cell=3 tgt_cell=6 ul_allocated_prb_list=1,35
+#     DSS_CRM_Cell_Setup_Phase3_new    id=3    cell=3    tgt_cell=6    ul_allocated_prb_list=1,35
+
+DSS_CRM_Cell_Setup_Phase3_8533_tgt_cell3
+    Dated Log    \n *** DSS_CRM_Cell_Setup_Phase3_8533_tgt_cell3 *** \n
+
+    Dated Log    ====> DSS_CRM_Cell_Setup_Phase3_new id=1 cell=1 tgt_cell=3 ul_allocated_prb_list=11,35
+    DSS_CRM_Cell_Setup_Phase3_new    id=1    cell=1    tgt_cell=3    ul_allocated_prb_list=11,35
+
+DSS_CRM_Cell_Setup_Phase3_8533_tgt_cell5
+    Dated Log    \n *** DSS_CRM_Cell_Setup_Phase3_8533_tgt_cell5 *** \n
+
+    Dated Log    ====> DSS_CRM_Cell_Setup_Phase3_new id=2 cell=2 tgt_cell=5 ul_allocated_prb_list=1,35
+    DSS_CRM_Cell_Setup_Phase3_new    id=2    cell=2    tgt_cell=5    ul_allocated_prb_list=1,35
+
+DSS_CRM_Cell_Setup_Phase3_8533_tgt_cell6
+    Dated Log    \n *** DSS_CRM_Cell_Setup_Phase3_8533_tgt_cell6 *** \n
+
+    Dated Log    ====> DSS_CRM_Cell_Setup_Phase3_new id=3 cell=3 tgt_cell=6 ul_allocated_prb_list=1,35
+    DSS_CRM_Cell_Setup_Phase3_new    id=3    cell=3    tgt_cell=6    ul_allocated_prb_list=1,35
+
+DSS_CRM_Cell_Setup_Phase3_new    #brut de fonderie
+    [Documentation]      KW used to set DSS Cell setup on primary Cell
+    [Arguments]        ${id}=1    ${cell}=1    ${tgt_cell}=3    ${ul_allocated_prb_list}=11,35
+
+    DSS_CMD    enb_xp_param                           id=1    ignore_xp=off    xp_listening_socket=on
+    Sleep   2s
+    DSS_CMD    enb_xp_param                           id=1    xp_peers=2
+    Sleep   2s
+    DSS_CMD    enb_xp_link_up                         enb=1    target=2
+    Sleep   2s
+
+    DSS_CMD    enb_x2_link_up                         enb=1    target=2
+    Sleep   2s
+
+    DSS_CMD    enb_dss_param                          id=${id}    feature_flag=on    message_sets=V1,DMS3
+    Sleep   2s
+    DSS_CMD    enb_cell_param                         enb=1    id=${id}    lte_nr_dss_mode=DSS_PHASE_3    antenna_ports_num=2
+    Sleep   2s
+    DSS_CMD    enb_cell_dss_feature                   enb=1    id=${id}    nr_dl_peak_rate_increase=on
+    Sleep   2s
+    DSS_CMD    enb_cell_dss_feature                   enb=1    id=${id}    superfast_allocation=on
+    Sleep   2s
+    #wtsemu.enb_dss_cell_param                     enb=1    id=1    dl_resource_sharing_algo=dl_buffer_level_based
+    DSS_CMD    enb_cell_dss_param                     enb=1    id=${id}    dl_resource_sharing_algo=dl_buffer_level_based
+    Sleep   2s
+
+    DSS_CMD    enb_dss_configure_partnership          enb=1    cell=${cell}    dss_peer=2:${tgt_cell}
+    Sleep   2s
+
+    DSS_CMD    enb_crm_cell_resource_reservation      enb=1    cell=${cell}    tgt_enb=2     tgt_cell=${tgt_cell}
+    ...                                               assigned_dl_minimum_share_to_nr=30     assigned_dl_maximum_share_to_nr=100
+    ...                                               assigned_dl_minimum_share_to_lte=15    assigned_dl_maximum_share_to_lte=70
+    ...                                               assigned_ul_minimum_share_to_nr=20     assigned_ul_maximum_share_to_nr=70
+    Sleep   2s
+    DSS_CMD    enb_crm_param                          id=1    ul_qos_load_meas_timer=200    dl_qos_load_meas_timer=200
+    sleep    30s
+
+    DSS_CMD    enb_dss_establish_partnership           enb=1    cell=${cell}    tgt_enb=2    tgt_cell=${tgt_cell}
+    sleep   10s
+
+    #wtsemu.enb_dss_cell_resource_reservation_dl    enb=1    cell=1    reset
+    DSS_CMD    enb_dss_dl_cell_resource_reservation    enb=1    cell=${cell}    #reset
+    Sleep   2s
+    #wtsemu.enb_dss_cell_resource_reservation_ul    enb=1    cell=1    reset
+    DSS_CMD    enb_dss_ul_cell_resource_reservation    enb=1    cell=${cell}    #reset
+    Sleep    2s
+
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1    prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    DSS_CMD    enb_dss_dl_cell_resource_reservation    cell=${cell}    enb=1    prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    Sleep    2s
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1 reserved_fixed_normal_subframes=1000010001-1000010001-1000010001-1000010001-
+    #...                                                                                            1000010001-1000010001-1000010001-1000010001
+    DSS_CMD    enb_dss_dl_cell_resource_reservation    cell=${cell}    enb=1
+    ...           reserved_fixed_normal_subframes=1000010001-1000010001-1000010001-1000010001-1000010001-1000010001-1000010001-1000010001
+    Sleep    2s
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1 min_lte_nr_dss_ratio=30    max_lte_nr_dss_ratio=100
+    DSS_CMD    enb_dss_dl_cell_resource_reservation    cell=${cell}    enb=1    min_lte_nr_dss_ratio=30    max_lte_nr_dss_ratio=100
+    Sleep    2s
+
+    DSS_CMD    enb_dss_cell_resource_coordination      enb=1    cell=${cell}    tgt_enb=2    tgt_cell=${tgt_cell}    dir=DL
+    Sleep    2s
+    DSS_CMD    enb_dss_ul_cell_resource_reservation    enb=1    cell=${cell}    minimum_prb_share=30    maximum_prb_share=70
+    Sleep    2s
+    DSS_CMD    enb_dss_cell_resource_coordination      enb=1    cell=${cell}    tgt_enb=2    tgt_cell=${tgt_cell}    dir=UL
+    Sleep    2s
+    DSS_CMD    enb_crm_status                          enb=1    cell=1
+    sleep    3m
+
+    DSS_CMD    enb_dss_resource_allocation            enb=1    cell=${cell}    tgt_enb=2    tgt_cell=${tgt_cell}    dir=DL
+    ...                                           allocation_start_time=immediate
+    ...             dl_allocated_normal_subframes=0011101000-0111101110-0011101000-0111101110-0011101000-0111101110-0011101000-0111101110
+    Sleep    2s
+    #FOR PRBlanking
+    DSS_CMD    enb_dss_resource_allocation            enb=1    cell=${cell}    tgt_enb=2    tgt_cell=${tgt_cell}    dir=UL
+    ...                                           allocation_start_time=immediate    ul_allocated_prb_list=${ul_allocated_prb_list}
+    Sleep    2s
+    DSS_CMD    enb_crm_status                         enb=1    cell=1
+    Sleep    2s
+
+
+
+DSS_CRM_Cell_Setup_Phase3_SUPERFAST_new
+    [Documentation]      KW used to set DSS Cell setup on primary Cell
+    [Arguments]        ${id}=1    ${cell}=1    ${tgt_cell}=3
+
+    DSS_CMD    enb_xp_param                           id=1    ignore_xp=off    xp_listening_socket=on
+    Sleep   2s
+    DSS_CMD    enb_xp_param                           id=1    xp_peers=2
+    Sleep   2s
+    DSS_CMD    enb_xp_link_up                         enb=1    target=2
+    Sleep   2s
+
+    DSS_CMD    enb_x2_link_up                         enb=1    target=2
+    Sleep   2s
+
+    Run Keyword If    ${debugDSS}                     DSS_CMD    sim_trace    enb=1    protocol=xp,xpu on
+    Sleep   2s
+
+    DSS_CMD    enb_dss_param                          id=${id}    feature_flag=on    message_sets=DMS3
+    Sleep   2s
+    DSS_CMD    enb_cell_param                         enb=1    id=${id}    lte_nr_dss_mode=DSS_PHASE_3    antenna_ports_num=2
+    Sleep   2s
+    DSS_CMD    enb_cell_dss_feature                   enb=1    id=${id}    nr_dl_peak_rate_increase=on
+    Sleep   2s
+    DSS_CMD    enb_cell_dss_feature                   enb=1    id=${id}    superfast_allocation=on
+    Sleep   2s
+    #wtsemu.enb_dss_cell_param                     enb=1    id=1    dl_resource_sharing_algo=dl_buffer_level_based
+    DSS_CMD    enb_cell_dss_param                     enb=1    id=${id}    dl_resource_sharing_algo=dl_buffer_level_based
+    Sleep   2s
+
+    DSS_CMD    enb_dss_configure_partnership          enb=1    cell=${cell}    dss_peer=2:${tgt_cell}
+    Sleep   2s
+
+    DSS_CMD    enb_crm_cell_resource_reservation      enb=1    cell=${cell}    tgt_enb=2     tgt_cell=${tgt_cell}
+    ...                                               assigned_dl_minimum_share_to_nr=30     assigned_dl_maximum_share_to_nr=100
+    ...                                               assigned_dl_minimum_share_to_lte=15    assigned_dl_maximum_share_to_lte=70
+    ...                                               assigned_ul_minimum_share_to_nr=20     assigned_ul_maximum_share_to_nr=70
+    Sleep   2s
+    DSS_CMD    enb_crm_param                          id=1    ul_qos_load_meas_timer=30    dl_qos_load_meas_timer=10
+    sleep    30s
+
+    DSS_CMD    enb_dss_establish_partnership           enb=1    cell=${cell}    tgt_enb=2    tgt_cell=${tgt_cell}
+    sleep   10s
+
+    wait until keyword succeeds     5min    20s    CheckCoordination
+
+    #wtsemu.enb_dss_cell_resource_reservation_dl    enb=1    cell=1    reset
+    DSS_CMD    enb_dss_dl_cell_resource_reservation    enb=1    cell=${cell}    #reset
+    Sleep   2s
+    #wtsemu.enb_dss_cell_resource_reservation_ul    enb=1    cell=1    reset
+    DSS_CMD    enb_dss_ul_cell_resource_reservation    enb=1    cell=${cell}    #reset
+    Sleep    2s
+
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1    prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    DSS_CMD    enb_dss_dl_cell_resource_reservation    cell=${cell}    enb=1    prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    Sleep    2s
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1 reserved_fixed_normal_subframes=0000000000-0000000000-0000000000-0000000000-
+    #...                                                                                            0000000000-0000000000-0000000000-0000000000
+    DSS_CMD    enb_dss_dl_cell_resource_reservation    cell=${cell}    enb=1
+    ...           reserved_fixed_normal_subframes=0000000000-0000000000-0000000000-0000000000-0000000000-0000000000-0000000000-0000000000
+    Sleep    2s
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1 min_lte_nr_dss_ratio=30    max_lte_nr_dss_ratio=100
+    DSS_CMD    enb_dss_dl_cell_resource_reservation    cell=${cell}    enb=1    min_lte_nr_dss_ratio=30    max_lte_nr_dss_ratio=100
+    Sleep    2s
+
+    DSS_CMD    enb_dss_cell_resource_coordination      enb=1    cell=${cell}    tgt_enb=2    tgt_cell=${tgt_cell}    dir=DL
+    Sleep    2s
+    DSS_CMD    enb_dss_ul_cell_resource_reservation    enb=1    cell=${cell}    minimum_prb_share=30    maximum_prb_share=70
+    Sleep    2s
+    DSS_CMD    enb_dss_cell_resource_coordination      enb=1    cell=${cell}    tgt_enb=2    tgt_cell=${tgt_cell}    dir=UL
+    Sleep    2s
+    DSS_CMD    enb_crm_status                          enb=1    cell=1
+    sleep    3m
+
+    ${dl_prb_area_allocation_list}=    Catenate    SEPARATOR=    0:0,52+1:0,0+2:0,52+3:0,52+4:0,52+5:0,36+6:0,52+7:0,52+8:0,52+9:0,
+    ...                              36+10:0,52+11:0,52+12:0,52+13:0,52+14:0,52+15:0,36+16:0,52+17:0,52+18:0,52+19:0,36+20:0,52+21:0,
+    ...                              0+22:0,52+23:0,52+24:0,52+25:0,36+26:0,52+27:0,52+28:0,52+29:0,36+30:0,52+31:0,52+32:0,52+33:0,
+    ...                              52+34:0,52+35:0,36+36:0,52+37:0,52+38:0,52+39:0,36+40:0,52+41:0,0+42:0,52+43:0,52+44:0,52+45:0,
+    ...                              36+46:0,52+47:0,52+48:0,52+49:0,36+50:0,52+51:0,52+52:0,52+53:0,52+54:0,52+55:0,36+56:0,52+57:0,
+    ...                              52+58:0,52+59:0,36+60:0,52+61:0,0+62:0,52+63:0,52+64:0,52+65:0,36+66:0,52+67:0,52+68:0,52+69:0,
+    ...                              36+70:0,52+71:0,52+72:0,52+73:0,52+74:0,52+75:0,36+76:0,52+77:0,52+78:0,52+79:0,36
+
+
+    # wtsemu.enb_crm_periodic_allocation_pattern     enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=DL    allocation_start_time=auto
+    # ...  delay_if_auto=20    dl_allocated_normal_subframes=1011111111-1111111111-1011111111-1111111111-1011111111-1111111111-1011111111-1111111111
+    # ...  dl_prb_area_allocation_list=${dl_prb_area_allocation_list}
+    DSS_CMD    enb_crm_periodic_allocation_pattern            enb=1    cell=${cell}    tgt_enb=2    tgt_cell=${tgt_cell}    dir=DL
+    ...                                                       allocation_start_time=auto
+    ...  delay_if_auto=20    dl_allocated_normal_subframes=1011111111-1111111111-1011111111-1111111111-1011111111-1111111111-1011111111-1111111111
+    ...  dl_prb_area_allocation_list=${dl_prb_area_allocation_list}
+
+    Sleep    2s
+
+    ${dl_prb_area_allocation_list}=    Catenate    SEPARATOR=    0:0,0+1:0,0+2:0,52+3:0,52+4:0,52+5:0,0+6:0,52+7:0,52+8:0,52+9:0,
+    ...                              0+10:0,0+11:0,52+12:0,52+13:0,52+14:0,52+15:0,0+16:0,52+17:0,52+18:0,52+19:0,0+20:0,0+21:0,
+    ...                              0+22:0,52+23:0,52+24:0,52+25:0,0+26:0,52+27:0,52+28:0,52+29:0,0+30:0,0+31:0,52+32:0,52+33:0,
+    ...                              52+34:0,52+35:0,0+36:0,52+37:0,52+38:0,52+39:0,0+40:0,0+41:0,0+42:0,52+43:0,52+44:0,52+45:0,
+    ...                              0+46:0,52+47:0,52+48:0,52+49:0,0+50:0,0+51:0,52+52:0,52+53:0,52+54:0,52+55:0,0+56:0,52+57:0,
+    ...                              52+58:0,52+59:0,0+60:0,0+61:0,0+62:0,52+63:0,52+64:0,52+65:0,0+66:0,52+67:0,52+68:0,52+69:0,
+    ...                              0+70:0,0+71:0,52+72:0,52+73:0,52+74:0,52+75:0,0+76:0,52+77:0,52+78:0,52+79:0,0
+
+    # wtsemu.enb_crm_periodic_allocation_pattern     enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=DL    allocation_start_time=auto
+    # ...  delay_if_auto=20    dl_allocated_normal_subframes=0011101110-0111101110-0011101110-0111101110-0011101110-0111101110-0011101110-0111101110
+    # ...  dl_prb_area_allocation_list=${dl_prb_area_allocation_list}
+    DSS_CMD    enb_crm_periodic_allocation_pattern            enb=1    cell=${cell}    tgt_enb=2    tgt_cell=${tgt_cell}    dir=DL
+    ...                                                       allocation_start_time=auto
+    ...  delay_if_auto=20    dl_allocated_normal_subframes=0011101110-0111101110-0011101110-0111101110-0011101110-0111101110-0011101110-0111101110
+    ...  dl_prb_area_allocation_list=${dl_prb_area_allocation_list}
+    Sleep    2s
+
+    # wtsemu.enb_crm_periodic_resource_allocation    enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=DL    periodicity=10    loopback=on
+    # ...                                            periodicity_and_load_indication=on    periodicity_messages_logged=500
+    DSS_CMD    enb_crm_periodic_resource_allocation    enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=DL    periodicity=10    loopback=on
+    ...                                                periodicity_and_load_indication=on    periodicity_messages_logged=500
+    Sleep    2s
+
+    # wtsemu.enb_crm_periodic_allocation_pattern     enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=UL    allocation_start_time=auto
+    # ...                                            delay_if_auto=20    ul_allocated_prb_list=1,35
+    DSS_CMD    enb_crm_periodic_allocation_pattern     enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=UL    allocation_start_time=auto
+    ...                                                delay_if_auto=20    ul_allocated_prb_list=1,35
+    Sleep    2s
+
+    # wtsemu.enb_crm_periodic_allocation_pattern     enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=UL    allocation_start_time=auto
+    # ...                                            delay_if_auto=20    ul_allocated_prb_list=1,20
+    DSS_CMD    enb_crm_periodic_allocation_pattern     enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=UL    allocation_start_time=auto
+    ...                                                delay_if_auto=20    ul_allocated_prb_list=1,20
+    Sleep    2s
+
+    # wtsemu.enb_crm_periodic_resource_allocation    enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=UL    periodicity=30    loopback=on
+    # ...                                            periodicity_and_load_indication=on    periodicity_messages_logged=500
+    DSS_CMD    enb_crm_periodic_resource_allocation    enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=UL    periodicity=30    loopback=on
+    ...                                                periodicity_and_load_indication=on    periodicity_messages_logged=500
+    Sleep    2s
+
+    DSS_CMD    enb_crm_status                         enb=1    cell=1
+    Sleep    2s
+
+
+DSS_CRM_Cell_Setup_Phase3_SUPERFAST_bdf    #brut de fonderie
+    [Documentation]      KW used to set DSS Cell setup on primary Cell
+    ...                  with Super fast allocation enabled in FDD Pcell
+
+    wtsemu.enb_xp_param                           id=1    ignore_xp=off    xp_listening_socket=on
+    Sleep   1s
+    wtsemu.enb_xp_param                           id=1    xp_peers=2
+    Sleep   1s
+    wtsemu.enb_xp_link_up                         enb=1    target=2
+
+    Sleep   10s
+
+    wtsemu.enb_x2_link_up                         enb=1    target=2
+    Sleep   2s
+
+    Run Keyword If    ${debugDSS}                   wtsemu.sim_trace    enb=1    protocol=xp,xpu on
+    Sleep   2s
+
+    wtsemu.enb_dss_param                          id=1    feature_flag=on    message_sets=DMS3
+    Sleep   1s
+    wtsemu.enb_cell_param                         enb=1    id=1    lte_nr_dss_mode=DSS_PHASE_3    antenna_ports_num=2
+    Sleep   1s
+    wtsemu.enb_cell_dss_feature                   enb=1    id=1    nr_dl_peak_rate_increase=on
+    Sleep   1s
+    wtsemu.enb_cell_dss_feature                   enb=1    id=1    superfast_allocation=on
+    Sleep   1s
+    #wtsemu.enb_dss_cell_param                     enb=1    id=1    dl_resource_sharing_algo=dl_buffer_level_based
+    wtsemu.enb_cell_dss_param                     enb=1    id=1    dl_resource_sharing_algo=dl_buffer_level_based
+    Sleep   2s
+
+    wtsemu.enb_dss_configure_partnership          enb=1    cell=1    dss_peer=2:3
+    Sleep   2s
+
+    wtsemu.enb_crm_cell_resource_reservation      enb=1    cell=1    tgt_enb=2    tgt_cell=3    assigned_dl_minimum_share_to_nr=30
+    ...                                           assigned_dl_maximum_share_to_nr=100    assigned_dl_minimum_share_to_lte=15
+    ...                                           assigned_dl_maximum_share_to_lte=70    assigned_ul_minimum_share_to_nr=20
+    ...                                           assigned_ul_maximum_share_to_nr=70
+    Sleep   2s
+    wtsemu.enb_crm_param                          id=1    ul_qos_load_meas_timer=30    dl_qos_load_meas_timer=10
+
+    sleep    60s
+
+    wtsemu.enb_dss_establish_partnership           enb=1    cell=1    tgt_enb=2    tgt_cell=3
+    sleep   10s
+
+    wait until keyword succeeds     5min    20s    CheckCoordination
+
+    #wtsemu.enb_dss_cell_resource_reservation_dl    enb=1    cell=1    reset
+    wtsemu.enb_dss_dl_cell_resource_reservation    enb=1    cell=1    #reset
+    Sleep   2s
+    #wtsemu.enb_dss_cell_resource_reservation_ul    enb=1    cell=1    reset
+    wtsemu.enb_dss_ul_cell_resource_reservation    enb=1    cell=1    #reset
+    Sleep    2s
+
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1    prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    wtsemu.enb_dss_dl_cell_resource_reservation    cell=1    enb=1    prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    Sleep    2s
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1 reserved_fixed_normal_subframes=1000010001-1000010001-1000010001-1000010001-
+    #...                                                                                            1000010001-1000010001-1000010001-1000010001
+    wtsemu.enb_dss_dl_cell_resource_reservation    cell=1    enb=1
+    ...    reserved_fixed_normal_subframes=0000000000-0000000000-0000000000-0000000000-0000000000-0000000000-0000000000-0000000000
+    Sleep    10s
+    #wtsemu.enb_dss_dl_resource_cell_reservation    cell=1    enb=1 min_lte_nr_dss_ratio=30    max_lte_nr_dss_ratio=100
+    wtsemu.enb_dss_dl_cell_resource_reservation    cell=1    enb=1    min_lte_nr_dss_ratio=30    max_lte_nr_dss_ratio=100
+    Sleep    2s
+
+    wtsemu.enb_dss_cell_resource_coordination      enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=DL
+    Sleep    2s
+    wtsemu.enb_dss_ul_cell_resource_reservation    enb=1    cell=1    minimum_prb_share=30    maximum_prb_share=70
+    Sleep    2s
+    wtsemu.enb_dss_cell_resource_coordination      enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=UL
+    Sleep    2s
+    wtsemu.enb_crm_status                          enb=1    cell=1
+    sleep    2m
+
+    ${dl_prb_area_allocation_list}=    Catenate    SEPARATOR=    0:0,52+1:0,0+2:0,52+3:0,52+4:0,52+5:0,36+6:0,52+7:0,52+8:0,52+9:0,
+    ...                              36+10:0,52+11:0,52+12:0,52+13:0,52+14:0,52+15:0,36+16:0,52+17:0,52+18:0,52+19:0,36+20:0,52+21:0,
+    ...                              0+22:0,52+23:0,52+24:0,52+25:0,36+26:0,52+27:0,52+28:0,52+29:0,36+30:0,52+31:0,52+32:0,52+33:0,
+    ...                              52+34:0,52+35:0,36+36:0,52+37:0,52+38:0,52+39:0,36+40:0,52+41:0,0+42:0,52+43:0,52+44:0,52+45:0,
+    ...                              36+46:0,52+47:0,52+48:0,52+49:0,36+50:0,52+51:0,52+52:0,52+53:0,52+54:0,52+55:0,36+56:0,52+57:0,
+    ...                              52+58:0,52+59:0,36+60:0,52+61:0,0+62:0,52+63:0,52+64:0,52+65:0,36+66:0,52+67:0,52+68:0,52+69:0,
+    ...                              36+70:0,52+71:0,52+72:0,52+73:0,52+74:0,52+75:0,36+76:0,52+77:0,52+78:0,52+79:0,36
+
+    wtsemu.enb_crm_periodic_allocation_pattern     enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=DL    allocation_start_time=auto
+    ...  delay_if_auto=20    dl_allocated_normal_subframes=1011111111-1111111111-1011111111-1111111111-1011111111-1111111111-1011111111-1111111111
+    ...  dl_prb_area_allocation_list=${dl_prb_area_allocation_list}
+    Sleep    2s
+
+    ${dl_prb_area_allocation_list}=    Catenate    SEPARATOR=    0:0,0+1:0,0+2:0,52+3:0,52+4:0,52+5:0,0+6:0,52+7:0,52+8:0,52+9:0,
+    ...                              0+10:0,0+11:0,52+12:0,52+13:0,52+14:0,52+15:0,0+16:0,52+17:0,52+18:0,52+19:0,0+20:0,0+21:0,
+    ...                              0+22:0,52+23:0,52+24:0,52+25:0,0+26:0,52+27:0,52+28:0,52+29:0,0+30:0,0+31:0,52+32:0,52+33:0,
+    ...                              52+34:0,52+35:0,0+36:0,52+37:0,52+38:0,52+39:0,0+40:0,0+41:0,0+42:0,52+43:0,52+44:0,52+45:0,
+    ...                              0+46:0,52+47:0,52+48:0,52+49:0,0+50:0,0+51:0,52+52:0,52+53:0,52+54:0,52+55:0,0+56:0,52+57:0,
+    ...                              52+58:0,52+59:0,0+60:0,0+61:0,0+62:0,52+63:0,52+64:0,52+65:0,0+66:0,52+67:0,52+68:0,52+69:0,
+    ...                              0+70:0,0+71:0,52+72:0,52+73:0,52+74:0,52+75:0,0+76:0,52+77:0,52+78:0,52+79:0,0
+
+    wtsemu.enb_crm_periodic_allocation_pattern     enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=DL    allocation_start_time=auto
+    ...  delay_if_auto=20    dl_allocated_normal_subframes=0011101110-0111101110-0011101110-0111101110-0011101110-0111101110-0011101110-0111101110
+    ...  dl_prb_area_allocation_list=${dl_prb_area_allocation_list}
+    Sleep    2s
+    wtsemu.enb_crm_periodic_resource_allocation    enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=DL    periodicity=10    loopback=on
+    ...                                            periodicity_and_load_indication=on    periodicity_messages_logged=500
+    Sleep    2s
+
+    wtsemu.enb_crm_periodic_allocation_pattern     enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=UL    allocation_start_time=auto
+    ...                                            delay_if_auto=20    ul_allocated_prb_list=1,35
+    Sleep    2s
+    wtsemu.enb_crm_periodic_allocation_pattern     enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=UL    allocation_start_time=auto
+    ...                                            delay_if_auto=20    ul_allocated_prb_list=1,20
+    Sleep    2s
+    wtsemu.enb_crm_periodic_resource_allocation    enb=1    cell=1    tgt_enb=2    tgt_cell=3    dir=UL    periodicity=30    loopback=on
+    ...                                            periodicity_and_load_indication=on    periodicity_messages_logged=500
+    Sleep    2s
+    wtsemu.enb_crm_status                          enb=1    cell=1
+    Sleep    2s
+
+CheckCoordination
+    [documentation]    KW helping to check nessary messages in DSS Cell_setup
+
+    CallSetup.Flush Egate Console Buffer
+    Traced sleep   3s  msg=wait 3s to flush egate memory on egate_console.log
+    Grep and check in file          host=${HOST_EPCSIM}             file=${tl.core.dir_path}/egate_console.log
+    ...                             grep=EN DSS DL Cell             pattern=EN DSS DL Cell Resource Area Coordination success on remote NE
+    Grep and check in file          host=${HOST_EPCSIM}             file=${tl.core.dir_path}/egate_console.log
+    ...                             grep=EN DSS UL Cell             pattern=Subcarrier Resource Coordination success on remote NE
+
+5GC002640-5G-8533AB5_Settings
+    [Documentation]    Basic cfg donwload + Restart TL
+    [Tags]  RESTART_STARTUP
+    # [Arguments]        ${basic}=testsuite/Paris/RRM/ET/5GC002640/resources/config/basic_setup_8533_AB5.cfg
+
+    #     run    cd /opt/iphy/latest && rm basic_wts_step2.modified.lua basic_wts_step2.modified.cfg basic_wts_step2.cfg 2>/dev/null
+    # Basic_delivery     ${basic}
+    Set Context_WTS CFG cell                               # set_cell id=3 => set_cell id=1
+    #Update Arfcn in WTS Cfg multi Cell     ${param.arfcn} # this is brought now by basic_setup_8533_AB5.cfg
+    #Update UeNrCapa In WTS Cfg multi UE    ${param.UEList} # this is brought now by basic_setup_8533_AB5.cfg
+    Restart.Restart TL
+    ${F_Restart}             set variable    PASS
+    Set Suite Variable    ${F_Restart}
+
+5GC002640-5G-F_Settings
+    [Documentation]    Basic cfg donwload + Restart TL
+    [Tags]  RESTART_STARTUP
+
+    Set Context_WTS CFG cell                               # set_cell id=3 => set_cell id=1
+    #Update Arfcn in WTS Cfg multi Cell     ${param.arfcn} # this is brought now by basic_setup_fts.cfg or basic_setup_ftsTC03.cfg
+    Update UeNrCapa In WTS Cfg multi UE    ${param.UEList}
+    Restart.Restart TL
+    ${F_Restart}             set variable    PASS
+    Set Suite Variable    ${F_Restart}
+
+5GC002640-5G-F_Cell_Setup
+    [Documentation]    Cell setup for cell non DSS
+    [Tags]  Cell_Setup
+    [Arguments]        ${blank}=${False}    ${DSS_SuperFastAlloc}=${False}    ${DSS_Ph3}=${False}
+
+    # WTS Setup for DSS Plus nonDSS cells    shouldUseLua=${False}    postprocessing=Check_Cell_SetupIs_Ok_on_AirPhoneDSSnonDSSMixtCase
+    WTS Setup for DSS Plus nonDSS cells    shouldUseLua=${False}    postprocessing=Check_IfAirPhone_is_waiting_DSScellsetup_commands
+
+    Run Keyword If      ${blank}                 5GC002640-5G-F_DSS_Blanking
+    Run Keyword If      ${DSS_SuperFastAlloc}    5GC002640-5G-F_DSS_SuperFastAlloc
+    Run Keyword If      ${DSS_Ph3}               5GC002640-5G-F_DSS
+    # Run Keyword If      ${8533_AB5}              DSS_CRM_Cell_Setup_Phase3_8533
+
+    Traced sleep   20s        msg=To let time to Airphone to perform is cells setup  #in order to let time for cell_setup on AP
+
+    Dated Log           CheckSIB
+    Check SIB Using Cell Number   nbCell=6
+
+    Traced sleep   3s   msg=wait 3s to flush egate memory on egate_console.log
+    CallSetup.Flush Egate Console Buffer
+    ${output}           SSH Wait For Connect and Cmd
+    ...                 command=grep 'Cell Setup completed for' ${tl.core.dir_path}/egate_console.log
+    ...                 host=${HOST_EPCSIM}
+
+    FOR    ${i}    IN    @{CellList}
+        Dated Log  is Cell Setup completed for [CELL_ID:${i}]  ?
+        Should Contain	    ${output}	 Cell Setup completed for [CELL_ID:${i}]
+    END
+
+    Dated Log           ***********************************
+    Dated Log           * AIRPHONE CELL_SETUP IS COMPLETE *
+    Dated Log           ***********************************
+
+    ${F_CellSetup}             set variable    PASS
+    Set Suite Variable    ${F_CellSetup}
+
+Check_IfAirPhone_is_waiting_DSScellsetup_commands
+    [Documentation]    Check if all cells are up on Airphone side and start dss egate command for dss cells listed on @{DssCellList}
+
+    ${pattern}=         Set Variable   PxyCellUeProtoControlHandler: MT_CELL_SETUP_REQ received for CellId:
+    Dated Log           Check_AirPhone_is_waiting_DSScellsetup_commands: ${pattern}
+
+    ${output}           SSH Wait For Connect and Cmd
+	...                 command=grep -i ${pattern} /tmp/startup_l3.log
+    ...                 host=${AP_DU.sys[0].M}
+
+    # all Found => @{DssCellList} is empty
+    Dated Log       $output:>${output}<
+    Dated Log       $DssCellList:>${DssCellList}<
+
+    FOR    ${i}    IN       @{DssCellList}
+                            ${patternWithCellid} = 	Set Variable 	${pattern}${i}
+                            Dated Log               check in /tmp/startup_l3.log ${patternWithCellid}
+                            Should Contain    ${output}    ${patternWithCellid}
+                            Remove Values From List 	${DssCellList} 	${i}
+                            Dated Log     DssCellList: ${DssCellList}
+                            ${toberun}     Evaluate    "DSS_CRM_Cell_Setup_Phase3_8533_tgt_cell${i}"
+                            Dated Log     LANCEMENT DE : ${toberun}
+                            Run Keyword    ${toberun}
+    END
+
+    # Should Contain	    ${output}	 ${patternWithCellid}
+    Should Be Empty  ${DssCellList}
+
+# Check_IfAirPhone_is_waiting_DSScellsetup_commands_C3
+#     [Documentation]    Check if all cells are up on Airphone side
+#     # [Arguments]        ${Cell_id}=1
+
+#     #en attendant de passer un argument  avec postprocessing
+#     ${Cell_id}          Set Variable    3
+
+#     ${pattern}=         Set Variable   PxyCellUeProtoControlHandler: MT_CELL_SETUP_REQ received for cell ${Cell_id}
+#     Dated Log           Check_AirPhone_is_waiting_DSScellsetup_commands: ${pattern}
+
+#     ${output}           SSH Wait For Connect and Cmd
+# 	...                 command=grep -i ${pattern} /tmp/startup_l3.log
+#     ...                 host=${AP_DU.sys[0].M}
+
+#     Dated Log           check in APL3: ${pattern}
+#     Should Contain	    ${output}	 ${pattern}
+
+5GC002640-5G-F_DSS
+    [Documentation]    Cell setup of DSS cell (DSS ph3)
+    [Tags]  DSS
+
+    # DSS_CRM_Cell_Setup_Phase3_bdf
+    Dated Log    ====> DSS_CRM_Cell_Setup_Phase3_new id=1 cell=1 tgt_cell=3 ul_allocated_prb_list=1,35
+    DSS_CRM_Cell_Setup_Phase3_new    id=1    cell=1    tgt_cell=3    ul_allocated_prb_list=1,35
+
+
+5GC002640-5G-F_DSS_SuperFastAlloc
+    [Documentation]    Cell setup of DSS cell (DSS ph3 with Super Fast allocation)
+    [Tags]  DSS
+
+    # DSS_CRM_Cell_Setup_Phase3_SUPERFAST_bdf
+    Dated Log    ====> DSS_CRM_Cell_Setup_Phase3_SUPERFAST_new id=1 cell=1 tgt_cell=3
+    DSS_CRM_Cell_Setup_Phase3_SUPERFAST_new    id=1    cell=1    tgt_cell=3
+
+5GC002640-5G-F_DSS_Blanking
+    [Documentation]    Cell setup of DSS cell (DSS ph3 with PRB Blanking)
+    [Tags]  DSS
+
+    # DSS_CRM_Cell_Setup_Phase3_Blanking_bdf
+    Dated Log    ====> DSS_CRM_Cell_Setup_Phase3_new id=1 cell=1 tgt_cell=3 ul_allocated_prb_list=11,35
+    DSS_CRM_Cell_Setup_Phase3_new    id=1    cell=1    tgt_cell=3    ul_allocated_prb_list=11,35
+
+5GC002640-5G-F_UE_DSS_CA_ScellActivation_ueRegister_traffic
+    [Documentation]    Sherpa Activation L3 call set up
+    [Tags]  ScellActivation
+
+    Sleep   10s        #try to let time between Cell_setup and ue_register
+
+    Run Keyword If                   ${enable_sherpa}                 Activate Sherpa
+
+    UE_register_Local                ${param.UEList}
+    PDU_Session                      ${param.UEList}
+
+    Check 5gnb still Cell on Air
+    Check_sCellToAddModList_onegateLogs
+    Check_sCellIndex_onegateLogs     ${param.NrRel_TargetedbyWeight_List}
+
+    Traffic                          ${param.UEList}
+    ${TRF_ongoing}=                  Set Variable If   ${TRF_ongoing} == ${False}    ${True}    ${False}
+    sleep     ${param.TrafficDuration}
+    Traffics Check                   ${param.UEList}
+
+    ${F_2}             set variable    PASS
+
+    Set Suite Variable    ${F_2}
+    Run Keyword If                  ${enable_sherpa}     Run Keywords
+    ...                             Dated log            SHERPA STOP AND COLLECTION ongoing
+    ...                             AND
+    ...                                                  Deactivate Sherpa and Stop Collect
+
+Basic_delivery
+    [Documentation]    This KW install a basic.cfg file found in ${basicChosen}
+    ...                where ${basicChosen}  is the path/fileName to reach it from current location
+    [Arguments]        ${basicChosen}=none
+
+    Dated log          Download ${basicChosen}
+    ${alias_epc}       SSH Wait For Connect                    ${HOST_EPCSIM}
+    Run                rm ${tl.core.dir_path}/basic_wts_step2.modified.cfg 2>/dev/null   #Bypass AF Sweng issue on basic managment
+    csn.upload_file    remote_path=${tl.core.dir_path}/basic_wts_step2.cfg
+    #csn.download_file    remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                local_path=${basicChosen}
+    ...                connection=${alias_epc}
+
+DdatedLog
+    [Documentation]    This KW will help on non regression to see seeper informations
+    ...                ${debugArg} need to be set to True at the begining of this file
+    [Arguments]        ${SomethinToTrace}=none
+
+    Run Keyword If     ${debugArg}    Dated Log   Debug : ${SomethinToTrace}
+
+WTS Setup for DSS Plus nonDSS cells
+    [Documentation]                 From sweng WTS Setup  !! maj 12/09/2023
+    ...                             Aim of this KW is to pioritize SIB processing for DSS cells vs non DSS one, when a testline is configured
+    ...                             with cells DSS and non DSS mode.
+    ...                             Cells with dss mode need dss cell_setup egate commands.
+    # ...                             Clean WTSEmu (processes, logs), restart ePC simulator (ePCSim)
+    # ...                             and configure it to establish a X2 link between eNB and gNB if gNB is configured in NSA mode.
+    # ...                             Wait for SIB-NR if not NSA and check cell setup.
+    # ...
+    # ...                             *Argument details:*
+    # ...                             - *telnet_egate_addr*: eGate VM IP address (default: dynamically retrieved)
+    # ...                             - *nbUe*: nb total of UE(s) to set in basic-setup LUA file (default value = 1)
+    # ...                             - *nbSaUe*: nb of SA UE(s) to set in basic-setup LUA file (default value = 0)
+    # ...                             - *shouldUseLua*: flag to choose between cfg or LUA basic-setup file (default value = True)
+    # ...                             - *nbCell*: number of cell to check for SystemInformationBlock-NR (default value = 0)
+    # ...                                         If nbCell=0 then checks are done for the total number of cells defined on the testline
+    # ...                             - *list_of_UE_tobe_created*: list of UEs structure to be created when using lua (default value = None)
+    # ...                                 mandatory params: ue & target_cells &{my_UE_SA}     ue=1    target_cells=2
+    # ...                             - *time_to_wait*: time to wait the SIB (default value = 5min)
+    # ...
+    # ...                             Exemple:
+    # ...                             | If nbUe = 10 and nbSaUe = 0, \ \ \ \ \ 10 NSA UE from 1 to 10, 0 SA UE
+    # ...                             | If nbUe = 10 and nbSaUe = 5, \ \ \ \ \ \ 5 NSA UE from 1 to 5, 5 SA UE from 6 to 10
+    # ...                             | If nbUe = 10 and nbSaUe = 10, \ \ \ \ \ 0 NSA UE, 10 SA UE from 1 to 10
+    [Arguments]                     ${telnet_egate_addr}=${tl.core.default_ssh_connection_details.addr}
+    ...                             ${nbUe}=1
+    ...                             ${nbSaUe}=0
+    ...                             ${shouldUseLua}=${True}
+    ...                             ${bypassSIB}=${False}
+    ...                             ${nbCell}=0
+    ...                             ${list_of_UE_tobe_created}=${None}
+    ...                             ${time_to_wait}=5min
+    ...                             ${postprocessing}=TimeToStartDSScellsetup  #WARNING this argument is not existing in sweng WTS Setup
+
+    # there is no "['cells']['nr']" info in AIC data --> need to use of NRCELL_ID_LIST instead
+    IF     ${isAic}
+                            ${cell_len_1}        Get Number Of Not None Element in List   ${NRCELL_ID_LIST}
+                            ${cell_len}    Set Variable    ${cell_len_1}
+    ELSE
+                            ${cell_len_2}        Get length           ${GNB_BTS_INFO['cells']['nr']}
+                            ${cell_len}    Set Variable    ${cell_len_2}
+    END
+
+    ${cell_len}        Convert to string    ${cell_len}
+
+    ${cell_nr}         set variable if      ${nbCell}==0    ${cell_len}    ${nbCell}
+
+    set suite variable     ${cell_nr}
+    # Clean WTS from process and logs point of view
+    ${isSANSA}                   set variable if    '${NWtype}' == 'SA+NSA'    ${True}    ${False}
+    set suite variable    ${isSANSA}
+    ${isNSA}                     set variable if    '${NWtype}' == 'NSA'       ${True}    ${False}
+    set suite variable    ${isNSA}
+    ${alias}		                SSH Wait For Connect                    host=${HOST_EPCSIM}
+    Dated Log New Line              Starting WTS setup ** WTS Setup for DSS Plus nonDSS cells mod ** (WTS:IP=${HOST_EPCSIM.sshConnection.addr})
+    WTS Clear
+    # Cloud only
+    Run Keyword If                  ${TLConfig.isGnbCloud} and not ${isAic}
+    ...                             WTS Set Backhaul IP                     ${alias}
+    # If lua file is requested, then init lua config file with nb of UEs:
+    ${LuaFileName}                  Run Keyword If      ${shouldUseLua}
+    ...                                                 TxtConfig Init      nbUe=${nbUe}
+    ...                                                                     nbSaUe=${nbSaUe}
+    ...                                                                     list_of_UE_tobe_created=${list_of_UE_tobe_created}
+    ...                                         ELSE    set variable        ${EMPTY}
+    Dated Log                       LuaFileName=${LuaFileName}
+
+    IF    not ${shouldUseLua}
+                            Check For SaNsa
+    END
+
+    # Configure eDaemon and eGate
+    WTS Start processes             telnet_egate_addr=${telnet_egate_addr}
+    # Launching configuration
+    WTS Configure upon format       shouldUseLua=${shouldUseLua}            luaFile=${LuaFileName}
+    Dated Log                       Delay for SIBs is set to ${time_to_wait}
+    run keyword if                  not ${isNSA} and not ${bypassSIB}    wait until keyword succeeds    5 min    15 sec   ${postprocessing}
+
+TimeToStartDSScellsetup
+    [Documentation]                 Help to synchronise DSS cell_setup time to be start
+    ...                             as DSS cells need egate command for cell_setup, this KW wait information
+    ...                             from AP/WTS complaining waiting dss egate cell_setup commands.
+    ...                             WARNING: on this KW no X2link set up is done, no UE_cell setup is done (need to be done after)
+
+    CallSetup.Flush Egate Console Buffer
+    Traced sleep   3s  msg=wait 3s to flush egate memory on egate_console.log
+    ${check_dss}                   SSH Wait For Connect and Cmd
+    ...                             command=grep 'CellSyncProcedure failed after' ${tl.core.dir_path}/egate_console.log|sort -u|wc -l
+    ...                             host=${HOST_EPCSIM}
+    Dated Log           que contient check_dss ${check_dss}
+    ${SibArrived}       Set Variable If  ${check_dss.strip()} > 0    ${True}    ${False}
+    Dated Log           SibArrived: ${SibArrived}
+    should be true      ${SibArrived}

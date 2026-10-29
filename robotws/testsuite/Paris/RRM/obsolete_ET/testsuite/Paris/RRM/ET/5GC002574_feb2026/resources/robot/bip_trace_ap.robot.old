@@ -1,0 +1,180 @@
+*** Settings ***
+
+Documentation
+...   This robot resource file contains KWs for BIP trace collection on airphone.
+
+Library    String
+Library    OperatingSystem
+Library    DateTime
+
+Library    taf.collectors.l1l2bip      WITH NAME   l1l2bip
+Library    taf.collectors.tcpdump      WITH NAME   tcpdump
+Library    taf.collectors.core         WITH NAME   core
+Library    taf.transport.ssh           WITH NAME   ssh
+
+
+*** Variables ***
+&{RUNNING_AP_BIP_TRACE}
+
+
+*** Keywords ***
+Start Airphone BIP Traces
+    [Arguments]    ${ue_id}=0    ${comu_id}=0   ${option}=${EMPTY}    ${collector}=ue${ue_id}_bip_trace
+    ${ap_bip_collector_alias}=   Create AP BIP Collectors   ue_id=${ue_id}
+    ...                                                     comu_id=${comu_id}
+    ...                                                     option=${option}
+    ...                                                     collector_alias=${collector}
+
+    Remember Start Time for AP BIP Trace    alias=${ap_bip_collector_alias}
+
+    core.Setup Collectors    names=${ap_bip_collector_alias}
+    core.Start Collectors    names=${ap_bip_collector_alias}
+
+
+Stop Airphone BIP Traces
+    [Documentation]
+    ...
+    ...    Logs are stored in Testcase Log directory by default
+    ...
+    ...    | ue_id |   Id/Number of UE |
+    ...    | collector |   Name of collector like used in start command |
+    ...    | target_dir |  Directory to store the pcap file |
+    ...
+    ...     *Returns* Path to pcap file incl. filename
+    ...
+    [Arguments]    ${ue_id}=${0}    ${collector}=ue${ue_id}_bip_trace    ${target_dir}=${None}
+
+    Warn on AP Reset during Trace Collection   alias=${collector}
+
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='${None}'
+    ...        common_Dss_Keywords.Get Testcase Log Directory
+    ...    ELSE
+    ...        Set Variable    ${target_dir}
+
+    l1l2bip.Stop Collectors        names=${collector}
+    l1l2bip.Collect Collectors     names=${collector}   target_dir=${target_dir}
+    l1l2bip.Teardown Collectors    names=${collector}
+
+    [RETURN]    ${target_dir}/${collector}/tcpdump_ue${ue_id}_bip.pcap
+
+
+Get Airphone BIP trace capture interface
+    [Documentation]
+    ...
+    ...     *Scope*  Internal
+    ...
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}
+    builtIn.log    ue_id=${ue_id} comu_id=${comu_id}
+    ${interface}=    Set variable    etha01.309
+    [Return]    ${interface}
+
+
+Create AP BIP Collectors
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}  ${option}=${EMPTY}   ${collector_alias}=ue${ue_id}_bip_trace
+    &{executor_airphone}=  Create Dictionary
+    ...  host=192.168.200.1
+    ...  user=toor4nsn
+    ...  password=oZPS0POrRieRtu
+
+    ${interface}    Get Airphone BIP trace capture interface   ue_id=${ue_id}   comu_id=${comu_id}
+    ${tcpdump_alias}    Set Variable   tcpdump_ue${ue_id}_bip
+
+    tcpdump.create_tcpdump_collector
+    ...     name=${tcpdump_alias}
+    ...     options=-i ${interface} ${option}
+    ...     executor=${executor_airphone}
+
+    core.Set Suite Alias     ${tcpdump_alias}
+
+    Create AP ASIL BIP Collectors
+    ...                    tcpdump_alias=${tcpdump_alias}
+    ...                    collector_alias=${collector_alias}
+    ...                    executor_airphone=${executor_airphone}
+
+
+    [Return]   ${collector_alias}
+
+
+Create AP ASIL BIP Collectors
+    [Arguments]   ${tcpdump_alias}   ${collector_alias}  ${executor_airphone}
+
+    ${script_path}     Create List
+    ...           /opt/wts/latest/sosReport_ASIL/airphone_mirror.sh
+    ...           /opt/wts/latest/sosReport_ASIL/gnbMirroring.py
+
+    &{remote_context_commands}   Create Dictionary  setup=./airphone_mirror.sh    teardown=./airphone_mirror.sh --stop
+
+    l1l2bip.create_airphone_l1l2bip_collector
+    ...     name=${collector_alias}
+    ...     collector=${tcpdump_alias}
+    ...     executor=${executor_airphone}
+    ...     script_paths=${script_path}
+    ...     command_line=${remote_context_commands}
+    core.Set Suite Alias     ${collector_alias}
+
+    [Return]    ${collector_alias}
+
+
+Remember Start Time for AP BIP Trace
+    [Arguments]   ${alias}
+
+    BuiltIn.Run Keyword And Warn On Failure
+    ...    Dictionary Should Not Contain Key    ${RUNNING_AP_BIP_TRACE}    ${alias}
+    ...    BIP Trace with alias ${alias} already started: ${RUNNING_AP_BIP_TRACE}!!
+
+    ${start_time}=    DateTime.Get Current Date     result_format=%Y-%m-%d %H:%M:%S
+    Set To Dictionary    ${RUNNING_AP_BIP_TRACE}   ${alias}     ${start_time}
+
+Warn on AP Reset during Trace Collection
+    [Arguments]    ${alias}
+
+    BuiltIn.Run Keyword And Warn On Failure
+    ...    Dictionary Should Contain Key    ${RUNNING_AP_BIP_TRACE}    ${alias}
+    ...    BIP Trace with alias ${alias} was not started!!
+
+    ${stop_time}=         DateTime.Get Current Date     result_format=%Y-%m-%d %H:%M:%S
+    ${start_time}=        Get From Dictionary   ${RUNNING_AP_BIP_TRACE}   ${alias}
+    Remove From Dictionary    ${RUNNING_AP_BIP_TRACE}   ${alias}
+
+    ${trace_duration_seconds}=    DateTime.Subtract Date From Date    ${stop_time}    ${start_time}  result_format=number
+
+    ${ap_runtime}=    Get AP Runtime
+
+    ${runtime_is_shorter_than_trace_duration}=    Evaluate   ${ap_runtime} < ${trace_duration_seconds}
+    Run Keyword If   ${runtime_is_shorter_than_trace_duration}
+    ...   BuiltIn.Log   There appears to be a reboot/reset of airphone during bip collection!   level=WARN
+
+Get AP Runtime
+    [Documentation]
+    ...    *Scope*  Internal
+
+    ${ap_ssh_connection}=    bip_trace_ap.Connect to Airphone Common Unit
+
+    ${ap_uptime_string}=     ssh.execute    cat /proc/uptime | awk '{print $1}'     connection=${ap_ssh_connection}
+
+    ${ap_uptime}=   Convert To Number   ${ap_uptime_string}
+
+    [Return]   ${ap_uptime}
+
+Connect to Airphone Common Unit
+    [Documentation]    :
+    ...     setup ssh connection to Airphone Airscale (ASXX) and returns connection handle/alias
+    ...
+    ...     :param ue_id:             Id of UE                       [0.. ]  default=0
+    ...     :param ue_comu_id:        Id of AP Common Unit           [0..1]  default=0
+    ...     :param alias:       (optional) connection alias  !! should not be used
+    ...
+    ...     :returns alias:     alias for ssh connection to Common Unit
+    ...
+    ...     **Example:**
+    ...
+    ...     | ${ap_alias}=   connect.Connect to Airphone Common Unit    ue_id=0  ue_comu_id=0
+    ...     | ssh.execute     command=uptime  connection=${ap_alias}
+    ...
+    [Arguments]    ${ue_id}=${0}    ${ue_comu_id}=${0}  ${alias}=ssh-ap-${ue_id}-${ue_comu_id}
+    ssh.Connect_to      hostname=${tl.ues[${ue_id}].l1.common_units[${ue_comu_id}].lmp_connection.addr}
+    ...                 username=${tl.ues[${ue_id}].l1.common_units[${ue_comu_id}].lmp_connection.username}
+    ...                 password=${tl.ues[${ue_id}].l1.common_units[${ue_comu_id}].lmp_connection.password}
+    ...                 alias=${alias}
+    ssh.Force Reconnect    connection=${alias}
+    [Return]    ${alias}

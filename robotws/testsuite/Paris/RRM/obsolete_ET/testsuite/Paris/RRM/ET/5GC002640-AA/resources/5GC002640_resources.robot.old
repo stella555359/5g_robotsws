@@ -1,0 +1,613 @@
+*** Settings ***
+Documentation
+...      == COPYRIGHT ==
+...          Nokia Networks
+...      == AUTHORS U-PLANE ==
+...        - Michal Obszarny  <michal.obszarny@nokia.com>
+...        - Jakub Drabina    <jakub.drabina@nokia.com>
+...        - Marcin Gorczyca  <marcin.gorczyca@nokia.com>
+...        - Lukasz Gdowski   <lukasz.gdowski@nokia.com>
+...      == MAINTAINER ==
+...        - N/A
+
+Library     OperatingSystem
+Library     ute_fsmaccess
+Library     ta_emss
+Library     ute_wtssim
+Library     ta_messaging
+Library     ta5g_pm_counters
+Library     ta5g_commissioning
+Library     ta5g_cell_operations
+Library     ta5g_testline_management
+Library     taf.collectors.l2stream3     WITH NAME  tcl
+Library     taf.collectors.core          WITH NAME  tcc
+Library     taf.converters.eventdecoder  WITH NAME  tce
+Library     ../../resources_KRK/python/traffic_handling.py
+Resource    ../../resources_KRK/robot/common_keywords.robot
+
+Variables   ta5g_global_var
+Library     5GC002640_tti_trace_keywords.py
+Library     5GC002640_resources.py
+Variables   ta_messaging_filters_FTT.py
+Variables   ta_messaging_filters_FFT.py
+
+Library     taf.sw.scout                 WITH NAME    scout
+
+*** Variables ***
+${ENABLE_CP_RT_DEBUG_LOGS}=     0x590072=1 #ENABLE CP_RT DEBUG LOGS
+${ENABLE_CP_NRT_DEBUG_LOGS}=    0x41001b=1 #ENABLE CP_NRT DEBUG LOGS
+@{SWCONFIG_FLAGS_LIST}=         ${ENABLE_CP_RT_DEBUG_LOGS}    ${ENABLE_CP_NRT_DEBUG_LOGS}
+${airphone_xml}=  ${CURDIR}/../config/gNB_BOO_AP_KLLL_FDD_TDD_1AEQE_6Cells_SANSA_L1B_3CC_CA_FTT/AirPhone_FDD_TDD_6Cells_L1B_SANSA_3CC_CA.xml
+${CFG_DIR}=       ${EXECDIR}/testsuite/Paris/RRM/ET/5GC002640-AA/config
+
+*** Keywords ***
+Activate Beamforming on Cell ${NRCELL_ID}
+    ${NRCELLGRP_ID}=    Evaluate    ${NRCELL_ID}-1
+    Set Enb Parameter Value    nrcell_id    ${NRCELL_ID}
+    Set Enb Parameter Value    nrcellgroup_id    ${NRCELLGRP_ID}
+    Log to console  Activating Beamforming on Cell ${NRCELL_ID}
+    Configure  ${CURDIR}/../config/delta_beamforming_activation.yaml  name=bf_activation_cell${NRCELL_ID}
+    Wait for enb on air
+
+Activate Beam Refinement on Cell ${NRCELL_ID}
+    Log to console  Activating Beam Refinement on Cell ${NRCELL_ID}
+    Configure  {'MOC': 'NRCELL', 'ID':'${NRCELL_ID}', 'beamSet': [{'nrBtsBeamRefinementP2': 'true'}]}  name=br_activation_cell${NRCELL_ID}
+    Wait for enb on air
+
+Deactivate Beam Refinement on Cell ${NRCELL_ID}
+    Deconfigure    br_activation_cell${NRCELL_ID}
+
+Change to 0 maximum queueing delay for primary path on Cell-${NRCELL_ID}
+    Configure  {'MOC': 'NRCELL', 'ID': '${NRCELL_ID}', 'primaryPathMaxQueueingDelay': '0'}
+
+Change to 0 maximum queueing delay for secondary path on Cell-${NRCELL_ID}
+    Configure  {'MOC': 'NRCELL', 'ID': '${NRCELL_ID}', 'secondaryPathMaxQueueingDelay': '0'}
+
+Bring back maximum queueing delay
+    Deconfigure all
+
+Get eNB SW release
+    ${Swversion}=  Get eNB SW Version  alias=gNB2
+    ${Swrelese}=  Get Substring  ${Swversion}  0  8
+    [Return]    ${Swrelese}
+
+# ------------ Register and Deregister NR-UE ------------
+Change NR-UE${UE_ID} 3CC CA capabilities to support band combination CA_n41A-n71A-n77A, CA_n41A-n66A-n71A, CA_n41(2A)-n71A, CA_n41C-n71A
+    ${ue_nr_3CC_FTT_CA_capabilities}=   Catenate    SEPARATOR=   F5A03C0047D4FFBEFFFFBAF0140782E0203C126BE7FFF6F800609B3CE3FF30C7942C020DC0407E380
+    ...    A517C46FF9BCA3BC857C1043E59496201105B29BA01893EB1079127C245116F9F8053FF4FFCA2F831FF37947790AF82087CB292C40220B6537403127D620F224F848A22
+    ...    DF3F00A7FE9FF945F013FE6F28EF215F0410F965258804416CA6E80624FAC41E449F091445BE7E014FFD3FF28BE20FFCDE510857C1043E59496201105B29BA01893EB10
+    ...    79127C245116F9F8053FF4FFCA2F851FF379443007C00002594972004416CA6E80624FAC41E449F091445BE7E016FFEAA6FFEAA28BE267FCDE510C0000000000000C001
+    ...    0F5B00000000000000000000000000001AAAAA9AAAAA81142E230007104003898000001FE7FFFFFFFFD42E2300070A0003898000005FE7FFFFFFFFD42E2300070A00038
+    ...    50000009FE7FFFFFFFFD42E2300070A020385010000DFE7FFFFFFFFC01C046808301320140283902448D0206C93E0448D0206C93E0448D0206C93E0448D0206C93E001F
+    ...    FFF00005807C005038180603105806000783A0070300C06000040000600A00C07C02B24000002B24000008B240000100098095809594140264000004B292B2000022594
+    ...    9590000212CA4A01280D5501AAA5154042A005E49C0792701E494000310080100202008010080300620100200404018030100600C40200400808030060200C018804008
+    ...    010100600C0401803080
+    Execute egate command
+    ...    cmd=ue_param id=${UE_ID} ue_nr_capabilities=${ue_nr_3CC_FTT_CA_capabilities}
+    Sleep  2s
+
+Change NR-UE${UE_ID} 3CC CA capabilities to support band combination CA_n25(2A)-n41A, CA_n41A-n77(2A), CA_n41A-n78(2A), CA_n28A-n41A
+    ${ue_nr_unsupp_bands_comb_capabilities}=   Catenate    SEPARATOR=   F5A03C0047D4FFBEFFFFBAF0140782E0203C126BE7FFF6F800609B3CE3FF30C7942C020DC0
+    ...    407E380C517C46FF9BCA3BC857C1043E59496201105B29BA01893EB1079127C245116F9F8053FF4FFCA2F831FF37947790AF82087CB292C40220B6537403127D620F224
+    ...    F848A22DF3F00A7FE9FF945F007FE6F28EF215F0410F965258804416CA6E80624FAC41E449F091445BE7E014FFD3FF28BE20FFCDE510857C1043E59496201105B29BA01
+    ...    893EB1079127C245116F9F8053FF4FFCA2F851FF379443007C00002594972004416CA6E80624FAC41E449F091445BE7E016FFEAA6FFEAA28BE267FCDE510C0000000000
+    ...    000C0010F5B00000000000000000000000000001AAAAA9AAAAA8A2F89BFF3794430000000000000300043D6C00000000000000000000000000006AAAAA6AAAAA0650B83
+    ...    0001C18000E140000007F9FFFFFFFFF50B898001C4C000E140000017F9FFFFFFFFF50B89A001C4D000E140000027F9FFFFFFFFF507802001C28000006FF3DFFFFFFFC00
+    ...    E2300000400388200001003404680830132014401880030134142681A2468103649F022468103649F022468103649F0214681B24F810A340D927C0851A06C93E00FFFF8
+    ...    0002C03E00281C0C0301882C030003C1D0038180603000020000300500603E01592000001592000004592000008004C0DAC0DACA1A01320000025949590000112CA4AC8
+    ...    00010965250094072A81D5528CA021D003F24E03C9380F24A03C9A80A00020804008010100400804018031008030060200C018080300620100600C04018030100600C00
+    ...    600400C01803000801002100
+    Execute egate command
+    ...    cmd=ue_param id=${UE_ID} ue_nr_capabilities=${ue_nr_unsupp_bands_comb_capabilities}
+    Sleep  2s
+
+Change NR-UE${UE_ID} 3CC CA capabilities to support band combination CA_n41A-n66A-n77A with BR enabled on all cells
+    ${ue_nr_3CC_FFT_CA_capabilities}=   Catenate    SEPARATOR=   F5A03C0047D4FFBEFFFFBAF0140782E0203C126BE7FFF6F800609B3CE3FF30C7942C020DC0407E380
+    ...     A517C46FF9BCA3BC857C1043E59496201105B29BA01893EB1079127C245116F9F8053FF4FFCA2F831FF37947790AF82087CB292C40220B6537403127D620F224F848A2
+    ...     2DF3F00A7FE9FF945F013FE6F28EF215F0410F965258804416CA6E80624FAC41E449F091445BE7E014FFD3FF28BE20FFCDE510857C1043E59496201105B29BA01893EB
+    ...     1079127C245116F9F8053FF4FFCA2F851FF379443007C00002594972004416CA6E80624FAC41E449F091445BE7E016FFEAA6FFEAA28BE267FCDE510C0000000000000C
+    ...     001105B29BA000000000000000000000000001AAAAA9AAAAA81142E230007104003898000001FE7FFFFFFFFD42E2300070A0003898000005FE7FFFFFFFFD42E2300070
+    ...     A0003850000009FE7FFFFFFFFD42E2300070A020385010000DFE7FFFFFFFFC01C046808301320140283902448D0206C93E0448D0206C93E0448D0206C93E0448D0206C
+    ...     93E001FFFF00005807C005038180603105806000783A0070300C06000040000600A00C07C02B24000002B24000008B240000100098095809594140264000004B292B20
+    ...     000225949590000212CA4A01280D5501AAA5154042A005E49C0792701E494000310080100202008010080300620100200404018030100600C40200400808030060200C
+    ...     018804008010100600C0401803080
+    Execute egate command
+    ...    cmd=ue_param id=${UE_ID} ue_nr_capabilities=${ue_nr_3CC_FFT_CA_capabilities}
+    Sleep  2s
+
+Register 3CC CA capable NR-UE${UE_ID} to gNB-2 Cell-${CELL_ID}
+    Log to console  \nRegister NR-UE${UE_ID} on gNB-2 Cell-${CELL_ID}
+    Expect message flow
+    ...    UE_${UE_ID}:NR-RRC_RRCSetupRequest
+    ...    UE_${UE_ID}:NR-RRC_RRCSetup (uplinkConfig is present)
+    ...    UE_${UE_ID}:NR-RRC_RRCSetupComplete
+    ...    alias=Register_UE${UE_ID}   overall_timeout=10
+    Execute egate command
+    ...    cmd=set_pdu_param ue=${UE_ID} pdu=${UE_ID} trf_type=internal
+    Sleep  2s
+    Execute egate command
+    ...    cmd=ue_register id=${UE_ID}
+    ...    pass_regexp=UE${UE_ID}: UE performed Registration type INITIAL_REGISTRATION
+    Flow occurred as expected  alias=Register_UE${UE_ID}
+
+Establish PDU session for NR-UE${UE_ID} to trigger successful 3CC CA
+    Log to console  ESTABLISH NR-UE${UE_ID}
+    Expect message flow
+    ...    gNB2:F1AP_UEContextSetupRequest (CUtoDURRCInformation is present) as UEContextSetupRequest
+    ...    gNB2:F1AP_UEContextSetupResponse (DUtoCURRCInformation is present) as UEContextSetupResponse
+    ...    gNB2:F1AP_UEContextModificationRequest (SCell-ToBeSetupMod-List is present) as UEContextModificationRequest
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse
+    ...    gNB2:F1AP_UEContextModificationRequest as UEContextModificationRequest_2nd
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse_2nd
+    ...    UE_${UE_ID}:NR-RRC_RRCReconfiguration as RRCReconfiguration
+    ...    UE_${UE_ID}:NR-RRC_RRCReconfigurationComplete as RRCReconfigurationComplete
+    ...    UE_${UE_ID}:NR-RRC_RRCReconfiguration as RRCReconfiguration_2nd
+    ...    UE_${UE_ID}:NR-RRC_RRCReconfigurationComplete as RRCReconfigurationComplete_2nd
+    ...    alias=Established_PDU_UE${UE_ID}   overall_timeout=20
+    Execute egate command
+    ...    cmd=ue_pdu_session_setup pdu=${UE_ID} ue=${UE_ID} nwslice=1 gw=${UE_ID}
+    ...    pass_regexp=UE${UE_ID}: Established PDU session
+    Flow occurred as expected  alias=Established_PDU_UE${UE_ID}
+
+Establish PDU session for NR-UE${UE_ID} to trigger unsuccessful 3CC CA due to no band combination support
+    Log to console  ESTABLISH NR-UE${UE_ID}
+    Expect message flow
+    ...    gNB2:F1AP_UEContextModificationRequest (SCell-ToBeSetupMod-List is present) as UEContextModificationRequest
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse
+    ...    UE_${UE_ID}:NR-RRC_RRCReconfiguration as RRCReconfiguration
+    ...    UE_${UE_ID}:NR-RRC_RRCReconfigurationComplete as RRCReconfigurationComplete
+    ...    alias=Established_PDU_UE${UE_ID}   overall_timeout=20
+    Execute egate command
+    ...    cmd=ue_pdu_session_setup pdu=${UE_ID} ue=${UE_ID} nwslice=1 gw=${UE_ID}
+    ...    pass_regexp=UE${UE_ID}: Established PDU session
+
+Establish PDU session for NR-UE${UE_ID} and wait for SCells blind activation
+    Expect message flow
+    ...    gNB2:F1AP_UEContextSetupRequest (CUtoDURRCInformation is present) as UEContextSetupRequest
+    ...    gNB2:F1AP_UEContextSetupResponse (DUtoCURRCInformation is present) as UEContextSetupResponse
+    ...    gNB2:F1AP_UEContextModificationRequest (SCell-ToBeSetupMod-List is present) as UEContextModificationRequest
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse
+    ...    gNB2:F1AP_UEContextModificationRequest as UEContextModificationRequest_2nd
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse_2nd
+    ...    UE_${UE_ID}:NR-RRC_RRCReconfiguration as RRCReconfiguration
+    ...    UE_${UE_ID}:NR-RRC_RRCReconfigurationComplete as RRCReconfigurationComplete
+    ...    UE_${UE_ID}:NR-RRC_RRCReconfiguration as RRCReconfiguration_2nd
+    ...    UE_${UE_ID}:NR-RRC_RRCReconfigurationComplete as RRCReconfigurationComplete_2nd
+    ...    alias=Established_PDU_UE${UE_ID}   overall_timeout=20
+    Execute egate command  cmd=ue_pdu_session_setup pdu=1 ue=${UE_ID} nwslice=1 gw=1
+    ...  pass_regexp=SCellIndex [1-2] activated successfully at airphone.*SCellIndex [1-2] activated successfully at airphone.    timeout=20
+    Flow occurred as expected  alias=Established_PDU_UE${UE_ID}
+
+Verify on NR-RRC and F1AP Messages that 3CC CA does not succeed for NR-UE${UE_ID}
+    Flow Not Occurred For Message  alias=Established_PDU_UE${UE_ID}
+
+Release PDU session for NR-UE${UE_ID}
+    Execute egate command
+    ...    cmd=ue_pdu_session_release ue=${UE_ID} pdu=${UE_ID}
+    ...    pass_regexp=Successfully released PDU Session with ID ${UE_ID}
+    Sleep  2s
+
+Deregister NR-UE${UE_ID}
+    Execute egate command
+    ...    cmd=ue_deregister id=${UE_ID} ue_deregister_type=switch_off
+    ...    pass_regexp=UE${UE_ID}: detached
+    Sleep  2s
+
+
+# ------------ Throughput ------------
+# todo: do sprawdzenia czy ta5g_tput ma ta metode lub przerzucenie for do python
+Wait ${seconds}s for throughput stable
+    Sleep  ${seconds}s
+
+Verify if DL transmission is done via all 3 carriers
+    Verify if DL transmission is done via SCells 0,1,2
+
+Verify if DL transmission is done only via SCells
+    Verify if DL transmission is done via SCells 1,2
+    Verify if DL transmission is not done via SCells 0
+
+Verify if DL transmission is done via Cell-1 and Cell-3
+    Verify if DL transmission is done via SCells 0,2
+    Verify if DL transmission is not done via SCells 1
+
+# ------------ PM counters keywords ------------
+Activate automatic PM Stats
+    Run Emssim Command  auto_stats  params=on
+
+Deactivate automatic PM Stats
+    Run Emssim Command  auto_stats  params=off
+
+Verify counters for successful 3CC FTT CA
+    ${pm_counter_file}=    Get Latest Unpacked Full Pm Counters File
+    Verify Any Counters In File
+        ...    M55138C02501    1    GNB_SCELL_2_ADMI_REQ_SA
+        ...    M55138C02502    1    GNB_SCELL_2_ADMI_SUCC_SA
+        ...    M55138C01503    0    GNB_SCELL_ADMI_UNSUCC_SA
+        ...    M55139C01501    1    GNB_DU_SCELL_2_ADMI_REQ_SA
+        ...    M55139C01502    1    GNB_DU_SCELL_2_ADMI_SUCC_SA
+        ...    M55118C07001  >200   UE_PCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07002  <300   UE_SCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07003    1    RRC_RECONF_ADD2DLSCELL_SUCC_SA
+        ...    M55118C07004    1    RRC_RECONF_ADD2DLSCELL_ATT_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-1
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55138C02501    0    GNB_SCELL_2_ADMI_REQ_SA
+        ...    M55138C02502    0    GNB_SCELL_2_ADMI_SUCC_SA
+        ...    M55138C01503    0    GNB_SCELL_ADMI_UNSUCC_SA
+        ...    M55139C01501    0    GNB_DU_SCELL_2_ADMI_REQ_SA
+        ...    M55139C01502    0    GNB_DU_SCELL_2_ADMI_SUCC_SA
+        ...    M55118C07001    0    UE_PCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07002  >200   UE_SCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07002  <300   UE_SCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07003    0    RRC_RECONF_ADD2DLSCELL_SUCC_SA
+        ...    M55118C07004    0    RRC_RECONF_ADD2DLSCELL_ATT_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-3
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55138C02501    0    GNB_SCELL_2_ADMI_REQ_SA
+        ...    M55138C02502    0    GNB_SCELL_2_ADMI_SUCC_SA
+        ...    M55138C01503    0    GNB_SCELL_ADMI_UNSUCC_SA
+        ...    M55139C01501    0    GNB_DU_SCELL_2_ADMI_REQ_SA
+        ...    M55139C01502    0    GNB_DU_SCELL_2_ADMI_SUCC_SA
+        ...    M55118C07001    0    UE_PCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07002  >200   UE_SCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07002  <300   UE_SCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07003    0    RRC_RECONF_ADD2DLSCELL_SUCC_SA
+        ...    M55118C07004    0    RRC_RECONF_ADD2DLSCELL_ATT_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-6
+        ...    file_path=${pm_counter_file}
+
+Check if all 3CC CA counters in file ${PM_COUNTER_FILE} are equal 0 for NRCELL-${NRCELL_ID}
+    Verify Any Counters In File
+        ...    M55138C02501    0    GNB_SCELL_2_ADMI_REQ_SA
+        ...    M55138C02502    0    GNB_SCELL_2_ADMI_SUCC_SA
+        ...    M55138C01503    0    GNB_SCELL_ADMI_UNSUCC_SA
+        ...    M55139C01501    0    GNB_DU_SCELL_2_ADMI_REQ_SA
+        ...    M55139C01502    0    GNB_DU_SCELL_2_ADMI_SUCC_SA
+        ...    M55118C07001    0    UE_PCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07002    0    UE_SCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07003    0    RRC_RECONF_ADD2DLSCELL_SUCC_SA
+        ...    M55118C07004    0     RRC_RECONF_ADD2DLSCELL_ATT_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-${NRCELL_ID}
+        ...    file_path=${PM_COUNTER_FILE}
+
+Verify counters for UE without supported bands combinations allowing 3CC FTT CA
+    ${PM_COUNTER_FILE}=    Get Latest Unpacked Full Pm Counters File
+    Check if all 3CC CA counters in file ${PM_COUNTER_FILE} are equal 0 for NRCELL-1
+    Check if all 3CC CA counters in file ${PM_COUNTER_FILE} are equal 0 for NRCELL-3
+    Check if all 3CC CA counters in file ${PM_COUNTER_FILE} are equal 0 for NRCELL-6
+
+Verify if that counters PSCELL_UE_2_ACT_SCELL_DL, MAX_PSCELL_UE_2_ACT_SCELL_DL are updated accordingly
+    Wait for next full PM Interval
+    Wait for next full PM Interval
+    ${pm_counter_file}=    Get Latest Unpacked Full Pm Counters File
+    Verify Any Counters In File
+    ...    M55316C03002   300  PSCELL_UE_2_ACT_SCELL_DL
+    ...    M55316C05002    1    MAX_PSCELL_UE_2_ACT_SCELL_DL
+    ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-1
+    ...    file_path=${pm_counter_file}
+
+# ------------ TTI Traces collection ------------
+Start TTI trace collection
+    ${configurations}=  tcc.Load Configurations    ${CURDIR}/5GC002640_tti_trace_collectors.yaml
+    tcc.Create Collectors    names=l2stream3    configurations=${configurations['collectors']}
+    tcl.Set Suite Alias     alias=l2stream3
+    tcc.Setup Collectors    names=l2stream3
+    tcc.Start Collectors    names=l2stream3
+    Log to console    ${\n}TTI traces collecting started
+
+Stop TTI trace collection
+    Log to console    Stopping TTI traces collecting
+    tcc.Stop Collectors    names=l2stream3
+    tcc.Collect Collectors    names=l2stream3
+    tcc.Teardown Collectors    names=l2stream3
+
+Convert TTI trace from pcap
+    [Arguments]  ${format}  ${directory_name}
+    Log to console    Converting TTI traces to ${format}
+    tce.Create eventDecoder Converter
+    ...  name=ttitrace_converter
+    ...  input_file_path=${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/l2stream3/tcpdump/tcpdump.pcap
+    ...  output_file_format=${format}
+    ...  output_file_path=${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/output
+    tce.Convert
+    ...  name=ttitrace_converter
+    Remove Directory  ${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/${directory_name}/    recursive=True
+    Move Files	    ${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/output*     ${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/${directory_name}/
+    Move Directory	${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/l2stream3/  ${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/${directory_name}/
+
+Collect TTI Traces during ${duration} seconds and save to directory ${directory_name}
+    ${parent_directory}  Set variable  ${directory_name}
+    Set Test Variable  ${parent_directory}
+    Start TTI trace collection
+    Log to console    Collecting duration is ${duration}
+    Sleep  ${duration}
+    Stop TTI trace collection
+    Convert TTI trace from pcap  format=excelCsv  directory_name=${directory_name}
+
+
+# ------------ ta_messaging messages verification ------------
+Verify SCell-ToBeSetupMod-List IE whether both TDD Cells were selected to 3CC CA for NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${selected_SCells_for_FTT_3CC_CA_in_UE_CON_MOD_REQ}
+    ...  message_alias=UEContextModificationRequest
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+Verify SCell-ToBeSetupMod-List IE whether TDD Cell and FDD Cell were selected to 3CC CA for NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${selected_SCells_for_FFT_3CC_CA_in_UE_CON_MOD_REQ}
+    ...  message_alias=UEContextModificationRequest
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+Verify allowedBC-ListMRDC IE whether CA_n71A-n41A-n77A band combination was selected to 3CC CA for NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${BandComb_Index_and_allowedFeatureSetsList_for_FTT_3CC_CA_in_UE_CON_MOD_REQ}
+    ...  message_alias=UEContextModificationRequest
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+Verify allowedBC-ListMRDC IE whether CA_n71A-n66A-n77A band combination was selected to 3CC CA for NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${BandComb_Index_and_allowedFeatureSetsList_for_FFT_3CC_CA_in_UE_CON_MOD_REQ}
+    ...  message_alias=UEContextModificationRequest
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+Verify sCellToAddModList IE whether both TDD Cells were added as SCells for NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${added_SCells_for_FTT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+Verify sCellToAddModList IE whether TDD Cell and FDD Cell were added as SCells for NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${added_SCells_for_FFT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+Verify spCellConfig and sCellToAddModList IEs whether maxMIMO-Layers DL and UL configuration was correct for NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${maxMIMO_Layers_for_FTT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+Verify iE-Extensions IE whether Selected Band Combination and Feature Set Entry Indexes were correct for FTT 3CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${Selected_BandComb_and_FeatSetEntry_Index_for_FTT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=UEContextModificationResponse
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+Verify iE-Extensions IE whether Selected Band Combination and Feature Set Entry Indexes were correct for FFT 3CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${Selected_BandComb_and_FeatSetEntry_Index_for_FFT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=UEContextModificationResponse
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ------------ Periodic CSI, HARQ AN, SSB Beam and CRI of the best CSI-RS (Beamforming and Beam Refinement) reporting configuration ------------
+#  BF - Beamforming, BR - Beam Refinement
+#  --- FFT Part ---:
+#  ***** FFT Measurements verification - Beamforming disabled *****
+Verify CSIReportConfigToAddModList IE whether pCSI and HARQ AN reporting configuration was sent for FFT 3CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_disabled_for_FFT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FFT Measurements verification - Beamforming enabled only on SCell-2 *****
+Verify CSIReportConfigToAddModList IE whether pCSI and HARQ AN and SSB Beam reporting configuration was sent for SCell-2 for FFT 3CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_enabled_for_FFT_3CC_CA_in_UE_CON_MOD_RESP_only_SCell_2}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FFT Measurements verification - Beamforming with Beam Refinement enabled only on SCell-2 *****
+Verify whether pCSI and HARQ AN and CRI of the best CSI-RS reporting configuration was sent for SCell-2 for FFT 3CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_enabled_with_BR_for_FFT_3CC_CA_in_UE_CON_MOD_RESP_only_SCell_2}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+#  --- FTT Part ---:
+# ***** FTT Measurements verification - Beamforming disabled *****
+Verify CSIReportConfigToAddModList IE whether pCSI and HARQ AN reporting configuration was sent for FTT 3CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_disabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FTT Measurements verification - Beamforming enabled on SCell-1 *****
+Verify CSIReportConfigToAddModList IE whether pCSI and HARQ AN and SSB Beam reporting configuration was sent for SCell-1 for FTT 3CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_enabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP_only_SCell_1}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FTT Measurements verification - Beamforming enabled on SCell-2 *****
+Verify CSIReportConfigToAddModList IE whether pCSI and HARQ AN and SSB Beam reporting configuration was sent for SCell-2 for FTT 3CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_enabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP_only_SCell_2}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FTT Measurements verification - Beamforming enabled on both SCells *****
+Verify whether pCSI and HARQ AN and SSB Beam reporting configuration was sent for both TDD SCells for FTT 3CC CA for NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_enabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FTT Measurements verification - Beamforming with Beam Refinement enabled on SCell-1 *****
+Verify whether pCSI and HARQ AN and CRI of the best CSI-RS reporting configuration was sent for SCell-1 for FTT 3CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_enabled_with_BR_for_FTT_3CC_CA_in_UE_CON_MOD_RESP_only_SCell_1}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FFT and FTT Measurements verification - Beamforming with Beam Refinement enabled on SCell-1 and Beamforming enabled on SCell-2 *****
+Verify whether pCSI and HARQ AN and BF/BR reporting configuration was sent for BR on SCell-1 and BF on SCell-2 for FTT 3CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_enabled_with_BR_for_FTT_3CC_CA_in_UE_CON_MOD_RESP_on_SCell_1_BF_on_SCell_2}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FFT and FTT Measurements verification - Beamforming with Beam Refinement enabled only on SCell-2 *****
+Verify whether pCSI and HARQ AN and CRI of the best CSI-RS reporting configuration was sent for SCell-2 for FTT 3CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_enabled_with_BR_for_FTT_3CC_CA_in_UE_CON_MOD_RESP_only_SCell_2}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FFT and FTT Measurements verification - Beamforming with Beam Refinement enabled on SCell-2 and Beamforming enabled on SCell-1 *****
+Verify whether pCSI and HARQ AN and BF/BR reporting configuration was sent for BF on SCell-1 and BR on SCell-2 for FTT 3CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_enabled_with_BR_for_FTT_3CC_CA_in_UE_CON_MOD_RESP_on_SCell_2_BF_on_SCell_1}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FTT Measurements verification - Beamforming with Beam Refinement enabled on both SCells *****
+Verify whether pCSI and HARQ AN and CRI of the best CSI-RS reporting configuration was sent for both TDD SCells for FTT 3CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_enabled_with_BR_for_FTT_3CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ------------ PUCCH resourceSetId verification: ------------
+#   I. FFT Part:
+# ***** FFT Beamforming disabled *****
+Verify resourceSetToAddModList IE whether PUCCH resources were allocated correctly for BF disabled for FFT 3CC CA NR-UE${UE_ID}
+    ${Swrelese}=  Get eNB SW release
+    Run Keyword If  '${Swrelese}'!='SBTS22R2'
+        ...  Verify That Message Fulfills Query
+        ...      ${resourceSetToAddModList_for_BF_disabled_for_FFT_3CC_CA_in_UE_CON_MOD_RESP}
+        ...  message_alias=UEContextModificationResponse_2nd
+        ...  flow_alias=Established_PDU_UE${UE_ID}
+        ...  ELSE IF  '${Swrelese}'=='SBTS22R2'
+        ...  Verify That Message Fulfills Query
+        ...      ${resourceSetToAddModList_for_BF_disabled_for_FFT_3CC_CA_in_UE_CON_MOD_RESP_SBTS22R2}
+        ...  message_alias=UEContextModificationResponse_2nd
+        ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FFT Beamforming enabled *****
+Verify resourceSetToAddModList IE whether PUCCH resources were allocated correctly for BF enabled for FFT 3CC CA NR-UE${UE_ID}
+    ${Swrelese}=  Get eNB SW release
+    Run Keyword If  '${Swrelese}'!='SBTS22R2'
+        ...  Verify That Message Fulfills Query
+        ...      ${resourceSetToAddModList_for_BF_enabled_for_FFT_3CC_CA_in_UE_CON_MOD_RESP_only_SCell_2}
+        ...  message_alias=UEContextModificationResponse_2nd
+        ...  flow_alias=Established_PDU_UE${UE_ID}
+        ...  ELSE IF  '${Swrelese}'=='SBTS22R2'
+        ...  Verify That Message Fulfills Query
+        ...      ${resourceSetToAddModList_for_BF_enabled_for_FFT_3CC_CA_in_UE_CON_MOD_RESP_only_SCell_2_SBTS22R2}
+        ...  message_alias=UEContextModificationResponse_2nd
+        ...  flow_alias=Established_PDU_UE${UE_ID}
+
+#   II. FTT Part:
+# ***** FTT Beamforming disabled *****
+Verify resourceSetToAddModList IE whether PUCCH resources were allocated correctly for BF disabled for FTT 3CC CA NR-UE${UE_ID}
+    ${Swrelese}=  Get eNB SW release
+    Run Keyword If  '${Swrelese}'!='SBTS22R2'
+        ...  Verify That Message Fulfills Query
+        ...      ${resourceSetToAddModList_for_BF_disabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP}
+        ...  message_alias=UEContextModificationResponse_2nd
+        ...  flow_alias=Established_PDU_UE${UE_ID}
+        ...  ELSE IF  '${Swrelese}'=='SBTS22R2'
+        ...  Verify That Message Fulfills Query
+        ...      ${resourceSetToAddModList_for_BF_disabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP_SBTS22R2}
+        ...  message_alias=UEContextModificationResponse_2nd
+        ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FTT Beamforming activated only on SCell-1 *****
+Verify resourceSetToAddModList IE whether PUCCH resources were allocated correctly for BF enabled only on SCell-1 for FTT 3CC CA NR-UE${UE_ID}
+    ${Swrelese}=  Get eNB SW release
+    Run Keyword If  '${Swrelese}'!='SBTS22R2'
+        ...  Verify That Message Fulfills Query
+        ...      ${resourceSetToAddModList_for_BF_enabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP_only_SCell_1}
+        ...  message_alias=UEContextModificationResponse_2nd
+        ...  flow_alias=Established_PDU_UE${UE_ID}
+        ...  ELSE IF  '${Swrelese}'=='SBTS22R2'
+        ...  Verify That Message Fulfills Query
+        ...      ${resourceSetToAddModList_for_BF_enabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP_only_SCell_1_SBTS22R2}
+        ...  message_alias=UEContextModificationResponse_2nd
+        ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FTT Beamforming activated only on SCell-2 *****
+Verify resourceSetToAddModList IE whether PUCCH resources were allocated correctly for BF enabled only on SCell-2 for FTT 3CC CA NR-UE${UE_ID}
+    ${Swrelese}=  Get eNB SW release
+    Run Keyword If  '${Swrelese}'!='SBTS22R2'
+        ...  Verify That Message Fulfills Query
+        ...      ${resourceSetToAddModList_for_BF_enabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP_only_SCell_2}
+        ...  message_alias=UEContextModificationResponse_2nd
+        ...  flow_alias=Established_PDU_UE${UE_ID}
+        ...  ELSE IF  '${Swrelese}'=='SBTS22R2'
+        ...  Verify That Message Fulfills Query
+        ...      ${resourceSetToAddModList_for_BF_enabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP_only_SCell_2_SBTS22R2}
+        ...  message_alias=UEContextModificationResponse_2nd
+        ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FTT Beamforming activated on both SCells *****
+Verify resourceSetToAddModList IE whether PUCCH resources were allocated correctly for BF enabled on both SCells for FTT 3CC CA NR-UE${UE_ID}
+    ${Swrelese}=  Get eNB SW release
+    Run Keyword If  '${Swrelese}'!='SBTS22R2'
+        ...  Verify That Message Fulfills Query
+        ...      ${resourceSetToAddModList_for_BF_enabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP}
+        ...  message_alias=UEContextModificationResponse_2nd
+        ...  flow_alias=Established_PDU_UE${UE_ID}
+        ...  ELSE IF  '${Swrelese}'=='SBTS22R2'
+        ...  Verify That Message Fulfills Query
+        ...      ${resourceSetToAddModList_for_BF_enabled_for_FTT_3CC_CA_in_UE_CON_MOD_RESP_SBTS22R2}
+        ...  message_alias=UEContextModificationResponse_2nd
+        ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ***** FFT SSB beam measurerements configured *****
+Verify SSB Beam measurements are configured
+    verify_that_message_fulfills_query
+    ...     (
+    ...         csi-ReportConfigToAddModList contains
+    ...         (
+    ...             reportConfigId eq 22
+    ...         )
+    ...         and
+    ...         (
+    ...             reportQuantity contains (ssb-Index-RSRP is present)
+    ...         )
+    ...     )
+    ...     message_alias=RRCReconfiguration_2nd
+    ...     flow_alias=Established_PDU_UE1
+
+# ------------ radio conditions setting ------------
+Trigger DL BLER Test Mode to achieve Target MCS
+    Execute egate command  cmd=bler_testmode_nr profile_id=1 target_mcs=5 num_dl_pkts=1000
+    Sleep  2s
+    Execute egate command  cmd=ue_testmode_nr_set id=1 testmode=bler action=activate profile_id=1 scell=2
+    Sleep  2s
+
+Deactivate and remove UE bler testmodes
+    Execute egate command  cmd=ue_testmode_nr_set id=1 testmode=bler action=deactivate profile_id=1 scell=2
+    Sleep  2s
+    Execute egate command  cmd=bler_testmode_nr profile_id=1 delete=on
+    Sleep  2s
+
+Trigger Beam change on the TDD FR1 SCells based on SSB beam measurements received from UE
+    Execute egate command
+    ...  cmd=beam_control_testmode_nr profile_id=2 ueBeamIndexInitial=1,0 ssbeam_bestbeam=1 ssbeam_rsrp_best=-45 ssbeam_rsrp_avg=-120
+    Sleep  2s
+    Execute egate command
+    ...  cmd=ue_testmode_set_nr id=1 testmode=beam_control action=activate profile_id=2 beamaction=switch scell=2
+    Sleep  5s
+
+Deactivate and remove UE beam control testmodes
+    Execute egate command
+    ...  cmd=ue_testmode_set_nr id=1 testmode=beam_control action=deactivate profile_id=2 beamaction=switch scell=2
+    Sleep  2s
+    Execute egate command
+    ...  cmd=beam_control_testmode_nr profile_id=2 delete=on
+    Sleep  2s
+
+Produce Scout Data
+    ${tl_name}=                     Get Testline
+    scout.setup_scout               scout_testline_name=${tl_name}      alias=conn_alias
+    ${scout_scf_id}=                scout.request_scf                   alias=conn_alias
+    ${TC_ID}=                       Set Variable                        ute:id:${scout_scf_id}
+    Set Tags                        ${TC_ID}
+    scout.teardown_scout_api        alias=conn_alias

@@ -1,0 +1,51 @@
+*** Settings ***
+
+Documentation
+...   Author:   Essi Passoja
+...   Contact:  I_MN_RAN_RD_TV_TRUNK_OUL1_GMS <I_MN_RAN_RD_TV_OTACI_CITCRT1@internal.nsn.com>
+
+Resource    testsuite/Oulu/TrunkEng/Common/Robot/Resources/common_resources.robot
+Resource    testsuite/Oulu/TrunkEng/PM/Robot/TestKeywords/Interval_sum_counters.robot
+
+Suite Setup       Common Suite Setup
+Suite Teardown    Common Suite Teardown
+
+Test Setup        Run Keywords  Common Test Setup
+...               AND           Start Alarm Listener  ${ALLOWED_ALARMS_FILE}
+...               AND           Init PM File Check    ${BASELINE}
+...                                                   ${IGNORED_MEAS}
+...                                                   ${IGNORED_COUNTERS}
+Test Teardown     Common Test Teardown
+
+
+*** Variables ***
+${MEAS_INTERVAL}        ${15}
+${UPLOAD_INTERVAL}      ${15}
+${LOOPS}                1
+${PASS_RATE}            1
+${ALLOWED_ALARMS_FILE}  testsuite/Oulu/TrunkEng/PM/Resources/Allowed_alarms_SBTS00.txt
+${BASELINE}             testsuite/Oulu/TrunkEng/PM/Resources/Baseline_SBTS00.xml
+${IGNORED_MEAS}         testsuite/Oulu/TrunkEng/PM/Resources/Ignored_measurements_SBTS00.txt
+${IGNORED_COUNTERS}     testsuite/Oulu/TrunkEng/PM/Resources/Ignored_counters_SBTS00.txt
+# Collect logs variable. Possible values are: On failure/Never/Always
+${COLLECT_LOGS}         On failure
+${UE_IN_USE}            ${True}
+
+&{15min}                M8006C0=0  M8006C1=0  M8018C1=2
+&{30min}                M8006C0=0  M8006C1=0  M8007C0=0  M8007C1=0  M8007C7=0  M8007C8=0  M8007C10=0  M8007C11=0  M8018C1=2
+&{45min}                M8006C0=0  M8006C1=0  M8018C1=2
+&{60min}                M8006C0=0  M8006C1=0  M8007C0=0  M8007C1=0  M8007C7=0  M8007C8=0  M8007C10=0  M8007C11=0
+                   ...  M8013C13=0  M8013C45=0  M8013C47=0  M8013C54=0  M8013C55=0  M8018C1=2  M8051C56=0
+
+*** Test Cases ***
+Interval Sum Counter
+    &{SUM_COUNTERS}=  Create Dictionary  15=${15min}  30=${30min}  45=${45min}  60=${60min}
+
+    Run Keyword In Loop And Return Pass Rate
+        ...    ${UPLOAD_INTERVAL}  ${MEAS_INTERVAL}  ${SUM_COUNTERS}
+        ...    name=Interval Sum Counters
+        ...    test_case=1
+        ...    loops=${LOOPS}
+		...    keywords=Interval Sum Counters
+        ...    expected_pass_rate=${PASS_RATE}
+        ...    collect_test_logs=${COLLECT_LOGS}

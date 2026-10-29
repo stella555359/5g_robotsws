@@ -1,0 +1,74 @@
+# ===Element length=====#
+# PRIMARY_LEN=359
+PRIMARY_LEN = 384
+SECONDARY_LEN = 76
+TERTIARY_LEN = 52
+CELLMRPT_LEN = 6
+CARPT_LEN = 44
+RRCFAILURERPT_LEN = 2
+FSM_LEN = 15
+SGNBREQ_LEN = 21
+CU_HEAD_LEN = 5
+CU_LEN = 85
+CU_BEAR_LEN = 12
+CU_CA_LEN = 7
+GNB_MEASURE_LEN = 4
+GNB_MEASURE_CELL_LEN = 7
+DU_HEAD_LEN = 5
+DU_LEN = 61
+DU_BEAR_LEN = 18
+DU_CA_LEN = 27
+DU_SSB_LEN = 24
+# ====keyword definition=====#
+PRIMARY = 1
+SECONDARY = 2
+TERTIARY = 3
+CELLMRPT = 4
+CARPT = 5
+RRCFAILURERPT = 6
+FSM = 7
+SGNBREQ = 8
+CU_HEAD = 9
+CU = 10
+CU_BEAR = 11
+CU_CA = 12
+GNB_MEASURE = 13
+GNB_MEASURE_CELL = 14
+DU_HEAD = 15
+DU = 16
+DU_BEAR = 17
+DU_CA = 18
+DU_SSB = 19
+
+# ====field area definition=====#
+CPLANE = 1
+UPLANE = 2
+NONNULL = 3
+TIME = 4
+RECURSION = 5
+QCI_NONNULL = 6
+QCI_CPLANE = 7
+# ===Position index definition, all plus 1 since the list starts from 0=====#
+SECONDARY_POS = 172  # actually 173
+TERTIARY_POS_IN_SEC = 32
+CELLMRPT_POS = 126  # actually 127
+CARPT_POS = 187  # actually 188
+RRCFAIL_POS = 273  # actually 274
+# ===in/out list definition========#
+KEYWORD = 0
+INDEX = 1
+FIELD_AREA = 2
+DELTA = 3
+TARGET_VALUE = 4
+LOWER_LIMIT = 5
+UPPER_LIMIT = 6
+REAL_VALUE = 7
+CHECK_RESULT = 8
+# ====Other=============#
+INVALID = -1
+FAIL = 0
+PASS = 1
+INVALID_VALUE = -1
+SECONDARY_QCI_INDEX = 6
+TERTIARY_QCI_INDEX = 1
+# =====End global definition=================#

@@ -1,0 +1,327 @@
+*** Settings ***
+Documentation       CNI GENERIC TEST
+...               Modified Date               : 20-October-2021
+...               Last Modified by            : vincent.boulet@nokia.com
+...               Modified Date               : 01-June-2023
+...               Last Modified by            : loic.marzin@nokia.com
+Library           OperatingSystem
+Library           Collections
+Library           DateTime
+Library           taf.transport.ssh    WITH NAME    csn
+Resource            ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource            ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource            ../../../../../resources/SWENG/robot/Tools.robot
+Resource            ../../../../../resources/SWENG/robot/Connect.robot
+Resource            ../../../../../resources/SWENG/robot/Restart.robot
+Resource            ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource            ../../../../../resources/SWENG/robot/Traffic.robot
+Resource            ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource            ../../../../../resources/SWENG/robot/Setup.robot
+Resource            ../../../../../resources/SWENG/robot/Oam.robot
+
+
+*** Variables ***
+
+${Traffic_Duration}            120s
+${gNB_Mplane_IP}               10.0.1.111
+${Udp_Receiver_wts_IP}         10.0.1.1
+${Destination_port}            5678
+@{UL_PDCP_PDU_MSG_ID}          L2HI_DU(0x82)    L2HI_DU(0x02)
+@{DDDS_FLOW_CONTROL_MSG_ID}    UlDl DU:FlowControl3GppF1(0x4c)
+${TMP_PATH}                    /tmp/Sherpa_logs
+${sherpaimg}                    sherpa_1_0_55
+
+&{traffic_A_1_TDD}             istraffic=True
+...                            ueid=102
+...                            cellid=1
+...                            pdnip=4.7.254.101
+...                            id=2
+...                            bearer=2
+...                            throughput=2
+
+&{traffic_A_1_FDD}             istraffic=True
+...                            ueid=152
+...                            cellid=3
+...                            id=2
+...                            pdnip=4.7.254.151
+...                            bearer=2
+...                            throughput=2
+
+&{traffic_A_2_TDD}             istraffic=True
+...                            ueid=101
+...                            cellid=1
+...                            pdnip=4.7.254.101
+...                            id=8
+...                            bearer=2,8
+...                            throughput=2
+ 
+&{traffic_A_2_FDD}             istraffic=True
+...                            ueid=151
+...                            cellid=3
+...                            pdnip=4.7.254.151
+...                            id=8
+...                            bearer=2,8
+...                            throughput=2
+
+&{A_1_TDD}                     traffic=${traffic_A_1_TDD}
+...                            addpdn=False
+...                            interval=1
+...                            multiUe=True
+...                            packetsize=56
+...                            sherpaimg=${sherpaimg}
+
+&{A_1_FDD}                     traffic=${traffic_A_1_FDD}
+...                            addpdn=False
+...                            interval=1
+...                            multiUe=True
+...                            packetsize=56
+...                            sherpaimg=${sherpaimg}
+
+&{A_2_TDD}                     traffic=${traffic_A_2_TDD}
+...                            addpdn=True
+...                            packetsize=56
+...                            interval=1
+...                            multiUe=False
+...                            sherpaimg=${sherpaimg}
+
+&{A_2_FDD}                     traffic=${traffic_A_2_FDD}
+...                            addpdn=True
+...                            packetsize=56
+...                            interval=1
+...                            multiUe=False
+...                            sherpaimg=${sherpaimg}
+  
+*** Keywords ***
+TC PingLatency
+    [Arguments]           ${param}
+    Init Sequence         ${param}
+    Step                  Set Context_Element Manager           depends=Set MRBTSID and NRBTSID
+    Critical Step         Restart TL
+    Step                  Ressources_Ping_Latency.WTS Setup
+    Step                  Attach Ue 
+    ...                   argument=${param}
+	Critical Step         Activate Sherpa
+    Step                  Launch Ping traffic Ue
+    ...                   argument=${param}	
+    Step                  DL Traffic For Ue
+    ...                   argument=${param}
+    Step                  Stop Ping
+    Step                  Deactivate Sherpa and Stop Collect
+    Step                  Get and decode sherpa pcap files
+    Step                  Verify PdchFlow values
+    Step                  Verify ControlFlow values
+    Step                  Verify Rlf values
+    [Teardown]            GenericTest.Display diagnosis
+
+Teardown TC PingLatency
+    Dated log             Test ending
+    [Teardown]            Run Keyword If Test Failed              Oam.OAM Get Snapshot
+
+Set Context_Element Manager
+    &{modify_param1}    Create Dictionary
+    ...    parameter=actMultiDrbNSA
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ...    value=true
+    @{modify_param}    Create List    ${modify_param1}
+    Oam.OAM Set Params                ${modify_param}
+
+CNI Test suite setup
+    Setup.Suite Setup From Scratch    keepAllUeDataInCfgFile=${True}
+	Set cfg file
+
+WTS Setup
+    CallSetup.WTS Setup                     shouldUseLua=${False}
+
+Set cfg file
+    startSession
+    replaceValue        prefix=set_bearer
+    ...                 param=trf_type
+    ...                 oldValue=internal
+    ...                 newValue=external
+    replaceValue        prefix=enb_param
+    ...                 param=endc_capable_qci
+    ...                 oldValue=9
+    ...                 newValue=all
+    ${ue_capab}         getParam        prefix=ue_param
+    ...                 param=ue_nr_capabilities
+    ${ue_eutra_cpab}    getParam        prefix=ue_param
+    ...                 param=ue_eutra_nr_capabilities
+    ${line}             getIndexUsingParam   prefix=set_pgw    paramId=id    paramVal=1
+    setConfigLine       configuration=set_pgw id=2 apn=ltetr2.nsn.com devtype=tun addr=4.8.254.207/16 type=simulated ip=:$DAEMON_PORT
+    ...                 line=${line+1}
+    ${line}             getIndexUsingParam   prefix=set_bearer    paramId=ue    paramVal=101
+    setConfigLine       configuration=set_bearer id=8 ue=101 qci=8 pdn=2 default=on trf_type=internal
+	...                 line=${line+1}
+    ${line}             getIndexUsingParam   prefix=set_bearer    paramId=ue    paramVal=102
+    setConfigLine       configuration=set_bearer id=8 ue=102 qci=8 pdn=2 default=on trf_type=internal
+	...                 line=${line+1}	
+    ${line}             getIndexUsingParam   prefix=set_bearer    paramId=ue    paramVal=151
+    setConfigLine       configuration=set_bearer id=8 ue=151 qci=8 pdn=2 default=on trf_type=internal
+	...                 line=${line+1}
+	${line}             getIndexUsingParam   prefix=set_bearer    paramId=ue    paramVal=152
+    setConfigLine       configuration=set_bearer id=8 ue=152 qci=8 pdn=2 default=on trf_type=internal
+	...                 line=${line+1}
+    ${idx}              getIndex        prefix=set_uec          param=set_uec
+    appendConfig        configuration=pdn=2 devtype=tun addr=72.22.1.1/26
+    ...                 line=${idx}
+	${line}             getIndexUsingParam   prefix=sim_param_set    paramId=NR_PDCP_TRUNCATE_DL_SIZE    paramVal=47	    
+	deleteConfig        ${line}
+    stopSession         rename=modified
+
+	
+Setup Capture
+    [Tags]    ActivateL1L2traces
+    ${Capture_BIP_GNB}                       Capture L1L2 Set Upon Config
+    ${Capture_BIP_AP}                        Capture L1L2 Set Upon Config       ${AP_DU}
+    set suite variable                       ${Capture_BIP_GNB}
+    set suite variable                       ${Capture_BIP_AP}
+
+Capture Start AP
+    [Tags]      CAPTURE
+    Capture Init                              ${Capture_BIP_AP}
+    Capture Start                             ${Capture_BIP_AP}
+
+
+Capture Start GNB
+    [Tags]      CAPTURE
+    Capture Init                              ${Capture_BIP_GNB}
+    Capture Start                             ${Capture_BIP_GNB}
+
+Capture Stop GNB
+    [Tags]      CAPTURE
+    Capture Stop                             ${Capture_BIP_GNB}
+
+Capture Stop AP
+    [Tags]      CAPTURE
+    Capture Stop                             ${Capture_BIP_AP}
+
+SgNB Addition ue
+    ${ueProfile}                           Dictionary Get       ${UE__SIMPLE}
+	Set To Dictionary    ${ueProfile}      ue              ${param.traffic.ueid}
+	Set To Dictionary    ${ueProfile}      target_cells    ${param.traffic.cellid}
+    SgNB Addition to ENB                      ueSetting=${ueProfile}
+    sleep            10
+
+Connect Ue To Second Pdn
+    [Tags]                    Connect Ue To Pdn 2 configured in cfg file
+	[Arguments]               ${UE_Id}
+    wtsemu.ue_pdn_connect     ue=${UE_Id}      pdn=2
+
+Attach Ue
+    [Arguments]           ${param}
+    run keyword if        '${param.multiUe}'=='True'
+    ...                   Attach 2 Ue    ${param.traffic.ueid}    ${param.traffic.cellid}
+    run keyword if        '${param.multiUe}'=='False'
+    ...                   Attach And Connect Pdn 2 Ue    ${param.traffic.ueid}    ${param.traffic.cellid}
+
+Attach 2 Ue
+    [Arguments]            ${UE_Id}    ${Cell_Id}
+	${First_UE_id}         Evaluate               ${UE_Id}-1
+	FOR      ${idUE}       IN RANGE      0        2
+        ${ueProfile}       Copy Dictionary        ${UE__SIMPLE}
+	    ${UE_id}           Evaluate               ${First_UE_id}+${idUE}
+		Dated log          Attach of UE Id ${UE_Id}
+        Set To Dictionary    ${ueProfile}      ue              ${UE_Id}
+		Set To Dictionary    ${ueProfile}      target_cells    ${Cell_Id}
+        SgNB Addition to ENB                       ueSetting=${ueProfile}
+        sleep    5s
+    END
+
+Attach And Connect Pdn 2 Ue
+   [Arguments]             ${UE_Id}
+	...                    ${Cell_Id}
+    Dated log           UE Attach Ue
+    Launch 4G UE Attach    ${UE_Id}
+    sleep    5s
+    Dated log           Connect Ue To Second Pdn
+    Connect Ue To Second Pdn    ${UE_Id}
+    sleep    5s
+    Dated log           Launch SgNB Addition And 5G Attach
+    Launch SgNB Addition And 5G Attach    ${UE_Id}    ${Cell_Id}
+
+
+Launch Ping traffic Ue 
+    [Arguments]     ${param}	
+    Sending Ping request    pattern=AA    packetsize=56    bearerIp=${param.traffic.pdnip}   interval=1
+    sleep    5sec
+    #Verify Ping Traffic
+
+
+Sending Ping request
+    [Arguments]     ${pattern}   ${packetsize}    ${bearerIp}   ${interval}
+    # Login to LTE emu
+    ${alias}     SSH Connect      host=${HOST_EPCSIM} 
+    SSH Cmd      alias=${alias}
+    ...          command=killall ping
+    Check IP is pinging      ${bearerIp}
+    SSH Cmd     alias=${alias}
+    ...         readOuput=False
+    ...         command=ping -p ${pattern} -s ${packetsize} -i ${interval} ${bearerIp}>/dev/null&    
+  
+
+Check IP is pinging
+    [Arguments]     ${bearerIp}
+    # Login to LTE emu
+   ${alias}     SSH Connect      host=${HOST_EPCSIM} 
+   ${output}    SSH Cmd      alias=${alias}
+   ...          command=ping ${bearerIp} -c 1 
+   Should Contain  ${output}    1 packets transmitted, 1 received
+
+
+Stop Ping
+    SSH Wait For Connect and Cmd            host=${HOST_EPCSIM}
+    ...                                     command=killall ping
+
+
+DL Traffic For Ue
+    [Tags]      Launch DL Traffic For Ue
+    [Arguments]             ${param}
+    ${UE}                   Dictionary Get          ${UE_SIMPLE}
+    ${UE.ue}                set Variable	        ${param.traffic.ueid}
+    ${UE.bearer}            set Variable	        ${param.traffic.id}
+    Traffic UE DL           ueSetting=${UE}         duration=${Traffic_Duration}     deviation=5
+
+
+Verify PdchFlow values
+    [Tags]     CheckValues
+    ${found}                Verify Message presence in csv Files    micro__PdcpFlows.csv            MSGID
+    ...                     ${UL_PDCP_PDU_MSG_ID}                   directory=${sherpa_output_path}
+    Should be equal         "${found}"                              "True"
+
+
+Verify ControlFlow values
+    [Tags]     CheckValues
+    ${found}                Verify Message presence in csv Files    micro__ControlFlows.csv         MSGID
+    ...                     ${DDDS_FLOW_CONTROL_MSG_ID}             directory=${sherpa_output_path}
+    Should be equal         "${found}"                              "True"
+
+
+Verify Rlf values
+    [Tags]     CheckValues
+    ${found}                Verify Regex in csv File Column with Prerequisite    micro__l1l2Trace.csv
+    ...                     TEXT                                                 (UL grant).*
+    ...                     rfs=                                    directory=${sherpa_output_path}
+    Should be equal         "${found}"                              "True"
+
+
+Launch 4G UE Attach
+    [Arguments]             ${UE_Id}
+    wtsemu.Ue Attach                       id=${UE_Id} 
+    wtsemu.Read Wtsemu Output Until Re     expected=UE IS ACTIVE               timeout=10
+    Dated log                              4G Attach is successful	
+
+
+Launch SgNB Addition And 5G Attach
+    [Tags]      5G_UE_ATTACH
+	[Arguments]             ${UE_Id}
+	...                     ${Cell_Id}
+    sleep    2s
+    wtsemu.Enb Ue Dc Start                 ue=${UE_Id}    target_gnb=2    target_cells=${Cell_Id}   
+	...                                    bearer=2,8    type=split_scg
+    wtsemu.Read Wtsemu Output Until        expected=Proxy (eNB 2 cell ${Cell_Id}) reported successful RA      timeout=30
+    Dated log                              sgNb Addition And Rach procedure are completed successfully    console=yes
+    sleep    10s
+
+
+Get and decode sherpa pcap files
+    Upload and decode sherpa pcap files    Sherpa_logs_local_path=${trace_dir}     duration=0

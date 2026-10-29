@@ -1,0 +1,285 @@
+import os
+import json
+import getopt
+import sys
+from enum import Enum
+
+# TAF Libraries:
+from taf.analyzer.ttitrace_eventdecoder import TtitraceReader as TtitraceReaderEvtDec
+
+
+def checkPoolId(_jsonPathName,
+                _PoolID,
+                _SubPoolID,
+                _event_type="dlInterL1SubpoolReconfData",
+                _mode_debug=False):
+    """
+    Description:...
+    """
+
+    result_check = False
+    print("===> TTI_INF: checkPoolId for event=%s into json file=%s" % (_event_type, _jsonPathName))
+
+    if not os.path.exists(_jsonPathName) or os.path.getsize(_jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % _jsonPathName)
+        return result_check
+
+    if _event_type != "dlInterL1SubpoolReconfData" and _event_type != "ulInterL1SubpoolReconfData":
+        print("===> TTI_ERR: _event_type=%s is not supported" % _event_type)
+        return result_check
+
+    with open(_jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            if event.type == _event_type:
+                sfn = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                lcrId = event.data["eventHeader"]["lcrId"]
+                rnti = event.data["eventHeader"]["rnti"]
+                l1PoolId = event.data["l1PoolId"]
+                if _mode_debug:
+                    print("===> TTI_DBG: event type=%s lcrId=%s" % (event.type, lcrId))
+                if l1PoolId == int(_PoolID):
+                    if _mode_debug:
+                        print("===> TTI_DBG: sfn=%s slot=%s rnti=%s l1PoolId=%s" % (sfn, slot, rnti, l1PoolId))
+                else:
+                    print("===> TTI_ERR: l1PoolId=%s compare with %s" % (l1PoolId, _PoolID))
+                    print("===> TTI_ERR: check IS NOT PASSED for l1PoolId=%s" % _PoolID)
+                    result_check = False
+                    break    # return result_check
+                subPoolId_0 = event.data["l1SubPools"][0]["subPoolId"]
+                subPoolId_1 = event.data["l1SubPools"][1]["subPoolId"]
+                if subPoolId_0 == int(_SubPoolID) or subPoolId_1 == int(_SubPoolID):
+                    result_check = True
+                else:
+                    print("===> TTI_ERR: subPoolId=%s is NOT FOUND then check IS NOT PASSED" % _SubPoolID)
+                    result_check = False
+                    break    # return result_check
+                if _mode_debug:
+                    print("===> TTI_DBG: event type=%s subPoolId=%s" % (event.type, _SubPoolID))
+    if result_check:
+        print("===> TTI_INF: checkPoolId is passed. l1 Pool Id is equal to %s when subPoolId is %s"
+              % (l1PoolId, _SubPoolID))
+    else:
+        print("===> TTI_ERR: checkPoolId is FAILED. l1 Pool Id IS NOT EQUAL to %s when subPoolId is %s"
+              % (l1PoolId, _SubPoolID))
+        print("===> TTI_ERR: sfn=%s slot=%s lcrId=%s rnti=%s l1PoolId=%s" % (sfn, slot, lcrId, rnti, l1PoolId))
+    return result_check
+
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+def checkZABPrivilege(_NRCellId,
+                      _expected_ZAB_value,
+                      _jsonPathName,
+                      _mode_debug=False):
+    """
+    Description:...
+    """
+
+    ZAB_check = False
+    found_cell = False
+    print("===> TTI_INF: check ZAB privileged cell for event=dlAllocatedPooledResourcesData into json file=%s"
+          % (_jsonPathName))
+
+    if not os.path.exists(_jsonPathName) or os.path.getsize(_jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % _jsonPathName)
+        return ZAB_check
+
+    with open(_jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            if event.type == "dlAllocatedPooledResourcesData":
+                rnti = event.data["eventHeader"]["rnti"]
+                physCellId = event.data["eventHeader"]["physCellId"]
+                nrCellIdentity = event.data["nrCellIdentity"]
+                hasZabPrivilege = event.data["hasZabPrivilege"]
+
+                if _mode_debug:
+                    print("===> TTI_DBG: event type=dlAllocatedPooledResourcesData rnti=%s physCellId=%"
+                          % (rnti, physCellId))
+
+                if nrCellIdentity == int(_NRCellId):
+                    found_cell = True
+                    if hasZabPrivilege == int(_expected_ZAB_value):
+                        ZAB_check = True
+                    else:
+                        print("===> TTI_ERR: expected_ZAB_Value=%s compare with %s"
+                              % (_expected_ZAB_value, hasZabPrivilege))
+                        print("===> TTI_ERR: nrCellIdentity = %s has wrong ZAB privilege " % _NRCellId)
+                        ZAB_check = False
+                    break    # return ZAB_check
+    if not found_cell:
+        print("===> TTI_ERR: nrCellIdentity= %s is out of range" % _NRCellId)
+    else:
+        if ZAB_check:
+            print("===> TTI_INF: checkZABPrivilege is passed. nrCellIdentity %s has ZAB Privilege = %s"
+                  % (nrCellIdentity, hasZabPrivilege))
+        else:
+            print("===> TTI_ERR: checkZABPrivilege is FAILED. ZAB Privilege IS NOT EQUAL to %s for nrCellIdentity %s"
+                  % (_expected_ZAB_value, nrCellIdentity))
+    return ZAB_check
+# ----------------------------------------------------------------------------------------------------------------------
+
+
+def check_l1SubPoolStreamPrbCapacity_consistency(_PoolID,
+                                                 _pool_max_num_stream_prb,
+                                                 _jsonPathName,
+                                                 _event_type="dlInterL1SubpoolReconfData",
+                                                 _mode_debug=False):
+    """
+    Description:...
+    checks:
+    1. poolMaxNumStreamPrb = 2400 (pour dlInterL1SubpoolReconfData)
+    """
+
+    result_check = False
+    print("===> TTI_INF: check_l1SubPoolStreamPrbCapacity consistency for event=%s into json file=%s"
+          % (_event_type, _jsonPathName))
+
+    if not os.path.exists(_jsonPathName) or os.path.getsize(_jsonPathName) <= 24:
+        print("===> TTI_ERR: json file=%s doesn't exist or size <= 24" % _jsonPathName)
+        return result_check
+
+    if _event_type != "dlInterL1SubpoolReconfData" and _event_type != "ulInterL1SubpoolReconfData":
+        print("===> TTI_ERR: _event_type=%s is not supported" % _event_type)
+        return result_check
+
+    with open(_jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            if event.type == _event_type:
+                lcrId = event.data["eventHeader"]["lcrId"]
+                l1PoolId = event.data["l1PoolId"]
+                poolMaxNumStreamPrb = event.data["poolMaxNumStreamPrb"]
+                maxStreamPrbAllocationSp_0 = event.data["l1SubPools"][0]["maxStreamPrbAllocationSp"]
+                maxStreamPrbAllocationSp_1 = event.data["l1SubPools"][1]["maxStreamPrbAllocationSp"]
+                minStreamPrbAllocationSp_0 = event.data["l1SubPools"][0]["minStreamPrbAllocationSp"]
+                minStreamPrbAllocationSp_1 = event.data["l1SubPools"][1]["minStreamPrbAllocationSp"]
+                currentStreamPrbCapacityPerSp_0 = event.data["l1SubPools"][0]["currentStreamPrbCapacityPerSp"]
+                currentStreamPrbCapacityPerSp_1 = event.data["l1SubPools"][1]["currentStreamPrbCapacityPerSp"]
+                calculatedStreamPrbCapacityPerSp_0 = event.data["l1SubPools"][0]["calculatedStreamPrbCapacityPerSp"]
+                calculatedStreamPrbCapacityPerSp_1 = event.data["l1SubPools"][1]["calculatedStreamPrbCapacityPerSp"]
+                subPoolId_0 = event.data["l1SubPools"][0]["subPoolId"]
+                subPoolId_1 = event.data["l1SubPools"][1]["subPoolId"]
+
+                if _mode_debug:
+                    print("===> TTI_DBG: event type=%s lcrId=%s" % (event.type, lcrId))
+
+                # start check1
+                if poolMaxNumStreamPrb != int(_pool_max_num_stream_prb):
+                    print("===> TTI_ERR: poolMaxNumStreamPrb=%s compare with %s"
+                          % (poolMaxNumStreamPrb, _pool_max_num_stream_prb))
+                    result_check = False
+                    break    # return result_check
+                # end check1
+
+                if l1PoolId != int(_PoolID):
+                    print("===> TTI_ERR: l1PoolId=%s compare with %s" % (l1PoolId, _PoolID))
+                    print("===> TTI_ERR: l1PoolId=%s is not found" % _PoolID)
+                    result_check = False
+                    break  # return result_check
+
+                # start check2
+                if (currentStreamPrbCapacityPerSp_0 >= maxStreamPrbAllocationSp_0)\
+                        or (currentStreamPrbCapacityPerSp_0 <= minStreamPrbAllocationSp_0):
+                    print("===> TTI_ERR: In subpool_id=%s, currentStreamPrbCapacityPerSp=%s is out of range"
+                          % (subPoolId_0, currentStreamPrbCapacityPerSp_0))
+                    result_check = False
+                    break  # return result_check
+                else:
+                    if (calculatedStreamPrbCapacityPerSp_0 >= maxStreamPrbAllocationSp_0)\
+                            or (calculatedStreamPrbCapacityPerSp_0 <= minStreamPrbAllocationSp_0):
+                        print("===> TTI_ERR: In subpool_id=%s, calculatedStreamPrbCapacityPerSp=%s is out of range %s"
+                              % (subPoolId_0, calculatedStreamPrbCapacityPerSp_0))
+                        result_check = False
+                        break  # return result_check
+                # end check2
+
+                # start check3
+                if (currentStreamPrbCapacityPerSp_1 >= maxStreamPrbAllocationSp_1)\
+                        or (currentStreamPrbCapacityPerSp_1 <= minStreamPrbAllocationSp_1):
+                    print("===> TTI_ERR: In subpool_id=%s, currentStreamPrbCapacityPerSp=%s is out of range %s"
+                          % (subPoolId_1, currentStreamPrbCapacityPerSp_1))
+                    result_check = False
+                    break  # return result_check
+                else:
+                    if (calculatedStreamPrbCapacityPerSp_1 >= maxStreamPrbAllocationSp_1)\
+                            or (calculatedStreamPrbCapacityPerSp_1 <= minStreamPrbAllocationSp_1):
+                        print("===> TTI_ERR: In subpool_id=%s, calculatedStreamPrbCapacityPerSp=%s is out of range %s"
+                              % (subPoolId_1, calculatedStreamPrbCapacityPerSp_1))
+                        result_check = False
+                        break  # return result_check
+                # end check3
+
+                # start check4
+                if (int(currentStreamPrbCapacityPerSp_0)+int(currentStreamPrbCapacityPerSp_1)) > poolMaxNumStreamPrb:
+                    print("==> TTI_ERR: currentStreamPrbCapacityPerSp in subpool %s (%s) and subpool %s (%s) exceeds "
+                          "poolMaxNumStreamPrb=%s" % (subPoolId_0, currentStreamPrbCapacityPerSp_0, subPoolId_1,
+                                                      currentStreamPrbCapacityPerSp_1, poolMaxNumStreamPrb))
+                    result_check = False
+                    break  # return result_check
+                else:
+                    if (int(calculatedStreamPrbCapacityPerSp_0) + int(calculatedStreamPrbCapacityPerSp_1)) \
+                            > poolMaxNumStreamPrb:
+                        print("===> TTI_ERR: calculatedStreamPrbCapacityPerSp in subpool %s and subpool %s exceeds "
+                              "poolMaxNumStreamPrb=%s" % (subPoolId_0, subPoolId_1, poolMaxNumStreamPrb))
+                        result_check = False
+                        break  # return result_check
+                    else:
+                        result_check = True
+                # end check4
+    if result_check:
+        print("===> TTI_INF: check_l1SubPoolStreamPrbCapacity_consistency is passed when l1PoolId=%s" % _PoolID)
+    else:
+        print("===> TTI_ERR: check_l1SubPoolStreamPrbCapacity_consistency is FAILED when l1PoolId=%s" % _PoolID)
+    return result_check
+# ----------------------------------------------------------------------------------------------------------------------
+
+
+def check_numAllocCellPrbDl_within_a_range(_NRCellId,
+                                           _min_prb_value,
+                                           _max_prb_value,
+                                           _jsonPathName,
+                                           _mode_debug=False):
+    """
+    Description: Verify PRB Allocated is within a range of min and max values
+    """
+
+    result_check = False
+    found_cell = False
+    print("===> TTI_INF: check numAllocCellPrbDl within a range into of min and max values json file=%s"
+          % (_jsonPathName))
+
+    if not os.path.exists(_jsonPathName) or os.path.getsize(_jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % _jsonPathName)
+        return result_check
+
+    with open(_jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            if event.type == "dlAllocatedPooledResourcesData":
+                rnti = event.data["eventHeader"]["rnti"]
+                physCellId = event.data["eventHeader"]["physCellId"]
+                nrCellIdentity = event.data["nrCellIdentity"]
+                numAllocCellPrbDl = event.data["numAllocCellPrbDl"]
+
+                if _mode_debug:
+                    print("===> TTI_DBG: event type=dlAllocatedPooledResourcesData rnti=%s physCellId=%"
+                          % (rnti, physCellId))
+
+                if nrCellIdentity == int(_NRCellId):
+                    found_cell = True
+                    if numAllocCellPrbDl >= int(_min_prb_value) and numAllocCellPrbDl <= int(_max_prb_value):
+                        result_check = True
+                    else:
+                        print("===> TTI_ERR: numAllocCellPrbDl = %s is out of range [%s, %s] for neCellIdentity=%s"
+                              % (numAllocCellPrbDl, _min_prb_value, _max_prb_value, _NRCellId))
+                        result_check = False
+                    break    # return ZAB_check
+    if not found_cell:
+        print("===> TTI_ERR: nrCellIdentity= %s is out of range" % _NRCellId)
+    else:
+        if result_check:
+            print("===> TTI_INF: check numAllocCellPrbDl is passed. numAllocCellPrbDl values are in [%s, %s] for "
+                  "nrCellIdentiy %s" % (_min_prb_value, _max_prb_value, nrCellIdentity))
+        else:
+            print("===> TTI_ERR: check numAllocCellPrbDl is FAILED. numAllocCellPrbDl values are out of range [%s, %s] "
+                  "for nrCellIdentiy %s" % (_min_prb_value, _max_prb_value, nrCellIdentity))
+    return result_check

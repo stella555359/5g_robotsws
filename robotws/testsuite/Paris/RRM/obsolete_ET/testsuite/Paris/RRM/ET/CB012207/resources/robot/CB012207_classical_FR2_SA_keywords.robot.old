@@ -1,0 +1,117 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB012207
+...
+...               Test Case Scenario author   : yann.ah.herve@nokia.com
+...               Test Case Scenario contact  : yann.ah.herve@nokia.com
+...               Test Case automation author : yann.ah.herve@nokia.com
+...               Test Case automation contact: yann.ah.herve@nokia.com
+...               Creation Date               : 24-May-2024
+...               Last Modified by            :
+...               Modification:
+...                       24-May-2024     | Creation
+...                       18-Sep-2024     | Scout data
+
+Library           ../python/getti_events.py
+
+Resource          ./CB012207_common_keywords.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/KPIs.robot
+
+*** Variables ***
+
+${nb_UEs_SA}                        3
+# UL throughput in Mbps per UE
+${UL_tput_per_UE}                   30
+# DL throughput in Mbps per UE
+${DL_tput_per_UE}                   170
+
+${delta_scf_12207_UL}            testsuite/Paris/RRM/ET/CB012207/resources/config/Delta_Configuration_scf_A_7_UL.json
+${delta_scf_12207_DL}            testsuite/Paris/RRM/ET/CB012207/resources/config/Delta_Configuration_scf_B_16_DL.json
+${TC_12207_UL_PM_constraints}    testsuite/Paris/RRM/ET/CB012207/resources/config/TC_A_7_UL_PM_Constraints.csv
+${TC_12207_DL_PM_constraints}    testsuite/Paris/RRM/ET/CB012207/resources/config/TC_B_16_DL_PM_Constraints.csv
+
+*** Keywords ***
+
+CB012207_UL_Traffic_with_PTRS_and_additional_DMRS
+    [Documentation]     This test aims to validate UL traffic when additional DMRS and PTRS are enabled
+    ...                 in SA mode.
+
+    Init Sequence   "CB012207_FR2_SA_UL"
+    Dated Log New Line                  ---> Starting gNB commissioning
+
+    # Update SCF file
+    Critical Step   CB012207_Update_SCF                 ${delta_scf_12207_UL}
+
+    Dated Log New Line                                  ---> Restart TL
+    Critical Step   Restart TL
+    Dated Log New Line                                  ---> WTS setup SA
+    Critical Step   WTS Setup                           shouldUseLua=${False}
+
+    ${UE_list}=        Create List
+    Step               CB012207 Build UE List           ${UE_list}        ${nb_UEs_SA}
+    Critical Step      CB012207 Attach_all_UEs          ${UE_list}
+
+    Traffic UEs UL     ueSettingList=${UE_list}
+    ...                duration=10s        shouldBeStop=False      shouldBeCheck=False
+    ...                throughput=${UL_tput_per_UE}
+
+    Step               Check SRS receive
+    Step               Check additional DMRS UL RRC Config
+
+    ${zoi}             ZOI Start
+    ZOI Wait End       zoi=${zoi}
+
+    Step               Traffic Stop UEs                ueSettingList=${UE_list}     dir=ul
+
+    Step               CB012207 Detach_all_UEs         ${UE_list}
+
+    # KPIs and counters checks
+    ${pm_path}         Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+    KPI Evaluate       pmFile=${pm_path}
+    ...                constraintsFile=${TC_12207_UL_PM_constraints}
+    ...                failOnError=${True}
+
+CB012207_DL_Traffic_with_PTRS_and_additional_DMRS
+    [Documentation]     This test aims to validate DL traffic when additional DMRS and PTRS are enabled
+    ...                 in SA mode.
+
+    Init Sequence   "CB012207_FR2_SA_DL"
+    Dated Log New Line                  ---> Starting gNB commissioning
+
+    # Update SCF file
+    Critical Step   CB012207_Update_SCF                 ${delta_scf_12207_DL}
+
+    Dated Log New Line                                  ---> Restart TL
+    Critical Step   Restart TL
+    Dated Log New Line                                  ---> WTS setup SA
+    Critical Step   WTS Setup                           shouldUseLua=${False}
+
+    ${UE_list}=        Create List
+    Step               CB012207 Build UE List           ${UE_list}        ${nb_UEs_SA}
+    Critical Step      CB012207 Attach_all_UEs          ${UE_list}
+
+    Traffic UEs DL     ueSettingList=${UE_list}
+    ...                duration=10s        shouldBeStop=False      shouldBeCheck=False
+    ...                throughput=${DL_tput_per_UE}
+
+    Step               Check additional DMRS DL RRC Config
+
+    ${zoi}             ZOI Start
+    ZOI Wait End       zoi=${zoi}
+
+    Step               Traffic Stop UEs                ueSettingList=${UE_list}     dir=dl
+
+    Step               CB012207 Detach_all_UEs         ${UE_list}
+
+    # KPIs and counters checks
+    ${pm_path}         Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+    KPI Evaluate       pmFile=${pm_path}
+    ...                constraintsFile=${TC_12207_DL_PM_constraints}
+    ...                failOnError=${True}
+
+Test Teardown for CB012207
+    [Documentation]    Perform needed actions at the end of a test case
+    Test Teardown
+    Restore Files      listFileDesc=${FD_ALL}
+    Dated log          Test teardown : end

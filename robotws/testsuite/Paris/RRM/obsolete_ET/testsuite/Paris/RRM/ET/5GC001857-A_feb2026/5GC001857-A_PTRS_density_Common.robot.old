@@ -1,0 +1,71 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Verification of 5GC001857-A - PTRS density
+...               Scope : Test PTRS frequency density configuration depending
+...                       on UE capabulities, gNB configuration and number of allocated PRB
+...                       Common KW for both cmW and mmW bands.
+...                       08-10-2021              |           1857 refactoring
+...                       14-Sept-2021            |           Updates for mmW (same strategy as for 1347)
+
+Resource          resources/robot/5GC001857-A_Keywords.robot
+
+*** Variables ***
+
+*** Keywords ***
+
+TC_1857_PTRS_DENSITY
+    [Documentation]                 Generic test for PTRS density introduced by 1857 (FR1 and FR2)
+    ...                             ${ptrs_test_config} is a dictionary with:
+    ...                             Band configuration (cmW / mmW)
+    ...                             PTRS density threshold 1
+    ...                             PTRS density threshold 2
+    [Arguments]                     ${ptrs_test_config}
+
+    ${ptrs_tr_1}                    Get From Dictionary     ${ptrs_test_config}     ptrs_threshold_1
+    ${ptrs_tr_2}                    Get From Dictionary     ${ptrs_test_config}     ptrs_threshold_2
+    ${band}                         Get From Dictionary     ${ptrs_test_config}     band_domain
+    ${tl_topology}                  Get From Dictionary     ${ptrs_test_config}     tl_topology
+
+    Set UE capa on EPCSim                 band=${band}
+
+    Set Suitable PTRS Config
+    ...                             frequencyDensityThresNrb0=${ptrs_tr_1}
+    ...                             frequencyDensityThresNrb1=${ptrs_tr_2}
+    ...                             tl_type=${tl_topology}
+   
+	#In case of mmW set the ueid to 1, for NSA call
+	Run Keyword If                  "${band}"=="mmW"	Run Keywords
+	...								Run    sed -i 's/set_ue simulated id=11 /set_ue simulated id=1 /g' ${tl.core.dir_path}/${tl.core.cfg_filename}
+	...								AND 
+	...								Run    sed -i 's/ue_param id=11 /ue_param id=1 /g' ${tl.core.dir_path}/${tl.core.cfg_filename}
+
+    WTS Setup
+
+    # Cellsetup is now done, Sherpa can be enabled if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}           Activate Sherpa
+
+    # Capture BIP and X2 to check PTRS configuration sent to UE
+    ${CaptureBIP}                   Capture L1L2 Set Upon Config             airscale=${GNB_DU}
+    Capture Init                    ${CaptureBIP}                            withTN=True
+
+    # UE attach to 4G+5G (NSA)
+    ${CaptureCPRT_X2} =              SgNB Addition to ENB
+    ...                              ueSetting=${UE_SIMPLE}
+    ...                              captureCallback=Callback Capture L1L2
+    ...                              capture=${CaptureBIP}
+    ...                              withTN=True
+
+    # If traffic is, it's enough in case a full stack TL is used. However, in case of L1Bypass,
+    # traffic success is not significatn because there is no L1 !
+    # So, also check PTRS configuration sent to UE.
+    Check PTRS Config in RRC Reconfiguration           ${CaptureCPRT_X2}       ${ptrs_tr_1}     ${ptrs_tr_2}
+
+    # Chech PTRS configuration inside BIP attach
+    Check PtrsFlag in Msg2 Msg3                         ${CaptureBIP.path}
+
+    # Check PTRS configuration for DL traffic
+    Check PTRS in DL Traffic                ${ptrs_tr_1}     ${ptrs_tr_2}
+    # Check PTRS configuration for UL traffic
+    Check PTRS in UL Traffic                ${ptrs_tr_1}     ${ptrs_tr_2}
+
+    # Detach UE
+    UE Detach Enb                   ueSetting=${UE_SIMPLE}

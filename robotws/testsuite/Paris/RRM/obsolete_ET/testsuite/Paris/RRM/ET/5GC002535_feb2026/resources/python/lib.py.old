@@ -1,0 +1,159 @@
+# -*- coding: utf-8 -*-
+"""
+this file include keywords to get distName by xpath
+Author
+
+"""
+
+from pprint import pprint
+from lxml import etree
+import os
+import os.path
+import datetime
+import xml.etree.ElementTree as ET
+from robot.libraries.BuiltIn import BuiltIn
+
+try:
+    import yaml
+    from robot.libraries.BuiltIn import BuiltIn
+except Exception as e:
+    pprint(e)
+
+
+class lib(object):
+    _DEBUG = 0
+
+    def __init__(self):
+        pass
+
+    def get_distName_by_xpath_filter(self, scf_content, xpath):
+        """to get the managedObject of the parameter belongs to via XML parsing, parameter filtering,
+        distName filtering.
+
+        | Input Parameters | Man. | Description |
+        | scf_content   | Yes  | Current SCF content fetched by REST, can be fetched via kw rest_get_scf_content |
+        | xpath      | Yes | xpath expression |
+        |           |    | if any duplicate may happen, using multiple parameters filtering and distName filtering |
+        |           |     | in Xpath expression, e.g. distName=TNL-5   |
+
+
+        *RETURN VALUE*
+        distName, e.g, MRBTS-3006/TNLSVC-1/TNL-5/IPNO-1/IPRT-1
+
+        Example
+        | ${scf_content}=                  | rest get scf content |
+        | get_distName_by_xpath_filter     | ${scf_content} | ${xpath} |
+
+        """
+        utf8_scf_content = scf_content.encode("utf-8")
+        utf8_parser = etree.XMLParser(ns_clean=True, recover=True, encoding="utf-8")
+        scf_root = etree.fromstring(utf8_scf_content, parser=utf8_parser)
+
+        print(xpath)
+
+        para_mo_list = scf_root.xpath(xpath,  namespaces={"ns": "raml21.xsd"})
+
+        if len(para_mo_list) == 0:
+            err = "No distName found"
+            raise Exception(err)
+        elif len(para_mo_list) == 1:
+            return para_mo_list[0].get("distName")
+        else:
+            err = "Found {} distName!".format(len(para_mo_list))
+            raise Exception(err)
+
+    def get_multi_distName_by_xpath_filter(self, scf_content, xpath, raml_version="raml21.xsd"):
+        """to get the distName of managedObject according to parameter filtering and distName filtering.
+        | Input Parameters | Man. | Description |
+        | scf_content      | Yes  | SCF content |
+        | xpath            | Yes | xpath expression |
+        |          |    | if any duplicate may happen, using multiple parameters filtering plus distName filtering |
+        |          |    | in Xpath expression |
+        | raml_version  | no | raml_version, default value is raml21.xsd used by VDU webem |
+
+        *RETURN VALUE*
+        list of distName, e.g, ['MRBTS-3006/TNLSVC-1/TNL-5/IPNO-1/IPRT-1','MRBTS-3006/TNLSVC-1/TNL-5/IPNO-1/IPRT-1']
+
+        Example
+        | ${scf_content} | OperatingSystem.Get File | /home/ute/scf.xml |
+        | ${xpath}       | set variable |
+        | ... | .//ns:managedObject[descendant::ns:*[local-name()='p' or local-name()='list']/@name="btsName"] |
+        | ${distName}    | get_multi_distName_by_xpath_filter | scf_content=${scf_content} | xpath=${xpath} |
+        """
+        rtn = []
+        utf8_scf_content = scf_content.encode("utf-8")
+        utf8_parser = etree.XMLParser(ns_clean=True, recover=True, encoding="utf-8")
+        scf_root = etree.fromstring(utf8_scf_content, parser=utf8_parser)
+
+        print(xpath)
+
+        # para_mo_list = scf_root.xpath(xpath, namespaces={"ns": "raml21.xsd"})
+        # para_mo_list = scf_root.xpath(xpath, namespaces={"ns": "raml20.xsd"})
+        namespace = {}
+        namespace["ns"] = raml_version
+        para_mo_list = scf_root.xpath(xpath, namespaces=namespace)
+        mo_list_len = len(para_mo_list)
+        if mo_list_len == 0:
+            print("No distName found")
+        else:
+            for item in para_mo_list:
+                rtn.append(item.get("distName"))
+        return rtn
+
+    def get_vdu_oam_http_connection_info(self, gnb_index=0, vdu_index=0):
+        """
+        [Documentation]  Get vDU OAM Http Connection Info
+        ...
+        ...    | Input Parameters | Man. | Description |
+        ...	   | gnb_index | no | gnb_index, default is 0 |
+        ...	   | vdu_index | no | vdu_index, default is 0 |
+        ...
+        ...    *RETURN VALUE*
+        ...    Dictionary of OAM connection information defined in __init__.py,
+        ...           dictionary keys are addr, username, password and port.
+        ...    example: {'addr': '1.1.1.1', 'username': 'Nemuadmin', 'password': 'nemuuser', 'port': '443'}
+        ...
+        ...    Example
+        ...    | ${vdu_oam_http_connection_info} | Get vDU OAM Http Connection Info |
+        ...    | ${vdu_oam_http_connection_info} | Get vDU OAM Http Connection Info | vdu_index=1 |
+        ...
+        """
+        builtin_obj = BuiltIn()
+
+        gnb_index = int(gnb_index)
+        vdu_index = int(vdu_index)
+
+        value = "${{tl.gnbs[{}].dus[{}].oam_http_connection_details.addr}}".format(gnb_index, vdu_index)
+        addr = builtin_obj.get_variable_value(value)
+
+        value = "${{tl.gnbs[{}].dus[{}].oam_http_connection_details.username}}".format(gnb_index, vdu_index)
+        username = builtin_obj.get_variable_value(value)
+
+        value = "${{tl.gnbs[{}].dus[{}].oam_http_connection_details.password}}".format(gnb_index, vdu_index)
+        password = builtin_obj.get_variable_value(value)
+
+        port = "443"
+
+        rtn = {
+            "addr": addr,
+            "username": username,
+            "password": password,
+            "port": port,
+        }
+        return rtn
+
+    def check_ip_type(self, ip):
+        matches = re.match("((2(5[0-5]|[0-4]\\d))|[0-1]?\\d{1,2})(\\.((2(5[0-5]|[0-4]\\d))|[0-1]?\\d{1,2})){3}", ip)
+        if matches is not None:
+            return "ipv4"
+        else:
+            return "ipv6"
+
+
+if __name__ == "__main__":
+    t = lib()
+    '''
+    scf_path="/tmp/tmpghHJc2taf_selenium_coam_download/
+    Configuration_scf_MRBTS-3002_5G19B_Classic_AEQA_DZR_20190916-0847.xml"
+    a=t.get_multi_distName_by_xpath_filter(scf_path)
+    '''

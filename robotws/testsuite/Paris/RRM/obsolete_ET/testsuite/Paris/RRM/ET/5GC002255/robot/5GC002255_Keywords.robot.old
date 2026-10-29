@@ -1,0 +1,996 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for 5GC001948 feature tests cases
+...
+...               Automation author           : axel.gouilly-frossard@nokia.com
+...               Automation contact          : axel.gouilly-frossard@nokia.com
+...               Creation Date               : 20-October-2020
+...               Modified Date               : 18-August-2023
+...               Last Modified by            : loic.marzin@nokia.com
+...                    10/08/21          Remove spaces before # to avoid warnings in robot
+...                    20/01/2022        Removal of airphone.xml
+...                    26/01/2022        Correction for MAC@ in overheating test
+...                    30/02/2022        Correction for MCShark of KW Check_PsPeerCtrl_ScellPuschReceiveIndPs
+...                    18/08/2023        Refactoring due to BOO_AP_LOO Migration
+
+
+
+Library                             taf.wts.runner                              WITH NAME    wtsemu
+Library                             ute_wtssim
+
+Library           OperatingSystem
+Library           Collections
+Library           taf.wts.runner                 WITH NAME      wtsemu
+Library           taf.sbts.oam.coam.admin.admin   WITH NAME      admin_cli
+Library           taf.ul.oam.selenium_coam       WITH NAME      seleniumC
+Library           taf.gnb.oam.commissioning      WITH NAME      commissioning
+Library           ../../resources/python/luashark_tools.py
+Library           luashark_tools.analyzer       WITH NAME       analyzer
+Library          ../../../../resources/SWENG/python/Captures.py
+
+Resource          ../../../../resources/SWENG/robot/Oam.robot
+Resource          taf/rfrl/common_resources/robot/coam.robot
+Resource          ../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource          ../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../resources/SWENG/robot/PacketSearch.robot
+
+*** Variables ***
+
+@{listFieldUci}                  uciCsiPart1Bits_item.*
+
+# Bearer path definition list inside SCF
+${NRCELL_dist_name_main}        MRBTS-1/NRBTS-1
+${NRCELL_dist_name_cell}        MRBTS-1/NRBTS-1/NRCELL-1
+${NRCELL_dist_name_cell1}       MRBTS-1/NRBTS-1/NRCELL-1
+${NRCELL_dist_name_cell2}       MRBTS-1/NRBTS-1/NRCELL-2
+${mrbtsID}    1
+
+
+${WEBUI_URL}      https://${tl.gnbs[0].cu.oam_http_connection_details.addr}/
+${WEBUI_USER}       ${tl.gnbs[0].cu.oam_ssh_connection_details.username}
+${WEBUI_PASSWORD}       ${tl.gnbs[0].cu.oam_ssh_connection_details.password}
+
+${PM_Counter_ReconfScell}	        M55118C05505   #Number of RRC Reconfiguration configuring 1 SCell in DL in SA mode
+${PM_Counter_RRC_ReconfScell}       M55118C05506   #Number of successful RRC Reconfiguration configuring 1 SCell in DL in SA mod
+${PM_Counter_UEinPcellwithScell}    M55118C05507   
+            #Number of CA UEs in the current cell configured as a PCell, which have 1 configured SCell in DL
+${PM_Counter_UEinScellwithPcell}    M55118C05508   
+            #Number of CA UEs in the current cell configured as a SCell, which have 1 configured SCell in DL
+${PM_Counter_ScellTraffic}          M55310C01006   #DL_RLC_VOL_TX_L_QOS_GRP_06
+
+${PM_Counter_UEinPcellwith0ActScell}            M55316C03000   #PSCELL_UE_0_ACT_SCELL_DL - PSCell UEs with 0 activated SCells in DL
+${PM_Counter_UEinPcellwith1ActScell}            M55316C03001   #PSCELL_UE_1_ACT_SCELL_DL - PSCell UEs with 1 activated SCells in DL
+#NMAX_PSCELL_UE_0_ACT_SCELL_DL - Maximum amount of PSCell UEs with 0 activated SCells in DL
+${PM_Counter_MaxUEinPcellwith0ActScell}         M55316C05000
+#NMAX_PSCELL_UE_0_ACT_SCELL_DL - Maximum amount of PSCell UEs with 1 activated SCells in DL   
+${PM_Counter_MaxUEinPcellwith1ActScell}         M55316C05001   
+#NMAX_PSCELL_UE_0_ACT_SCELL_DL - Maximum amount of PSCell UEs with 1 activated SCells in DL
+${PM_Counter_UlRLCDdataPDUsReceivedByLowRLC}         M55310C04006
+#SCell deactivations due to Buffer Status
+${PM_Counter_ScellDeactBufferStatus}         M55316C09001
+#SCell deactivations due to Channel State
+${PM_Counter_ScellDeactChannelState}         M55316C09002
+#L2HI counters
+#DL RLC PDU volume transmitted by High RLC - QoS Group 01
+${PM_Counter_DL_RLC_PDU_volume_QOS1}         M55311C01001
+#DL RLC PDU volume transmitted by High RLC - QoS Group 05
+${PM_Counter_DL_RLC_PDU_volume_QOS5}         M55311C01005
+#DL RLC PDU volume transmitted by High RLC - QoS Group 06
+${PM_Counter_DL_RLC_PDU_volume_QOS6}         M55311C01006
+#DL RLC PDU volume transmitted over primary path - QoS Group 01
+${PM_Counter_DL_RLC_PDU_volume_primary_QOS1}         M55311C42001
+#DL RLC PDU volume transmitted over primary path - QoS Group 05
+${PM_Counter_DL_RLC_PDU_volume_primary_QOS5}         M55311C42005
+#DL RLC PDU volume transmitted over primary path - QoS Group 06
+${PM_Counter_DL_RLC_PDU_volume_primary_QOS6}         M55311C42006
+#DL RLC PDU volume transmitted over secondary path - QoS Group 01
+${PM_Counter_DL_RLC_PDU_volume_secondary_QOS1}         M55311C44001
+#DL RLC PDU volume transmitted over secondary path - QoS Group 05
+${PM_Counter_DL_RLC_PDU_volume_secondary_QOS5}         M55311C44005
+#DL RLC PDU volume transmitted over secondary path - QoS Group 06
+${PM_Counter_DL_RLC_PDU_volume_secondary_QOS6}         M55311C44006
+#SCELL_ACTIVATIONS
+${PM_Counter_ScellActivationScell}    M55316C09000 
+#DL slots with DSS
+${PM_Counter_DSSDlSlots}         M55332C00001
+#UL PRB with DSS
+${PM_Counter_DSSUlPRB}         M55332C01001
+
+${PCellID}                            2
+${SCellID}                            1
+
+&{PM_Counter_ReconfScell_WITHID_EXPECTED}           counter=${PM_Counter_ReconfScell}            objId=${PCellID} 
+&{PM_Counter_RRC_ReconfScell_WITHID_EXPECTED}       counter=${PM_Counter_RRC_ReconfScell}        objId=${PCellID}
+&{PM_Counter_UEinPcellwithScell_WITHID_EXPECTED}    counter=${PM_Counter_UEinPcellwithScell}     objId=${PCellID}
+&{PM_Counter_UEinScellwithPcell_WITHID_EXPECTED}    counter=${PM_Counter_UEinScellwithPcell}     objId=${SCellID}
+&{PM_Counter_ScellTraffic_WITHID_EXPECTED}          counter=${PM_Counter_ScellTraffic}           objId=${SCellID}
+
+&{PM_Counter_UEinPcellwith0ActScell_PCell_WITHID_EXPECTED}          counter=${PM_Counter_UEinPcellwith0ActScell}        objId=${PCellID}
+&{PM_Counter_UEinPcellwith1ActScell_PCell_WITHID_EXPECTED}          counter=${PM_Counter_UEinPcellwith1ActScell}        objId=${PCellID}
+&{PM_Counter_UEinPcellwith0ActScell_SCell_WITHID_EXPECTED}          counter=${PM_Counter_UEinPcellwith0ActScell}        objId=${SCellID}
+&{PM_Counter_UEinPcellwith1ActScell_SCell_WITHID_EXPECTED}          counter=${PM_Counter_UEinPcellwith1ActScell}        objId=${SCellID}
+
+&{PM_Counter_MaxUEinPcellwith0ActScell_PCell_WITHID_EXPECTED}       counter=${PM_Counter_MaxUEinPcellwith0ActScell}     objId=${PCellID}
+&{PM_Counter_MaxUEinPcellwith1ActScell_PCell_WITHID_EXPECTED}       counter=${PM_Counter_MaxUEinPcellwith1ActScell}     objId=${PCellID}
+&{PM_Counter_MaxUEinPcellwith0ActScell_SCell_WITHID_EXPECTED}       counter=${PM_Counter_MaxUEinPcellwith0ActScell}     objId=${SCellID}
+&{PM_Counter_MaxUEinPcellwith1ActScell_SCell_WITHID_EXPECTED}       counter=${PM_Counter_MaxUEinPcellwith1ActScell}     objId=${SCellID}
+
+&{PM_Counter_UlRLCDdataPDUsReceivedByLowRLC_PCell_WITHID_EXPECTED}    counter=${PM_Counter_UlRLCDdataPDUsReceivedByLowRLC}    objId=${PCellID}
+&{PM_Counter_UlRLCDdataPDUsReceivedByLowRLC_SCell_WITHID_EXPECTED}    counter=${PM_Counter_UlRLCDdataPDUsReceivedByLowRLC}    objId=${SCellID}
+
+&{PM_Counter_ScellDeactBufferStatus_SCell_WITHID_EXPECTED}          counter=${PM_Counter_ScellDeactBufferStatus}        objId=${SCellID}
+
+&{PM_Counter_ScellDeactChannelState_SCell_WITHID_EXPECTED}          counter=${PM_Counter_ScellDeactChannelState}        objId=${SCellID}
+
+&{PM_Counter_ScellActivationScell_SCell_WITHID_EXPECTED}            counter=${PM_Counter_ScellActivationScell}        objId=${SCellID}
+
+&{PM_Counter_DSSDlSlots_PCell_WITHID_EXPECTED}          counter=${PM_Counter_DSSDlSlots}        objId=${PCellID}
+&{PM_Counter_DSSUlPRB_PCell_WITHID_EXPECTED}            counter=${PM_Counter_DSSUlPRB}          objId=${PCellID}
+
+
+${pm_files_path}       ${LOG_PATH}
+${latest_pm_file_name}
+
+@{FilterPSPeer}     ScellUeSchedulingReq
+...                 ScellUeSchedulingResp
+...                 ScellPucchReceiveIndPs
+...                 ScellPuschReceiveIndPs
+...                 UeDataDeliveryStatusInd
+
+@{FilterPSPeerDRX}     ScellUeSchedulingInd
+
+*** Keywords ***
+
+setup 2255
+    ${yamlPath}    Set Variable    ${CURDIR}/../../../../../../custom-config/IBCA/5GC002255/SBTS00/custom_config_2255_BOOAPLOO.yaml
+    Suite Setup from scratch        yamlPathname=${yamlPath}
+    ...                             listBackupFiles=${FD_ALL}
+    ...                             keepAllUeDataInCfgFile=${True}
+
+    Init Variables
+    5GC002255_Keywords.Get Original WTS Config
+
+Init Variables
+    &{MIRROR_L2_GNB}                create dictionary
+    ...                             sport1=21                               sport2=29
+    ...                             dport=3                                 host=${GNB_DU.sys[0].M}
+    Set Suite Variable              ${MIRROR_L2_GNB}
+    ${slaveHost}                    Call method
+    ...                             ${GNB_DU}                               getSysSlaveHost
+    ${CAPTURE_L2_GNB}               newCapture
+    ...                                 host=${slaveHost}
+    ...                                 interface=etha01
+    ...                                 prefix=L2Traces
+    ${CAPTURE_L2_GNB.withTN}        Set Variable                            ${True}
+    Set Suite Variable              ${CAPTURE_L2_GNB}
+
+teardown 2255
+    CallSetup.Empty Buffer For Egate
+    Traced sleep   10s  msg=wait 10s for flush
+    5GC002255_Keywords.Collect EGATE console Logs
+	Setup.Suite Teardown       reset_ap=${True}
+	5GC002255_Keywords.Put back original config files
+
+Check Cell on Air
+    coam.connect to   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+    &{bts_info}    coam.Get Bts Statuses    connection=coam_admin
+    Should Be Equal    ${bts_info['proceduralState']}    onAir    ignore_case=true 
+
+Cell_Lock_id1
+    #  Classical_connections.Connect to gNB Asik Master
+   Oam.OAM Cell Lock  cell_id=1
+
+Get Original WTS Config
+    [Documentation]      KW used to get the original WTS configuration
+
+    # Get WTS original file configuration:
+    ${alias_wts}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/basic_wts_ori.cfg
+    ...                             connection=${alias_wts}
+
+Get Modified WTS Config
+    [Documentation]      KW used to get the modified WTS configuration
+    ${ModFileName}       Set Variable    basic_wts_step2.modified.cfg
+
+    # Get WTS modified file configuration:
+    ${alias_wts}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${ModFileName}
+    ...                             local_path=${LOG_PATH}/basic_wts_mod.cfg
+    ...                             connection=${alias_wts}
+
+Set SCF Context
+    Copy File                       ${SCF_SETUP_PATH}     ${SCF_SETUP_PATH}.ori
+    #Config Update                               scf_file=${SCF_SETUP_PATH}
+    SCF StartSession                scf_file=${SCF_SETUP_PATH}
+
+    ${dist_name}         Set Variable    MRBTS-1/NRBTS-2
+    SCF Set element    dist_name=${dist_name}    element_name=actGeneralConnectivityGold  element_value=true
+    SCF Set element    dist_name=${dist_name}    element_name=actLteNrDss   element_value=true
+    SCF Set element    dist_name=${dist_name}    element_name=sCellActivationMethod   element_value=blind
+
+    ${dist_name}         Set Variable    MRBTS-1/NRBTS-2/NRCELL-1
+    SCF Set element    dist_name=${dist_name}    element_name=sCellDeactivationTimerGNB   element_value=infinity
+    SCF Set element    dist_name=${dist_name}    element_name=srPeriodicity   element_value=slots80
+
+    ${dist_name}         Set Variable    MRBTS-1/NRBTS-2/NRCELL-2
+    SCF Set element    dist_name=${dist_name}    element_name=actPRBBlanking   element_value=true
+    SCF Set element    dist_name=${dist_name}    element_name=actPdschAtSsbSlots   element_value=true
+    SCF Set element    dist_name=${dist_name}    element_name=actPdschRmCsirsForTracking   element_value=true
+    SCF Set element    dist_name=${dist_name}    element_name=lteNrDssMode   element_value=DL_CRS_TDM_UL_FDM
+    SCF Set element    dist_name=${dist_name}    element_name=msg1FrequencyStart   element_value=9
+    SCF Set element    dist_name=${dist_name}    element_name=nbrOfBlankedPRBsHighEdgeDL   element_value=2
+    SCF Set element    dist_name=${dist_name}    element_name=nbrOfBlankedPRBsHighEdgeUL   element_value=2
+    SCF Set element    dist_name=${dist_name}    element_name=pagingOffset   element_value=2
+    SCF Set element    dist_name=${dist_name}    element_name=pucchF3ModulationScheme   element_value=pi2bpsk
+    SCF Set element    dist_name=${dist_name}    element_name=trsMutingInBlankedPRBsEnabled   element_value=true
+    SCF Set element    dist_name=${dist_name}    element_name=type0SearchSpaceConfigurationIndex   element_value=15
+    SCF Set element    dist_name=${dist_name}    element_name=sCellDeactivationTimerGNB   element_value=infinity
+    SCF Set element    dist_name=${dist_name}    element_name=srPeriodicity   element_value=slots80
+
+    SCF Remove list    dist_name=${dist_name}    list_name=cellBwpList
+    SCF Add list       dist_name=${dist_name}    list_name=cellBwpList
+
+    &{cellBwpList}     Create Dictionary    bwpDN=MRBTS-1/NRBTS-2/BWP_PROFILE-162   cellBwpId=0
+    SCF Add items to list   dist_name=${dist_name}    list_name=cellBwpList   elements=${cellBwpList}
+    &{cellBwpList}     Create Dictionary    bwpDN=MRBTS-1/NRBTS-2/BWP_PROFILE-173   cellBwpId=1
+    SCF Add items to list   dist_name=${dist_name}    list_name=cellBwpList   elements=${cellBwpList}
+
+    SCF Set element in List    dist_name=${dist_name}    list_name=csirsForTracking     element_name=csirsTrackingPeriod   element_value=40ms
+
+    ${dist_name}         Set Variable    MRBTS-1/NRBTS-2/NRCELL-2/NRREL-1
+    SCF Set element    dist_name=${dist_name}    element_name=gNbId   element_value=2
+
+    ${dist_name}         Set Variable    MRBTS-1/NRBTS-2/NRSYSINFO_PROFILE-2
+    SCF Set element    dist_name=${dist_name}    element_name=siWindowLength   element_value=s160
+    SCF Set element    dist_name=${dist_name}    element_name=systemInformationTargetRate   element_value=0
+
+    SCF Remove list    dist_name=${dist_name}    list_name=sibSchedulingList
+    SCF Add list       dist_name=${dist_name}    list_name=sibSchedulingList
+
+    &{sibSchedulingList}     Create Dictionary    sibBroadcastStatus=broadcasting   sibPeriodicity=rf64   sibScope=cellSpecific   sibType=sibType2
+    SCF Add items to list   dist_name=${dist_name}    list_name=sibSchedulingList   elements=${sibSchedulingList}
+    &{sibSchedulingList}     Create Dictionary    sibBroadcastStatus=broadcasting   sibPeriodicity=rf64   sibScope=cellSpecific   sibType=sibType3
+    SCF Add items to list   dist_name=${dist_name}    list_name=sibSchedulingList   elements=${sibSchedulingList}
+    &{sibSchedulingList}     Create Dictionary    sibBroadcastStatus=broadcasting   sibPeriodicity=rf64   sibScope=cellSpecific   sibType=sibType4
+    SCF Add items to list   dist_name=${dist_name}    list_name=sibSchedulingList   elements=${sibSchedulingList}
+    &{sibSchedulingList}     Create Dictionary    sibBroadcastStatus=broadcasting   sibPeriodicity=rf64   sibScope=cellSpecific   sibType=sibType5
+    SCF Add items to list   dist_name=${dist_name}    list_name=sibSchedulingList   elements=${sibSchedulingList}
+
+    SCF StopSession      scf_file=${SCF_SETUP_PATH}
+    Dated Log    ----> Modifications completed.\n
+
+    OAM Perform Full Commissioning          scf_file=${SCF_SETUP_PATH}
+    WA Airscale Wait For Ready                  ${GNB_DU}
+
+InCellId0
+    [Arguments]    ${a}    ${b}
+    Dated Log    le CRNTI ${a} est trouve en index ${b} dans cellid0
+    ${CrntiOK} =    Set Variable    true
+    #    ${nb} =    Set Variable    ${b}
+    #    ${cellid} =    Set Variable    0
+    Set Global Variable    ${CrntiOK}
+    #    Set Global Variable    ${cellid}
+    Exit For Loop
+
+InCellId1
+    [Arguments]    ${a}    ${b}
+    Dated Log    le CRNTI ${a} est trouve en index ${b} dans cellid1
+    ${CrntiOK} =    Set Variable    true
+    #    ${nb} =    Set Variable    ${b}
+    #    ${cellid} =    Set Variable    1
+    Set Global Variable    ${CrntiOK}
+    #    Set Global Variable    ${cellid}
+    Exit For Loop
+
+Put back original config files
+    [Documentation]      KW used to put back TL configuration: swconfig, WTS
+
+    # Get WTS file configuration:
+    ${alias_wts}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.upload_file                 remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/basic_wts_ori.cfg
+    ...                             connection=${alias_wts}
+
+Restart
+    Restart TL              isOAMRebooted=${True}        
+
+Setup configuration files
+    # Set WTS file configuration:
+    ${alias_wts}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.upload_file                 remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${CURDIR}/../config/basic_wts.cfg
+    ...                             connection=${alias_wts}
+ 	BuiltIn.Log to Console          upload ${tl.core.dir_path}/${tl.core.cfg_filename}
+
+Change in commissioning
+    [Documentation]                 Generic test for 5GC002300 tests
+    [Arguments]                     ${param}        
+  #  GenericTest.Init Sequence       ${param}    
+    Set MRBTSID and NRBTSID
+    #${len}             Get Length    ${param}
+    #Run Keyword if     ${len} > 1
+    #...                Set Context_Element Manager         ${param}
+    #...                ELSE
+    #...                Set Context_Element Manager1390     ${param}
+    Set Context_Element Manager1390     ${param}
+
+Set MRBTSID and NRBTSID
+    coam.connect to   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+    &{bts_info}    coam.Get Bts Info    connection=coam_admin
+    ${mrbtsID} =           Get From Dictionary     ${bts_info}     mrbtsID
+    Run    echo ${bts_info} >/tmp/bts_info.txt
+    ${nrbtsID}    Run    grep -oE "NRBTS-[0-9]+" /tmp/bts_info.txt | awk -F '-' '{print $2}' | awk 'NR==1'
+    ${dist_nameDU} =       Set Variable    MRBTS-${mrbtsID}/NRBTS-${nrbtsID}/NRDU-1
+    ${dist_name} =         Set Variable    MRBTS-${mrbtsID}/NRBTS-${nrbtsID}/NRCELL-2    
+    ${ch_dist_name} =      Set Variable    MRBTS-${mrbtsID}/NRBTS-${nrbtsID}/NRCELL-2/NRCELL_FDD-1
+    ${MRBTS} =       Set Variable    MRBTS-${mrbtsID}
+    Set Suite Variable             ${dist_name}
+    Set Suite Variable             ${dist_nameDU}
+    Dated log                      ${dist_name}
+    Set Suite Variable             ${ch_dist_name}
+    Set Suite Variable          ${MRBTS}
+
+Set MRBTSID and NRBTSID_RWorked
+    coam.connect to   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+    &{bts_info}    coam.Get Bts Info    connection=coam_admin
+    ${mrbtsID} =           Get From Dictionary     ${bts_info}     mrbtsID
+    Run    echo ${bts_info} >/tmp/bts_info.txt
+    ${nrbtsID}    Run    grep -oE "NRBTS-[0-9]+" /tmp/bts_info.txt | awk -F '-' '{print $2}' | awk 'NR==1'
+    ${MRBTS} =       Set Variable    MRBTS-${mrbtsID}
+    ${DU} =       Set Variable    MRBTS-${mrbtsID}/NRBTS-${nrbtsID}
+    ${dist_nameDU} =       Set Variable    MRBTS-${mrbtsID}/NRBTS-${nrbtsID}/NRDU-1
+    ${dist_name1} =         Set Variable    MRBTS-${mrbtsID}/NRBTS-${nrbtsID}/NRCELL-1
+    ${dist_name2} =         Set Variable    MRBTS-${mrbtsID}/NRBTS-${nrbtsID}/NRCELL-2
+    ${Meth_name} =         Set Variable    MRBTS-${mrbtsID}/NRBTS-${nrbtsID}/NRCELL-2/NRREL-1     
+    ${ch_dist_name} =      Set Variable    MRBTS-${mrbtsID}/NRBTS-${nrbtsID}/NRCELL-2/NRCELL_FDD-1
+    Set Suite Variable             ${dist_name2}
+    Dated log                      ${dist_name2}
+    Set Suite Variable             ${Meth_name}
+    Dated log                      ${Meth_name}
+    Set Suite Variable             ${dist_nameDU}
+    Dated log                      ${dist_name2}
+    Set Suite Variable             ${ch_dist_name}
+    Set Suite Variable          ${dist_name1}
+    Set Suite Variable          ${DU}
+    Set Suite Variable          ${MRBTS}
+
+Set Context_Element Manager1390
+    [Arguments]                     ${param}
+    &{modify_param1}    Create Dictionary
+    ...    parameter=carrierAggregationSupportList
+    ...    dist_name=${dist_nameDU}
+    ...    value=${param.carrierAggregationSupportList}
+    @{modify_param}    Create List    ${modify_param1}
+    Dated log                         Parameters to modify:\n ${modify_param}
+    Oam.OAM Set Params
+    ...                 ${modify_param}
+
+Set Feature 2255
+    Set parameters for 2255 in SCF   
+    Dated log                       Activated 2255: set actInterNumerologyCa to:                   first=True
+    Dated log                       \t${param}
+ 
+    # Pcap Keywords 
+
+Capture L2PsPeer Messages
+    [Documentation]                 Return pertinent capture L2PS GNB data structure
+    #    [Arguments]                     ${useWA}=True
+    # ${capture}                      Dictionary Get                          ${CAPTURE_L2_GNB}
+    ${capture}                      copyInstance                            ${CAPTURE_L2_GNB}
+    [Return]                        ${capture}
+
+Start Capture L2PS
+   ${CaptureL2PS}                  Capture L2PsPeer Messages
+   Capture Set Mirror			   ${MIRROR_L2_GNB}
+   Capture Init                    ${CaptureL2PS}    withTN=True
+   #${CaptureL2PS.filter}           Get Filter For Particular Msgs     ${FilterPSPeer}
+   Capture Start                   ${CaptureL2PS}
+   Set Suite Variable              ${CaptureL2PS}
+
+Start Capture L2PS-DRX
+   ${CaptureL2PS}                  Capture L2PsPeer Messages
+   Capture Set Mirror			   ${MIRROR_L2_GNB}
+   Capture Init                    ${CaptureL2PS}   withTN=True
+   ${CaptureL2PS.filter}           Get Filter For Particular Msgs     ${FilterPSPeerDRX}
+   Capture Start                   ${CaptureL2PS}
+   Set Suite Variable              ${CaptureL2PS}
+
+Stop Capture L2PS
+   Capture Stop                    ${CaptureL2PS}
+
+Start Capture CPRT
+   ${CaptureCPRT}                  Capture CPRT Set Upon Config            airscale=${GNB_DU}
+   Capture Init                    ${CaptureCPRT}
+   #${CaptureCPRT.filter}           Get Filter For SCTP
+   #Set Suite Variable              ${CaptureCPRT.filter}
+   Capture Start                   ${CaptureCPRT}
+   Set Suite Variable              ${CaptureCPRT}
+
+Start Capture CPRT ASIB
+    ${CaptureCPRT_ASIB}             Capture CPRT Set Upon Config
+    ${CaptureCPRT_ASIB.filter}      set Variable      sctp
+    Set Suite Variable              ${CaptureCPRT_ASIB}
+    Capture Init                    capture=${CaptureCPRT_ASIB}
+    Capture Start                   ${CaptureCPRT_ASIB}
+
+Start Capture BIP ABIO 2slots
+    ${CaptureL1L2}                  Capture L1L2 Set Upon Config
+    Set Suite Variable              ${CaptureL1L2}
+    Capture Init                    capture=${CaptureL1L2}
+    #sleep                           10s
+    Capture Start                   ${CaptureL1L2}
+
+Stop Capture L1L2
+   Capture Stop                    ${CaptureL1L2}
+
+Stop Capture CPRT
+   Capture Stop                    ${CaptureCPRT}
+
+Check_K1_Values_In_L2_PS_Cell_Setup_Resp_with_filter
+    [Arguments]                   ${pcapFile}   
+    Dated Log                     pcapFile=${pcapFile}
+    ${FilteredPcap}=              analyzer.filter_pcap
+    ...                    pcapInFile=${pcapFile}    filterExp=itf_l2_ps_cell_CellSetupResp_t.nrCellIdentity == 16386
+    ${pdmlFile}=                  analyzer.pcap_to_pdml           ${FilteredPcap}
+    Dated Log                     pdmlFile=${pdmlFile}
+
+    ${retvalue}      analyzer.get_unique            pdmlFile=${pdmlFile}
+    ...                                                  packetName=itf_l2_ps_cell_cellsetupresp
+    ...                                                  path=itf_l2_ps_cell_CellSetupResp.dlDataToUlAck.dlDataToUlAck_item_0
+    ...                                                  kind="value"
+    ...                                                  startPacket=2
+    ...                                                  endPacket=2
+
+    Dated Log                       retvalue=${retvalue}
+    ${result_1}=	Convert To Integer	${retvalue}
+    Dated Log                       result=${result_1}
+    ${retvalue2}      analyzer.get_unique               pdmlFile=${pdmlFile}
+    ...                                                  packetName=itf_l2_ps_cell_cellsetupresp
+    ...                                                  path=itf_l2_ps_cell_CellSetupResp.dlDataToUlAck.dlDataToUlAck_item_1
+    ...                                                  kind="value"
+    ...                                                  startPacket=2
+    ...                                                  endPacket=2
+    Dated Log                       retvalue2=${retvalue2}
+    ${result_2}=	Convert To Integer	${retvalue2}
+    Dated Log                       result_1=${result_2}
+
+    ### compare items
+    ${valSum} =  Evaluate       ${result_1}+2
+    Dated Log                       valSum=${valSum}
+    should be equal as integers     ${valSum}    ${result_2}
+
+Check_PsCell_NrRell_SCellSetupResponse
+    [Arguments]                     ${pcapFile}   
+    Dated Log                       pcapFile=${pcapFile}
+    ${FilteredPcap}=                analyzer.filter_pcap    pcapInFile=${pcapFile}    filterExp=itf_l2_ps_cell_nrrelscellsetupresp
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${FilteredPcap}
+    #${pCell}                        set variable                        itf_l2_ps_cell_NrRelSCellSetupResp.NrRelSCellSetupResp.pCellNrCellIdentity
+    #${sCell}                        set variable                        itf_l2_ps_cell_NrRelSCellSetupResp.NrRelSCellSetupResp.sCellNrCellIdentity
+	${pCell}                        set variable                        .*pCellNrCellIdentity$
+    ${sCell}                        set variable                        .*sCellNrCellIdentity$
+    Dated Log                       pdmlFile=${pdmlFile}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_nrrelscellsetupresp
+    ...                             path=${pCell}
+    ...                             value=^pCellNrCellIdentity*
+    ...                             kind=showname
+    ...                             test=MATCH
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_nrrelscellsetupresp
+    ...                             path=${sCell}
+    ...                             value=^sCellNrCellIdentity*
+    ...                             kind=showname
+    ...                             test=MATCH
+
+Check_PsPeerCtrl_ScellUeSchedulingReqResp
+    [Arguments]                     ${pcapFile}   
+    Dated Log                       pcapFile=${pcapFile}
+    ${FilteredPcap}=                analyzer.filter_pcap    pcapInFile=${pcapFile}
+    ...                             filterExp=itf_l2_ps_peerctrl_scellueschedulingreq || itf_l2_ps_peerctrl_scellueschedulingresp
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${FilteredPcap}
+    #${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFile}
+    ${pCell}                        set variable                 itf_l2_ps_peerctrl_ScellUeSchedulingReq_t.pCellNrCellIdentity
+    ${sCell}                        set variable                 itf_l2_ps_peerctrl_ScellUeSchedulingReq_t.sCellNrCellIdentity
+    ${status}                       set variable                 itf_SMessageResult5G.status
+    Dated Log                       pdmlFile=${pdmlFile}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_peerctrl_scellueschedulingreq
+    ...                             path=${pCell}
+    ...                             value=^pCellNrCellIdentity*
+    ...                             kind=showname
+    ...                             test=MATCH
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_peerctrl_scellueschedulingreq
+    ...                             path=${sCell}
+    ...                             value=^sCellNrCellIdentity*
+    ...                             kind=showname
+    ...                             test=MATCH
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_smessageresult5g
+    ...                             path=${status}$
+    ...                             value=^status*
+    ...                             kind=showname
+    ...                             test=MATCH
+
+Check_PsPeerCtrl_ScellPucchReceiveRespPs
+    [Arguments]                     ${pcapFile}   
+    Dated Log                       pcapFile=${pcapFile}
+    ${FilteredPcap}=                analyzer.filter_pcap    pcapInFile=${pcapFile}
+    ...                             filterExp=itf_l2_ps_peerctrl_scellpucchreceiveindps
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${FilteredPcap}
+    #${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFile}
+    ${TotalScellPucchReceiveIndPs}  Run
+    ...                 cat ${pdmlFile} | grep -i "itf_l2_ps_peerctrl_ScellPucchReceiveIndPs.ueFeedbackList_item_55.csiBitIndex" -c
+    ${csiBitIndexNoAck}             Run
+    ...                 cat ${pdmlFile} | grep -i "itf_l2_ps_peerctrl_ScellPucchReceiveIndPs.ueFeedbackList_item_55.csiBitIndex" | grep -i "(0)" -c
+    ${csiBitIndexAck}               Run
+    ...                 cat ${pdmlFile} | grep -i "itf_l2_ps_peerctrl_ScellPucchReceiveIndPs.ueFeedbackList_item_55.csiBitIndex" | grep -i "(1)" -c
+    ${csiBitIndexOther}             Run
+    ...                 cat ${pdmlFile} | grep -i "itf_l2_ps_peerctrl_ScellPucchReceiveIndPs.ueFeedbackList_item_55.csiBitIndex" | grep -i "(2)" -c
+    ${TotalScellPucchReceiveIndPs}=    Convert To Integer  ${TotalScellPucchReceiveIndPs}
+    ${csiBitIndexNoAck}=               Convert To Integer  ${csiBitIndexNoAck}
+    ${csiBitIndexAck}=                 Convert To Integer  ${csiBitIndexAck}
+    ${csiBitIndexOther}=               Convert To Integer  ${csiBitIndexOther}
+    ${csiBitIndexTotal}=               Evaluate   ${csiBitIndexNoAck}+${csiBitIndexAck}+${csiBitIndexOther}
+    Should be equal as integers        ${TotalScellPucchReceiveIndPs}    ${csiBitIndexTotal}
+    Dated Log                          ${TotalScellPucchReceiveIndPs}=${csiBitIndexTotal}
+
+Check_PsPeerCtrl_ScellPuschReceiveIndPs
+    [Arguments]                     ${pcapFile}   
+    Dated Log                       pcapFile=${pcapFile}
+    ${FilteredPcap}=                analyzer.filter_pcap    pcapInFile=${pcapFile}
+    ...                             filterExp=itf_l2_ps_peerctrl_scellpuschreceiveindps
+    #${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFile}
+    ${pdmlFile}=                    analyzer.pcap_to_pdml            ${FilteredPcap}
+	${packet}                       set Variable                     ${1}
+    ${uci_item}                     set Variable                     ${0}
+    Dated Log                       pdmlFile=${pdmlFile}
+	
+	${packetsMatch}              Get Packet Match List
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_pusch_puschucibitsresp
+    ...                             pathList=${listFieldUci}
+    ...                             startPacket=${${packet}}
+    ...                             endPacket=${${packet}}
+	${packetMatch}               set variable                           ${packetsMatch[0]}
+	
+    @{listPath}                  Get Paths matching Field
+         ...                             packetMatch=${packetMatch}     field=uciCsiPart1Bits_item
+    ${path}                      set variable                           ${listPath[${uci_item}]}
+	${csi_part1_bits}            set variable                           ${packetMatch.fields['${path}'].value}
+    Dated log                    \t\tItem${uci_item}:uciCsiPart1Bits=${csi_part1_bits} PATH=${path}
+	
+	Should Be True               '${csi_part1_bits}'=='9e'
+
+Get Paths matching Field
+    [Arguments]                     ${packetMatch}                          ${field}
+    @{listPath}                     Get Dictionary Keys                     ${packetMatch.fields}
+    @{listPathMatching}             Create List
+    FOR    ${path}         IN      @{listPath}
+        # Run Keyword if              ${path.endswith('${field}')}
+        Run Keyword if              ${path.find('${field}')}!=${-1}
+        ...                         Append to list              ${listPathMatching}             ${path}
+    END
+    [Return] 
+	
+Check_L2_Ps_User_userSetup_Req
+    [Arguments]                     ${pcapFile}   
+    Dated Log                       pcapFile=${pcapFile}
+    #${FilteredPcap}=                analyzer.filter_pcap    pcapInFile=${pcapFile}
+    #...                             filterExp=itf_l2_ps_peerctrl_scellpuschreceiveindps
+    ${pdmlFile}=                    analyzer.pcap_to_pdml           ${pcapFile}
+    ${scellActivationMethod}        set variable    itf_l2_ps_user_UserSetupReq.UserSetupReq.sCellActivationMethod
+    Dated Log                       pdmlFile=${pdmlFile}
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_user_usersetupreq
+    ...                             path=${scellActivationMethod}$
+    ...                             value=01
+    ...                             kind=value
+    ...                             test=MATCH
+    ...                             startPacket=1
+    ...                             endPacket=1
+
+Check_uedatadeliverystatusind
+    [Arguments]                     ${pcapFile}    ${mode}=NoOH
+    ${startPacketOH}                set variable   1
+    #Dated Log                       ${startPacketOH}
+    ${startPacketNoOH}              set variable   2
+    #Dated Log                       ${startPacketNoOH}
+    ${startPacket}=                 set variable if    '${mode}'=='NoOH'    ${startPacketNoOH}    ${startPacketOH}    
+    Dated Log                       ${startPacket}
+
+    ${FilteredPcap0}=               analyzer.filter_pcap
+    ...                             pcapInFile=${pcapFile}	
+	...                             filterExp=itf_l2_lo_data_DrbStatusInfo.l2loActivatedForData == 0
+    
+    ${pdmlFileFiltered0}=            analyzer.pcap_to_pdml           ${FilteredPcap0}
+    
+    Dated Log                       pdmlFile=${pdmlFileFiltered0}
+   
+    ${l2loActivatedForData}         set variable    .*l2loActivatedForData$
+    analyzer.check_exists_once      pdmlFile=${pdmlFileFiltered0}
+	...                             packetName=itf_l2_lo_data_DrbStatusInfo
+    ...                             path=${l2loActivatedForData}
+    ...                             value=00
+    ...                             kind=value
+    ...                             test=MATCH
+    ...                             startPacket=1
+    ...                             endPacket=-1
+    
+    ${FilteredPcap1}=               analyzer.filter_pcap
+    ...                             pcapInFile=${pcapFile}	
+	...                             filterExp=itf_l2_lo_data_DrbStatusInfo.l2loActivatedForData == 1
+	
+    ${pdmlFileFiltered1}=           analyzer.pcap_to_pdml           ${FilteredPcap1}
+	
+    Dated Log                       pdmlFile=${pdmlFileFiltered1}
+	
+    analyzer.check_exists_once      pdmlFile=${pdmlFileFiltered1}
+	...                             packetName=itf_l2_lo_data_DrbStatusInfo
+    ...                             path=${l2loActivatedForData}
+    ...                             value=01
+    ...                             kind=value
+    ...                             test=MATCH
+    ...                             startPacket=${startPacket}
+    ...                             endPacket=-1
+
+Collect PM Counters File
+    [Documentation]                 KW to get counters and store in specific directory with day date
+
+    ${date}                          robot.libraries.DateTime.Get Current Date
+    ${date_in_dir_name}              robot.libraries.DateTime.Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                   Set Variable         ${LOG_PATH}/PM_${date_in_dir_name} 
+    BuiltIn.Log              The PM counters file collected from gnb will be stored under : ${log_path_pm}
+    ${pm_latest}                    Counters.Collect PM files from BTS    ${log_path_pm}
+    set Suite Variable              ${LATEST_FILE}       ${pm_latest}
+    set Suite Variable              ${log_path_pm}
+    BuiltIn.Log     Latest pm counters file : ${LATEST_FILE}
+
+Check ScellAdditionCounters
+    [Arguments]         ${expectedValue}    ${expectedValue2}  
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}   &{PM_Counter_ReconfScell_WITHID_EXPECTED}
+    Dated Log           Valeur de ${PM_Counter_ReconfScell} ${val}
+    should be true      ${expectedValue} == ${val}
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_RRC_ReconfScell_WITHID_EXPECTED}   
+    Dated Log           Valeur de ${PM_Counter_RRC_ReconfScell} ${val}
+    should be true      ${expectedValue} == ${val}
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_UEinPcellwithScell_WITHID_EXPECTED}
+    Dated Log           Valeur de ${PM_Counter_UEinPcellwithScell} ${val}
+    should be true      ${expectedValue2} < ${val}
+    
+Check ScellAdditionCounterinScell
+    [Arguments]         ${expectedValue} 
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID       
+    ...        ${log_path_pm}    &{PM_Counter_UEinScellwithPcell_WITHID_EXPECTED}      
+    Dated Log           Valeur de ${PM_Counter_UEinScellwithPcell} ${val}
+    should be true      ${expectedValue} < ${val}
+
+Check TrafficInScell
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_ScellTraffic_WITHID_EXPECTED}      
+    Dated Log           Valeur de ${PM_Counter_ScellTraffic} ${val}
+    should be true      ${val} > 0
+
+Check ScellActivationCounters
+    [Arguments]         ${expValue1}=0    ${expValue2}=0    ${expValue3}=0    ${expValue4}=0    
+    ...                 ${expValue5}=0    ${expValue6}=0    ${expValue7}=0    ${expValue8}=0
+    ...                 ${expValue9}=0
+    #M55316C0300x for Pcell
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_UEinPcellwith0ActScell_PCell_WITHID_EXPECTED}
+    Dated Log           Value of ${PM_Counter_UEinPcellwith0ActScell} ${val} in Pcell
+    ${expValue1}=    Evaluate  ${expValue1} * 1
+    #Run Keyword if      ${expValue1}==0
+    Run Keyword if      ${expValue1}!=0 
+    ...                 should be true      ${expValue1}*3 > ${val} >= ${expValue1}*1
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_UEinPcellwith1ActScell_PCell_WITHID_EXPECTED}   
+    Dated Log           Value of ${PM_Counter_UEinPcellwith1ActScell} ${val} in Pcell
+    ${expValue2}=    Evaluate  ${expValue2} * 1
+    Run Keyword if      ${expValue2}!=0 
+    ...                 should be true      ${expValue2} > ${val} 
+    #M55316C0300x for Scell
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_UEinPcellwith0ActScell_SCell_WITHID_EXPECTED}  
+    Dated Log           Value of ${PM_Counter_UEinPcellwith0ActScell} ${val} in Scell
+    ${expValue3}=    Evaluate  ${expValue3} * 1
+    Run Keyword if      ${expValue3}!=0 
+    ...                 should be true      ${expValue3}*3 > ${val} >= ${expValue3}*2
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_UEinPcellwith1ActScell_SCell_WITHID_EXPECTED}  
+    Dated Log           Value of ${PM_Counter_UEinPcellwith1ActScell} ${val} in Scell
+    ${expValue4}=    Evaluate  ${expValue4} * 1
+    Run Keyword if      ${expValue4}!=0 
+    ...                 should be true      ${expValue4}*3 > ${val} >= ${expValue4}*2
+    #M55316C0500x for Pcell
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_MaxUEinPcellwith0ActScell_PCell_WITHID_EXPECTED}
+    Dated Log           Value of ${PM_Counter_MaxUEinPcellwith0ActScell} ${val} in Pcell
+    ${expValue5}=       Evaluate  ${expValue5} * 1
+    Run Keyword if      ${expValue5}!=0
+    ...                 should be true      ${expValue5} <= ${val} <= ${expValue5}*3
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_MaxUEinPcellwith1ActScell_PCell_WITHID_EXPECTED}   
+    Dated Log           Value of ${PM_Counter_MaxUEinPcellwith1ActScell} ${val} in Pcell
+    ${expValue6}=       Evaluate  ${expValue6} * 1
+    Run Keyword if      ${expValue6}!=0
+    ...                 should be true      ${expValue6} <= ${val} <= ${expValue6}*2
+    #M55316C0500x for Scell
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_MaxUEinPcellwith0ActScell_SCell_WITHID_EXPECTED}  
+    Dated Log           Value of ${PM_Counter_MaxUEinPcellwith0ActScell} ${val} in Scell
+    Run Keyword if      ${expValue7}!=0
+    ...                 should be true      ${expValue7} == ${val}
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_MaxUEinPcellwith1ActScell_SCell_WITHID_EXPECTED}  
+    Dated Log           Value of ${PM_Counter_MaxUEinPcellwith1ActScell} ${val} in Scell
+    Run Keyword if      ${expValue8}!=0
+    ...                 should be true      ${expValue8} == ${val}
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_ScellActivationScell_SCell_WITHID_EXPECTED}  
+    Dated Log           Value of ${PM_Counter_ScellActivationScell} ${val} in Scell
+    Run Keyword if      ${expValue9}!=0
+    ...                 should be true      ${expValue9} == ${val}
+
+
+Check TrafficUplink    
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_UlRLCDdataPDUsReceivedByLowRLC_PCell_WITHID_EXPECTED}
+    Dated Log           Value of ${PM_Counter_UlRLCDdataPDUsReceivedByLowRLC} ${val} in Pcell
+    should be true      0 < ${val}
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_UlRLCDdataPDUsReceivedByLowRLC_SCell_WITHID_EXPECTED}
+    Dated Log           Value of ${PM_Counter_UlRLCDdataPDUsReceivedByLowRLC} ${val} in Pcell
+    should be true      0 == ${val}
+
+Check ScellDeactivationCounter
+    [Arguments]         ${expValue1}
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_ScellDeactBufferStatus_SCell_WITHID_EXPECTED}  
+    Dated Log           Value of ${PM_Counter_ScellDeactBufferStatus} ${val} in Scell
+    should be true      ${expValue1} == ${val}
+
+Check ScellDeactivationCounterChannelState
+    [Arguments]         ${expValue1}
+    ${val}=    Counters.Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}    &{PM_Counter_ScellDeactChannelState_SCell_WITHID_EXPECTED}  
+    Dated Log           Value of ${PM_Counter_ScellDeactChannelState} ${val} in Scell
+    should be true      ${expValue1} == ${val}
+
+5GC002255_PMCounterCheck_In_A_Range
+     [Documentation]   Check the value of a counter is in range of MinRange and MaxRage 
+    ...                before using this Keyword you must call 5GC002255_Keywords.Collect PM Counters File
+    ...                with arguments 
+    ...                ${Counter_Id1}: name of the counter (ex : M55311C01001)
+    ...                &{MinRange}: min value of the counter
+    ...                &{MaxRange}: max value of the counter
+    5GC002255_Keywords.Collect PM Counters File
+    [Arguments]         ${Counter_Id1}         ${MinRange}         ${MaxRange}
+    ${val}=    Counters.Retrieve Latest Single Counter Value From Pm File           ${LATEST_FILE}        ${Counter_Id1} 
+    Dated Log           [5GC002255_PMCounterCheck_In_A_Range] Value of ${Counter_Id1} = ${val}
+    should be true      ${MinRange} <= ${val} <= ${MaxRange}
+
+5GC002255_PMCounterCheck_Expected_Value
+     [Documentation]   Check the value of a counter is egal to an exepted value
+    ...                before using this Keyword you must call 5GC002255_Keywords.Collect PM Counters File
+    ...                with arguments 
+    ...                ${Counter_Id1}: name of the counter (ex : M55311C01001)
+    ...                &{ExpValue}: value expected
+    [Arguments]         ${Counter_Id1}         ${ExpValue}
+    ${val}=    Counters.Retrieve Latest Single Counter Value From Pm File           ${LATEST_FILE}        ${Counter_Id1} 
+    Dated Log           [5GC002255_PMCounterCheck_Expected_Value] Value of ${Counter_Id1} = ${val}
+    should be true      ${val} == ${ExpValue}
+
+5GC002255_PMCounterCheck_Compare_Counters_egal
+     [Documentation]   Check the value of 2 counters are egal
+    ...                before using this Keyword you must call 5GC002255_Keywords.Collect PM Counters File
+    ...                with arguments 
+    ...                ${Counter_Id1}: name of the first counter (ex : M55311C01001)
+    ...                ${Counter_Id2}: name of the second counter (ex : M55311C01002)
+    [Arguments]         ${Counter_Id1}         ${Counter_Id2}
+    ${val1}=    Counters.Retrieve Latest Single Counter Value From Pm File           ${LATEST_FILE}        ${Counter_Id1} 
+    Dated Log           [5GC002255_PMCounterCheck_Compare_Counters_egal] Value of ${Counter_Id1} = ${val1}
+    ${val2}=    Counters.Retrieve Latest Single Counter Value From Pm File           ${LATEST_FILE}        ${Counter_Id2} 
+    Dated Log           [5GC002255_PMCounterCheck_Compare_Counters_egal] Value of ${Counter_Id2} = ${val2}
+    should be true      ${val1} == ${val2}
+
+5GC002255_PMCounterCheck_Sum_eqal
+     [Documentation]   Check the sum of 2 first counters are egal to the third counter with range 1 
+    ...                before using this Keyword you must call 5GC002255_Keywords.Collect PM Counters File
+    ...                with arguments 
+    ...                ${Counter_Id1}: name of the first counter (ex : M55311C01001)
+    ...                ${Counter_Id2}: name of the second counter (ex : M55311C01002)
+    ...                ${Counter_Id3}: name of the third counter (ex : M55311C01003)
+    [Arguments]         ${Counter_Id1}         ${Counter_Id2}         ${Counter_Id3}
+    ${val1}=    Counters.Retrieve Latest Single Counter Value From Pm File           ${LATEST_FILE}        ${Counter_Id1} 
+    Dated Log           [5GC002255_PMCounterCheck_Sum_eqal] Value of ${Counter_Id1} = ${val1}
+    ${val2}=    Counters.Retrieve Latest Single Counter Value From Pm File           ${LATEST_FILE}        ${Counter_Id2} 
+    Dated Log           [5GC002255_PMCounterCheck_Sum_eqal] Value of ${Counter_Id2} = ${val2}
+    ${val3}=    Counters.Retrieve Latest Single Counter Value From Pm File           ${LATEST_FILE}        ${Counter_Id3} 
+    Dated Log           [5GC002255_PMCounterCheck_Sum_eqal] Value of ${Counter_Id3} = ${val3}
+    should be true      (${val3} -1) <=(${val1} + ${val2}) <= (${val3} +1)
+
+5GC002255_Check _DRX_Mode
+     [Documentation]   Check the DRX configuration in last RRC RECONF in egate
+    ...                with arguments 
+    ...                ${LongCycleStart}: value of the drx-InactivityTimer expeted
+    ...                ${InactivityTimer}: value of the drx-LongCycleStartOffset expeted
+    [Arguments]         ${LongCycleStart}         ${InactivityTimer}
+    ${cmd}      Catenate 
+    ...                      cd ${tl.core.dir_path}; 
+    ...                      grep -i drx-InactivityTimer egate_console.log | tail -1
+    ${output}                       SSH Wait For Connect and Cmd
+    ...                             command=${cmd}
+    ...                             host=${HOST_EPCSIM}
+    should contain	${output}	drx-InactivityTimer ${InactivityTimer}
+    ${cmd}      Catenate 
+    ...                      cd ${tl.core.dir_path}; 
+    ...                      grep -i drx-LongCycleStartOffset egate_console.log | tail -1
+    ${output}                       SSH Wait For Connect and Cmd
+    ...                             command=${cmd}
+    ...                             host=${HOST_EPCSIM}
+    should contain	${output}   drx-LongCycleStartOffset ${LongCycleStart} :
+    
+Check TrafficDownlink
+    # When buffer based and traffic 20Mbps both legs should traffic. M55311C42006 M55311C44006 should increase their values
+    [Arguments]         ${expValue1}    ${expValue2}
+
+Check DSS Counters
+    [Arguments]         ${DLSlots}    ${ULPRB}   
+    ${val}=    Retrieve Latest Single Counter Value From Pm File with CellID
+    ...        ${LATEST_FILE}    ${PM_Counter_DSSDlSlots}    2  
+    Dated Log           Value of ${PM_Counter_DSSDlSlots} ${val} in Pcell    
+    ${minDLSlots}=   Evaluate  ${DLSlots}*0.9
+    ${maxDLSlots}=   Evaluate  ${DLSlots}*1.1
+    should be true    ${minDLSlots} < ${val} <= ${maxDLSlots}
+    ${val}=    Retrieve Latest Single Counter Value From Pm File with CellID
+    ...        ${LATEST_FILE}    ${PM_Counter_DSSUlPRB}    2   
+    Dated Log           Value of ${PM_Counter_DSSUlPRB} ${val} in Pcell
+    should be true    ${ULPRB} < ${val}
+
+Set SCF Context DSS
+    ${SCF_MODIFIED}         OAM Change String in SCF          oldVal=MRBTS-1/NRBTS-1     newVal=MRBTS-1/NRBTS-2
+    SCF StartSession                scf_file=${SCF_MODIFIED}
+
+    ${dist_name}         Set Variable    MRBTS-1
+    SCF Set element    dist_name=${dist_name}    element_name=btsName  element_value=CB007873-G
+    
+    ${dist_name}         Set Variable    MRBTS-1/NRBTS-2
+    SCF Set element    dist_name=${dist_name}    element_name=actGeneralConnectivityGold  element_value=true
+    SCF Set element    dist_name=${dist_name}    element_name=actLteNrDss   element_value=true
+    SCF Set element    dist_name=${dist_name}    element_name=sCellActivationMethod   element_value=blind
+
+    ${dist_name}         Set Variable    MRBTS-1/NRBTS-2/NRCELL-1
+    SCF Set element    dist_name=${dist_name}    element_name=sCellDeactivationTimerGNB   element_value=infinity
+    SCF Set element    dist_name=${dist_name}    element_name=srPeriodicity   element_value=slots80
+
+    ${dist_name}         Set Variable    MRBTS-1/NRBTS-2/NRCELL-2
+    SCF Set element    dist_name=${dist_name}    element_name=actPRBBlanking   element_value=true
+    SCF Set element    dist_name=${dist_name}    element_name=actPdschAtSsbSlots   element_value=true
+    SCF Set element    dist_name=${dist_name}    element_name=actPdschRmCsirsForTracking   element_value=true
+    SCF Set element    dist_name=${dist_name}    element_name=lteNrDssMode   element_value=DL_CRS_TDM_UL_FDM
+    SCF Set element    dist_name=${dist_name}    element_name=msg1FrequencyStart   element_value=9
+    SCF Set element    dist_name=${dist_name}    element_name=nbrOfBlankedPRBsHighEdgeDL   element_value=2
+    SCF Set element    dist_name=${dist_name}    element_name=nbrOfBlankedPRBsHighEdgeUL   element_value=2
+    SCF Set element    dist_name=${dist_name}    element_name=pagingOffset   element_value=2
+    SCF Set element    dist_name=${dist_name}    element_name=pucchF3ModulationScheme   element_value=pi2bpsk
+    SCF Set element    dist_name=${dist_name}    element_name=trsMutingInBlankedPRBsEnabled   element_value=true
+    SCF Set element    dist_name=${dist_name}    element_name=type0SearchSpaceConfigurationIndex   element_value=15
+    SCF Set element    dist_name=${dist_name}    element_name=sCellDeactivationTimerGNB   element_value=infinity
+    SCF Set element    dist_name=${dist_name}    element_name=srPeriodicity   element_value=slots80
+
+    SCF Remove list    dist_name=${dist_name}    list_name=cellBwpList
+    SCF Add list       dist_name=${dist_name}    list_name=cellBwpList
+
+    &{cellBwpList}     Create Dictionary    actPdcchCceFragmentControl=false
+	...                                     actUpperThrAckNackFiltering=false
+	...                                     actUpperThrAckNackHrFiltering=false	
+	...                                     bwpDN=MRBTS-1/NRBTS-2/BWP_PROFILE-162
+	...                                     cellBwpId=0
+	...                                     pdcchResourcePreference=peakRate
+    SCF Add items to list   dist_name=${dist_name}    list_name=cellBwpList   elements=${cellBwpList}
+    &{cellBwpList}     Create Dictionary    actPdcchCceFragmentControl=false
+	...                                     actUpperThrAckNackFiltering=false
+	...                                     actUpperThrAckNackHrFiltering=false	
+	...                                     bwpDN=MRBTS-1/NRBTS-2/BWP_PROFILE-173
+	...                                     cellBwpId=1
+	...                                     pdcchResourcePreference=peakRate
+    SCF Add items to list   dist_name=${dist_name}    list_name=cellBwpList   elements=${cellBwpList}
+
+    SCF Set element in List    dist_name=${dist_name}    list_name=csirsForTracking     element_name=csirsTrackingPeriod   element_value=40ms
+
+    ${dist_name}         Set Variable    MRBTS-1/NRBTS-2/NRCELL-2/NRREL-1
+    SCF Set element    dist_name=${dist_name}    element_name=gNbId   element_value=2
+
+    ${dist_name}         Set Variable    MRBTS-1/NRBTS-2/NRSYSINFO_PROFILE-2
+    SCF Set element    dist_name=${dist_name}    element_name=siWindowLength   element_value=s160
+    SCF Set element    dist_name=${dist_name}    element_name=systemInformationTargetRate   element_value=0
+
+    SCF Remove list    dist_name=${dist_name}    list_name=sibSchedulingList
+    SCF Add list       dist_name=${dist_name}    list_name=sibSchedulingList
+
+    &{sibSchedulingList}     Create Dictionary    sibBroadcastStatus=broadcasting   sibPeriodicity=rf64   sibScope=cellSpecific   sibType=sibType2
+    SCF Add items to list   dist_name=${dist_name}    list_name=sibSchedulingList   elements=${sibSchedulingList}
+    &{sibSchedulingList}     Create Dictionary    sibBroadcastStatus=broadcasting   sibPeriodicity=rf64   sibScope=cellSpecific   sibType=sibType3
+    SCF Add items to list   dist_name=${dist_name}    list_name=sibSchedulingList   elements=${sibSchedulingList}
+    &{sibSchedulingList}     Create Dictionary    sibBroadcastStatus=broadcasting   sibPeriodicity=rf64   sibScope=cellSpecific   sibType=sibType4
+    SCF Add items to list   dist_name=${dist_name}    list_name=sibSchedulingList   elements=${sibSchedulingList}
+    &{sibSchedulingList}     Create Dictionary    sibBroadcastStatus=broadcasting   sibPeriodicity=rf64   sibScope=cellSpecific   sibType=sibType5
+    SCF Add items to list   dist_name=${dist_name}    list_name=sibSchedulingList   elements=${sibSchedulingList}
+    &{sibSchedulingList}     Create Dictionary    sibBroadcastStatus=broadcasting   sibPeriodicity=rf64   sibScope=cellSpecific   sibType=sibType6
+    SCF Add items to list   dist_name=${dist_name}    list_name=sibSchedulingList   elements=${sibSchedulingList}
+	&{sibSchedulingList}     Create Dictionary    sibBroadcastStatus=broadcasting   sibPeriodicity=rf64   sibScope=cellSpecific   sibType=sibType7
+    SCF Add items to list   dist_name=${dist_name}    list_name=sibSchedulingList   elements=${sibSchedulingList}
+    &{sibSchedulingList}     Create Dictionary    sibBroadcastStatus=broadcasting   sibPeriodicity=rf64   sibScope=cellSpecific   sibType=sibType8
+    SCF Add items to list   dist_name=${dist_name}    list_name=sibSchedulingList   elements=${sibSchedulingList}
+    &{sibSchedulingList}     Create Dictionary    sibBroadcastStatus=broadcasting   sibPeriodicity=rf64   sibScope=cellSpecific   sibType=sibType9
+    SCF Add items to list   dist_name=${dist_name}    list_name=sibSchedulingList   elements=${sibSchedulingList}	
+
+	${dist_name}         Set Variable    MRBTS-1/NRBTS-2/NRPMRNL-1
+	SCF Set element    dist_name=${dist_name}    element_name=miNrEnDssPerCell   element_value=5min
+
+    SCF StopSession      scf_file=${SCF_MODIFIED}
+    Dated Log    ----> Modifications completed.\n
+
+    OAM Perform Full Commissioning          scf_file=${SCF_MODIFIED}
+    WA Airscale Wait For Ready                  ${GNB_DU}
+    Dated Log    ----> Airscale Ready.\n
+
+
+Capture Set Mirror
+    [Documentation]                 Apply a mirroring setting
+    [Arguments]                     ${mirror}
+    # Apply mirroring for sport1, and sport2 if required
+    Dbgrrc Mirror                   ${mirror.sport1}                        ${mirror.dport}         ${mirror.host}
+    Dbgrrc Mirror                   ${mirror.sport2}                        ${mirror.dport}         ${mirror.host}
+
+Dbgrrc Mirror
+    [Documentation]                 Basic service to mirror a source port onto a destination port
+    [Arguments]                     ${sport}                                ${dport}
+    ...                             ${host}
+    Run Keyword if                  ${sport}>0                              Run Keywords
+    ...                             Dated log                               Set mirror on ${host.alias} : mirror sport ${sport} on ${dport}
+    ...                             AND
+    ...                             SSH Wait For Connect and Cmd            dbgrrc mirror sport ${sport} dport ${dport} enable both
+    ...                             host=${host}
+
+Setup UEs Profiles
+    &{basic2}    copy dictionary    ${BASIC_UE_SA}
+    &{basic3}    copy dictionary    ${BASIC_UE_SA}
+    &{basic4}    copy dictionary    ${BASIC_UE_SA}
+    &{basic5}    copy dictionary    ${BASIC_UE_SA}
+    &{basic6}    copy dictionary    ${BASIC_UE_SA}
+
+    @{UE_profiles_list}    Create List     ${BASIC_UE_SA}    ${basic2}    ${basic3}    ${basic4}    ${basic5}    ${basic6}
+    FOR    ${index}    IN RANGE     1    7
+        ${elem}     set variable     ${UE_profiles_list}[${index-1}]
+        ${elem.ue}        Set Variable     3
+        ${elem.pdu}       Set Variable     3
+        ${elem.qfi}       Set Variable If     
+        ...     ${index}==1        1
+        ...     ${index}==2        1
+        ...     ${index}==3        2
+        ...     ${index}==4        2
+        ...     ${index}==5        3
+        ...     ${index}==6        3
+        ${elem.trf_id}        Set Variable          ${index}
+    END
+    Tools.Dated Log   New ue profiles list : ${UE_profiles_list}
+    Set Suite Variable     ${UE_profiles_list}
+
+Collect EGATE console Logs
+    [Documentation]    This keyword is used to collect egate_console.log from the /opt/wts/latest/ folder
+    ...                This is collected in the Test Log Folder
+    # Connect to WTS  alias=alias_wts
+    ${alias_wts}                    SSH Wait For Connect                ${HOST_EPCSIM}
+
+    Dated Log      Collecting ${tl.core.dir_path}/egate_console.log...
+    csn.download_file               remote_path=${tl.core.dir_path}/egate_console.log
+    ...                             local_path=${LOG_PATH}/egate_console.log
+    ...                             connection=${alias_wts}
+    Dated Log                  egate_console.log file stored to ${LOG_PATH}

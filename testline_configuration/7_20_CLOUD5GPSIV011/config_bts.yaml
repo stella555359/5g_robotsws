@@ -1,0 +1,762 @@
+heat_template_version: 2016-04-08
+
+description: Template for create all VNFCs
+
+parameters:
+  image:
+    type: string
+    description: image name or UUID
+  ssh_public_key:
+    type: string
+    description: key pair publich ssh key
+  vnf_name:
+    type: string
+    description: 5GBTS VNF name
+    default: 5gbts
+    constraints:
+      - allowed_pattern: "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+        description: "Invalid vnf_name format"
+      - length: {min: 4, max: 35}
+        description: "Invalid vnf_name length (should be [4,35])"
+  cluster_id:
+    description: Cluster identification.
+    type: number
+    constraints:
+      - range: {min: 1, max: 4095}
+  flavors:
+    type: json
+    description: flavor to use
+    default:
+      oam: 5gbts_oam
+      cpcn: 5gbts_cpcn
+      cpue: 5gbts_cpue
+      upue: 5gbts_upue
+      cpif: 5gbts_cpif
+      cpnb: 5gbts_cpnb
+      cpcl: 5gbts_cpcl
+      uvm: 5gbts_uvm
+      db: 5gbts_db
+  timezone:
+    description: timezone region
+    type: string
+    constraints:
+      - {custom_constraint: timezone}
+  availability-zone:
+    description: availability zone region
+    type: string
+    default: "nova"
+  oam_network:
+    description: public network from which to allocate OAM IP
+    type: string
+    constraints:
+      - {custom_constraint: neutron.network}
+  oam_ip:
+    description: IP address for O&M and SSH accessing
+    type: string
+  ntp_servers:
+    description: list of servers to sync time from
+    type: comma_delimited_list
+    constraints:
+      - length: {min: 1, max: 3}
+  dns_forwarders:
+    description: list of servers to forward queries to
+    type: comma_delimited_list
+    constraints:
+      - length: {min: 0, max: 3}
+    default: []
+  password:
+    description: password to use for RCP account
+    type: json
+    default: {root: '!', _nokadmin: '!', _nokfsoperator: '!'}
+  external_networks:
+    description: External network to attach to a interface node
+    type: json
+  internal_networks:
+    description: Internal network to attach to a interface node
+    type: json
+  internal_provider_networks:
+    description: provider net name for internal networks
+    type: string
+  number_of_upue_nodes:
+    description: number of ues nodes to instantiate
+    type: number
+    constraints:
+      - range: {min: 1, max: 4}
+  number_of_cpue_nodes:
+    description: number of cpues nodes to instantiate
+    type: number
+    constraints:
+      - range: {min: 1, max: 2}
+  number_of_uvm_nodes:
+    description: number of ues nodes to instantiate]
+    type: number
+    constraints:
+      - range: {min: 0, max: 1}
+  vif_model:
+    type: string
+    description: virtual interface model
+    default: avp
+  best_effort:
+    type: boolean
+    description: The best effort value of OAM and CCP VM sever group
+    default: true
+  extra_cloud_config_data:
+    type: json
+    default: {}
+  vnfc_layout:
+    type: string
+    description: vnfc layout, 5G18A for 4 CP VM, 5G18ASA for 2 CP VM(before CP Split)
+    default: 5G18A
+    constraints:
+      - allowed_values: [5G18A, 5G18ASA]
+  vnfc_name_prefix:
+    type: json
+    description: vnf name prefix mapping
+    default:
+      5G18A:
+        cpcn: cpcn
+        cpue: cpue
+        upue: upue
+      5G18ASA:
+        cpcn: cncp
+        cpue: uecp
+        upue: ueup
+  number_of_cp_nodes:
+    type: json
+    description: number of cplane nodes
+    default:
+      5G18A:
+        cpcn: 0
+        cpue: 1
+        cpif: 1
+        cpnb: 1
+        cpcl: 1
+      5G18ASA:
+        cpcn: 1
+        cpue: 1
+        cpif: 0
+        cpnb: 0
+        cpcl: 0
+  number_of_db_nodes:
+    description: number of db nodes
+    type: number
+    default: 1
+    constraints:
+      - range: {min: 0, max: 1}
+
+resources:
+  keypair:
+    type: OS::Nova::KeyPair
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-cbam-generated
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      public_key: {get_param: ssh_public_key}
+
+  network_setup:
+    type: 5GBTS::Network::Setup
+    properties:
+      oam_network: {get_param: oam_network}
+      external_networks: {get_param: external_networks}
+      internal_networks: {get_param: internal_networks}
+      provider_name: {get_param: internal_provider_networks}
+      name_prefix:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+
+  server_group:
+    type: OS::Nova::ServerGroup
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-server-group
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      policies:
+        - affinity
+      best_effort: {get_param: best_effort}
+
+  oam_node:
+    type: 5GBTS::Node::Oam
+    depends_on: network_setup
+    properties:
+      name:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: oam-0
+      roles: [management, storage, 5gbts_oam]
+      instance_params:
+        server:
+          image: {get_param: image}
+          flavor: {get_param: [flavors, oam]}
+      key_name: {get_resource: keypair}
+      vif_model: {get_param: vif_model}
+      oam_net:
+        name: oam
+        uuid: {get_attr: [network_setup, networks, oam]}
+        ip_address: {get_param: oam_ip}
+      internal_networks:
+        count: 2
+        net_list:
+          - name: internal
+            uuid: {get_attr: [network_setup, networks, internal]}
+          - name: internal_srv
+            uuid: {get_attr: [network_setup, networks, internal_srv]}
+      external_networks:
+        count: 1
+        net_list:
+          - name: fronthaul
+            uuid: {get_attr: [network_setup, networks, fronthaul]}
+      ntp_servers: {get_param: ntp_servers}
+      server_group_id: {get_resource: server_group}
+      cluster_id:
+        str_replace:
+          template: $vnf-$cid
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+      timezone: {get_param: timezone}
+      dns_forwarders: {get_param: dns_forwarders}
+      dpdk_type: oam
+      ha_cluster:
+        str_replace:
+          template: $vnf-$cid-$vm
+          params:
+            $vnf: {get_param: vnf_name}
+            $cid: {get_param: cluster_id}
+            $vm: oam-0
+      nfs_volumes:
+        name_prefix:
+          str_replace:
+            template: $vnf-$cid
+            params:
+              $vnf: {get_param: vnf_name}
+              $cid: {get_param: cluster_id}
+        count: 5
+        vol_list:
+          - {size: 10, name: ccs, mount: /mnt/ccs}
+          - {size: 1, name: mstate, mount: /mnt/mstate}
+          - {size: 5, name: export, mount: /mnt/export}
+          - {size: 1, name: log, mount: /mnt/log}
+          - {size: 2, name: services, mount: /mnt/services}
+      local_volumes:
+        name_prefix:
+          str_replace:
+            template: $vnf-$cid
+            params:
+              $vnf: {get_param: vnf_name}
+              $cid: {get_param: cluster_id}
+        count: 3
+        vol_list:
+          - {size: 1, name: db, mount: /mnt/db}
+          - {size: 10, name: dbcm, mount: /mnt/dbcm}
+          - {size: 1, name: etcd, mount: /mnt/etcd}
+      password: {get_param: password}
+      service_ip_meta:
+        get_attr: [network_setup, service_ip_map]
+      availability-zone: {get_param: availability-zone}
+      extra_cloud_config_data: {get_param: extra_cloud_config_data}
+      number_of_nodes:
+        deployment:
+          number_of_cpcl: 1
+          number_of_cpue: {get_param: number_of_cpue_nodes}
+          number_of_upue: {get_param: number_of_upue_nodes}
+          min_number_of_cpcl: 1
+          min_number_of_cpue: 1
+          min_number_of_upue: 1
+          max_number_of_cpcl: 1
+          max_number_of_cpue: 2
+          max_number_of_upue: 2
+
+  cpcn_nodes:
+    type: OS::Heat::ResourceGroup
+    depends_on: [oam_node, upue_nodes]
+    properties:
+      count: {get_param: [number_of_cp_nodes, {get_param: vnfc_layout}, cpcn]}
+      resource_def:
+        type: 5GBTS::Node::Common
+        properties:
+          name:
+            str_replace:
+              template: $vnf-$cid-$vm$index
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_name_prefix, {get_param: vnfc_layout}, cpcn]}
+                $index: -%index%
+          roles: [application, 5gbts_cpcn]
+          instance_params:
+            server:
+              image: {get_param: image}
+              flavor: {get_param: [flavors, cpcn]}
+          instance_index: '%index%'
+          vif_model: {get_param: vif_model}
+          internal_networks:
+            count: 2
+            net_list:
+              - name: internal
+                uuid: {get_attr: [network_setup, networks, internal]}
+              - name: internal_srv
+                uuid: {get_attr: [network_setup, networks, internal_srv]}
+          external_networks:
+            count: 2
+            net_list:
+              - name: fronthaul
+                uuid: {get_attr: [network_setup, networks, fronthaul]}
+              - name: backhaul
+                uuid: {get_attr: [network_setup, networks, backhaul]}
+          database_ip:
+            get_attr: [oam_node, internal_ip]
+          cluster_id:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          timezone: {get_param: timezone}
+          dpdk_type: cpif
+          server_group_id: {get_resource: server_group}
+          ha_cluster:
+            str_replace:
+              template: $vnf-$cid-$vm
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: oam-0
+          storage_meta:
+            get_attr: [oam_node, volume_map]
+          password: {get_param: password}
+          availability-zone: {get_param: availability-zone}
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+
+  cpif_nodes:
+    type: OS::Heat::ResourceGroup
+    depends_on: [oam_node, upue_nodes]
+    properties:
+      count: {get_param: [number_of_cp_nodes, {get_param: vnfc_layout}, cpif]}
+      resource_def:
+        type: 5GBTS::Node::Common
+        properties:
+          name:
+            str_replace:
+              template: $vnf-$cid-$vm
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: cpif-%index%
+          roles: [application, 5gbts_cpif]
+          instance_params:
+            server:
+              image: {get_param: image}
+              flavor: {get_param: [flavors, cpif]}
+          instance_index: '%index%'
+          vif_model: {get_param: vif_model}
+          internal_networks:
+            count: 2
+            net_list:
+              - name: internal
+                uuid: {get_attr: [network_setup, networks, internal]}
+              - name: internal_srv
+                uuid: {get_attr: [network_setup, networks, internal_srv]}
+          external_networks:
+            count: 2
+            net_list:
+              - name: fronthaul
+                uuid: {get_attr: [network_setup, networks, fronthaul]}
+              - name: backhaul
+                uuid: {get_attr: [network_setup, networks, backhaul]}
+          database_ip:
+            get_attr: [oam_node, internal_ip]
+          cluster_id:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          timezone: {get_param: timezone}
+          dpdk_type: cpif
+          server_group_id: {get_resource: server_group}
+          ha_cluster:
+            str_replace:
+              template: $vnf-$cid-$vm
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: oam-0
+          storage_meta:
+            get_attr: [oam_node, volume_map]
+          password: {get_param: password}
+          availability-zone: {get_param: availability-zone}
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+
+  cpnb_nodes:
+    type: OS::Heat::ResourceGroup
+    depends_on: [oam_node, upue_nodes]
+    properties:
+      count: {get_param: [number_of_cp_nodes, {get_param: vnfc_layout}, cpnb]}
+      resource_def:
+        type: 5GBTS::Node::Common
+        properties:
+          name:
+            str_replace:
+              template: $vnf-$cid-$vm
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: cpnb-%index%
+          roles: [application, 5gbts_cpnb]
+          instance_params:
+            server:
+              image: {get_param: image}
+              flavor: {get_param: [flavors, cpnb]}
+          instance_index: '%index%'
+          vif_model: {get_param: vif_model}
+          internal_networks:
+            count: 2
+            net_list:
+              - name: internal
+                uuid: {get_attr: [network_setup, networks, internal]}
+              - name: internal_srv
+                uuid: {get_attr: [network_setup, networks, internal_srv]}
+          database_ip:
+            get_attr: [oam_node, internal_ip]
+          cluster_id:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          timezone: {get_param: timezone}
+          dpdk_type: none
+          server_group_id: {get_resource: server_group}
+          ha_cluster:
+            str_replace:
+              template: $vnf-$cid-$vm
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: oam-0
+          storage_meta:
+            get_attr: [oam_node, volume_map]
+          password: {get_param: password}
+          availability-zone: {get_param: availability-zone}
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+          number_of_nodes:
+            deployment:
+              number_of_cpcl: 1
+              number_of_cpue: {get_param: number_of_cpue_nodes}
+              number_of_upue: {get_param: number_of_upue_nodes}
+              min_number_of_cpcl: 1
+              min_number_of_cpue: 1
+              min_number_of_upue: 1
+              max_number_of_cpcl: 1
+              max_number_of_cpue: 2
+              max_number_of_upue: 2
+
+  cpcl_nodes:
+    type: OS::Heat::ResourceGroup
+    depends_on: [oam_node, upue_nodes]
+    properties:
+      count: {get_param: [number_of_cp_nodes, {get_param: vnfc_layout}, cpcl]}
+      resource_def:
+        type: 5GBTS::Node::Common
+        properties:
+          name:
+            str_replace:
+              template: $vnf-$cid-$vm
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: cpcl-%index%
+          roles: [application, 5gbts_cpcl]
+          instance_params:
+            server:
+              image: {get_param: image}
+              flavor: {get_param: [flavors, cpcl]}
+          instance_index: '%index%'
+          vif_model: {get_param: vif_model}
+          internal_networks:
+            count: 2
+            net_list:
+              - name: internal
+                uuid: {get_attr: [network_setup, networks, internal]}
+              - name: internal_srv
+                uuid: {get_attr: [network_setup, networks, internal_srv]}
+          database_ip:
+            get_attr: [oam_node, internal_ip]
+          cluster_id:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          timezone: {get_param: timezone}
+          dpdk_type: none
+          server_group_id: {get_resource: server_group}
+          ha_cluster:
+            str_replace:
+              template: $vnf-$cid-$vm
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: oam-0
+          storage_meta:
+            get_attr: [oam_node, volume_map]
+          password: {get_param: password}
+          availability-zone: {get_param: availability-zone}
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+
+  cpue_nodes:
+    type: OS::Heat::ResourceGroup
+    depends_on: [oam_node, upue_nodes]
+    properties:
+      count: {get_param: number_of_cpue_nodes}
+      resource_def:
+        type: 5GBTS::Node::Common
+        properties:
+          name:
+            str_replace:
+              template: $vnf-$cid-$vm$index
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_name_prefix, {get_param: vnfc_layout}, cpue]}
+                $index: -%index%
+          roles: [application, 5gbts_cpue]
+          instance_params:
+            server:
+              image: {get_param: image}
+              flavor: {get_param: [flavors, cpue]}
+          instance_index: '%index%'
+          vif_model: {get_param: vif_model}
+          internal_networks:
+            count: 2
+            net_list:
+              - name: internal
+                uuid: {get_attr: [network_setup, networks, internal]}
+              - name: internal_srv
+                uuid: {get_attr: [network_setup, networks, internal_srv]}
+          database_ip:
+            get_attr: [oam_node, internal_ip]
+          cluster_id:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          timezone: {get_param: timezone}
+          dpdk_type: none
+          server_group_id: {get_resource: server_group}
+          ha_cluster:
+            str_replace:
+              template: $vnf-$cid-$vm
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: oam-0
+          storage_meta:
+            get_attr: [oam_node, volume_map]
+          password: {get_param: password}
+          availability-zone: {get_param: availability-zone}
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+
+  upue_nodes:
+    type: OS::Heat::ResourceGroup
+    depends_on: oam_node
+    properties:
+      count: {get_param: number_of_upue_nodes}
+      resource_def:
+        type: 5GBTS::Node::Common
+        properties:
+          name:
+            str_replace:
+              template: $vnf-$cid-$vm$index
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: {get_param: [vnfc_name_prefix, {get_param: vnfc_layout}, upue]}
+                $index: -%index%
+          roles: [application, 5gbts_upue]
+          instance_params:
+            server:
+              image: {get_param: image}
+              flavor: {get_param: [flavors, upue]}
+          instance_index: '%index%'
+          vif_model: {get_param: vif_model}
+          internal_networks:
+            count: 2
+            net_list:
+              - name: internal
+                uuid: {get_attr: [network_setup, networks, internal]}
+              - name: internal_srv
+                uuid: {get_attr: [network_setup, networks, internal_srv]}
+          external_networks:
+            count: 2
+            net_list:
+              - name: fronthaul
+                uuid: {get_attr: [network_setup, networks, fronthaul]}
+                mtu: 9000
+              - name: backhaul
+                uuid: {get_attr: [network_setup, networks, backhaul]}
+          database_ip:
+            get_attr: [oam_node, internal_ip]
+          cluster_id:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          timezone: {get_param: timezone}
+          dpdk_type: upue
+          server_group_id: {get_resource: server_group}
+          ha_cluster:
+            str_replace:
+              template: $vnf-$cid-$vm
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: oam-0
+          storage_meta:
+            get_attr: [oam_node, volume_map]
+          password: {get_param: password}
+          availability-zone: {get_param: availability-zone}
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+
+  upgrade_node:
+    type: OS::Heat::ResourceGroup
+    depends_on: oam_node
+    properties:
+      count: {get_param: number_of_uvm_nodes}
+      resource_def:
+        type: 5GBTS::Node::Common
+        properties:
+          name:
+            str_replace:
+              template: $vnf-$cid-$vm
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: uvm-0
+          roles: [upgrade]
+          instance_params:
+            server:
+              image: {get_param: image}
+              flavor: {get_param: [flavors, uvm]}
+          instance_index: '%index%'
+          vif_model: {get_param: vif_model}
+          internal_networks:
+            count: 1
+            net_list:
+              - name: internal
+                uuid: {get_attr: [network_setup, networks, internal]}
+          database_ip:
+            get_attr: [oam_node, internal_ip]
+          cluster_id:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          timezone: {get_param: timezone}
+          dpdk_type: none
+          server_group_id: {get_resource: server_group}
+          ha_cluster:
+            str_replace:
+              template: $vnf-$cid-$vm
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: oam-0
+          storage_meta:
+            get_attr: [oam_node, volume_map]
+          password: {get_param: password}
+          upgrade-node: true
+          availability-zone: {get_param: availability-zone}
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+
+  db_node:
+    type: OS::Heat::ResourceGroup
+    depends_on: oam_node
+    properties:
+      count: {get_param: number_of_db_nodes}
+      resource_def:
+        type: 5GBTS::Node::Common
+        properties:
+          name:
+            str_replace:
+              template: $vnf-$cid-$vm
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: db-0
+          roles: [application, 5gbts_db]
+          instance_params:
+            server:
+              image: {get_param: image}
+              flavor: {get_param: [flavors, db]}
+          instance_index: '%index%'
+          vif_model: {get_param: vif_model}
+          internal_networks:
+            count: 1
+            net_list:
+              - name: internal
+                uuid: {get_attr: [network_setup, networks, internal]}
+          database_ip:
+            get_attr: [oam_node, internal_ip]
+          cluster_id:
+            str_replace:
+              template: $vnf-$cid
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+          timezone: {get_param: timezone}
+          dpdk_type: none
+          server_group_id: {get_resource: server_group}
+          local_volumes:
+            name_prefix:
+              str_replace:
+                template: $vnf-$cid
+                params:
+                  $vnf: {get_param: vnf_name}
+                  $cid: {get_param: cluster_id}
+            count: 2
+            vol_list:
+            - {size: 1, name: db_pg_session, mount: /mnt/db_pg_sesssion}
+            - {size: 2, name: db_redis_session, mount: /mnt/db_redis_session}
+          ha_cluster:
+            str_replace:
+              template: $vnf-$cid-$vm
+              params:
+                $vnf: {get_param: vnf_name}
+                $cid: {get_param: cluster_id}
+                $vm: oam-0
+          storage_meta:
+            get_attr: [oam_node, volume_map]
+          password: {get_param: password}
+          availability-zone: {get_param: availability-zone}
+          extra_cloud_config_data: {get_param: extra_cloud_config_data}
+
+outputs:
+  management_ip:
+    description: Managemen IP address allocated to access the system
+    value: {get_attr: [oam_node, oam_ip]}
+  int_ports:
+    value: {get_attr: [oam_node, int_ports]}
+  ext_ports:
+    value: {get_attr: [oam_node, ext_ports]}
+  oam_port:
+    value: {get_attr: [oam_node, oam_port]}
+  ports:
+    value: {get_attr: [oam_node, ports]}
+  ip-info:
+    value: {get_attr: [oam_node, ip-info]}

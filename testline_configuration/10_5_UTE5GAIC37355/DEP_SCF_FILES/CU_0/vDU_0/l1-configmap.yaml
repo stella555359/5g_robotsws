@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "l1.configmap.name" . }}
+  labels:
+  {{ include "common.custom_extensions.global.labels" . | indent 4 }}
+data:
+  DPDK_HOST_BIND: {{ quote .Values.global.fpIfaceBindOnHost }}
+  EM_DPDK_CHANNELS: "4"
+  EM_DPDK_BASEVADDR: "0x2aaa2aa0000"
+  EM_DPDK_SOCKMEM: {{ quote .Values.l1hi.ccsrtdpdk.dispSockMem }}
+  EM_DPDK_FILEPREFIX: "{{ .Values.l1hi.ccsrtdpdk.nameOfHugePage }}"
+  EM_DPDK_ADDITIONAL: "{{ .Values.l1hi.ccsrtdpdk.dispAdditional }}"
+  L1BIP_PORT_2_CORE_IDX: "0"
+  {{- $total := 0 }}
+  {{- if and (eq (include "up.infra.cpuDevicePlugin" . ) "cpuPooler") .Values.l1hi.resources.limits.dedicatedNum.cpuPooler -}}
+    {{- $total = int .Values.l1hi.resources.limits.dedicatedNum.cpuPooler }}
+  {{- else if and (eq (include "up.infra.cpuDevicePlugin" . ) "cpuManager") .Values.l1hi.resources.limits.dedicatedNum.cpuManager -}}
+    {{- $total = sub (int .Values.l1hi.resources.limits.dedicatedNum.cpuManager) 1 }}
+  {{- end }}
+  {{- if (gt $total 8) }}
+    {{- $core_idx := sub $total 4 | int }}
+    {{- $mask := 0x1E0 }}
+    {{- range (sub $total 9 | int | until) }}
+      {{- $mask = mul $mask 2 }}
+    {{- end }}
+  ECPRI_PORT_1_CORE_IDX: "{{ $core_idx }}"
+  FHP_EM_CORE_MASK: {{ printf "0x%X" $mask | quote }}
+  {{- else if (gt $total 5) }}
+    {{- $mask := 0x20 }}
+    {{- $factor := 2 }}
+    {{- range (sub $total 6 | int | until) }}
+      {{- $factor = mul $factor 2 }}
+    {{- end }}
+    {{- $mask = mul $mask (sub $factor 1) }}
+  ECPRI_PORT_1_CORE_IDX: "5"
+  FHP_EM_CORE_MASK: {{ printf "0x%X" $mask | quote }}
+  {{- end }}
+  # WA: this is just a workaround remaining from RCP2211, will be deleted later
+  L1BIP_PORT_2: "l1bipl1"
+  RCP_EM_CONF_BASE_DIR: "/etc/rcp_em_config"
+  ODP_CONFIG_FILE: "/etc/odp/odp-linux-dpdk.conf"
+  FHP_DUMMY_SYMBOL_ENABLE: "TRUE"
+  FHP_ENABLE_1116_3ms: "TRUE"
+  FHP_FAST_CPLANE_ENABLE: "{{ .Values.l1hi.fast_cplane_enabled }}"
+  EM_DPTRACE: {{ quote .Values.l1hi.dptrace.enable }}
+  EM_DPTRACE_DUMP: {{ quote .Values.l1hi.dptrace.dump_payload }}
+  EM_DPTRACE_FILTER: {{ quote .Values.l1hi.dptrace.filter }}
+  CCSRT_CONTAINER_TYPE: "L1"
+  {{- if eq .Values.l1hi.l1_default_scs "30" }}
+  L1_DEFAULT_SCS: "30"
+  {{- else }}
+  L1_DEFAULT_SCS: "15"
+  {{- end }}
+  {{- with .Values.l1hi.fhpconfig }}
+    {{- toYaml . | nindent 2 }}
+  {{- end }}
+  FHP_PRACH_RECEIVE_WIN_WORKAROUND_ENABLE: {{ .Values.l1hi.FHP_PRACH_RECEIVE_WIN_WORKAROUND_ENABLE | default "FALSE" | quote }}
+  FHP_LOCAL_SYSCOM_CPID: "{{ .Values.l1hi.fhp_local_syscom_cpid }}"

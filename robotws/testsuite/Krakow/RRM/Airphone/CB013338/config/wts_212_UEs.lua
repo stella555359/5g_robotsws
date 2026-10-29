@@ -1,0 +1,125 @@
+-- Copyright (c) 2024 Nokia. All rights reserved.
+
+----------------------------------------------------------------------------------------------------
+--COMMON VARIABLES for ALL WTS
+----------------------------------------------------------------------------------------------------
+
+CONTAINER_IP="10.0.2.1"
+SERVER_IP='10.0.2.1'
+GNB_NG_ADDR="10.0.1.2"
+PROXY_SERVER_IP="10.0.2.80"
+AMF_NG_ADDR="10.0.1.1"
+UEC_ADDR="72.22.0.1"
+UPF_ADDR="1.2.4.1"
+EDAEMON_PORT="22222"
+ENB1_S1_ADDR="10.0.1.136"
+GNB_S1U_ADDR="10.0.1.112"
+ENB1_X2_ADDR="10.0.1.137"
+GNB_X2_ADDR="10.0.1.2"
+MME1_S1_ADDR="10.0.1.131"
+SERVER_ADDR="10.0.1.132"
+SGW_S1U_ADDR="10.0.1.133"
+SGW_S11_ADDR="10.0.1.134"
+ENB_X2U_ADDR="10.0.1.135"
+PGW_ADDR="4.7.254.213"
+PROXY_SERVER_IP="10.0.2.80"
+
+
+PROXY_CELL='10.0.2.80:9999|10.0.2.80:8888'
+-- NSA capabilites from Samsung S24 supported band n257
+SA_CAPABILITIES_8CC_SA='E7A05000574F7E03560803C320016080080C048830004C1C2600C4834000A04026010188A0300A67016A8D89BAC1184341020E90480A2D954542439F40CFB027C639F30C7942C0E070F017001DF001C0077C00122003650000500000141F11B582308682041E2090125B2A8A82873E819F18E7CC31E50B0381C3C09FC0000007F0000002A0F883AC1184341020F1048092D954541439F40CF8C73E618F28581C0E1E04FEC000003FB00000024200182A81681EF1C610E00151E7E284808FDB30552003C78010E208308A8147EFE40DC6E3094000603A05A0381BC718438005479F8A12023F6CC154800F1E00438820C22A051FBF90371F8E25000180A816806F1C610E00151E7E284808FDB30552003C78010E208308A8147EFE40DC6E30940006000461E268007400C200002006026C1000F400F00C2893B639F1407014001E827007C0050006020280381804A00E000C040422002085808400200065F0064940180000000000724A01C010040100401004010043005BC56E94010401000000000104030040100401000010055EA8AED409407C00D028000A10014C0088008000224000010000001200000800000000002020040080802004150A5105803738'
+SA_EUTRA_NR_CAPABILITIES='a107c588868201d03000c8181903032060640c0c818190303206000002219a080740ce3b2067640c0c818190303206000102219a080740c0032067640cec818190303206000202219a080740c61b2063640c0c818190303206000102219a080740c0032063640c6c818190303206000202215a080740cf3b2067640c0c818190300018110ad0403a0671d9033f2060640c0c8180010088568201d03000c819f9033b2060640c000a0442b4100e819c7640cec819d90303206000602215a080740c0032067640cec819d903000381108d0403a0671d9033b2067640ce010044234100e818e3640c7c8181903000481108d0403a060019031f2063e40c0014044234100e818c3640c6c818d903180401106d0403a0681d9033f206000b0220da080740cf3b2068640c00180441b4100e81800640d0c819e0340887682009043a06001903032060640c0c818190300070110ad0401208740c61b2063640c0c818003c0885682009043a060019031b2063640c00200441b41004821d031c6c818e044088260c008183a006100480801c10382000182088804062a2d4274e9d3a74e9d3a76cf1e5cc9d3a74e9d3a76cf1e5cc9d3a74e9d3a76cf1e5cc9d3a74e9d3a76cf1e5cc9d3a74e9d3a76cf1e5ca9d3a74e9d3b678f2e54e9d3a74e9db3c7972a74e9d3a74ed9e3cb953a74e9d3a76cf1e5ca9d3a74e9d3b678f2e44e9d3a74ed9e3cb913a74e9d3b678f2e44e9d3a74ed9e3cb913a74e9d3b678f2e34e9d3a76cf1e5c69d3a74ed9e3cb8d3a74e9db3c7973a74e9d3a74e9d3b678f2e54e9d3a74e9db3c7972a74e9d3a74ed9e3cb8d3a74e9db3c7971274e9db3c79610124000080202038038080e00002038000080e00002038000080e00002038000080e0006000100404078060101e00004070000101c00004070000101c000c0002008080e00e0203c000080f00002038000080e0000203800140004010102001804078000101c00004070000101c000a0002008080f00c02040000080e00002038000080e0005000100404070070102000004078000101c0000407000280008020203c030080f0000203c000080e0000203800140004010101c01c04078000101e00004078000101c00080002008080f00c0203c000080f0000203c00100004010102001804080000101c00004070002000080202038038081000002040000080e0003000100404088060102000004070001800080202040030081100002038000c0004010101c01c040880001020000e000200800080002038038080e00002038000080e00002038000080e000500010040004000101e01804078000101c0000407000280008020002000080e00e0203c000080f00002038000c000401000100004080060102000040002008000800020480300'
+NSA_CAPABILITIES_8CC_NR='E7205000574E7E035600030940005820020301220C01130720B0018906804C060188A0300A60056A05A01BC718438005479F8A1E0047ED982A9001E3C0087100084540A3FFF206E1708620000600A0F801AC1184341020F10780105B2A8A808B5E31CF9867CA1607038F809FF8000007FE000000A0F803AC1184341020F10780105B2A8A808B5E31CF9867CA1607038F809FF8000007FE000000A0F809AC1184341020F10780105B2A8A808B5E31CF9867CA1607038F809FC0000007F0000002A0D899AC1184341020E90780145B2A8A848B5E82AF60978C73E618F28581C0E3E05C0017C0070005F000608001B280002800000A0F817AC1184341020F10780105B2A8A808B5E31CF9867CA1607038F809F80000007E0000000A0F83BAC1184341020F10780105B2A8A808B5E31CF9867CA1607038F809D0000000740000002A0F883AC1184341020F10780105B2A8A808B5E31CF9867CA1607038F809FD0000007F4000000604000608A0D85FAC1184341020E90780145B2A8A848B5E82AF60978C73E618F28581C0E3E09C0017C00700058000A0F80DAC1184341020F10780105B2A8A808B5E31CF9867CA1607038F809FC0000007F0000002A0F88DAC1184341020F10780105B2A8A808B5E31CF9867CA1607038F809FC0000007F000000060400061EA0D89BAC1184341020E90780145B2A8A848B5E82AF60978C73E618F28581C0E3E05C0017C0070005F000608001B280002800000A0F805AC1184341020F10780105B2A8A808B5E31CF9867CA1607038F809FC0000007F0000000A0F831AC1184341020F10780105B2A8A808B5E31CF9867CA1607038F809FF8000007FE000003A0D85181AC1184341020E90780145B2A8A848B5E82AF60978C73E618F28581C0E3E05C0017C0070005F000608001B280002800000A0F80FAC1184341020F10780105B2A8A808B5E31CF9867CA1607038F809FC0000007F0000000A0F827AC1184341020F10780105B2A8A808B5E31CF9867CA1607038F809FC0000007F0000000A0D84BAC1184341020E90780145B2A8A848B5E82AF60978C73E618F28581C0E3E09C0016000700058000A0F837AC1184341020F10780105B2A8A808B5E31CF9867CA1607038F809FD0000007F4000002A05A07BC718438005479F8A1E0047ED982A9001E3C0087100084540A3FFF206E3718620000602A05A09BC718438005479F8A1E0047ED982A9001E3C0087100084540A3FFF206E3718620000603A05A0381BC718438005479F8A1E0047ED982A9001E3C0087100084540A3FFF206E3718620000603D06A002400300F008401808084400410B4108000000C2C0041001F002494038000000000000000000006003748000201800000000000000800AED40D000D000800428600004080C10181C2C303444484C60646C707494989CA0BD05190'
+NSA_CAPABILITIES_8CC_EUTRA='A107C05C160801D003080001002244008048200320000C80C20D8E3C5040002000100808010020'
+-----------------------------------------------------------------------------------------------------
+-- ENB CONFIGURATION
+-----------------------------------------------------------------------------------------------------
+exec('set_enb id=1 plmn=311:489 s1='..ENB1_S1_ADDR..' enb_id_macro=0x12346 daemon='..SERVER_IP..':'..EDAEMON_PORT..' x2='..ENB1_X2_ADDR..' x2u='..ENB_X2U_ADDR..' type=simulated x2_peers=all')
+exec('enb_param id=1 drb_id_begin=3 endc_capable_qci=9')
+exec('set_cell id=1 enb=1 bw=20MHz eci=0x1234601 pci=3:2 tac=222 proxy='..SERVER_IP..':12219|'..SERVER_IP..':8889 earfcn=68771:133307 mandatory_for_activation=off')
+exec('enb_endc_param id=1 control_flow_period=3gpp1 use_nr_ran_cont=on serving_cell_index_range_scg=8:20')
+
+-----------------------------------------------------------------------------------------------------
+-- GNB CONFIGURATION
+-----------------------------------------------------------------------------------------------------
+exec('set_gnb id=2 type=external plmn=311:489 ng='..GNB_NG_ADDR..' gnb_id=0x01 daemon='..SERVER_IP..':'..EDAEMON_PORT..' x2='..GNB_X2_ADDR..':36422 xp_management=on xp=10.0.1.2:32742 xpu=10.0.1.2:32742 x2_peers=none amf=1')
+exec('set_cell id=1 gnb=2 pci=17:0 tac=788 nrci=0x01 tdd_cell=on proxy='..PROXY_CELL..' nr_arfcn=2071675:2071675 gscn=22446 mandatory_for_activation=off')
+exec('set_cell id=2 gnb=2 pci=17:1 tac=788 nrci=0x02 tdd_cell=on proxy='..PROXY_CELL..' nr_arfcn=2073339:2073339 gscn=22452 mandatory_for_activation=off')
+exec('set_cell id=3 gnb=2 pci=17:2 tac=788 nrci=0x03 tdd_cell=on proxy='..PROXY_CELL..' nr_arfcn=2075003:2075003 gscn=22458 mandatory_for_activation=off')
+exec('set_cell id=4 gnb=2 pci=18:0 tac=788 nrci=0x04 tdd_cell=on proxy='..PROXY_CELL..' nr_arfcn=2076667:2076667 gscn=22464 mandatory_for_activation=off')
+exec('set_cell id=5 gnb=2 pci=18:1 tac=788 nrci=0x05 tdd_cell=on proxy='..PROXY_CELL..' nr_arfcn=2078331:2078331 gscn=22470 mandatory_for_activation=off')
+exec('set_cell id=6 gnb=2 pci=18:2 tac=788 nrci=0x06 tdd_cell=on proxy='..PROXY_CELL..' nr_arfcn=2079995:2079995 gscn=22476 mandatory_for_activation=off')
+exec('set_cell id=7 gnb=2 pci=19:0 tac=788 nrci=0x07 tdd_cell=on proxy='..PROXY_CELL..' nr_arfcn=2081659:2081659 gscn=22482 mandatory_for_activation=off')
+exec('set_cell id=8 gnb=2 pci=19:1 tac=788 nrci=0x08 tdd_cell=on proxy='..PROXY_CELL..' nr_arfcn=2083323:2083323 gscn=22488 mandatory_for_activation=off')
+-----------------------------------------------------------------------------------------------------
+-- EPC CONFIGURATION
+-----------------------------------------------------------------------------------------------------
+exec('mme_pool_area id=1 mmegi=1 plmn=311:489 tac_list=777,111,222,444,333,200')
+exec('set_mme id=1 ip='..SERVER_IP..':'..EDAEMON_PORT..' s1='..MME1_S1_ADDR..':36412 supported_rat=lte,nblte pool=1:1')
+-- exec('set_sgw id=1 ip='..SERVER_IP..':'..EDAEMON_PORT..' s1u='..SGW_S1U_ADDR..' s11='..SGW_S11_ADDR..':60100 s5u_snd_buff_size=20M s5u_rcv_buff_size=20M s1u_snd_buff_size=20M s1u_rcv_buff_size=20M gtpu_read_packets_threshold=10')
+exec('set_sgw id=1 ip='..SERVER_IP..':'..EDAEMON_PORT..' s1u='..SGW_S1U_ADDR..' s11='..SGW_S11_ADDR..':60100 s5u_snd_buff_size=20M s5u_rcv_buff_size=40M s1u_snd_buff_size=40M s1u_rcv_buff_size=40M gtpu_read_packets_threshold=20')
+exec('set_pgw id=1 type=simulated ip='..SERVER_IP..':'..EDAEMON_PORT..' addr='..PGW_ADDR..'/16 apn=lteapn1.com.mnc69.mcc450.gprs devtype=tun devname=tunLTEA13 sgi_rcv_buff_size=20M sgi_snd_buff_size=20M s5u_rcv_buff_size=20M s5u_snd_buff_size=20M gtpu_read_packets_threshold=10')
+
+----------------------------------------------------------------------------------------------------
+--5GCN CONFIGURATION
+----------------------------------------------------------------------------------------------------
+exec('set_amf_region id=1 tac_list=100,788,200,0 plmn=311:489')
+exec('set_amf id=1 daemon='..SERVER_IP..':'..EDAEMON_PORT..' ng='..AMF_NG_ADDR..':38412 region=1 set_id=2 pointer=2')
+exec('amf_param id=1 full_nas_auth=on nia=null+aes+snow3g+zuc nea=null+aes+snow3g+zuc')
+exec('set_upf id=1 daemon='..SERVER_IP..':'..EDAEMON_PORT..' type=simulated addr='..UPF_ADDR..'/24 ngu='..AMF_NG_ADDR..' ngu_snd_buff_size=20M ngu_rcv_buff_size=20M ngu_read_packets_threshold=20')
+
+-----------------------------------------------------------------------------------------------------
+-- UEC CONFIGURATION
+-----------------------------------------------------------------------------------------------------
+exec('set_uec id=1 daemon='..SERVER_IP..':'..EDAEMON_PORT..' peer='..SERVER_IP..':2152 retries=unlimited gtpu=off pdn=1 devtype=tun devname=tunUEC addr=72.22.0.1/26 proxy_snd_buf_size=20971520 proxy_rcv_buf_size=20971520 proxy_read_packets_threshold=20 tun_read_packet_threshold=20')
+
+-----------------------------------------------------------------------------------------------------
+-- UE CONFIGURATION
+-----------------------------------------------------------------------------------------------------
+FIRST_UE_SA = 1
+END_UE_SA = 106
+FIRST_UE_NSA = 107
+END_UE_NSA = 212
+PCELL = 1
+
+SUCI_FIRST_UE=21645400
+IMSI_FIRST_UE_NSA=21645500
+
+for UEID = FIRST_UE_SA, END_UE_SA do
+    exec('set_ue simulated id='..UEID..' uec=1 release=15 idle_edrx_cycle_len=2 ptw=2.56 opc_key=0ED47545168EAFE2C39C075829A7B61F nia=null+zuc nea=null+zuc sec_key=0102030405060708090A0B0C0D0EFF00 suci=0:311:489:0000:0:0:0'..SUCI_FIRST_UE + UEID - 1 ..' mode=nr enb=2 cell='..PCELL..'')
+    exec('ue_param id='..UEID..' ue_nr_capabilities='..SA_CAPABILITIES_8CC_SA..' dual_conn=eutra_nr ue_eutra_nr_capabilities='..SA_EUTRA_NR_CAPABILITIES..'')
+    UEID1=UEID
+    exec('set_pdu_gateway id='..UEID1..' ue_nat_ip=72.23.0.'..UEID1..' dl_nat_gw='..SERVER_IP..' ul_nat_gw='..SERVER_IP)
+end
+
+for UEID_NSA = FIRST_UE_NSA, END_UE_NSA do
+    exec('set_ue simulated id='..UEID_NSA..' uec=1 release=15 idle_edrx_cycle_len=2 ptw=2.56 sec_key=0102030405060708090A0B0C0D0EFF00 nia=null+zuc+aes+snow3g nea=null+zuc+aes+snow3g eia=null+zuc+aes+snow3g eea=null+zuc+aes+snow3g imsi=311:489:'..IMSI_FIRST_UE_NSA + UEID_NSA - 1 ..'')
+    exec('ue_param id='..UEID_NSA..' ue_nr_capabilities='..NSA_CAPABILITIES_8CC_NR..' dual_conn=eutra_nr ue_eutra_nr_capabilities='..NSA_CAPABILITIES_8CC_EUTRA..'')
+    UEID2=UEID_NSA
+    exec('set_pdu_gateway id='..UEID2..' ue_nat_ip=72.23.0.'..UEID2..' dl_nat_gw='..SERVER_IP..' ul_nat_gw='..SERVER_IP..'')
+    exec('set_bearer id=2 ue='..UEID2..' qci=9 pdn=1 ip=4.7.254.'..UEID2..' default=on ul_nat_gw=10.0.2.1 dl_nat_gw=10.0.2.1 trf_type=internal')
+end
+
+--COMMON CONFIGURATION
+---------------------------------------------------------------------------------------------------
+exec('set_qosflow id=1 5qi=6 default=on')
+exec('set_nwslice id=1 snssai=0x01:0xD143A5 default=on ue=all amf=1')
+
+-----------------------------------------------------------------------------------------------------
+-- OTHER CONFIGURATION
+-----------------------------------------------------------------------------------------------------
+exec('debug_log level=4')
+exec('sim_debug_log level=4 mme=1')
+exec('sim_debug_log level=4 pgw=1')
+exec('sim_debug_log level=4 uec=1')
+exec('sim_debug_log level=4 sgw=1')
+exec('link_ctrl_param hb_period=5 hb_retries=5')
+-- exec('trace enb=1 protocol=x2 on')
+-- exec('trace uec=1 protocol=x2 on')
+-- exec('trace uec=1 protocol=rrc,nr_rrc on')
+-- exec('sim_trace uec=1 protocol=nr_rrc on')
+exec('sim_param_set NR_PDCP_CIPHERING=distributed')
+exec('cfg_end')
+
+exec('set_log log_to_file=on')
+exec('start version_check=off')

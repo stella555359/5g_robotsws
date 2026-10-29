@@ -1,0 +1,299 @@
+import datetime
+import os
+import pexpect
+import sys
+import time
+from io import BytesIO
+from zipfile import ZipFile
+from tarfile import TarFile
+
+
+def get_matching_zip_and_file_name(pattern_list, name_list):
+    zip_file_name = None
+    matching_zip_name = None
+    matching_file_name = None
+    for file_name in name_list:
+        file_name_str = file_name.decode("utf-8")
+        all_patterns_found = True
+        if ".zip:" in file_name_str:
+            zip_file_name = file_name_str.strip().replace(":", "")
+        for pattern in pattern_list:
+            if pattern not in file_name_str:
+                all_patterns_found = False
+                break
+        if all_patterns_found:
+            print(f"Found {file_name_str.strip()} in {zip_file_name}")
+            if matching_file_name is None:
+                matching_file_name = file_name_str.strip()
+                matching_zip_name = zip_file_name
+            else:
+                raise BaseException(f"{pattern_list} found several times")
+    if matching_file_name is None:
+        raise BaseException(f"{pattern_list} not found")
+    return matching_zip_name, matching_file_name
+
+
+def get_multi_pattern(pattern_list, name_list):
+    matching_file_name = None
+    for file_name in name_list:
+        all_patterns_found = True
+        for pattern in pattern_list:
+            if pattern not in file_name:
+                all_patterns_found = False
+                break
+        if all_patterns_found:
+            print(f"Found {file_name.strip()}")
+            if matching_file_name is None:
+                matching_file_name = file_name.strip()
+            else:
+                matching_file_name_before_point = matching_file_name.split(".")[0].split("_")[-1]
+                file_name_before_point = file_name.split(".")[0].split("_")[-1]
+                if file_name_before_point > matching_file_name_before_point:
+                    matching_file_name = file_name.strip()
+                print(f"Keeping {matching_file_name}")
+    if matching_file_name is None:
+        raise BaseException(f"{pattern_list} not found")
+    return matching_file_name
+
+
+def run_command(system_command):
+    print(f"Launching command: {system_command}")
+    os.system(system_command)
+
+
+def get_crash_type_pattern(crash_type):
+    crash_type_pattern = "_"
+    if crash_type.startswith("CD"):
+        crash_type_pattern = "_6_"
+    return crash_type_pattern
+
+
+def get_core_from_snapshot(snapshot_file_name, log_path, decrypt_key, topology, crash_type):
+    snapshot_file = ZipFile(snapshot_file_name)
+    snapshot_file_list = snapshot_file.open("snapshot_file_list.txt")
+    snapshot_file_list_lines = snapshot_file_list.readlines()
+    snapshot_file_list.close()
+    if "L_AP" in topology:
+        zip_name, crash_name = get_matching_zip_and_file_name(("CCS-RT_crashdumps", "L2RT", "asp"),
+                                                              snapshot_file_list_lines)
+    else:
+        zip_name, crash_name = get_matching_zip_and_file_name(("CCS-RT_crashdumps", "L2RT"), snapshot_file_list_lines)
+    board_zip = BytesIO(snapshot_file.read(zip_name))
+    board_file = ZipFile(board_zip)
+    board_file.extract(crash_name, path=f"{log_path}")
+    board_file.close()
+    board_zip.close()
+    snapshot_file.close()
+
+    crash_tar = open(f"{log_path}/{crash_name}", "rb")
+    crash_file = TarFile(fileobj=crash_tar)
+    print(f"Content of {crash_name} is: {crash_file.getnames()}\n")
+    if "L_AP" in topology:
+        cores_tar = crash_tar
+        cores_file = crash_file
+    else:
+        cores_name = get_multi_pattern(("00_cores.tar",), crash_file.getnames())
+        cores_tar = crash_file.extractfile(cores_name)
+        cores_file = TarFile(fileobj=cores_tar)
+        print(f"Content of {cores_name} is: {cores_file.getnames()}\n")
+    crash_type_pattern = get_crash_type_pattern(crash_type)
+    p7_name = get_multi_pattern(("L2RT", ".p7", "CCSEmDispatcher", crash_type_pattern), cores_file.getnames())
+    cores_file.extract(p7_name, log_path)
+    cores_file.close()
+    cores_tar.close()
+    crash_file.close()
+    crash_tar.close()
+    run_command(f"rm {log_path}/{crash_name}")
+
+    core_name = p7_name.replace(".xz.p7", "")
+    run_command(f"openssl smime -decrypt -inform DER -out {log_path}/{core_name}.xz -inkey {decrypt_key}" +
+                f" -in {log_path}/{p7_name}")
+    run_command(f"rm {log_path}/{p7_name}")
+
+    return core_name
+
+
+def p_send(command, pattern, p_client, sec_patt=None, timeout=30):
+    init_time = time.time()
+    print(f"Sending: {command}")
+    p_client.sendline(command)
+    print(f"Expecting: {pattern}")
+    p_client.expect(pattern, timeout=timeout)
+    print(f"Got it in {time.time() - init_time} sec")
+    if sec_patt is not None:
+        p_client.expect(sec_patt, timeout=timeout)
+    time.sleep(2)
+
+
+def create_temporary_directory(pexpect_log, server, user, credential):
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%Hh%Mm%Ss')
+    temporary_directory = f"/var/fpwork/{user}/get_stack_{timestamp}"
+    prompt = "\\$ "
+    p_client = pexpect.spawn(f"ssh -o StrictHostKeyChecking=no -o CheckHostIP=no {user}@{server}")
+    p_client.logfile = pexpect_log
+    p_client.expect("word:")
+    p_send(credential, prompt, p_client)
+    p_send('find /var/fpwork/ -maxdepth 2 -mmin +120 -name "get_stack*" -exec rm -rf {} \\;', prompt, p_client)
+    p_send(f"mkdir -p {temporary_directory}", prompt, p_client)
+    p_send(f"exit", pexpect.EOF, p_client)
+    p_client.close()
+    return temporary_directory
+
+
+def send_core_to_server(pexpect_log, log_path, core_name, temporary_directory, server, user, credential):
+    p_client = pexpect.spawn(f"scp -o StrictHostKeyChecking=no -o CheckHostIP=no {log_path}/{core_name}.xz" +
+                             f" {user}@{server}:{temporary_directory}")
+    p_client.logfile = pexpect_log
+    p_client.expect("word:")
+    p_send(credential, pexpect.EOF, p_client, timeout=60)
+    p_client.close()
+
+
+def get_soc_and_techno(topology):
+    soc = None
+    techno = None
+    # Mapping found in https://confluence.int.net.nokia.com/display/CDSSCM/Architecture+mapping
+    if "O_AP" in topology:
+        soc = "sm6-snowfish"
+        techno = "tremont-64-pc"
+    elif "P_AP" in topology:
+        soc = "sm7-marlin-rt"
+        techno = "aarch64"
+    elif "L_AP" in topology:
+        soc = "airscale5g-xeon"
+        techno = "core2-64-pc"
+    return soc, techno
+
+
+def get_stack(pexpect_log, core_name, temporary_directory, version, topology, server, user, credential):
+    gnb_branch = version.split("_")[0]
+    knife_id = version.split("_")[4]
+    soc, techno = get_soc_and_techno(topology)
+    prompt = "\\$ "
+    p_client = pexpect.spawn(
+        f"ssh -o StrictHostKeyChecking=no -o CheckHostIP=no -o ServerAliveInterval=30 {user}@{server}")
+    p_client.logfile = pexpect_log
+    p_client.expect("word:")
+    p_send(credential, prompt, p_client)
+    p_send(f"cd {temporary_directory}", prompt, p_client)
+    p_send(f"xz -d {core_name}.xz", prompt, p_client)
+
+    for download_url in (
+            f"https://artifactory-espoo2.int.net.nokia.com/artifactory/mn-cosi-sran-central-public-local/" +
+            f"build/{gnb_branch}/{version}",
+            f"https://es-si-s3-z2.eecloud.nsn-net.net/knife-results/{knife_id}/sdk/{soc}",
+            f"https://es-si-s3-z2.eecloud.nsn-net.net/lterel/build/{gnb_branch}",
+    ):
+        try:
+            p_send(f"wget {download_url}/" +
+                   f"{version}-{soc}-toolchain-minimal.sh", "saved", p_client, sec_patt=prompt)
+            break
+        except pexpect.TIMEOUT:
+            print(f"{version} not in {download_url}")
+
+    p_send(f"chmod +x {version}-{soc}-toolchain-minimal.sh", prompt, p_client)
+    p_send(f"unset LD_LIBRARY_PATH", prompt, p_client)
+    p_send(f"./{version}-{soc}-toolchain-minimal.sh -yd {soc}-toolchain-minimal", prompt, p_client)
+    p_send(f"source ./{soc}-toolchain-minimal/environment-setup-{techno}-linux-gnu", prompt, p_client)
+    p_send(f"opkg update", prompt, p_client)
+    p_send(f"echo Done opkg update in $PWD", f"Done opkg update in {temporary_directory}", p_client, sec_patt=prompt)
+    p_send(f"opkg list", prompt, p_client)
+    p_send(f"echo Done opkg list in $PWD", f"Done opkg list in {temporary_directory}", p_client, sec_patt=prompt)
+
+    for lib in ("l2-ps", "l2-ps-dbg", "l2-rt-common", "l2-rt-common-dbg",
+                "ccs-rt-service", "ccs-rt-service-dbg", "libccs", "libccs-dbg"):
+        p_send(f"opkg install {lib}", prompt, p_client, timeout=1200)
+        p_send(f"echo Done opkg install {lib} in $PWD", f"Done opkg install {lib} in {temporary_directory}",
+               p_client, sec_patt=prompt, timeout=1200)
+
+    lib_path = f"{soc}-toolchain-minimal/sysroots/{techno}-linux-gnu/usr/lib64"
+    p_send(f"ls -l {lib_path}", prompt, p_client)
+    p_send(f"opkg remove --nodeps psrel-sysroot", prompt, p_client)
+    p_send(f"opkg install psrel-rootfs", prompt, p_client)
+    p_send(f"opkg-nativesdk update", prompt, p_client)
+    p_send(f"opkg-nativesdk install packagegroup-cross-canadian-{soc}", prompt, p_client, timeout=1200)
+    p_send(f"echo Done opkg-nativesdk install in $PWD", f"Done opkg-nativesdk install in {temporary_directory}",
+           p_client, sec_patt=prompt, timeout=1200)
+    p_send(f"ls -ltr ..", prompt, p_client)
+    gdb_prompt = "\\(gdb\\) "
+    p_send(f"$GDB {soc}-toolchain-minimal/sysroots/{techno}-linux-gnu/opt/CCS_RT/.debug/" +
+           f"CCSEmDispatcherExe.optdebug {core_name}", gdb_prompt, p_client)
+    p_send(f"nosharedlibrary", gdb_prompt, p_client)
+    p_send(f"set sysroot {soc}-toolchain-minimal/sysroots/{techno}-linux-gnu/usr/lib64",
+           gdb_prompt, p_client)
+    try:
+        p_send(f"set solib-search-path {lib_path}", "c to continue without paging--", p_client)
+    except pexpect.TIMEOUT:
+        pass
+
+    for try_id in range(20):
+        try:
+            print(f"Try {try_id}")
+            p_send(f"c", "The program is not being run", p_client, sec_patt=gdb_prompt)
+            break
+        except pexpect.TIMEOUT:
+            time.sleep(60)
+    try:
+        p_send(f"bt", "c to continue without paging--", p_client)
+    except pexpect.TIMEOUT:
+        pass
+
+    for try_id in range(20):
+        try:
+            print(f"Try {try_id}")
+            p_send(f"c", "The program is not being run", p_client, sec_patt=gdb_prompt)
+            break
+        except pexpect.TIMEOUT:
+            pass
+
+    p_send(f"quit", prompt, p_client)
+    p_send(f"cd /var/fpwork", prompt, p_client)
+    p_send(f"rm -rf {temporary_directory}", prompt, p_client)
+    p_send(f"exit", pexpect.EOF, p_client)
+    p_client.close()
+
+
+def get_line_of_crash(pexpect_log_name):
+    result = "Not found"
+    pexpect_log = open(pexpect_log_name, "r")
+    for line in pexpect_log.readlines():
+        if "not a core dump: file format not recognized" in line:
+            result = "not a core dump: file format not recognized"
+        if "previous frame identical to this frame (corrupt stack?)" in line:
+            result = "previous frame identical to this frame (corrupt stack?)"
+        if "#0 " in line:
+            result = line
+        if ("#" in line) and (("l2::ps" in line) or ("l2ps" in line)):
+            result = line
+            break
+    pexpect_log.close()
+    print(f"Crash at: {result}")
+    return result
+
+
+def extract_crash(snapshot_file_name, log_path, decrypt_key, version, topology, crash_type):
+    core_name = get_core_from_snapshot(snapshot_file_name, log_path, decrypt_key, topology, crash_type)
+    user = "ca_psci5g"
+    if "L_AP" in topology:
+        # server = "10.183.33.104"
+        server = "10.181.49.37"
+    elif "O_AP" in topology:
+        # server = "10.183.33.79"
+        server = "10.181.49.41"
+    else:
+        # server = "10.183.33.106"
+        # server = "10.183.36.241"
+        server = "10.181.49.46"
+    credential = "Welcome123"
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%Hh%Mm%Ss')
+    pexpect_log_name = f"{log_path}/pexpect_{timestamp}.log"
+    pexpect_log = open(pexpect_log_name, "wb")
+    temporary_directory = create_temporary_directory(pexpect_log, server, user, credential)
+    send_core_to_server(pexpect_log, log_path, core_name, temporary_directory, server, user, credential)
+    get_stack(pexpect_log, core_name, temporary_directory, version, topology, server, user, credential)
+    pexpect_log.close()
+    return get_line_of_crash(pexpect_log_name)
+
+
+if __name__ == '__main__':
+    extract_crash(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])

@@ -1,0 +1,213 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  keywords of CB009158 feature
+...               Prerequisite :
+...               Scope : keywords for CB009158-D
+...
+...               Test Case Scenario author   : imen.mestiri@nokia.com
+...               Test Case Scenario contact  : imen.mestiri@nokia.com
+...               Test Case automation author : imen.mestiri@nokia.com
+...               Test Case automation contact: imen.mestiri@nokia.com
+...               Creation Date               : 06-05-2022
+...               Modified Date               : 05-07-2022
+...               Last Modified by            : imen.mestiri@nokia.com
+...               Version History   Date            Author                              Notes
+...               0.1               06-05-2022      imen.mestiri@nokia.com              Creation
+...               0.2               FB2212          ying.yw.wu@nokia.com                Add step Recommissioning
+...               0.3               FB2213          imen.mestiri@nokia.com              Refactoring
+...               0.4               FB2216          ilakcoumi.pareemanen@nokia.com      Refacto 10MHz A4 into A2
+...               0.5               FB2302          ying.yw.wu@nokia.com                call Sherpa.robot "Check Values 
+...                                                                                     on Operator" In File with argument
+...                                                                                     name column_name instead of 
+...                                                                                     Column_name due to sweng evolution
+...               0.6               FB2302          ying.yw.wu@nokia.com                Fix NRCELLID format to hexa (0x4001, 0x4003)
+...               0.7               FB2317          blandine.garnier@nokia.com          Add comissionning bbmodeboardConfigType for ABIP
+
+Library           taf.wts.runner           WITH NAME    wtsemu
+Library             ../../../resources/python/luashark_tools.py
+
+Resource          taf/rfrl/common_resources/robot/preconditions.robot
+
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../../../resources/SWENG/robot/Container.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+
+Resource          ../../../5GC001227/resources/robot/5GC001227-Common_keywords.robot
+
+Variables           ../../../../../resources/SWENG/python/Colors.py
+
+
+*** Variables ***
+# Variables for ue profile and traffic
+${ue_1_id}            1            # Applied only for KW SA Call of 1 UE
+${ue_3_id}            3            # ue id 3
+${dl_high_tput_mbps}  50           # DL throughput in Mbps
+${ul_high_tput_mbps}  21           # UL throughput in Mbps
+${dl_low_tput_mbps}   1            # DL throughput in Mbps
+${ul_low_tput_mbps}   1            # UL throughput in Mbps
+
+*** Keywords ***
+
+Suite Setup 9158
+    Setup.Suite Setup From Scratch         keepAllUeDataInCfgFile=${True}
+
+
+TC 9158 Traffic DL UL Mix BW LoadBased
+    [Documentation]        verification of LoadBased Algo of 1227 with mixed Bandwidth
+    [Arguments]            ${params}        ${Vendor_Param}
+    Set Suite Variable     ${params}
+    Init Sequence          ${params}
+    Step                   Config1227.Vendor File Config With Specific Settings     argument=${Vendor_Param}
+    Step                   Recommissioning
+    Critical Step          Restart TL
+    Step                   Multi Cells Setup SA 1227                  argument=${params.nbCell}
+    Step                   SA Call With UE Id low tput    argument=${ue_1_id}
+    Step                   SA Call With UE Id high tput   argument=${ue_3_id}
+    Step                   Activate Sherpa On All Cells
+    Step                   Wait In Seconds
+    Step                   Stop Sherpa Collection
+    Step                   Calling Panda Extract Csv function
+    Step                   Verification of BB Pooling Mode within PRB Pooling Report
+    Step                   check DL PRB Allocated by BBRM to UE1 and UE3
+    Step                   check UL PRB Allocated by BBRM to UE1 and UE3
+	
+	
+TC 9158 ABIP Traffic DL UL Mix BW LoadBased
+    [Documentation]        verification of LoadBased Algo of 1227 with mixed Bandwidth
+    [Arguments]            ${params}        ${Vendor_Param}
+    Set Suite Variable     ${params}
+    Init Sequence          ${params}                 
+    Step                   Config1227.Vendor File Config With ABIP     argument=${Vendor_Param}                   
+    Step                   Commissionning SCF ABIP
+    Step                   Multi Cells Setup SA 1227                  argument=${params.nbCell}
+    Step                   SA Call With UE Id low tput    argument=${ue_1_id}
+    Step                   SA Call With UE Id high tput   argument=${ue_3_id}
+    Step                   Activate Sherpa On All Cells
+    Step                   Wait In Seconds
+    Step                   Stop Sherpa Collection
+    Step                   Calling Panda Extract Csv function
+    Step                   Verification of BB Pooling Mode within PRB Pooling Report
+    Step                   check DL PRB Allocated by BBRM to UE1 and UE3
+    Step                   check UL PRB Allocated by BBRM to UE1 and UE3
+
+SA Call With UE Id low tput
+	[Arguments]                      ${ue_id}
+	[Documentation]                  1  UE SA call  based on ue_id
+	CallSetup.UE Register            ue=${ue_id}
+	CallSetup.Launch PDU Session     ue=${ue_id}     pdu=${ue_id}       gw=${ue_id}
+	sleep							 1s
+	${ueSetting}                     set variable            ${BASIC_UE_SA}
+	${ueSetting.pdu}                 set variable            ${ue_id}
+	${ueSetting.ue}                  set variable            ${ue_id}
+	Traffic UE DL					 ueSetting=${BASIC_UE_SA}    throughput=${dl_low_tput_mbps}    shouldBeStop=False
+	sleep							 1s                          
+	Traffic UE UL                    ueSetting=${BASIC_UE_SA}    throughput=${ul_low_tput_mbps}    shouldBeStop=False
+
+SA Call With UE Id high tput
+	[Arguments]                      ${ue_id}
+	[Documentation]                  1  UE SA call  based on ue_id
+	CallSetup.UE Register            ue=${ue_id}
+	CallSetup.Launch PDU Session     ue=${ue_id}     pdu=${ue_id}       gw=${ue_id}
+	sleep							 1s
+	${ueSetting}                     set variable            ${BASIC_UE_SA}
+	${ueSetting.pdu}                 set variable            ${ue_id}
+	${ueSetting.ue}                  set variable            ${ue_id}
+	Traffic UE DL                    ueSetting=${BASIC_UE_SA}    throughput=${dl_high_tput_mbps}    shouldBeStop=False
+	sleep 							 1s
+	Traffic UE UL                    ueSetting=${BASIC_UE_SA}    throughput=${ul_high_tput_mbps}    shouldBeStop=False
+	sleep							 1s
+	
+check DL PRB Allocated by BBRM to UE1 and UE3
+   [Documentation]     Check that the number of PRB allocated by BBRM for UE3(NRCELL=16387, BW=10MHz) is greater than
+    ...                UE1(NRCELL=16385, BW=20), 48 for cell 1 and 51 for cell 3
+    ${file_path_Dl_PrbPoolingAllocation_semicolon} =      set variable    ${sherpa_output_path}/tcpdump/Dl_PrbPoolingAllocationReport_45_.csv
+    BuiltIn.Log    ${file_path_Dl_PrbPoolingAllocation_semicolon}    console=no
+    Dated Log New Line    Verify the number of DL PRB allocated by BBRM to NRCELLID=16385 AND NRCELLID=16387
+
+    Retrieve PRB Pooling Reports Lines within defined range    file_name=${file_path_Dl_PrbPoolingAllocation_semicolon}
+    ...                                                        First_Line=1     Last_line=606
+
+    Retrieve raws of the DL PRB Pooling Reports on given NRCELL     NRCELLID=0x4001
+    Dated Log New Line    Read the number of PRB Allocated for NRCELLID=16385 in Downlink
+    Dated Log New Line    Saved the PRB allocated values in ${file_path_Dl_PRB_Pooling_Report_NRCELL}
+    ${NrCell_16385_Prb_Allocated_Dl}    Check Values on Operator In File    file=${file_path_Dl_PRB_Pooling_Report_NRCELL}
+    #...                                 column_name=PrbAllocated     check_operator===     valuetocheck=48
+    ...                                  column_name=PrbAllocated     check_operator===     valuetocheck=98
+    ${Check_NrCell_16385_Prb_Allocated_Dl} =     Set Variable If   ${NrCell_16385_Prb_Allocated_Dl}==True
+    ...                                            The number of PRB Allocated for NRCell=16385 in Downlink is equal to 98
+    ...                                            ${NrCell_16385_Prb_Allocated_Dl}==False
+    ...                                            The number of PRB Allocated for NRCell=16385 in Downlink is greater than 98
+    Dated Log New Line     ${Check_NrCell_16385_Prb_Allocated_Dl}
+    should be true              ${NrCell_16385_Prb_Allocated_Dl}==True
+
+    Retrieve raws of the DL PRB Pooling Reports on given NRCELL     NRCELLID=0x4003
+    Dated Log New Line    Read the number of PRB Allocated for NRCELLID=16387 in Downlink
+    Dated Log New Line    Saved the PRB allocated values in ${file_path_Dl_PRB_Pooling_Report_NRCELL}
+    ${NrCell_16387_Prb_Allocated_Dl}    Check Values on Operator In File    file=${file_path_Dl_PRB_Pooling_Report_NRCELL}
+    #...                                 Column_name=PrbAllocated     check_operator===     valuetocheck=51
+    ...                                  column_name=PrbAllocated     check_operator===     valuetocheck=52
+    ${Check_NrCell_16387_Prb_Allocated_Dl} =     Set Variable If   ${NrCell_16387_Prb_Allocated_Dl}==True
+    ...                                            The number of PRB Allocated for NRCell=16387 in Downlink is equal to 52
+    ...                                            ${NrCell_16387_Prb_Allocated_Dl}==False
+    ...                                            The number of PRB Allocated for NRCell=16387 in Downlink is different from 52
+    Dated Log New Line     ${Check_NrCell_16387_Prb_Allocated_Dl}
+    should be true              ${NrCell_16387_Prb_Allocated_Dl}==True
+
+
+
+check UL PRB Allocated by BBRM to UE1 and UE3
+   [Documentation]     Check that the number of UL PRB allocated by BBRM for UE3(NRCELL=16387, BW=10MHz) is greater than
+    ...                UE1(NRCELL=16385, BW=20)
+    ${file_path_Ul_PrbPoolingAllocation_semicolon} =      set variable    ${sherpa_output_path}/tcpdump/Ul_PrbPoolingAllocationReport_45_.csv
+    BuiltIn.Log    ${file_path_Ul_PrbPoolingAllocation_semicolon}    console=no
+    Dated Log New Line    Verify the number of uL PRB allocated by BBRM to NRCELLID=16385 AND NRCELLID=16387
+    Retrieve PRB Pooling Reports Lines within defined range    file_name=${file_path_Ul_PrbPoolingAllocation_semicolon}
+    ...                                                        First_Line=1     Last_line=606
+
+    Retrieve raws of the UL PRB Pooling Reports on given NRCELL     NRCELLID=0x4001
+    Dated Log New Line    Read the number of PRB Allocated for NRCELLID=16385 in Uplink
+    Dated Log New Line    Saved the PRB allocated values in ${file_path_Ul_PRB_Pooling_Report_NRCELL}
+    ${NrCell_16385_Prb_Allocated_Ul}    Check Values on Operator In File    file=${file_path_Ul_PRB_Pooling_Report_NRCELL}
+    ...                                 column_name=PrbAllocated     check_operator=>=     valuetocheck=37
+    ${Check_NrCell_16385_Prb_Allocated_Ul} =     Set Variable If   ${NrCell_16385_Prb_Allocated_Ul}==True
+    ...                                            The number of PRB Allocated for NRCell=16385 in Uplink is lower than 37
+    ...                                            ${NrCell_16385_Prb_Allocated_Ul}==False
+    ...                                            The number of PRB Allocated for NRCell=16385 in Uplink is greater than 37
+    Dated Log New Line     ${Check_NrCell_16385_Prb_Allocated_Ul}
+    should be true              ${NrCell_16385_Prb_Allocated_Ul}==True
+
+    Retrieve raws of the UL PRB Pooling Reports on given NRCELL     NRCELLID=0x4003
+    Dated Log New Line    Read the number of PRB Allocated for NRCELLID=16387 in Uplink
+    Dated Log New Line    Saved the PRB allocated values in ${file_path_Ul_PRB_Pooling_Report_NRCELL}
+    ${NrCell_16387_Prb_Allocated_Ul}    Check Values on Operator In File    file=${file_path_Ul_PRB_Pooling_Report_NRCELL}
+    ...                                 column_name=PrbAllocated     check_operator=<=     valuetocheck=37
+    ${Check_NrCell_16387_Prb_Allocated_Ul} =     Set Variable If   ${NrCell_16387_Prb_Allocated_Ul}==True
+    ...                                            The number of PRB Allocated for NRCell=16387 in Uplink is greater than 37
+    ...                                            ${NrCell_16387_Prb_Allocated_Ul}==False
+    ...                                            The number of PRB Allocated for NRCell=16387 in Uplink is lower than 37
+    Dated Log New Line     ${Check_NrCell_16387_Prb_Allocated_Ul}
+    should be true              ${NrCell_16387_Prb_Allocated_Ul}==True
+
+CB009158-D_keywords.End Of TC Teardown
+   [Documentation]        At the end of each TC :
+   ...                      - show the Diagnosis of the TC steps
+   ...                      - collect the gnb Snapshot
+   ...                      - if TC failed, collect also AP sosReport
+
+   Dated Log              End Of TC : start
+   Oam.OAM Get Snapshot
+   Run Keyword If Test Failed     Setup.Get Sos Report
+   GenericTest.Display Diagnosis
+   Dated Log              End of TC : end
+
+

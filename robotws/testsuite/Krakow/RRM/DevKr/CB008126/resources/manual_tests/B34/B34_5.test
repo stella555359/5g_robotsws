@@ -1,0 +1,59 @@
+# ; first value after semicolon means sleep after action command
+# ; parameter 'o' after semicolon means, that output of the command is required
+
+# CB008126-A-B34 GTPU Error Indication Ignored during 5QI Modification
+# Test verifies that:
+# When modification of 5QI of QoSFlow is ongoing due to NGAP:PDUSessionResourceModifyRequest,
+# then received GTPU Error Indcation is ignored, until gNB will respond with PDUSessionResourceModifyResponse.
+# UE will not be released.
+# After successful modification of 5QI next GTPU Error Inditation will be handled, UE will be released.
+# use lua SA_TDD_2c_1gNBSim.lua
+
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/5QI_1_2_3_4_71_72_76_128_170_212_254.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/vonr_gbr_activation.yaml
+$ testsuite/Krakow/RRM/DevKr/resources/yaml_config/disable_ciphering.yaml
+$ testsuite/Krakow/RRM/DevKr/CB008126/config/yaml_config/CB008126_enable.yaml
+% [{'MOC': 'NRBTS', 'ID': '1', 'timerRRCGuard': '6000'}]
+
+!python /home/ute/MN/UTE/robotws/testsuite/Krakow/RRM/resources/Python/pdu_session_qosflow_modification.py save
+
+# attach UE1 with 5QI9
+qosflow_modify qos_flow=15 ue=all default=true
+ue_change_location id=1 enb=2 cell=1
+ue_register id=1;2
+set_pdu_param ue=1 pdu=1 trf_type=internal
+ue_pdu_session_setup pdu=1 ue=1 gw=1 nwslice=1;2
+trf_data_start ue=1 pdu=1 qfi=1 dir=dl mbps=30 trf_id=1
+trf_data_start ue=1 pdu=1 qfi=1 dir=ul mbps=10 trf_id=1;10
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;o
+pause
+
++clear
+pause
+#Delay UE response for RRCConnectionReconfiguration
+ue_nr_rrc_reconf_param id=1 if_contains=any delay=5s;1
+# Modify 5QI9->5QI6
+qosflow_modify qos_flow=15 5qi=6 qos_flow_type=non-gbr;1
+ue_pdu_session_modify ue=1 pdu=1 qosflows_to_modify=15 by=amf;1
+#Trigger GTPU Error Indication
+upf_ue_pdu_inject_error_ind id=1 ue=1;10
+# Verify that GTPU Error Indication was received before UE responded with RRCConnectionReconfigurationComplete
+# Verify, that gNB sent PDUSessionResourceModifyResponse with PDUSessionResourceModifyListModRes to AMF
+# Verify that UE is not released, GTPU Error Indication was ignored
++parse
+pause
+bearer_stats ue=1 pdu=1 qfi=1 dir=dl;o
+bearer_stats ue=1 pdu=1 qfi=1 dir=ul;o
+pause
+
+#Trigger GTPU Error Indication
+upf_ue_pdu_inject_error_ind id=1 ue=1
+# Verify that GTPU Error Indication was handled, UE is released
+pause
+
+#cleanup after test
+!python /home/ute/MN/UTE/robotws/testsuite/Krakow/RRM/resources/Python/pdu_session_qosflow_modification.py restore
+% [{'MOC': 'NRBTS', 'ID': '1', 'timerRRCGuard': '2500'}]
+ue_kill id=1;5
+exit

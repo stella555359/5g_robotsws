@@ -1,0 +1,414 @@
+---
+include:
+  - project: 'RAN/robotws'
+  - local: '.templated_dry_runs.yml'
+
+stages:
+    - sanity checks
+    - mirroring
+    - dry-runs
+
+variables:
+    PYTHONPATH: $CI_PROJECT_DIR
+    CI_BASE_IMAGE_VERSION: 4.37.0
+    PYTHON_VERSION: "3.11"
+    ROBOT_VERSION: "5.0.1"
+    TESTSUITE_DIR: $CI_PROJECT_DIR/testsuite/
+    PIP_CACHE_DIR: $CI_PROJECT_DIR/.cache/pip
+    GET_SOURCES_ATTEMPTS: 3
+    RESTORE_CACHE_ATTEMPTS: 3
+    CRYPTOGRAPHY_DONT_BUILD_RUST: 1
+    ms_teams_url: https://nokia.webhook.office.com/webhookb2/aaac7a75-7d1a-4bf8-93fb-8da9e50fbc57@5d471751-9675-428d-917b-70f44f9630b0/IncomingWebhook/02951dfd537a44b5bcef945a4b566358/ced9bda5-850c-487b-9d29-5bd458393d03
+    job_with_artifact: "Master: Airphone"
+    MAX_FILE_SIZE: 2000000
+    MAX_XML_FILE_SIZE: 4000000
+    XML_FILES: "commissionings testsuite/Hangzhou/SISO/RAN_PZ_HAZ_34/CB009508/Resource_TMO/COMMON_110_SCF.xml testsuite/Hangzhou/SISO/RAN_PZ_HAZ_34/CB009508/Resource_TMO/COMMON_SCF.xml testsuite/Hangzhou/SISO/RAN_PZ_HAZ_34/CB009508/Resource_TMO/NO_RU3_CELL_SCF.xml testsuite/Hangzhou/SISO/RAN_PZ_HAZ_34/CB009508/Resource_TMO/NO_RU3_SCF.xml"
+    GIT_HTTP_LOW_SPEED_LIMIT: "0" # Disables the low speed limit - WA applied for CAL5721314
+    GIT_HTTP_LOW_SPEED_TIME: "0"  # Disables the time limit for slow connections - WA applied for CAL5721314
+
+cache:
+    paths:
+        - .cache/pip
+
+.template-runner-settings: &runner-settings
+    image: mnp5g-docker-virtual.artifactory-espoo1.int.net.nokia.com/ci_base_image:$CI_BASE_IMAGE_VERSION
+    tags:
+        - 5G_docker_runner
+    before_script:
+        - git config --global http.postBuffer 524288000  # 500 MB buffer - WA applied for CAL5721314
+        - git config --global core.compression -1  # Disables compression - WA applied for CAL5721314
+    retry:
+        when:
+            - runner_system_failure
+            - stuck_or_timeout_failure
+            - job_execution_timeout
+            - unknown_failure
+            - api_failure
+        max: 2
+
+Repository structure:
+    <<: *runner-settings
+    image: mnp5g-docker-virtual.artifactory-espoo1.int.net.nokia.com/taf-ci:py${PYTHON_VERSION}
+    stage: sanity checks
+    cache: {}
+    only:
+        refs:
+            - merge_requests
+        variables:
+            - $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "master"
+        changes:
+            - "testsuite/**/*"
+    script:
+        - python sanity-checks/structure.py testsuite/
+
+Prohibited files check:
+    <<: *runner-settings
+    stage: sanity checks
+    script:
+        - commits_on_lock_files_by_users=$(git log --oneline --perl-regexp --author='^((?!ca_5Gauto <ca_5Gauto@nokia.com.not.available>).*)$' origin/master.. dependencies.*.lock)
+        - | #Get commit messages and hash(--oneline), when author (--author) matches given regexp (--perl-regexp, in this case - author should be different than ca_5Gauto), check only dependencies.*.lock files and commits done on current branch (origin/master..).
+          if [ "$commits_on_lock_files_by_users" != "" ]
+          then
+              echo '       __      '
+              echo '     /    \    '
+              echo '    | STOP |   '
+              echo '     \ __ /    '
+              echo '       ||      '
+              echo '       ||      '
+              echo '       ||      '
+              echo '       ||      '
+              echo '       ||      '
+              echo '     ~~~~~~~   '
+              echo 'You should not change dependencies.py*.lock files directly. Please change requirements.cfg instead.'
+              echo "Check failed for commit: $commits_on_lock_files_by_users"
+              exit 1
+          fi
+    only:
+      refs:
+        - merge_requests
+      changes:
+        - dependencies.py*.lock
+        - requirements.cfg
+
+Dep-lock:
+    <<: *runner-settings
+    stage: sanity checks
+    cache:
+      paths:
+        - .cache/pip
+    needs: ["Prohibited files check"]
+    variables:
+      commit_msg: "[Skip Sanity] Updated dependencies"
+      GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no"
+      PACKAGE_BLACKLIST_PY3: '^enum34'
+    parallel:
+      matrix:
+        - PY_VER: [310, 311, 312, 313]
+          RF_VER: "5.0.1"
+    script:
+        - |
+          if [[ "$CI_COMMIT_MESSAGE" == "$commit_msg"* ]]; then
+              echo "New locks have already been pushed."
+              exit 0
+          fi
+        - echo "Detected change in requirements.cfg - compiling new locks..."
+        - |
+          if [[ $RF_VER = 5.0* ]]
+          then
+            lock_id="${PY_VER}-rf50"
+            req_file=".requirements_rf50.cfg"
+          fi
+        - |
+          py_minor=$(echo ${PY_VER} | sed 's/^3//')
+          python3.${py_minor} -m venv py${PY_VER}_venv; . py${PY_VER}_venv/bin/activate
+          pip -qqq install pip-tools "pip<25.3"  # contrained because of pip-tools!2252
+          echo -e "\033[0;32mCompile lock for Python ${PY_VER} and Robot ${RF_VER}\033[0m"
+          pip-compile --cache-dir "$PIP_CACHE_DIR" \
+            --no-emit-index-url --no-emit-trusted-host --no-emit-find-links \
+            $req_file -o new_dependencies.py${lock_id}.lock
+    only:
+      refs:
+        - merge_requests
+      variables:
+        - $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "master"
+      changes:
+        - requirements.cfg
+        - dependencies.py*.lock
+    artifacts:
+      paths:
+        - new_dependencies.py*.lock
+
+Commit new dependency locks:
+    <<: *runner-settings
+    stage: sanity checks
+    cache:
+      paths:
+        - .cache/pip
+    needs:
+      ["Dep-lock"]
+    variables:
+      commit_msg: "[Skip Sanity] Updated dependencies"
+      GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no"
+      PACKAGE_BLACKLIST_PY3: '^enum34'
+      PY_RF_VERSIONS: |
+        310 50
+        311 50
+        312 50
+        313 50
+    script:
+        - |
+          if [[ "$CI_COMMIT_MESSAGE" == "$commit_msg"* ]]; then
+              echo "New locks have already been pushed."
+              exit 0
+          fi
+        - |
+          git checkout $CI_COMMIT_REF_NAME
+          git pull
+          export HEAD_COMMIT_HASH=`git rev-parse HEAD`
+        - |
+          changes_found=false
+          echo "Detecting changes in new dependencies lock files"
+          while read -r py_ver rf_ver; do
+            [[ -z "$py_ver" || -z "$rf_ver" ]] && continue
+            if ! diff new_dependencies.py${py_ver}-rf${rf_ver}.lock $CI_PROJECT_DIR/dependencies.py${py_ver}-rf${rf_ver}.lock; then
+              changes_found=true
+            fi
+          done <<< "$PY_RF_VERSIONS"
+        - |
+          if [ "$changes_found" = false ]; then
+            echo "Requirements changed but no new dependencies found."
+            exit 0
+          fi
+        - |
+          if [ $HEAD_COMMIT_HASH != $CI_COMMIT_SHA ]; then
+              echo 'New commit already pushed.'
+              exit 0
+          fi
+        - |
+          if grep -E $PACKAGE_BLACKLIST_PY3 new_dependencies.py3*.lock
+          then
+              echo "ERROR: One or more of blacklisted packages found in new lock files!"
+              echo "Blacklisted Python 3 packages: $PACKAGE_BLACKLIST_PY3" | tr "|" " " | tr -d "^"
+              exit 1
+          fi
+        - |
+          echo 'Committing modified lock files'
+          git config user.email "ca_5Gauto@nokia.com.not.available"
+          git config user.name "ca_5Gauto"
+          eval $(ssh-agent -s)
+          echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add - > /dev/null
+        - |
+          while read -r py_ver rf_ver; do
+            [[ -z "$py_ver" || -z "$rf_ver" ]] && continue
+            cp new_dependencies.py${py_ver}-rf${rf_ver}.lock dependencies.py${py_ver}-rf${rf_ver}.lock
+            git add dependencies.py${py_ver}-rf${rf_ver}.lock
+          done <<< "$PY_RF_VERSIONS"
+          git commit -m "$commit_msg"
+          git push git@wrgitlab.ext.net.nokia.com:RAN/robotws.git $CI_COMMIT_REF_NAME
+    only:
+      refs:
+        - merge_requests
+      variables:
+        - $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "master"
+      changes:
+        - requirements.cfg
+        - dependencies.py*.lock
+
+.template-sanity: &sanity
+    <<: *runner-settings
+    image: mnp5g-docker-virtual.artifactory-espoo1.int.net.nokia.com/taf-ci:py${PYTHON_VERSION}
+    stage: sanity checks
+    cache: {}
+    when: always
+    before_script:
+        - python -m pip --disable-pip-version-check install --upgrade ci_pipeline_steps
+    script: |-
+      if git log --oneline -n 1 | grep -iE '\[(skip sanity)\]'; then
+        echo "Skipped due to tag."
+        exit 0
+      else
+        ci-pipeline3 run_sanity $CI_PROJECT_DIR
+      fi
+
+Sanity on MR:
+    <<: *sanity
+    only:
+      refs:
+        - merge_requests
+      variables:
+        - $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "master"
+
+Sanity on branch:
+    <<: *sanity
+    only:
+        - branches
+    except:
+        - master
+
+Gerrit-mirror:
+    <<: *runner-settings
+    image: mnp5g-docker-virtual.artifactory-espoo1.int.net.nokia.com/taf-ci:utility-1
+    stage: mirroring
+    cache: {}
+    only:
+      - master
+    except:
+      - schedules
+    variables:
+        gerrit_master_remote_url: ssh://ca_5Gauto@gerrit.ext.net.nokia.com:29418/MN/UTE/robotws
+    resource_group: mirroring_job_gerrit
+    before_script:
+      - echo "$id_ed25519_deploy_key_robotws" > /id_ed25519_deploy_key
+      - chmod 600 /id_ed25519_deploy_key
+      - export GIT_SSH_COMMAND="ssh -i /id_ed25519_deploy_key -o StrictHostKeyChecking=no"
+    script:
+      - git config --global user.email "ca_5Gauto@nokia.com.not.available"
+      - git config --global user.name "ca_5Gauto"
+      - git remote add gerrit $gerrit_master_remote_url || git remote set-url gerrit $gerrit_master_remote_url
+      - exit_status=0; git push gerrit HEAD:master || exit_status=$?
+      - if [ "$exit_status" -ne 0 ]; then echo "NO WORRIES, your changes WILL BE mirrored once the next such job is run successfully."; exit 1; fi
+    allow_failure: true
+
+Send stats:
+    <<: *runner-settings
+    image: mnp5g-docker-virtual.artifactory-espoo1.int.net.nokia.com/taf-ci:py${PYTHON_VERSION}
+    stage: mirroring
+    cache: {}
+    needs: ["Gerrit-mirror"]
+    variables:
+      GIT_STRATEGY: none
+    only:
+      - master
+    except:
+      - schedules
+    before_script:
+      - python -m pip install --user taf.tools.pipeline_jobs_metrics
+    script:
+      - send_job_metrics --token $TAF_GITLAB_TOKEN --project_id $CI_PROJECT_ID --pipeline_id $CI_PIPELINE_ID --job_name "Gerrit-mirror"
+    allow_failure: true
+
+Filesize check:
+    <<: *runner-settings
+    image: mnp5g-docker-virtual.artifactory-espoo1.int.net.nokia.com/taf-ci:py${PYTHON_VERSION}
+    stage: sanity checks
+    cache: {}
+    only:
+      refs:
+        - merge_requests
+      variables:
+        - $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "master"
+    before_script:
+        - python -m pip --disable-pip-version-check install ci_pipeline_steps -q
+    script:
+        - ci-pipeline3 verify_filesize $CI_PROJECT_DIR $CI_PROJECT_ID $CI_MERGE_REQUEST_IID $TAF_GITLAB_TOKEN $MAX_FILE_SIZE "$XML_FILES" $MAX_XML_FILE_SIZE
+
+Fastparse verification:
+    <<: *runner-settings
+    image: mnp5g-docker-virtual.artifactory-espoo1.int.net.nokia.com/taf-ci:py${PYTHON_VERSION}
+    stage: sanity checks
+    cache: {}
+    only:
+      refs:
+        - merge_requests
+      changes:
+        - "**/*.robot"
+    before_script:
+        - python -m pip --disable-pip-version-check install robotframework==${ROBOT_VERSION} -q
+        - python -m pip --disable-pip-version-check install ci_pipeline_steps -q
+        - python -m pip --disable-pip-version-check install taf.internal.robot_fastparse_verification -q
+    script:
+        - CHANGED_ROBOT_FILES=$(ci-pipeline3 affected_paths -f d $CI_PROJECT_DIR | grep \.robot$) || exit 0
+        - echo $CHANGED_ROBOT_FILES
+        - fastparse-verification "${CHANGED_ROBOT_FILES}"
+
+Hazardous SCF features:
+    <<: *runner-settings
+    image: mnp5g-docker-virtual.artifactory-espoo1.int.net.nokia.com/taf-ci:py${PYTHON_VERSION}
+    stage: sanity checks
+    cache: {}
+    only:
+      refs:
+        - merge_requests
+      changes:
+        - "**/*.xml"
+    before_script:
+      - python -m pip --disable-pip-version-check install ci_pipeline_steps "taf.config.scf>=5.4.0" -q
+    script:
+      - CHANGED_XML_FILES=$(ci-pipeline3 affected_paths -f d $CI_PROJECT_DIR | grep \.xml$) || exit 0
+      - echo $CHANGED_XML_FILES
+      - python -m taf.config.scf.hazard ${CHANGED_XML_FILES}
+
+Sync users from LDAP to Gitlab:
+    <<: *runner-settings
+    stage: sanity checks
+    cache: {}
+    only:
+      refs:
+        - schedules
+      variables:
+        - $SCHEDULE_TYPE == "ldap_sync"
+    before_script:
+      - python${PYTHON_VERSION} -m pip install python-gitlab python-ldap
+    script:
+      - python${PYTHON_VERSION} sanity-checks/sync_users_ldap_gitlab.py $TAF_LDAP_LOGIN $TAF_LDAP_PASSWORD $TAF_GITLAB_TOKEN --ldap_group $LDAP_GROUP_NAME --gitlab_access_level $GITLAB_ACCESS_LEVEL --gitlab_project_id $GITLAB_PROJECT_ID
+
+Dryrun lengthy jobs alert:
+    <<: *runner-settings
+    stage: sanity checks
+    cache: {}
+    only:
+      refs:
+        - schedules
+      variables:
+        - $SCHEDULE_TYPE == "lengthy_jobs"
+    before_script:
+      - python${PYTHON_VERSION} -m pip install python-gitlab taf.monitoring.alertmanager taf.tools.gitlab-stats
+    script:
+      - python${PYTHON_VERSION} sanity-checks/lengthy_jobs_alert.py --threshold $DRY_RUN_DURATION_THRESHOLD --gitlab_token $TAF_GITLAB_TOKEN
+
+RF5.0 static analysis:
+  <<: *runner-settings
+  stage: sanity checks
+  cache: {}
+  only:
+    refs:
+      - merge_requests
+    variables:
+      - $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "master"
+    changes:
+      - "**/*.robot"
+  before_script:
+    - python${PYTHON_VERSION} -m pip install robotframework==5.0.1
+    - python${PYTHON_VERSION} -m pip install robotframework-robocop~=7.0 typing-extensions
+  script:
+    - changed_files=$(git diff --name-only --diff-filter=d origin/master... | grep \.robot$) || exit 0
+    - echo CHANGED FILES
+    - echo "${changed_files}"
+    - echo "Performing static code analysis..."
+    - set +e
+    - python${PYTHON_VERSION} sanity-checks/robocop_analyser.py $changed_files || EXIT_CODE=$?
+    - exit $EXIT_CODE
+
+RF7.4 static analysis:
+  <<: *runner-settings
+  stage: sanity checks
+  cache: {}
+  only:
+    refs:
+      - merge_requests
+    variables:
+      - $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "master"
+    changes:
+      - "**/*.robot"
+  before_script:
+    - python${PYTHON_VERSION} -m pip install robotframework==7.4.2
+    - python${PYTHON_VERSION} -m pip install robotframework-robocop~=7.0 typing-extensions
+  script:
+    - changed_files=$(git diff --name-only --diff-filter=d origin/master... | grep \.robot$) || exit 0
+    - echo CHANGED FILES
+    - echo "${changed_files}"
+    - echo "Performing static code analysis..."
+    - set +e
+    - python${PYTHON_VERSION} sanity-checks/robocop_analyser.py $changed_files || EXIT_CODE=$?
+    - exit $EXIT_CODE
+  allow_failure: true

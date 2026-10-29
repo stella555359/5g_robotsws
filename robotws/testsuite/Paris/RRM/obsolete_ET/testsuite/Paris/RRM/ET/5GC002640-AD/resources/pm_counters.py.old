@@ -1,0 +1,230 @@
+import testsuite.Paris.RRM.ET.resources_KRK.python.pm_counters as pm_counters
+from robot.libraries.BuiltIn import BuiltIn
+from testsuite.Paris.RRM.ET.resources_KRK.python.utilities import *
+from time import sleep, time
+from variables import *
+
+
+def wait_for_first_counters_values_to_arrive(minutes=None):
+    if minutes is None:
+        minutes = BuiltIn().get_variable_value("${PM_PERIOD}")
+    logger_console("Waiting for one PM period ({}min) for first counter values to arrive".format(minutes))
+    pm_counters.wait_for_next_pm_period(int(minutes), delay=5)
+
+
+def wait_for_next_pm_period_to_start(minutes=None):
+    if minutes is None:
+        minutes = BuiltIn().get_variable_value("${PM_PERIOD}")
+    pm_counters.wait_for_next_pm_period(int(minutes))
+
+
+def verify_counters_for_ad_b1_tests(scells, drx_successful=True, include_vonr=False, non_gbr=False):
+    drx_cycle_check = "== 0" if non_gbr else "!= 0"
+    tput_counter_check = "> 0" if drx_successful else "== 0"
+    scell_ids = [NRCELLIDENTIFICATION_MAP[cell] for cell in scells]
+    pcell_id = NRCELLIDENTIFICATION_MAP[BuiltIn().get_variable_value("${PCELL_ID}")]
+    cells = [pcell_id] + scell_ids
+    counters_dtx = {"DTX": "M55303C17001", "Non-DTX": "M55303C18001"}
+    counters_list = [
+        "M55138C01503", "M55138C02501", "M55138C02502", "M55139C01501", "M55308C11001", "M55308C11002",
+        "M55118C07003", "M55118C07004", "M55139C01502", "M55139C01002", "M55139C01001", "M55308C00008",
+    ] + list(counters_dtx.values())
+    if include_vonr:
+        counters_list = counters_list + ["M55311C01001", "M55311C01005"]
+
+    counters_data = pm_counters.get_pm_counters_values(counter_ids_list=counters_list)
+    pm_counters.verify_any_counters(
+        "M55138C01503", "== 0", "NRCELL-{}".format(pcell_id),
+        "M55138C02501", "== 1", "NRCELL-{}".format(pcell_id),
+        "M55138C02502", "== 1", "NRCELL-{}".format(pcell_id),
+        "M55139C01501", "== 1", "NRCELL-{}".format(pcell_id),
+        "M55308C11001", drx_cycle_check, "NRCELL-{}".format(pcell_id),
+        "M55308C11002", drx_cycle_check, "NRCELL-{}".format(pcell_id),
+        "M55118C07003", "== 1", "NRCELL-{}".format(pcell_id),
+        "M55118C07004", "== 1", "NRCELL-{}".format(pcell_id),
+        "M55139C01502", "== 1", "NRCELL-{}".format(pcell_id),
+        "M55139C01002", "== 1", "NRCELL-{}".format(scell_ids[0]),
+        "M55139C01002", "== 1", "NRCELL-{}".format(scell_ids[1]),
+        "M55139C01001", "== 1", "NRCELL-{}".format(scell_ids[0]),
+        "M55139C01001", "== 1", "NRCELL-{}".format(scell_ids[1]),
+        "M55308C00008", tput_counter_check, "NRCELL-{}".format(pcell_id),
+        "M55308C00008", tput_counter_check, "NRCELL-{}".format(scell_ids[0]),
+        "M55308C00008", tput_counter_check, "NRCELL-{}".format(scell_ids[1]),
+        counters_data=counters_data
+    )
+
+    if include_vonr:
+        pm_counters.verify_any_counters(
+            "M55311C01001", tput_counter_check, None,
+            "M55311C01005", tput_counter_check, None,
+            counters_data=counters_data
+        )
+
+    for cell in cells:
+        qos_counters = pm_counters.get_latest_values_for_specified_counters(counters_dtx.values(),
+                                                                            path_filters="NRCELL-{}".format(cell),
+                                                                            counters_data=counters_data)
+        dtx_value = qos_counters[counters_dtx["DTX"]]
+        nondtx_value = qos_counters[counters_dtx["Non-DTX"]]
+        assert float(dtx_value) <= 0.1 * float(nondtx_value), "Counter DTX({}) is not <= 0.1 * Non-DTX() for cell {}".\
+            format(counters_dtx["DTX"], counters_dtx["Non-DTX"], cell)
+
+
+def verify_counters_for_ad_b2_tests(scells, drx_successful=True, include_vonr=False, non_gbr=False,
+                                    ignore_active_sleep_time=False):
+    drx_cycle_check = "== 0" if non_gbr or ignore_active_sleep_time else "!= 0"
+    tput_counter_check = "> 0" if drx_successful else "== 0"
+    scell_ids = [NRCELLIDENTIFICATION_MAP[cell] for cell in scells]
+    pcell_id = NRCELLIDENTIFICATION_MAP[BuiltIn().get_variable_value("${PCELL_ID}")]
+    cells = [pcell_id] + scell_ids
+    counters_dtx = {"DTX": "M55303C17001", "Non-DTX": "M55303C18001"}
+    counters_list = [
+        "M55138C01503", "M55138C02501", "M55138C02502", "M55139C01501", "M55308C11001",
+        "M55118C07003", "M55118C07004", "M55139C01502", "M55139C01002", "M55139C01001", "M55308C00008",
+    ] + list(counters_dtx.values())
+    if include_vonr:
+        counters_list = counters_list + ["M55311C01001", "M55311C01005"]
+
+    counters_data = pm_counters.get_pm_counters_values(counter_ids_list=counters_list)
+    pm_counters.verify_any_counters(
+        "M55138C01503", "== 0", "NRCELL-{}".format(pcell_id),
+        "M55138C02501", "== 1", "NRCELL-{}".format(pcell_id),
+        "M55138C02502", "== 1", "NRCELL-{}".format(pcell_id),
+        "M55139C01501", "== 1", "NRCELL-{}".format(pcell_id),
+        "M55308C11001", drx_cycle_check, "NRCELL-{}".format(pcell_id),
+        "M55118C07003", "== 1", "NRCELL-{}".format(pcell_id),
+        "M55118C07004", "== 1", "NRCELL-{}".format(pcell_id),
+        "M55139C01502", "== 1", "NRCELL-{}".format(pcell_id),
+        "M55139C01002", "== 1", "NRCELL-{}".format(scell_ids[0]),
+        "M55139C01002", "== 1", "NRCELL-{}".format(scell_ids[1]),
+        "M55139C01001", "== 1", "NRCELL-{}".format(scell_ids[0]),
+        "M55139C01001", "== 1", "NRCELL-{}".format(scell_ids[1]),
+        "M55308C00008", tput_counter_check, "NRCELL-{}".format(pcell_id),
+        "M55308C00008", tput_counter_check, "NRCELL-{}".format(scell_ids[0]),
+        "M55308C00008", tput_counter_check, "NRCELL-{}".format(scell_ids[1]),
+        counters_data=counters_data
+    )
+
+    if include_vonr:
+        pm_counters.verify_any_counters(
+            "M55311C01001", tput_counter_check, None,
+            "M55311C01005", tput_counter_check, None,
+            counters_data=counters_data
+        )
+
+    for cell in cells:
+        qos_counters = pm_counters.get_latest_values_for_specified_counters(counters_dtx.values(),
+                                                                            path_filters="NRCELL-{}".format(cell),
+                                                                            counters_data=counters_data)
+        dtx_value = qos_counters[counters_dtx["DTX"]]
+        nondtx_value = qos_counters[counters_dtx["Non-DTX"]]
+        assert float(dtx_value) <= 0.1 * float(nondtx_value), "Counter DTX({}) is not <= 0.1 * Non-DTX() for cell {}".\
+            format(counters_dtx["DTX"], counters_dtx["Non-DTX"], cell)
+
+
+def verify_counters_for_b_b1_tests(scells, drx_successful=True, include_vonr=False, non_gbr=False):
+    drx_cycle_check = "== 0" if non_gbr else "!= 0"
+    tput_counter_check = "> 0" if drx_successful else "== 0"
+    scell_ids = [NRCELLIDENTIFICATION_MAP[cell] for cell in scells]
+    pcell_id = NRCELLIDENTIFICATION_MAP[BuiltIn().get_variable_value("${PCELL_ID}")]
+    cells = [pcell_id] + scell_ids
+    counters_dtx = {"DTX": "M55303C17001", "Non-DTX": "M55303C18001"}
+    counters_list = [
+        "M55138C01503", "M55138C02501", "M55138C02502", "M55139C01501", "M55308C11001", "M55303C13001",
+        "M55118C07003", "M55118C07004", "M55139C01502", "M55139C01002", "M55139C01001", "M55308C00008",
+    ] + list(counters_dtx.values())
+    if include_vonr:
+        counters_list = counters_list + ["M55311C01006"]
+
+    counters_data = pm_counters.get_pm_counters_values(counter_ids_list=counters_list)
+    pm_counters.verify_any_counters(
+        "M55138C01503", "== 0", "NRCELL-{}".format(pcell_id),
+        "M55138C02501", "== 5", "NRCELL-{}".format(pcell_id),
+        "M55138C02502", "== 5", "NRCELL-{}".format(pcell_id),
+        "M55118C07003", "== 5", "NRCELL-{}".format(pcell_id),
+        "M55118C07004", "== 5", "NRCELL-{}".format(pcell_id),
+        "M55139C01501", "== 5", "NRCELL-{}".format(pcell_id),
+        "M55139C01502", "== 5", "NRCELL-{}".format(pcell_id),
+        "M55139C01002", "== 5", "NRCELL-{}".format(scell_ids[0]),
+        "M55139C01002", "== 5", "NRCELL-{}".format(scell_ids[1]),
+        "M55139C01001", "== 5", "NRCELL-{}".format(scell_ids[0]),
+        "M55139C01001", "== 5", "NRCELL-{}".format(scell_ids[1]),
+        "M55303C13001", "== 0", "NRCELL-{}".format(scell_ids[0]),
+        "M55303C13001", "== 0", "NRCELL-{}".format(scell_ids[1]),
+        "M55308C00008", tput_counter_check, "NRCELL-{}".format(pcell_id),
+        "M55308C00008", tput_counter_check, "NRCELL-{}".format(scell_ids[0]),
+        "M55308C00008", tput_counter_check, "NRCELL-{}".format(scell_ids[1]),
+        counters_data=counters_data
+    )
+
+    if include_vonr:
+        pm_counters.verify_any_counters(
+            "M55311C01006", tput_counter_check, None,
+            counters_data=counters_data
+        )
+
+    qos_counters = pm_counters.get_latest_values_for_specified_counters(counters_dtx.values(),
+                                                                        path_filters="NRCELL-{}".format(pcell_id),
+                                                                        counters_data=counters_data)
+    dtx_value = qos_counters[counters_dtx["DTX"]]
+    nondtx_value = qos_counters[counters_dtx["Non-DTX"]]
+    assert float(dtx_value) <= 0.1 * float(nondtx_value), "Counter DTX({}) is not <= 0.1 * Non-DTX() for cell {}".\
+        format(counters_dtx["DTX"], counters_dtx["Non-DTX"], pcell_id)
+
+
+def verify_counters_for_8533_tests():
+    counters_dtx = {"DTX": "M55303C17001", "Non-DTX": "M55303C18001"}
+    counters_list = ["M55139C03001", "M55139C03002", "M55118C09502", "M55118C09503", "M55139C01501", "M55139C01502",
+                     "M55118C07003", "M55118C07004", "M55139C01003", "M55139C01004", "M55118C05506",
+                     "M55118C05505", "M55138C01503", "M55308C00008", "M55303C17001", "M55145C00501",
+                     "M55316C05000", "M55139C01001", "M55139C01002", "M55311C01006"] + list(counters_dtx.values())
+    counters_data = pm_counters.get_pm_counters_values(counter_ids_list=counters_list)
+    pm_counters.verify_any_counters(
+        "M55139C03001", "== 3", "NRCELL-1",
+        "M55139C03002", "== 3", "NRCELL-1",
+        "M55118C09502", "== 3", "NRCELL-1",
+        "M55118C09503", "== 3", "NRCELL-1",
+        "M55139C01501", "== 1", "NRCELL-1",
+        "M55139C01502", "== 1", "NRCELL-1",
+        "M55118C07003", "== 1", "NRCELL-1",
+        "M55118C07004", "== 1", "NRCELL-1",
+        "M55139C01003", "== 1", "NRCELL-1",
+        "M55139C01004", "== 1", "NRCELL-1",
+        "M55118C05506", "== 1", "NRCELL-1",
+        "M55118C05505", "== 1", "NRCELL-1",
+        "M55138C01503", "== 0", "NRCELL-1",
+
+        "M55308C00008", "> 0", "NRCELL-1",
+        "M55308C00008", "> 0", "NRCELL-3",
+        "M55308C00008", "> 0", "NRCELL-4",
+        "M55308C00008", "> 0", "NRCELL-6",
+
+        "M55145C00501", "== 6", "NRCELL-1",
+        "M55316C05000", "== 6", "NRCELL-1",
+
+        "M55139C01001", "== 5", "NRCELL-4",
+        "M55139C01002", "== 5", "NRCELL-4",
+        "M55138C01503", "== 0", "NRCELL-4",
+
+        "M55139C01001", "== 4", "NRCELL-3",
+        "M55139C01002", "== 4", "NRCELL-3",
+        "M55138C01503", "== 0", "NRCELL-3",
+
+        "M55139C01001", "== 3", "NRCELL-6",
+        "M55139C01002", "== 3", "NRCELL-6",
+        "M55138C01503", "== 0", "NRCELL-6",
+        counters_data=counters_data
+    )
+
+    pm_counters.verify_any_counters("M55311C01006", "> 0", None, counters_data=counters_data)
+    qos_counters = pm_counters.get_latest_values_for_specified_counters(counters_dtx.values(),
+                                                                        path_filters="NRCELL-1",
+                                                                        counters_data=counters_data)
+    dtx_value = qos_counters[counters_dtx["DTX"]]
+    nondtx_value = qos_counters[counters_dtx["Non-DTX"]]
+    assert float(dtx_value) <= 0.02 * float(nondtx_value), "Counter DTX({}) is not <= 0.1 * Non-DTX() for NRCELL-{}".\
+        format(counters_dtx["DTX"], counters_dtx["Non-DTX"], 1)
+
+
+def verify_counter_M55316C05000_for_1CC():
+    pm_counters.verify_any_counters("M55316C05000", "== 1", "NRCELL-1")

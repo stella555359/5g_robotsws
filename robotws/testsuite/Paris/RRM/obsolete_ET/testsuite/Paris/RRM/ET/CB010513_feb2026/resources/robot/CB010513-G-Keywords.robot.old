@@ -1,0 +1,254 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Common keyword of CB010513-G feature
+...               Prerequisite : gNB configured with 3 Cells & RU detected
+...               Scope : CB010513-G
+...
+...               Test Case Scenario author   : adrien.hervat@nokia.com
+...               Test Case Scenario contact  :
+...               Creation Date               : 17-04-2023
+...               Modified Date               :
+...               Last Modified by            :
+...               Version History    Date           Author                      Notes
+...               0.1                17-04-2023     adrien.hervat@nokia.com     Creation
+...               0.2                21-08-2023     blandine.garnier@nokia.com  Update the check on the counter value
+...               0.3                FB2323         philippe.daroux@nokia.com   LO_AP_LOOO adaptation + Suite Setup with yaml custom config
+...               0.4                FB2419         richard.duthu@nokia.com     some fix for RF50
+
+
+Library           OperatingSystem
+Library           String
+Library           BuiltIn
+Library           ute_wtssim           WITH NAME    wts
+Library           ../../../../../resources/SWENG/python/PandasCsv.py
+Library           ../../../resources/python/luashark_tools.py
+
+Resource          taf/rfrl/common_resources/robot/preconditions.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../resources/common/TtiTrace/ttitrace.robot
+
+Resource          ../../../CB008940/resources/robot/CB008940-Common-Keywords.robot
+Resource          ../../../CB008940/resources/robot/CB008940-Q-L-Common-Keywords.robot
+
+Variables         ../../../../../resources/SWENG/python/Colors.py
+Variables         ../python/Constants-CB010513-G.py
+
+
+
+*** Keywords ***
+
+Suite Setup CB010513-G
+
+    [Documentation]
+    ...     Conditions:     customs configurations yamlPathname
+    ...     Actions:        it performs the generic suite setup and backup the configurations files
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        suite setup is passed
+    [Arguments]             ${yamlPathname}=${EMPTY}
+
+    Setup.Suite Setup from scratch        yamlPathname=${yamlPathname}
+    ...                                   listBackupFiles=${FD_ALL}
+    #...                                   keepAllUeDataInCfgFile=${True}
+    Backup Files
+    ${scf_suite_setup_backup}         OAM Get SCF File    file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable      ${scf_suite_setup_backup}
+    Dated Log               SCF backup file = ${scf_suite_setup_backup}
+
+TC_CB010513-G
+    [Documentation]        10513-G Basic Call
+    [Arguments]            ${params}        ${Vendor_Param}      ${dict_ues}
+    Set Suite Variable     ${params}
+    Init Sequence          ${params}
+    Step                   Set RAD Params
+    Step                   CB008940-Q-L-Common-Keywords.Update Vendor File Config For bbL1SpPrbInitCapacity And bbPoolCapacity    ${Vendor_Param}
+    Step                   CB010513-G-Keywords.Set Context TDD SA
+    Step                   Restart.F1 Wait Link Classical
+    ${listOfUes}           CB010513-G-Keywords.Build UEs list SA Multi UEs            dict_ues=${dict_ues}
+    Step                   CB010513-G-Keywords.Set UE_Capa Context_WTS CFG            listOfUes=${listOfUes}
+    Step                   CB010513-G-Keywords.Multi Cells Setup                      listOfUes=${listOfUes}     nbCell=${params.nbCell}
+    Step                   CB010513-G-Keywords.SA Attach All UEs                      listOfUes=${listOfUes}
+    Step                   CB010513-G-Keywords.Get L1L2 Logs
+    Step                   CB010513-G-Keywords.Get TTI Logs
+    Step                   CB010513-G-Keywords.Get Sherpa Logs
+    Step                   CB010513-G-Keywords.Check PM Counters
+    Step                   CB010513-G-Keywords.SA DeRegister Multi UEs                listOfUes=${listOfUes}
+    [Teardown]             Display diagnosis
+
+
+Set RAD Params
+    Dated Log New Line   Add RAD params for 10513
+    ${rad_param_1}=      create dictionary       field=0x580117    value=1  # CSI-RS Event Sherpa
+    ${rad_param_list}=       Create List         ${rad_param_1}
+    SetConfig.Set Fields in swconfig DU          param_list=${rad_param_list}
+    Dated Log New Line                           RAD params update completed
+
+
+Set Context TDD SA
+    Copy File                         ${SCF_SETUP_PATH}     ${SCF_SETUP_PATH}.ori
+    ${scf_file_name}                  Fetch from right      ${SCF_SETUP_PATH}      /
+    ${file_name_without_extention}    String.Replace string    ${scf_file_name}    .xml    ${EMPTY}
+    ${scf_name_for_update}            catenate    SEPARATOR=${EMPTY}    ${file_name_without_extention}
+    ...                               10513-G_TDD_SA.xml
+    ${scf_file_update_path}           set variable    ${LOG_PATH}/${scf_name_for_update}
+    SCF StartSession                  scf_file=${SCF_SETUP_PATH}     second_scf_file=${SCF_SETUP_PATH}
+    CB010513-G-Keywords.Set Parameters on SCF_COAM_TDD_SA
+    SCF StopSession                   scf_file=${scf_file_update_path}     second_scf_file=${scf_file_update_path}
+    OAM Perform Full Commissioning    scf_file=${scf_file_update_path}
+    Airscale Wait for Ready           ${GNB_DU}
+
+
+Get New Cell Id List without None Value          # Create a new NRCELL_ID_LIST which does not contains "NONE" value
+    [Documentation]                 Returns the number of not 'None' element in the list
+    [Arguments]                     ${my_list}
+    ${cell_id_list}=                Create List
+    FOR     ${elem}     IN          @{my_list}
+            Run Keyword If          '${elem}'!='None'
+            ...                     Append To List     ${cell_id_list}     ${elem}
+    END
+    [Return]                        ${cell_id_list}
+
+
+Set Parameters on SCF_COAM_TDD_SA
+    @{NRCELL_ID_LIST_UPDATED}     Get New Cell Id List without None Value     ${NRCELL_ID_LIST}
+    FOR    ${i}     IN    @{NRCELL_ID_LIST_UPDATED}
+           ${dn}          set variable        MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${i}
+           SCF Set element                    dist_name=${dn}     element_name=targetTotalLoad
+           ...                                element_value=100
+           ...                                aicListEntity=vduvcu
+           ...                                scope=Both
+
+           Dated Log New Line                 "Database Modifications completed for NRCELL-${i}"
+    END
+
+
+Build UEs list SA Multi UEs
+    [Arguments]             ${dict_ues}
+    ${totalNbOfUe}          get length          ${dict_ues}
+    Step                    Dated Log           Configure the setting for the ${totalNbOfUe} ue's
+    Set Global Variable     ${totalNbOfUe}
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${totalNbOfUe}
+        ${current_ue}=              Evaluate                   ${current_id} + 1
+        ${current_ueSetting}=       Copy Dictionary            ${BASIC_UE_SA}
+        Set To Dictionary           ${current_ueSetting}       ue                     ${current_ue}
+        Set To Dictionary           ${current_ueSetting}       pdu                    1
+        Set To Dictionary           ${current_ueSetting}       trf_id                 ${current_ue}
+        Set To Dictionary           ${current_ueSetting}       target_gnb             2
+        Set To Dictionary           ${current_ueSetting}       target_cells           ${dict_ues[${current_id}].originalCell}
+        Set To Dictionary           ${current_ueSetting}       DL_throughput          ${dict_ues[${current_id}].DL_throughput}
+        Set To Dictionary           ${current_ueSetting}       DL_throughput_GBR      ${dict_ues[${current_id}].DL_throughput_GBR}
+        Set To Dictionary           ${current_ueSetting}       UL_throughput          ${dict_ues[${current_id}].UL_throughput}
+        Set To Dictionary           ${current_ueSetting}       ue_nr_capa             ${dict_ues[${current_id}].ue_nr_capa}
+
+        Append To List              ${listOfUes}               ${current_ueSetting}
+    END
+    Dated Log New Line              UE_List=${listOfUes}
+    [Return]                        ${listOfUes}
+
+
+Set UE_Capa Context_WTS CFG
+    [Arguments]       ${listOfUes}
+    Create UEs in Cfg File             nb_sa_ues=${totalNbOfUe}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Modify UE Data in Cfg File     sa_or_nsa=SA    ue_id=${current_elem.ue}    ue_nr_capa=${current_elem.ue_nr_capa}
+        ...                            cell_id=${current_elem.target_cells}
+    END
+
+
+Multi Cells Setup
+    [Arguments]       ${nbCell}        ${listOfUes}
+    ${msgStr}=    Catenate  Test ${nbCell} Cells Setup
+    Dated Log   ${msgStr}
+    Check Multi Ues Setting In List                             multiUesList=${listOfUes}
+    CallSetup.Setup Wtsemu SA                                   nbUe=${totalNbOfUe}
+    ...                                                         nbSaUe=${totalNbOfUe}
+    ...                                                         shouldUseLua=False
+    ...                                                         shouldSaveBasicCfg=True
+    WTS Set X2 Link
+    sleep    5s
+
+
+SA Attach All UEs
+    [Arguments]       ${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Dated Log New Line     === SA Register UE ${current_elem.ue} on cell ${current_elem.target_cells} ===
+        CallSetup.UE Register                                   ue=${current_elem.ue}
+        CallSetup.Launch PDU Session                            ue=${current_elem.ue}
+        ...                                                     pdu=${current_elem.pdu}
+        ...                                                     gw=${current_elem.ue}
+    END
+
+
+SA DeRegister Multi UEs
+    [Arguments]       ${listOfUes}
+    FOR    ${current_elem}    IN    @{listOfUes}
+        Dated Log New Line     === SA DeRegister UE ${current_elem.ue} on cell ${current_elem.target_cells} ===
+        CallSetup.UE Deregister       id=${current_elem.ue}
+    END
+
+
+Get TTI Logs
+    # TTI capture configuration
+    ${TTIdir}                             Get TTI Trace Path    dir_suffix=TTI
+    # Start TTI capture
+    Dated Log New Line                    Start TTI traces capture
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+    Traced Sleep                5         msg=DL TTI traffic capture 5 seconds
+    # Stop TTI capture
+    Dated Log New Line                    Stop TTI traces capture
+    ${TTIpcap}                            Stop TTI Traces in Streaming mode
+    ...                                   tti_trace_path=${TTIdir}
+    ...                                   tti_trace_filename=TTI_TC10513
+    Dated Log New Line                    Convert TTItrace to json and csv
+    ${TTIjson}                            Convert TTItrace from pcap to others
+    ...                                   input_file_path=${TTIpcap}
+    ${TTIcsv}                             ttitrace_tools.decode_tti_traces_json_using_TtitraceReaderEvtDec
+    ...                                   jsonPathName=${TTIjson}     num_of_events=10000
+
+
+Get Sherpa Logs
+    Activate Sherpa
+    Traced Sleep                               duration=5s
+    Deactivate Sherpa and Stop Collect
+    Upload and decode sherpa pcap files        Sherpa_logs_local_path=${trace_dir}
+    Calling Panda Extract Csv For PRB Pooling
+
+
+Get L1L2 Logs
+    ${CaptureL1L2}               Capture L1L2 Set Upon Config         airscale=${GNB_DU}
+    Set Suite Variable           ${CaptureL1L2}
+    Capture Init                 ${CaptureL1L2}
+    Capture Start                ${CaptureL1L2}
+    sleep    5s
+    Capture Stop    ${CaptureL1L2}
+
+
+Check PM Counters
+    [Documentation]                 M55308C00007   DL_SLOT_DUMMY_PDSCH
+    Dated Log New Line          =================================================================
+    Dated Log                      PM Counter: M55308C00007
+    Dated Log                   =================================================================
+    Dated Log                              Waiting 6 minutes before checking counter
+    sleep                                  360s
+    ${date}                                Get Current Date
+    ${date_in_dir_name}                    Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                         Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+    Dated Log                              The PM counters file collected from gnb will be stored under : ${log_path_pm}
+    ${pm_latest}                           Counters.Collect PM files from BTS      ${log_path_pm}
+    set Suite Variable                     ${LATEST_PM_FILE}       ${pm_latest}
+    set Suite Variable                     ${log_path_pm}
+    Dated Log                              Latest pm counters file : ${LATEST_PM_FILE}
+    ${PM_Dummy_pdsch}     Set Variable     M55308C00007
+    ${Value_PM_Dummy_pdsch_Cell_1}=        Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${PM_Dummy_pdsch}       1
+    Dated Log                              Value of DL_SLot_Dummy_for Cell 1 : ${Value_PM_Dummy_pdsch_Cell_1}
+    should be true                         ${Value_PM_Dummy_pdsch_Cell_1} == 446250
+    ${Value_PM_Dummy_pdsch_Cell_2}=        Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${PM_Dummy_pdsch}       2
+    Dated Log                              Value of DL_SLot_Dummy_for Cell 2 : ${Value_PM_Dummy_pdsch_Cell_2}
+    should be true                         ${Value_PM_Dummy_pdsch_Cell_2} == 393750
+    ${Value_PM_Dummy_pdsch_Cell_3}=        Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${PM_Dummy_pdsch}       3
+    Dated Log                              Value of DL_SLot_Dummy_for Cell 3 : ${Value_PM_Dummy_pdsch_Cell_3}
+    should be true                         ${Value_PM_Dummy_pdsch_Cell_3} == 393750
+

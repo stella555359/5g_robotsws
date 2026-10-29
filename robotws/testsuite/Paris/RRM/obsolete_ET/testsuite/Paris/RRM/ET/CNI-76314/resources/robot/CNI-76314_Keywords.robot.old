@@ -1,0 +1,208 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for CNI-76314 CNI tests cases
+...
+...               Automation author           : emmanuel.diatta@nokia.com 
+...               Automation contact          : davide.bacchiega@nokia.com
+...               Creation Date               : 21-March-2022
+...               Modified Date               : 
+...               Last Modified by            : emmanuel.diatta@nokia.com
+
+Library                             taf.wts.runner                         WITH NAME    wtsemu
+Variables         ../../../../../../Paris/resources/SWENG/python/ReadConfig.py
+
+
+Resource            ../../../../../../Paris/resources/SWENG/robot/Setup.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/Sherpa.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/GenericTest.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/Tools.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/Connect.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/Restart.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/Oam.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/CallSetup.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/Traffic.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/Restart.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/CallSetup.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/PacketSearch.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/CaptureFilter.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/WtsCfgConfig.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/WtsXmlConfig.robot
+Resource            ../../../../../../Paris/resources/SWENG/robot/Counters.robot
+
+
+Library           json      
+
+*** Variables ***
+
+
+*** Keywords ***
+TC_CNI-76314
+    [Documentation]     Generic test for SANSA 3CC Cellsetup
+    [Arguments]         ${param}
+
+    ${enable_sherpa}             set variable           ${False}   #This TC not need Sherpa, this setting is present as Jenchins may set Sherpa
+    Init Sequence                ${param}
+
+    Critical Step       Restart.Restart TL
+    Step                Set srb3SupportEnable in SCF to True             argument=${param}
+    Step                CellSetup                                        argument=${param}
+    Step                UE_4G_attach with SRB3 Activation                argument=${param}
+    Step                UE_5G_attach                                     argument=${param}
+    Step                Check_Srb3Enable_In_L2PS_Resource_Logs           argument=${param}
+
+
+
+CellSetup
+    [Arguments]                    ${testParam}
+    CallSetup.WTS Setup            nbUe=${testParam.nbUe}            
+
+Set srb3SupportEnable in SCF to True
+    [Arguments]                    ${testParam}
+    &{modify_param1}    Create Dictionary
+    ...    parameter=srb3SupportEnabled
+    ...    dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ...    value=${testParam.srb3SupportEnable}
+
+    @{modify_param}                 Create List    ${modify_param1}
+
+    Dated log                       Parameters to modify:  #${modify_param}
+    Dated log                       ${modify_param1}
+
+    OAM Set Params      ${modify_param}
+
+
+UE_4G_attach with SRB3 Activation
+    [Arguments]                     ${testParam}           # Reference to UE Settings
+    # Launch UE Attach with or without profile upon <ueSetting.profile>
+    wtsemu.Ue Attach                        id=${testParam.ueSetting.ue}-${testParam.nbUe}
+    ...                                     emergency=off
+    ...                                     pdn_connectivity_type=auto 
+    ...                                     ue_eutra_nr_capabilities=210C040100904D00000402404D10001000100804008010 
+    ...                                     ue_nr_capabilities=01000000010800040004D1000080000003C00000000000008A8000100000000000010AA0
+    
+    wtsemu.Read Wtsemu Output Until Re  expected=UE IS ACTIVE               timeout=10
+    Dated Log                       4G Attach is successful (UE=${testParam.nbUe} Profile=${testParam.ueSetting.profile})
+
+UE_5G_attach
+    [Arguments]                             ${testParam} 
+    FOR    ${idUE}       IN RANGE      1        ${testParam.nbUe}+1
+           ${ueProfile}       Copy Dictionary       ${testParam.ueSetting}
+           Set To Dictionary    ${ueProfile}      ue       ${idUE}
+           CallSetup.UE Attach Gnb                        ueSetting=${ueProfile} 
+	END
+    
+
+
+Check_Srb3Enable_In_L2PS_Resource_Logs
+    [Arguments]                             ${testParam} 
+    ${currentResourceStatus_1_UE}       Get SRB3 L2PS Resources Usage        0
+    
+    Dated Log                           Current L2PS resources are: ${currentResourceStatus_1_UE}
+
+    Should Be True                  ${currentResourceStatus_1_UE}[DLnbOfActiveSRBs]==${testParam.nbUe}
+    Should Be True                  ${currentResourceStatus_1_UE}[DLnbOfActiveUEs]==${testParam.nbUe}
+	Should Be True                  ${currentResourceStatus_1_UE}[DLnbOfActiveDRBs]==${testParam.nbUe}
+    Should Be True                  ${currentResourceStatus_1_UE}[ULnbOfActiveSRBs]==${testParam.nbUe}
+    Should Be True                  ${currentResourceStatus_1_UE}[ULnbOfActiveUEs]==${testParam.nbUe}
+	Should Be True                  ${currentResourceStatus_1_UE}[ULnbOfActiveDRBs]==${testParam.nbUe}
+
+
+Get SRB3 L2PS Resources Usage
+        [Documentation]                 KW used to send the getResourcesUsage command to CPRT through AaShell
+        ...                             and return values related to L2PS: 
+        ...                             nbOfFreeCRNTI, dlCellResources/nbOfHarqPoolFree, ulCellResources/nbOfHarqPoolFree
+        ...                             Output: Dictonary with key/value corresponding to AsShell output of the wanted cells group.
+        ...                             e.g.: 
+        ...                             This part get through each line of the reported output. Here is an example:
+        ...                              ...
+        ...                               "l2resource": {
+        ...                               "l2psList": {
+        ...                               "l2psInfo": [
+        ...                               {
+        ...                                "l2psPoolId": 1,
+        ...                                "cellGroupResources": [
+        ...                                 {
+        ...                                  "nrCellGrpId": 0,
+        ...                                  "cellResources": [
+        ...                                   {
+        ...                                   "dlNbUesAndBearers": {
+        ...                                     "nbOfActiveUEs": 2,
+        ...                                     "nbOfTemporaryUEs": 0,
+        ...                                     "nbOfActiveSRBs": 2,
+        ...                                     "nbOfActiveDRBs": 2
+        ...                                     },
+        ...                                   "ulNbUesAndBearers": {
+        ...                                     "nbOfActiveUEs": 2,
+        ...                                     "nbOfTemporaryUEs": 0,
+        ...                                     "nbOfActiveSRBs": 2,
+        ...                                     "nbOfActiveDRBs": 2
+        ...                                     },
+        ...                                ]
+        ...                               }
+        ...                               ]
+        ...                               },
+        [Arguments]                     ${cell_index}=0
+
+        ${nodeCPRT}                     Get Node                CPRT
+        ${nodeId}=                      Get Regexp Matches      '${nodeCPRT}'         NodeId=(......)       1
+        Dated Log                       nodeId=${nodeId}
+        # Run commnand through AaShell 
+        ${output}                       SSH Wait For Connect and Exec
+        ...                             command=echo "getResourcesUsage @Cprt #${nodeId}[0]" | nc 0 15007
+        ...                             host=${GNB_DU.sys[0].M}
+
+        # Remove unexpected "AaShell> " strings from output
+        ${clean_output}                 Remove String           ${output}               AaShell>
+
+        # Move to robot dictionary
+        ${source_data}=                 Evaluate                json.loads('''${clean_output}''')    json
+        #Dated Log                       Source data: ${source_data} 
+
+        ${l2ps_data}=                   Set Variable           ${source_data}[l2resource][l2psList][l2psInfo]
+        Dated Log                       L2PS data: ${l2ps_data} 
+        # Look for wanted cell group index
+        ${num_items}                    Get Length              ${l2ps_data}
+        Dated Log                       num_items : ${num_items}
+        FOR                             ${i}                    IN RANGE                ${num_items}
+                ${nrCellGrp}            Set Variable            ${l2ps_data}[${i}][cellGroupResources][0][nrCellGrpId]
+                Exit For Loop If        ${nrCellGrp}==${cell_index} 
+        END           
+
+
+        ${DLnbOfActiveSRBs}                 Set Variable
+        ...                             ${l2ps_data}[${i}][cellGroupResources][0][dlNbUesAndBearers][nbOfActiveSRBs]
+        ${DLnbOfActiveUEs}                 Set Variable
+        ...                             ${l2ps_data}[${i}][cellGroupResources][0][dlNbUesAndBearers][nbOfActiveUEs]
+		${DLnbOfActiveDRBs}                 Set Variable
+        ...                             ${l2ps_data}[${i}][cellGroupResources][0][dlNbUesAndBearers][nbOfActiveDRBs]
+		
+		
+        ${ULnbOfActiveSRBs}                 Set Variable
+        ...                             ${l2ps_data}[${i}][cellGroupResources][0][ulNbUesAndBearers][nbOfActiveSRBs]
+        ${ULnbOfActiveUEs}                 Set Variable
+        ...                             ${l2ps_data}[${i}][cellGroupResources][0][ulNbUesAndBearers][nbOfActiveUEs]
+		${ULnbOfActiveDRBs}                 Set Variable
+        ...                             ${l2ps_data}[${i}][cellGroupResources][0][ulNbUesAndBearers][nbOfActiveDRBs]
+        
+        
+        &{l2ps_cell_resource}           Create Dictionary        DLnbOfActiveSRBs=${DLnbOfActiveSRBs}
+        ...                             DLnbOfActiveUEs=${DLnbOfActiveUEs}
+		...                             DLnbOfActiveDRBs=${DLnbOfActiveDRBs}
+        ...                             ULnbOfActiveSRBs=${ULnbOfActiveSRBs}
+        ...                             ULnbOfActiveUEs=${ULnbOfActiveUEs}
+		...                             ULnbOfActiveDRBs=${ULnbOfActiveDRBs}
+
+
+        Dated Log                       L2PS cell resource for nrCellGrp ${cell_index} is: ${l2ps_cell_resource}
+
+        [Return]                        ${l2ps_cell_resource}
+
+
+Test Teardown for CNI76314
+        [Documentation]    Perform needed actions at the end of a test case
+        Dated log                       Test teardown : start
+
+        # Stop Sherpa if needed
+        Run Keyword If                  ${enable_sherpa} == ${True}             Sherpa.Deactivate Sherpa and Stop Collect
+        # "Test Teardown" KW from Setup.robot
+        Test Teardown
+        Dated log                       Test teardown : end

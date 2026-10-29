@@ -1,0 +1,366 @@
+# Python script used for CB009007 ReTxn checks
+# Script author : yann.ah.herve@nokia.com
+# Script contact: yann.ah.herve@nokia.com
+# Creation Date : 2-August-2022
+# Adapted for CB009007 by : adrien.hervat@nokia.com (19-September-2022)
+
+import os
+import json
+import getopt
+import sys
+import math
+from enum import Enum
+
+# TAF Libraries:
+from taf.analyzer.ttitrace_eventdecoder import TtitraceReader as TtitraceReaderEvtDec
+
+
+def CheckSLIVinSpecialSlotsInTTI(jsonPathName, SLIVlist, SlotList):
+    """
+    This function check that all slots from slot List parameter use a SLIV from SLIV list
+    Return the number of right SLIV if check is passed, 0 else
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+
+    SlotListInt = list(map(int, SlotList))
+    SLIVlistint = list(map(int, SLIVlist))
+    nbRightSLIV = 0
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            if event.type == "dlFdSchedData":
+                SFN = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                if slot in SlotListInt:
+                    SLIVval = event.data["SLIV"]
+                    if SLIVval not in SLIVlistint:
+                        print("TTI trace ERROR: wrong SLIV %s instead of %s \
+                            at %s/%s" % (SLIVval, SLIV, SFN, slot))
+                        return 0
+                    nbRightSLIV = nbRightSLIV+1
+    return nbRightSLIV
+
+
+def checkAdaptiveDLMaxCodeRate(jsonPathName, rdAdaptiveReTxNackCount):
+    """
+
+    """
+
+# REs available per slot over a 160 ms (320 slots) period
+# (see http://5gtables.eecloud.dynamic.nsn-net.net/
+# ?code=ICCBLuYHekgCaQIENRN3pAAQAAAAAATbfSbb6PZBAAJKAQBAAAAAACYABIAAg0AAEE0AAAA
+# JABRUMRUMAkgAAAAAAAAAAAAAAAAAAABAgAAAABAAMQCRDAAAgAAAAAAAAAAAYBAEwLAAAAAA)
+# 132 = (13 symbols - 2 symbols for 2 DMRS) x 12 sub-carrier
+# 126 = (13 symbols - 2 symbol  for 2 DMRS) x 12 sub-carrier - 6 REs for TRS
+# 48 =  ( 4 symbols - 2 symbols for 2 DMRS) x 12 sub-carrier
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# !!!!!!!!!!!!! IMPORTANT REMARK !!!!!!!!!!!!!!!!!!!!!!!
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# TRS and CSI-CA allocation depends on the times attach wasreturn done.
+# TRS and CSI-CA allocation depends on the times attach was done.
+# over time during attach attempts...
+# So, this table is only working just after gNB reset and for first attach
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    TddREsPerFrame = ([[138, 138, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [144, 144, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [144, 144, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [144, 144, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [144, 144, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [144, 144, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [144, 144, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [144, 144, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [138, 138, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [144, 144, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [144, 144, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [144, 144, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [144, 144, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [144, 144, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [144, 144, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       [144, 144, 144, 54, 0, 0, 144, 144, 144, 144, 144, 144, 144, 54, 0, 0, 144, 144, 144, 144],
+                       ])
+
+# Number of PRB already booked by SIB or MIB depending on SFN and slot
+# 32 PRBs for SSB, 64 PRB for SIBx
+    TddPRBSIBMIB = ([[32, 0, 64, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [32, 0, 64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]])
+
+    Sliv57State = 0
+    Sliv30State = 0
+
+    Sliv30_Dl_Counter = 0
+    Sliv30_Sliv57_Counter = 0
+    Sliv30_Sliv30_Counter = 0
+    Sliv57_Dl_Counter = 0
+    Sliv57_Sliv57_Counter = 0
+    Sliv57_Sliv30_Counter = 0
+    Dl_Dl_Counter = 0
+    Dl_Sliv57_Counter = 0
+    Dl_Sliv30_Counter = 0
+    REDelta = 500
+
+    ReservedMcs1 = 29
+    ReservedMcs2 = 30
+    ReservedMcs3 = 31
+
+    targetPct = 100
+    MinPct = 50
+    MaxPRB = 273
+    RBGSize = 16
+    dlHarqProcessTable = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]
+    PRBMargin = 3
+    numOfChecksWithMoreResources = 0
+    numOfChecksWithLessResources = 0
+    numOfChecksWithSameResources = 0
+    numOfReservedMcs = 0
+    numOfUnexpectedPRBRBG = 0
+    numOfUnexpectedPRBCand = 0
+    numOfUnexpectedMCS = 0
+    if rdAdaptiveReTxNackCount == 2:
+        needToCheckRV3 = False
+    else:
+        needToCheckRV3 = True
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            if event.type == "dlFdSchedData":
+                dlHarqProcessIndex = event.data["dlHarqProcessIndex"]
+                # Filter broadcast RNTI
+                if event.data["eventHeader"]["rnti"] != 65535:
+                    dlHarqProcessTable[dlHarqProcessIndex].append(event.data)
+
+    # TTI trace is processed by HARQ
+    for harqProcessId in range(0, 16):
+        ndi = 0
+        print('Processing HARQ process ID: %s' % harqProcessId)
+        for dlFdSchedEvents in dlHarqProcessTable[harqProcessId]:
+            sfn = dlFdSchedEvents["eventHeader"]["sfn"]
+            slot = dlFdSchedEvents["eventHeader"]["slot"]
+            rrmDlUsedMcs = dlFdSchedEvents["rrmDlUsedMcs"]
+            numOfPrb = dlFdSchedEvents["numOfPrb"]
+            startPrb = dlFdSchedEvents["startPrb"]
+            dlHarqProcessIndex = dlFdSchedEvents["dlHarqProcessIndex"]
+            sliv = dlFdSchedEvents["SLIV"]
+            redundancyVersion = dlFdSchedEvents["redundancyVersion"]
+            tbSize = dlFdSchedEvents["tbSize"]
+            PRBCandRetx = dlFdSchedEvents["PRBCandRetx"]
+            PRBMinRetx = dlFdSchedEvents["PRBMinRetx"]
+            PRBMaxCodeRateRetx = dlFdSchedEvents["PRBMaxCodeRateRetx"]
+            adaptRetxStatus = dlFdSchedEvents["adaptRetxStatus"]
+
+            if dlFdSchedEvents["numCdmGroupNoData"] == 2:
+                UnusedREWith2L = 12
+            else:
+                UnusedREWith2L = 0
+
+            # In case of an initial transmission, we save number of RE and number of PRB
+            if redundancyVersion == 0:
+                ndi = 1
+                McsIni = rrmDlUsedMcs
+                # The use of SLIV 53 and 67 is not clear to me. It does not belong to a dedicated slot.
+                # I don't exactly know when it's used, so add special cases for it:
+                if sliv == 53:
+                    REIni = 132 - UnusedREWith2L    # (11*12) - 12 RE if numCdmGroupNoData==2
+                elif sliv == 67:
+                    REIni = 120 - UnusedREWith2L    # (10*12) - 12 RE if numCdmGroupNoData==2
+                elif sliv == 54:
+                    REIni = 132 - UnusedREWith2L    # (11*12) - 12 RE if numCdmGroupNoData==2
+                elif sliv == 30:
+                    REIni = 30 - (UnusedREWith2L/2)  # (2*12)+6RE - 6RE if numCdmGroupNoData==2
+                elif sliv == 57:
+                    REIni = 54 - (UnusedREWith2L/2)  # (4*12)+6RE - 6RE if numCdmGroupNoData==2
+                else:
+                    REIni = TddREsPerFrame[sfn % 16][slot] - UnusedREWith2L
+                PRBIni = numOfPrb
+                print("New data (RV=0): SFN/slot: %s.%s, RE in slot: %s, MCS: %s, num of PRBs: %s" %
+                      (sfn, slot, REIni, McsIni, PRBIni))
+
+                if sliv == 30:
+                    Sliv30State = 1
+                else:
+                    Sliv30State = 0
+                if sliv == 57:
+                    Sliv57State = 1
+                else:
+                    Sliv57State = 0
+
+            else:
+                # Check adaptive retransmission only in case RV=2 or RV=1 and RV=3 only in case
+                # HARQ DTX feedback hardening is not delivered (needToCheckRV3 == True)
+                if ndi == 1 and (redundancyVersion != 3 or needToCheckRV3):
+                    if sliv == 53:
+                        RERetransPerPRB = 132 - UnusedREWith2L    # (11*12) - 12 RE if numCdmGroupNoData==2
+                    elif sliv == 67:
+                        RERetransPerPRB = 120 - UnusedREWith2L    # (10*12) - 12 RE if numCdmGroupNoData==2
+                    elif sliv == 54:
+                        RERetransPerPRB = 132 - UnusedREWith2L    # (11*12) - 12 RE if numCdmGroupNoData==2
+                    elif sliv == 30:
+                        RERetransPerPRB = 30 - (UnusedREWith2L/2)  # (2*12)+6RE - 6RE if numCdmGroupNoData==2
+                    elif sliv == 57:
+                        RERetransPerPRB = 54 - (UnusedREWith2L/2)  # (4*12)+6RE - 6RE if numCdmGroupNoData==2
+                    else:
+                        RERetransPerPRB = TddREsPerFrame[sfn % 16][slot] - UnusedREWith2L
+                    if REIni < RERetransPerPRB:
+                        numOfChecksWithMoreResources += 1
+                    elif REIni > RERetransPerPRB:
+                        numOfChecksWithLessResources += 1
+                    else:
+                        numOfChecksWithSameResources += 1
+                    ExpectedPRBCand = math.ceil((PRBIni*REIni*targetPct)/(RERetransPerPRB*100))
+
+                    # Check number of PRB allocated with a 3 PRB margin
+                    if (ExpectedPRBCand > PRBCandRetx + PRBMargin) or (ExpectedPRBCand < PRBCandRetx - PRBMargin):
+                        print("==> To be checked: wrong value for PRBCand: %s expected: %s" %
+                              (PRBCandRetx, ExpectedPRBCand))
+                        numOfUnexpectedPRBCand += 1
+
+                    # In case the number of needed PRB + number of PRB busy by SSB or SIBx
+                    #  exceed the max number of PRB, number of PRB is limited ro maxPRB
+                    PRBBusy = TddPRBSIBMIB[sfn % 16][slot]
+                    if ExpectedPRBCand + PRBBusy > MaxPRB:
+                        ExpectedPRBCand = MaxPRB - PRBBusy
+
+                    # PRB alignment to RBG
+                    # PRB alignment to RBG depends on RBG size but also is last RBG is used or not.
+                    # It's too complicated to forecast expected values, so I only check
+                    # if number of RBG is one of the 4 expected values
+                    ExpectedPRBCandRBG_1 = 16*(int(ExpectedPRBCand / RBGSize) + 1)
+                    ExpectedPRBCandRBG_2 = 16*int(ExpectedPRBCand / RBGSize)
+                    ExpectedPRBCandRBG_3 = 16*int(ExpectedPRBCand / RBGSize) + MaxPRB % RBGSize
+                    ExpectedPRBCandRBG_4 = 16*(int(ExpectedPRBCand / RBGSize) + 1) + MaxPRB % RBGSize
+
+                    print("Retrans: SFN/slot: %s.%s, RV: %s, MCS: %s, REs in slot: %s, PRB busy in slot: %s, \
+Expected PRBCand: %s, Expected PRBCandRBG: %s or %s or %s or %s , PRBCand in TTI: %s, numOfPrb in TTI: %s" %
+                          (sfn, slot, redundancyVersion, rrmDlUsedMcs, RERetransPerPRB, PRBBusy,
+                           ExpectedPRBCand,
+                           ExpectedPRBCandRBG_1, ExpectedPRBCandRBG_2, ExpectedPRBCandRBG_3, ExpectedPRBCandRBG_4,
+                           PRBCandRetx, numOfPrb))
+
+                    if ((ExpectedPRBCandRBG_1 != numOfPrb) and (ExpectedPRBCandRBG_2 != numOfPrb) and
+                       (ExpectedPRBCandRBG_3 != numOfPrb) and (ExpectedPRBCandRBG_4 != numOfPrb)):
+                        print("==> To be checked: wrong value for PRBCandRBG")
+                        numOfUnexpectedPRBRBG += 1
+
+                    #
+                    # Check that reserved MCS is used in case of different number of PRB or RE
+                    # and initial MCS is used in case of same number of REs in retransmission slot.
+                    #
+                    # However, it's not because there are the same number of REs in initial and retrans PRBs
+                    # that the initial MCS is used. Initial MCS is only use in case TBS is the same.
+                    # On the contrary adaptive retrans takes into account TRS (for example) which is not taken
+                    # into account by TBS computation.
+                    # It's too difficult to check if TBS is the same. So, the check is kept and generate
+                    # a ~1 or 2 % error cases.
+                    # I have preferred to keep it instead of removing it.
+                    # If something gets wrong the error ratio will increase and an error will be detected.
+                    #
+                    if (((RERetransPerPRB*numOfPrb == REIni*PRBIni) and (rrmDlUsedMcs != McsIni)) or
+                       ((RERetransPerPRB*numOfPrb != REIni*PRBIni) and (rrmDlUsedMcs != ReservedMcs1) and
+                       (rrmDlUsedMcs != ReservedMcs2) and (rrmDlUsedMcs != ReservedMcs3))):
+                        print("==> To be checked: wrong MCS for retrans")
+                        numOfUnexpectedMCS += 1
+
+                    if ((rrmDlUsedMcs == ReservedMcs1) or (rrmDlUsedMcs == ReservedMcs2) or
+                       (rrmDlUsedMcs == ReservedMcs3)):
+                        numOfReservedMcs += 1
+
+                    if ((Sliv30State == 1 and sliv == 40) or (Sliv30State == 1 and sliv == 53) or
+                       (Sliv30State == 1 and sliv == 67) or (Sliv30State == 1 and sliv == 54)):
+                        Sliv30_Dl_Counter += 1
+
+                    if (Sliv30State == 1 and sliv == 57):
+                        Sliv30_Sliv57_Counter += 1
+
+                    if (Sliv30State == 1 and sliv == 30):
+                        Sliv30_Sliv30_Counter += 1
+
+                    if ((Sliv57State == 1 and sliv == 40) or (Sliv57State == 1 and sliv == 53) or
+                       (Sliv57State == 1 and sliv == 67) or (Sliv57State == 1 and sliv == 54)):
+                        Sliv57_Dl_Counter += 1
+
+                    if (Sliv57State == 1 and sliv == 57):
+                        Sliv57_Sliv57_Counter += 1
+
+                    if (Sliv57State == 1 and sliv == 30):
+                        Sliv57_Sliv30_Counter += 1
+
+                    if ((Sliv30State == 0 and Sliv57State == 0 and sliv == 40) or
+                       (Sliv30State == 0 and Sliv57State == 0 and sliv == 53) or
+                       (Sliv30State == 0 and Sliv57State == 0 and sliv == 67) or
+                       (Sliv30State == 0 and Sliv57State == 0 and sliv == 54)):
+                        Dl_Dl_Counter += 1
+
+                    if (Sliv30State == 0 and Sliv57State == 0 and sliv == 57):
+                        Dl_Sliv57_Counter += 1
+
+                    if (Sliv30State == 0 and Sliv57State == 0 and sliv == 30):
+                        Dl_Sliv30_Counter += 1
+
+                    if redundancyVersion == 1:
+                        ndi = 0
+
+    totalChecks = numOfChecksWithLessResources + numOfChecksWithMoreResources + numOfChecksWithSameResources
+    totalErrors = numOfUnexpectedMCS + numOfUnexpectedPRBRBG + numOfUnexpectedPRBCand
+    print("Num of check performed with less number of REs as initial transmission: " +
+          str(numOfChecksWithLessResources))
+    print("Num of check performed with more number of REs as initial transmission: " +
+          str(numOfChecksWithMoreResources))
+    print("Num of check performed with same number of REs as initial transmission: " +
+          str(numOfChecksWithSameResources))
+    print("Total number of checks: " + str(totalChecks))
+    print("Number of reserved MCS: " + str(numOfReservedMcs))
+    print("Number of unexpected MCS: " + str(numOfUnexpectedMCS))
+    print("Number of unexpected PRBs: " + str(numOfUnexpectedPRBCand))
+    print("Number of unexpected RBGs: " + str(numOfUnexpectedPRBRBG))
+    print("Total number of unexpected values: " + str(totalErrors))
+    AdaptiveReTxErrorRatio = ((100*totalErrors) / (totalChecks*3))
+    print("Error ratio: ==> " + str(AdaptiveReTxErrorRatio) + " % <<=")
+    if (numOfChecksWithLessResources == 0 or numOfChecksWithMoreResources == 0 or numOfChecksWithSameResources == 0):
+        # Return an error in case some cases are missing.
+        AdaptiveReTxErrorRatio = 100
+
+    print("number of ReTxn from Sliv 30 to Dl: " + str(Sliv30_Dl_Counter))
+    print("number of ReTxn from Sliv 30 to Sliv 57: " + str(Sliv30_Sliv57_Counter))
+    print("number of ReTxn from Sliv 30 to Sliv 30: " + str(Sliv30_Sliv30_Counter))
+    print("number of ReTxn from Sliv 57 to Dl: " + str(Sliv57_Dl_Counter))
+    print("number of ReTxn from Sliv 57 to Sliv 57: " + str(Sliv57_Sliv57_Counter))
+    print("number of ReTxn from Sliv 57 to Sliv 30: " + str(Sliv57_Sliv30_Counter))
+    print("number of ReTxn from Dl to Dl: " + str(Dl_Dl_Counter))
+    print("number of ReTxn from Dl to Sliv 57: " + str(Dl_Sliv57_Counter))
+    print("number of ReTxn from Dl to Sliv 30: " + str(Dl_Sliv30_Counter))
+
+    checksSumUp = {"reservedMcsDetected": numOfReservedMcs,
+                   "unexpectedMcsDetected": numOfUnexpectedMCS,
+                   "unexpectedPRBDetected": numOfUnexpectedPRBCand,
+                   "unexpectedRBGDetected": numOfUnexpectedPRBRBG,
+                   "moreResourceChecks": numOfChecksWithMoreResources,
+                   "lessResourceChecks": numOfChecksWithLessResources,
+                   "sameResourceChecks": numOfChecksWithSameResources,
+                   "ErrorRatio": AdaptiveReTxErrorRatio,
+                   "ReTxnSliv30_Dl": Sliv30_Dl_Counter,
+                   "ReTxnSliv30_Sliv57": Sliv30_Sliv57_Counter,
+                   "ReTxnSliv30_Sliv30": Sliv30_Sliv30_Counter,
+                   "ReTxnSliv57_Dl": Sliv57_Dl_Counter,
+                   "ReTxnSliv57_Sliv57": Sliv57_Sliv57_Counter,
+                   "ReTxnSliv57_Sliv30": Sliv57_Sliv30_Counter,
+                   "ReTxnDl_Dl": Dl_Dl_Counter,
+                   "ReTxnDl_Sliv57": Dl_Sliv57_Counter,
+                   "ReTxnDl_Sliv30": Dl_Sliv30_Counter}
+
+    return checksSumUp

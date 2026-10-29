@@ -1,0 +1,87 @@
+import os
+import json
+import getopt
+import sys
+import zipfile
+from enum import Enum
+
+# TAF Libraries:
+from taf.analyzer.ttitrace_eventdecoder import TtitraceReader as TtitraceReaderEvtDec
+
+
+def isBeamUsageAboveTarget(jsonPathName, beamToCheck, BeamUsageTarget):
+    """
+    This function return the value of DL selectedBestBeamId in TTI trace.
+    """
+    if not os.path.exists(jsonPathName) or os.path.getsize(jsonPathName) <= 24:
+        print("TTI trace ERROR: %s doesn't exist or size <= 24" % jsonPathName)
+        return 0
+    jsonExtension = os.path.splitext(jsonPathName)
+    print("DTN: file name = %s - file extension = %s" % (jsonExtension[0], jsonExtension[1]))
+
+    nbMsg = 0
+    dlSelectedBeamDistribution = {}
+    ulSelectedBeamDistribution = {}
+    # dlSelectedBeamDistribution[0] = 0     for debug
+    # ulSelectedBeamDistribution[0] = 0
+    # dlSelectedBeamDistribution[6] = 10
+    # ulSelectedBeamDistribution[6] = 0
+    print("%s" % (dlSelectedBeamDistribution))
+    print("The beam to check is beam ID = %s" % (beamToCheck))
+    print("The beam utilisation ratio target must be above %s" % (BeamUsageTarget))
+
+    with open(jsonPathName, 'rb') as file_obj:
+        for i, event in enumerate(TtitraceReaderEvtDec(file_obj=file_obj)):
+            nbMsg = nbMsg+1
+            # if nbMsg > 15000: break     for debug
+            if event.type == "dlBeamData":
+                DLselectedBestBeamId = event.data["selectedBestBeamId"]
+                SFN = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                print("Message #%s : DLselectedBestBeamId = %s at %s.%s" % (nbMsg, DLselectedBestBeamId, SFN, slot))
+                if not (DLselectedBestBeamId in dlSelectedBeamDistribution):
+                    dlSelectedBeamDistribution[DLselectedBestBeamId] = 0
+                dlSelectedBeamDistribution[DLselectedBestBeamId] += 1
+            if event.type == "ulBeamData":
+                ULselectedBestBeamId = event.data["selectedBestBeamId"]
+                SFN = event.data["eventHeader"]["sfn"]
+                slot = event.data["eventHeader"]["slot"]
+                print("Message #%s : ULselectedBestBeamId = %s at %s.%s" % (nbMsg, ULselectedBestBeamId, SFN, slot))
+                if not (ULselectedBestBeamId in ulSelectedBeamDistribution):
+                    ulSelectedBeamDistribution[ULselectedBestBeamId] = 0
+                ulSelectedBeamDistribution[ULselectedBestBeamId] += 1
+
+    print("distribution of selected DL beam (beam ID, nb of occurence)= %s" % (dlSelectedBeamDistribution))
+    print("distribution of selected UL beam (beam ID, nb of occurence)= %s" % (ulSelectedBeamDistribution))
+    dlTotalNbOccurence = 0
+    for i in dlSelectedBeamDistribution:
+        dlTotalNbOccurence += int(dlSelectedBeamDistribution[int(i)])
+
+    ulTotalNbOccurence = 0
+    for i in ulSelectedBeamDistribution:
+        ulTotalNbOccurence += int(ulSelectedBeamDistribution[int(i)])
+
+    dlratioBeamUsage = dlSelectedBeamDistribution[int(beamToCheck)]/dlTotalNbOccurence
+    ulratioBeamUsage = ulSelectedBeamDistribution[int(beamToCheck)]/ulTotalNbOccurence
+
+    print("dlratioBeamusage = %s" % (dlratioBeamUsage))
+    print("ulratioBeamusage = %s" % (ulratioBeamUsage))
+
+    if (dlratioBeamUsage < float(BeamUsageTarget)):
+        print("The utilisation ratio for beam ID %s in DL is below the target of %s" % (beamToCheck, BeamUsageTarget))
+        return 0
+    if (ulratioBeamUsage < float(BeamUsageTarget)):
+        print("The utilisation ratio for beam ID %s in UL is below the target of %s" % (beamToCheck, BeamUsageTarget))
+        return 0
+    return 1
+
+    print("nombre total d'occurence en DL = %s" % (dlTotalNbOccurence))
+    print("dlSelectedBeamDistribution[5] = %s" % (dlSelectedBeamDistribution[5]))
+    print("dlSelectedBeamDistribution[int(beamToCheck)] = %s" % (dlSelectedBeamDistribution[int(beamToCheck)]))
+    dlNbOfOccurence = dlSelectedBeamDistribution[int(beamToCheck)]
+    ulNbOfOccurence = ulSelectedBeamDistribution[int(beamToCheck)]
+    print("Nb of occurence in DL for beamid %s is = %s" % (int(beamToCheck), dlNbOfOccurence))
+    print("Nb of occurence in UL for beamid %s is = %s" % (beamToCheck, ulNbOfOccurence))
+    dictBeamDistribution = {'dlNbOfOccurence': dlNbOfOccurence, 'ulNbOfOccurence': ulNbOfOccurence}
+    print(dictBeamDistribution)
+    return dictBeamDistribution

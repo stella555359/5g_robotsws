@@ -1,0 +1,32 @@
+import os
+
+__team__ = "MN 5G RAN I&V 4 Pz HZG SG1"
+__email__ = "I_MN_5G_RAN_IV4_LINE_HZG_1@internal.nsn.com"
+
+
+# modify CB007078 SCF
+# CU
+PARAMS_TO_DELETE_CU_7078 = []
+
+MOs_TO_ADD_CU_7078 = []
+
+PARAMS_TO_MODIFY_CU_7078 = []
+
+
+LIST_PARAMS_TO_MODIFY_CU_7078 = []
+
+
+LIST_TO_ADD_CU_7078 = []
+
+
+# DU
+
+PARAMS_TO_DELETE_DU_7078 = []
+
+MOs_TO_ADD_DU_7078 = []
+
+PARAMS_TO_MODIFY_DU_7078 = []
+
+LIST_PARAMS_TO_MODIFY_DU_7078 = []
+
+LIST_TO_ADD_DU_7078 = []

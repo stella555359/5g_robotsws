@@ -1,0 +1,507 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for 5GC000522 feature tests cases
+...
+...               Automation author           : yann.ah.herve@nokia.com
+...               Automation contact          : davide.bacchiega@nokia.com
+...               Creation Date               : 30-Sept-2021
+...               Modified Date               : 12-Jan-2024
+...               Last Modified by            : imen.mestiri@nokia.com
+...               Modification:
+...               07-March-2022:
+...               Use TM BLER to cover all MCS 256QAM instead of RAD param to set MCS to use
+...               Data volume check  replaces data throughput check with eGate command
+...               12-Jan-2024                 : Adding KWs for VRAN4
+
+
+Library           taf.wts.runner     WITH NAME     wtsemu
+Library           ../../../../../../Paris/RRM/ET/resources/python/luashark_tools.py
+Library           OperatingSystem
+
+Resource          ../../../../../../Paris/resources/SWENG/robot/Oam.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Restart.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Capture.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Tools.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Setup.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/PacketSearch.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Scf.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../../Paris/resources/SWENG/robot/Counters.robot
+
+Variables         ../../../../../resources/SWENG/python/Colors.py
+
+
+*** Variables **
+
+@{FIELDS_PDSCHSendReq}      mcs     modulationOrder
+
+${counter_DL_RLCdataPDUvolume_NSA}      M55310C01009
+
+@{counters_initial_dl_transmission_256QAM}        M55300C04020    M55300C04021    M55300C04022    M55300C04023
+...                                               M55300C04024    M55300C04025    M55300C04026    M55300C04027
+...                                               M55300C04028
+
+#MCS28 counter doesn't exist in 256QAM, MCS28..MCS31 are reserved (256 QAM Table)
+@{counters_initial_dl_transmission_256QAM_VRAN}        M55300C04020    M55300C04021    M55300C04022    M55300C04023
+...                                               M55300C04024    M55300C04025    M55300C04026    M55300C04027
+
+@{counters_success_dl_transmission_256QAM}        M55300C06020    M55300C06021    M55300C06022    M55300C06023
+...                                               M55300C06024    M55300C06025    M55300C06026    M55300C06027
+...                                               M55300C06028
+
+# Min expected number of MCS usage over test duration (empirical value)
+${min_num_of_256qam_mcs}                          12000
+
+${default_cell_bound}                             8
+
+${DLthroughput}                                   50
+
+${MCSprofile1}                                    21
+${MCSprofile2}                                    25
+
+${DLprofile1Duration}                             30
+${DLprofile1DurationPCAP}                         2
+${DLprofile2Duration}                             30
+${DLprofile2DurationPCAP}                         3
+${TestSharkTool}                                  MC_SHARK
+
+*** Keywords ***
+#=======================================================================================================================
+# KW to perform checks in pcap files
+#=======================================================================================================================
+
+Update RI reported values
+    [Documentation]             This KW is used to send a command to WTS in order to report a rank 2 towards gNB (i.e.: RI=1)
+    ...                         In fact, it seems useless as, by doing some trials, reported rank is already set to 2
+    ...                         However, when looking at the configured default test configuration RI is set to 0...
+    ...                         I don't really know why there is a difference. To be sure I have added this WTS command
+    ...                         in order to change the test mode RI to 1 instead of 0 as it's displayed.
+    ...                         May be it's useless ?
+    [Arguments]                 ${ueSetting}
+    ...                         ${ri_value}=1
+
+    ${console_msg}              Evaluate     "${BG_CYAN}Updating RI values to rank ${ri_value}${NORMAL}"
+    Dated Log                   ${console_msg}
+
+    # Be sure to have RI reported to 1 in order to perform DL in 2 layers.
+    wtsemu.csi_override_testmode_nr             profile_id=1       cqi=15         ri_mode=fixed      cqi_mode=fixed              ri=1
+    wtsemu.ue_testmode_set_nr                   id=${ueSetting.ue}      testmode=csi_override       action=activate     profile_id=1
+
+
+Check 256QAM in DL Traffic
+    [Documentation]                 Start DL traffic and call BIP 256QAM checks
+    [Arguments]                     ${duplexing_mode}
+
+    Init Trace color
+
+    # Capture initialisation
+    ${CaptureBIP_DL}                Capture L1L2 Set Upon Config            airscale=${GNB_DU}
+    Capture Init                    ${CaptureBIP_DL}                        withTN=True
+
+    ${file_name_wo_space}           getFormattedTestName
+    ${CaptureBIP_DL.prefix}         set variable                            ${CaptureBIP_DL.prefix}_${file_name_wo_space}
+
+
+    # Define BLER configurations
+    wtsemu.bler_testmode_nr         profile_id=3
+    ...                             target_mcs=${MCSprofile1}
+	...                             target_bler=100,100,100,100,95,90,50,10,5,1,0.5,0.1,0,0,0
+	...                             mcs_table=2
+    ...                             num_dl_pkts=2000
+
+    wtsemu.bler_testmode_nr         profile_id=4
+    ...                             target_mcs=${MCSprofile2}
+	...                             target_bler=100,100,95,90,80,70,50,10,5,1,0.5,0.1,0,0,0
+	...                             mcs_table=2
+    ...                             num_dl_pkts=2000
+
+    # activate first TM BLER profile
+    wtsemu.ue_testmode_set_nr       id=${UE_SIMPLE.ue}
+    ...                             testmode=bler
+    ...                             profile_id=3
+    ...                             scell=${default_cell_bound}
+    ...                             action=activate
+
+    Traffic UE DL                   ueSetting=${UE_SIMPLE}
+    ...                             throughput=${DLthroughput}
+    ...                             shouldBeCheck=${False}
+    ...                             duration=${DLprofile1Duration}
+    ...                             shouldBeStop=${False}
+
+    Callback Capture L1L2           capture=${CaptureBIP_DL}                Action=START
+    Traced Sleep                    ${DLprofile1DurationPCAP}               msg=DL traffic capture with MCS target : ${MCSprofile1}
+
+    # deactivate first TM BLER profile
+    wtsemu.ue_testmode_set_nr       id=${UE_SIMPLE.ue}
+    ...                             testmode=bler
+    ...                             profile_id=3
+    ...                             scell=${default_cell_bound}
+    ...                             action=deactivate
+
+    # activate second TM BLER profile
+    wtsemu.ue_testmode_set_nr       id=${UE_SIMPLE.ue}
+    ...                             testmode=bler
+    ...                             profile_id=4
+    ...                             scell=${default_cell_bound}
+    ...                             action=activate
+
+    Traced Sleep                    ${DLprofile2DurationPCAP}               msg=DL traffic capture with MCS target : ${MCSprofile2}
+    Callback Capture L1L2           capture=${CaptureBIP_DL}                Action=STOP
+
+    Traced Sleep                    ${DLprofile2Duration}                   msg=DL traffic with MCS target : ${MCSprofile2}
+
+    # Stop traffic
+    Traffic Stop                    ueSetting=${UE_SIMPLE}                  dir=dl
+
+    # deactivate second TM BLER profile
+    wtsemu.ue_testmode_set_nr       id=${UE_SIMPLE.ue}
+    ...                             testmode=bler
+    ...                             profile_id=4
+    ...                             scell=${default_cell_bound}
+    ...                             action=deactivate
+
+    Check BIP 256QAM in DL Traffic       pcapFile=${CaptureBIP_DL.path}     duplexing_mode=${duplexing_mode}
+
+Init Trace color
+    ${consTraceColor}               Evaluate                    "${CYAN}"
+    ${defColor}                     Evaluate                    "${NORMAL}"
+    Set Suite Variable              ${consTraceColor}
+    Set Suite Variable              ${defColor}
+
+Check BIP 256QAM in DL Traffic
+    [Documentation]                 KW for checking 256QAM configuration inside PDSCH
+
+    [Arguments]                     ${pcapFile}
+    ...                             ${duplexing_mode}
+
+    Dated Log New Line              ${consTraceColor}=== Check dldata_Pdschsendreq BIP messages === ${defColor}
+
+    ${filterPcap}                   analyzer.filter_pcap                               ${pcapFile}
+    ...                             filterName=dldata_pdschsendreq
+    ...                             filterExp=(dldata_pdschsendreq)&&!(3gpp.rnti==0xffff)
+
+    ${pdmlFile}=                    analyzer.pcap_to_pdml                              ${filterPcap}
+
+    # Sample some packets and check additional DMRS configuration
+    @{listSomePdschSendReq}         Get Packet Match List
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=dldata_pdschsendreq
+    ...                             pathList=${FIELDS_PDSCHSendReq}
+
+    ${lenPdschSendReq}              get length          ${listSomePdschSendReq}
+    Dated Log                       ${consTraceColor}Total number of PdschSendReq msg: ${lenPdschSendReq} ${defColor}
+    should be true                  ${lenPdschSendReq}!=0
+
+    ${Nb_mcs20_in_pcap}             Set Variable     0
+    ${Nb_mcs27_in_pcap}             Set Variable     0
+    ${Nb_mcs256QAM_in_pcap}         Set Variable     0
+    FOR    ${packet}   IN           @{listSomePdschSendReq}
+            # Get MCS value
+            ${mcs_in_pcap}          Get Value In Packet Match
+            ...                     packetMatch=${packet}
+            ...                     field=mcs
+
+            ${Nb_mcs20_in_pcap}        Run Keyword If          ${mcs_in_pcap}==20     Evaluate     ${Nb_mcs20_in_pcap}+1
+            ...                        ELSE                                           Evaluate     ${Nb_mcs20_in_pcap}+0
+            ${Nb_mcs27_in_pcap}        Run Keyword If          ${mcs_in_pcap}==27     Evaluate     ${Nb_mcs27_in_pcap}+1
+            ...                        ELSE                                           Evaluate     ${Nb_mcs27_in_pcap}+0
+            ${Nb_mcs256QAM_in_pcap}    Run Keyword If          ${mcs_in_pcap}>=20     Evaluate     ${Nb_mcs256QAM_in_pcap}+1
+            ...                        ELSE                                           Evaluate     ${Nb_mcs256QAM_in_pcap}+0
+
+            # Get modulation order
+            ${modulationOrder}          Get Value In Packet Match
+            ...                         packetMatch=${packet}
+            ...                         field=modulationOrder
+            #Dated Log              Checking PDSCH packet with:
+            #Dated Log              => MCS:${mcs_in_pcap}, Modulation order:${modulationOrder}
+
+            # Check modulation order = 8 for 256QAM
+            Run Keyword If          ${mcs_in_pcap}>=20      should be true     ${modulationOrder}==8
+    END
+    Dated Log                       ${consTraceColor}Nb of grants in pcap: ${lenPdschSendReq} ${defColor}
+    Dated Log                       ${consTraceColor}Nb of MCS 20 in pcap: ${Nb_mcs20_in_pcap} ${defColor}
+    Dated Log                       ${consTraceColor}Nb of MCS 27 in pcap: ${Nb_mcs27_in_pcap} ${defColor}
+    Dated Log                       ${consTraceColor}Nb of MCS 256QAM in pcap: ${Nb_mcs256QAM_in_pcap} ${defColor}
+
+Verify DL data volume
+    [Documentation]             Dedicated KW for checking DL data volume according to the traffic
+    ...                         ${pm_path} Path to PM files
+    [Arguments]                 ${pm_path}
+    Dated Log new line          ${consTraceColor}=== Check DL data volume === ${defColor}
+
+    ${data_volume}              Retrieve Counter Sum of Values From Pm Files For Object With Name
+    ...                         ${pm_path}     NRCELL    ${counter_DL_RLCdataPDUvolume_NSA}
+
+    ${Duration}                 Evaluate       ${DLprofile1Duration}+${DLprofile1DurationPCAP}+${DLprofile2Duration}+${DLprofile2DurationPCAP}
+    ${expected_data_volume}                Evaluate       ${DLthroughput}*1000000*${Duration}/8
+    ${expected_data_volume_with_margin}    Evaluate       ${expected_data_volume} - ${expected_data_volume}*5/100
+
+    Dated Log                   ${consTraceColor}- Expected DL data volume min: ${expected_data_volume_with_margin} ${defColor}
+    Dated Log                   ${consTraceColor}- ${counter_DL_RLCdataPDUvolume_NSA} : ${data_volume} ${defColor}
+    Should Be True              ${data_volume} > ${expected_data_volume_with_margin}
+
+Verify DL data volume VRAN
+    [Documentation]             Dedicated KW for checking DL data volume
+
+    Dated Log new line          ${consTraceColor}=== Check DL data volume === ${defColor}
+
+    &{counter_dict}      Create Dictionary
+    ...                  counter=${counter_DL_RLCdataPDUvolume_NSA}    obj=NRCELL    objId=1
+
+#   &{counter_dict}    counter=${counter_DL_RLCdataPDUvolume_NSA}   obj=NRCELL     objId=1
+
+    ${data_volume}              Retrieve Counter Sum of Values From Pm Files For Object and Id on vDU
+    ...                         &{counter_dict}
+
+#    ${data_volume}              Retrieve Counter Sum of Values From Pm Files For Object With Name
+#    ...                         ${pm_path}     NRCELL    ${counter_DL_RLCdataPDUvolume_NSA}
+
+    ${Duration}                 Evaluate       ${DLprofile1Duration}+${DLprofile1DurationPCAP}+${DLprofile2Duration}+${DLprofile2DurationPCAP}
+    ${expected_data_volume}                Evaluate       ${DLthroughput}*1000000*${Duration}/8
+    ${expected_data_volume_with_margin}    Evaluate       ${expected_data_volume} - ${expected_data_volume}*5/100
+
+    Dated Log                   ${consTraceColor}- Expected DL data volume min: ${expected_data_volume_with_margin} ${defColor}
+    Dated Log                   ${consTraceColor}- ${counter_DL_RLCdataPDUvolume_NSA} : ${data_volume} ${defColor}
+    Should Be True              ${data_volume} > ${expected_data_volume_with_margin}
+
+Verify MCS Usage
+    [Documentation]             Dedicated KW for checking is 256QAM counter is triggered
+    ...                         ${pm_path} Path to PM files
+    [Arguments]                 ${pm_path}
+
+    Dated Log new line          ${consTraceColor}=== Check MCS 256QAM usage === ${defColor}
+
+    ${num_of_256qam_mcs}        Set Variable                    0
+    FOR    ${counter}    IN    @{counters_initial_dl_transmission_256QAM}
+
+        ${value}                 Retrieve Counter Sum of Values From Pm Files For Object With Name
+        ...                      ${pm_path}     NRCELL         ${counter}
+
+        Dated Log                ${consTraceColor} MCS counter ${counter}: ${value} ${defColor}
+        ${num_of_256qam_mcs}     Evaluate        ${num_of_256qam_mcs} + ${value}
+    END
+
+    Dated Log                   ${consTraceColor} Total number of 256QAM MCS in DL : ${num_of_256qam_mcs} ${defColor}
+    Should Be True              ${num_of_256qam_mcs} >= ${min_num_of_256qam_mcs}
+
+Verify MCS Usage VRAN
+    [Documentation]             Dedicated KW for checking if 256QAM counter is triggered
+
+    Dated Log new line          ${consTraceColor}=== Check MCS 256QAM usage === ${defColor}
+
+    ${num_of_256qam_mcs}        Set Variable                    0
+    FOR    ${counter}    IN    @{counters_initial_dl_transmission_256QAM_VRAN}
+
+        &{counter_dict}      Create Dictionary
+        ...                  counter=${counter}    obj=NRCELL    objId=1
+
+        ${value}                 Retrieve Counter Sum of Values From Pm Files For Object and Id on vDU
+        ...                      &{counter_dict}
+
+        Dated Log                ${consTraceColor} MCS counter ${counter}: ${value} ${defColor}
+        ${num_of_256qam_mcs}     Evaluate        ${num_of_256qam_mcs} + ${value}
+    END
+
+    Dated Log                   ${consTraceColor} Total number of 256QAM MCS in DL : ${num_of_256qam_mcs} ${defColor}
+    Should Be True              ${num_of_256qam_mcs} >= ${min_num_of_256qam_mcs}
+
+
+
+Verify Counter Cumulative Values With Margin
+    [Documentation]     KW used to check counters values for 5GC000522
+    ...                 It checks that:
+    ...                 Right MCS counter is incremented depending on MCS (30, 24, 27)
+
+    # Retrieve GP value
+    SCF StartSession                scf_file=${SCF_SETUP_PATH}
+    ${dist_name}                    Set Variable                 MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/PMCADM-1
+    ${reportingIntervalPm}          SCF Get Single Value         ${dist_name}           reportingIntervalPm
+    SCF StopSession                 scf_file=${SCF_SETUP_PATH}
+
+    # Sleep till GP expired
+    Traced Sleep                    ${reportingIntervalPm}[0]              msg="Waiting for GP expirency to check counters"
+
+    ${date}                          Get Current Date
+    ${date_in_dir_name}              Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                   Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+
+    ${pm_latest}                     Collect PM files from BTS    ${log_path_pm}
+
+    Verify DL data volume            pm_path=${log_path_pm}
+    Verify MCS Usage                 pm_path=${log_path_pm}
+
+Verify Counter Cumulative Values With Margin VRAN
+    [Documentation]     KW used to check counters values for 5GC000522
+    ...                 It checks that:
+    ...                 Right MCS counter is incremented depending on MCS (30, 24, 27)
+
+    # Retrieve GP value
+    SCF StartSession                scf_file=${SCF_SETUP_PATH}
+    ${dist_name}                    Set Variable                 MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/PMCADM-1
+    ${reportingIntervalPm}          SCF Get Single Value         ${dist_name}           reportingIntervalPm
+    ...                                                          Vdu                    aic
+    SCF StopSession                 scf_file=${SCF_SETUP_PATH}
+
+    # Sleep till GP expired
+    Traced Sleep                    ${reportingIntervalPm}[0]              msg="Waiting for GP expirency to check counters"
+
+    ${date}                          Get Current Date
+    ${date_in_dir_name}              Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                   Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+
+    ${pm_latest}                     Collect PM files from BTS    ${log_path_pm}
+
+    Verify DL data volume VRAN
+    Verify MCS Usage VRAN
+
+#=======================================================================================================================
+# KW to set some parameters in SCF
+#=======================================================================================================================
+
+Test Setup for 256QAM
+    [Documentation]    Configuration files are saved at test level
+    Backup Files        listFileDesc=${FD_ALL}
+
+
+Test Teardown for 256QAM
+    [Documentation]    Perform needed actions at the end of a test case
+    Dated log                       Test teardown : start
+    Restore Files                   listFileDesc=${FD_ALL}
+
+    # Stop Sherpa if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}             Sherpa.Deactivate Sherpa and Stop Collect
+    # "Test Teardown" KW from Setup.robot
+    Test Teardown
+    Dated log                       Test teardown : end
+
+Set 256QAM Config
+    [Documentation]                 Set suitable configuration for 256QAM tests (SCF and swconfig.txt)
+    # Updated SCF
+    &{scf_256qam}       Create Dictionary   dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${NRCELL_ID}
+    ...                                     parameter=actDl256Qam
+    ...                                     value=true
+
+	&{scf_adddmrsdl}    Create Dictionary   dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${NRCELL_ID}
+    ...                                     parameter=dlDMRSAdditionalPosition
+    ...                                     value=No additional DMRS
+
+    &{scf_adddmrsul}    Create Dictionary   dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${NRCELL_ID}
+    ...                                     parameter=ulDMRSAdditionalPosition
+    ...                                     value=No additional DMRS
+
+#   &{scf_silver}       Create Dictionary   dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+#   ...                                     parameter=actGeneralConnectivitySilver
+#   ...                                     value=true
+
+    ${param_list_scf}   Create List         ${scf_256qam}       ${scf_adddmrsdl}
+    ...                                     ${scf_adddmrsul}
+
+    Dated log                        Updating SCF file with SCF params: ${param_list_scf}
+
+    # Modify COAM parameters with rest API            modify_param=@{param_list_scf}
+    OAM Set Params       ${param_list_scf}
+
+Set MRBTSID and NRBTSID
+    ${dist_name_nrbts}                   Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ${dist_name_nrcell1}                 Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    ${dist_name_nrcell2}                 Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-2
+    ${dist_name_nrcellgrp1}              Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-1
+    ${dist_name_nrcellgrp2}              Set Variable    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELLGRP-2
+
+
+
+    Set Suite Variable              ${dist_name_nrbts}
+    Set Suite Variable              ${dist_name_nrcell1}
+    Set Suite Variable              ${dist_name_nrcell2}
+    Set Suite Variable              ${dist_name_nrcellgrp1}
+    Set Suite Variable              ${dist_name_nrcellgrp2}
+
+
+Set 256QAM Config VRAN4
+    [Documentation]                 Set suitable configuration for 256QAM tests (SCF and swconfig.txt)
+    # Updated SCF
+
+    ${SCF_PATH_522_DU}              OAM Get SCF File                oam=${GNB_DU.oam}        file=SCF_Setup_522_DU.xml
+    ${SCF_PATH_522_CU}              OAM Get CU SCF File             file=SCF_Setup_522_CU.xml
+
+    Set Suite Variable              ${SCF_PATH_522_DU}
+    Set Suite Variable              ${SCF_PATH_522_CU}
+
+    SCF StartSession                scf_file=${SCF_PATH_522_DU}     second_scf_file=${SCF_PATH_522_CU}
+
+    SCF Set element                 dist_name=${dist_name_nrbts}
+    ...                             element_name=actGeneralConnectivitySilver
+    ...                             element_value=true
+    ...                             aicListEntity=vduvcu    scope=both    bestEffort=${True}
+
+    SCF Set element                 dist_name=${dist_name_nrcell1}
+    ...                             element_name=actDl256Qam
+    ...                             element_value=true
+    ...                             aicListEntity=vduvcu    scope=both    bestEffort=${True}
+
+    SCF Set element                 dist_name=${dist_name_nrcell1}
+    ...                             element_name=dlDMRSAdditionalPosition
+    ...                             element_value=No additional DMRS
+    ...                             aicListEntity=vduvcu    scope=both    bestEffort=${True}
+
+    SCF Set element                 dist_name=${dist_name_nrcell1}
+    ...                             element_name=ulDMRSAdditionalPosition
+    ...                             element_value=No additional DMRS
+    ...                             aicListEntity=vduvcu    scope=both    bestEffort=${True}
+
+    SCF Set element                 dist_name=${dist_name_nrcell2}
+    ...                             element_name=actDl256Qam
+    ...                             element_value=true
+    ...                             aicListEntity=vduvcu    scope=both    bestEffort=${True}
+
+    SCF Set element                 dist_name=${dist_name_nrcell2}
+    ...                             element_name=dlDMRSAdditionalPosition
+    ...                             element_value=No additional DMRS
+    ...                             aicListEntity=vduvcu    scope=both    bestEffort=${True}
+
+    SCF Set element                 dist_name=${dist_name_nrcell2}
+    ...                             element_name=ulDMRSAdditionalPosition
+    ...                             element_value=No additional DMRS
+    ...                             aicListEntity=vduvcu    scope=both    bestEffort=${True}
+
+#    SCF Set element                 dist_name=${dist_name_nrcell1}
+#    ...                             element_name=dlMimoMode
+#    ...                             element_value=2x2 Closed Loop Spatial Multiplexing
+#    ...                             aicListEntity=vduvcu    scope=both    bestEffort=${True}
+
+#    SCF Set element                 dist_name=${dist_name_nrcell1}
+#    ...                             element_name=nrCellType
+#    ...                             element_value=2DL2UL
+#    ...                             aicListEntity=vduvcu    scope=both    bestEffort=${True}
+
+#    SCF Set element                 dist_name=${dist_name_nrcell1}
+#    ...                             element_name=actBeamforming
+#    ...                             element_value=false
+#    ...                             aicListEntity=vduvcu    scope=both    bestEffort=${True}
+
+#    ${list_name}                    Set Variable        beamSet
+#    SCF Set element in List         dist_name=${dist_name_nrcell1}    list_name=${list_name}
+#    ...                             element_name=basicBeamSet    aicListEntity=vduvcu   scope=Both
+#    ...                             element_value=beamSet_1
+
+#    SCF Set element                 dist_name=${dist_name_nrcellgrp1}
+#    ...                             element_name=numberOfTransmittedSsBlocks
+#    ...                             element_value=1 beam
+#    ...                             aicListEntity=vduvcu    scope=both    bestEffort=${True}
+
+#    KW to remove extra TXRX to be added
+
+    SCF StopSession                 scf_file=${SCF_PATH_522_DU}     second_scf_file=${SCF_PATH_522_CU}
+    Dated Log                         Modifications completed.\n
+    Oam.OAM Perform Full Commissioning          scf_file=${SCF_PATH_522_DU}
+    Run Keyword If                 ${isAic}
+    ...                            Oam.OAM Perform Full Commissioning    scf_file=${SCF_PATH_522_CU}    oam=${GNB_CU.oam}
+
+    Run keyword if                 ${isAic}
+	...                            Wait Vcu And Vdu Available
+
+    Run Keyword If                 not ${isAic}
+    ...                            WA Airscale Wait For Ready              ${GNB_DU}

@@ -1,0 +1,3080 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for 5GC001586 feature tests cases
+...
+...               Automation author           : christophe.samson@nokia.com
+...               Automation contact          : christophe.samson@nokia.com
+...               Creation Date               : 29-June-2020
+...               Modified Date               : 29-July-2020
+...               Last Modified by            : christophe.samson@nokia.com
+...               Last Modified by            : richard.duthu@nokia.com
+...               Last Modification           : Scout data + some fixes for RF50
+
+Library          taf.wts.runner                            WITH NAME    wtsemu
+Library          ute_wtssim
+Library          OperatingSystem
+Library          DateTime
+
+
+# 1586 specific
+Library          ../python/tools.py     WITH NAME    nps_dss_tools
+Library          ../python/Common.py
+Library          ../python/aasyslog.py
+Library          ../../../resources/DSS/python/robot_extension.py      WITH NAME          robot_extension
+
+Resource         ../../../../../resources/SWENG/robot/Container.robot
+Resource         ../../../../../resources/SWENG/robot/Restart.robot
+Resource         ../../../../../resources/SWENG/robot/Tools.robot
+
+# DSS Specific
+Resource         ../../../resources/DSS/robot/common_Dss_SA_NSA.robot
+
+# 1586 specific
+Resource         5GC001586_Kw_TestSetup.robot
+Resource         5GC001586_Ue_command.robot
+Resource         pcap.robot
+Resource         bip_trace.robot
+Resource         bip_trace_ap.robot
+Resource         tcpdump.robot
+
+*** Variables ***
+
+# ${BLACK}    "\\033[30m"
+# ${RED}      "\\033[31m"
+# ${BLUE}     "\\033[34m"
+# ${GREEN}    "\\033[32m"
+# ${NORMAL}   "\\033[0m"
+
+${kill_btslog}     timeout 5 sudo kill -9 $(ps -ef|grep btslog|grep -v grep|awk '{print $2}') 1>/dev/null 2>&1
+${kill_dpkg}       timeout 5 sudo kill -9 $(ps -ef|grep dpkg|grep tti-dec.deb|grep -v grep|awk '{print $2}') 1>/dev/null 2>&1
+${kill_sherpa}     timeout 5 sudo kill -9 $(ps -ef|grep ./Sherpa|grep -v grep|grep -v run|awk '{print $2}') 1>/dev/null 2>&1
+${kill_tcpdump}     timeout 5 sudo kill -9 $(ps -ef|grep tcpdump|grep -v grep|grep -v run|awk '{print $2}') 1>/dev/null 2>&1
+
+&{logs_and_traces_flags}     BackhaulTrace=${False}
+...                          L1L2BIPTrace=${True}
+...                          AP_L1L2BIPTrace=${True}
+...                          X2Trace=${False}
+
+
+&{start_end_trace_point}     get_biptrace_start_point=before_attach
+...                          get_biptrace_stop_point=after_attach
+...                          get_backhaul_start_point=before_attach
+...                          get_backhaul_stop_point=after_attach
+
+
+# to remove later
+&{OPT_GNB_MIRRORING}                bb_slot=bb_slot_1
+...                                 mirroring_mode='manual'
+# ...                                 bb_board_type='ABIL'
+...                                 l2_l1_bip='false'
+...                                 syscom_mirroring='false'
+...                                 carrier_aggregation='false'
+...                                 backhaul_mirroring='false'
+...                                 l2hi_l2lo_mirroring='false'
+...                                 filtering='off'
+...                                 capturing_time_seconds='1'
+
+&{CAPTURE_BH_GNB_FS_TO_REMOVE}                prefix=BH_GNB_FS                   name=
+...                                 path=                              filter=${EMPTY}
+
+# for PM Check
+${latest_pm_file_name}
+${coam_pm_file_path}   gnb_pm_counters
+
+# Table describing list of field we want to collect for each packet
+@{FIELDS_PUCCH_REQ}                 slot        sfn         rnti        pucchFormat     startPrb
+...                                 numOfBitsOfUciInformation           nANPucch        numOfSymbols
+...                                 firstSymbol
+@{FIELDS_PUCCH_RESP}                slot        sfn         rnti        pucchFormat     startPrb
+...                                 dtx         ackNack     crc
+@{FIELDS_PDSCHSendReq}              rat0Bitmap        rbgSize         numOfPrb
+@{FIELDS_PUCCHreceivereq}                           pucchFormat          startPrb         nANPucch
+@{FIELDS_PUSCHreceivereq}           numOfPrb       startPrb
+
+# Global counters to build status when parsing pucchResp packets
+${NbReq}                            0           # Number of pucchReq packets found
+${NbNone}                           0           # Number of pucchReq with no pucchResp found
+${NbOK}                             0           # Number of pucchReq/resp where numOfBitsOfUci is OK
+${NbKO}                             0           # Number of pucchReq/resp where numOfBitsOfUci is KO
+
+# UL/DL throughput
+${UL_THROUGHPUT}     200M
+${DL_THROUGHPUT}    600M
+@{UL_THROUGHPUT_LIST}
+@{DL_THROUGHPUT_LIST}
+${UL_EXPECT}        30M
+${DL_EXPECT}        30M
+
+${PCAP_PATH_GNB}=       /tmp/lte1460/portMirroringTmp.pcap.gz
+${PCAP_PATH_TMP_VM}=        /tmp/tmp.pcap
+
+${REGEX_PDU_SESSION_PASS}=  (Established PDU session ID=\\d+ using PDU Gateway ID=\\d+)
+
+
+*** Keywords ***
+# robocop: off=unused-argument
+# robocop: off=possible-variable-overwriting
+#===================================
+# To Start and stop Traces for 1586
+#===================================
+
+Init Trace color
+    ${consTraceColor}               Evaluate                    "${CYAN}"
+    ${consTraceColorBlack}          Evaluate                    "${BLACK}"
+    ${consTraceColorRed}            Evaluate                    "${RED}"
+    ${consTraceColorGreen}          Evaluate                    "${GREEN}"
+    ${consTraceColorYellow}         Evaluate                    "${YELLOW}"
+    ${consTraceColorBgBlue}         Evaluate                    "${BG_BLUE}"
+    ${consTraceColorBgYellow}       Evaluate                    "${BG_YELLOW}"
+    ${consTraceColorBgRed}          Evaluate                    "${BG_RED}"
+    ${defColor}                     Evaluate                    "${NORMAL}"
+    Set Suite Variable              ${consTraceColor}
+    Set Suite Variable              ${consTraceColorBlack}
+    Set Suite Variable              ${consTraceColorRed}
+    Set Suite Variable              ${consTraceColorGreen}
+    Set Suite Variable              ${consTraceColorYellow}
+    Set Suite Variable              ${consTraceColorBgBlue}
+    Set Suite Variable              ${consTraceColorBgYellow}
+    Set Suite Variable              ${defColor}
+    Set Suite Variable              ${consTraceColorBgRed}
+
+Clean Up Env
+    [Arguments]    ${host_ip}=localhost
+    [Documentation]    This keyword is to clean up testline process such as btslog and so on.
+    ...    Examples:
+    ...    | Clean Up Env |
+    ${HOME}=    Get Environment Variable    name=HOME
+    Run Keyword If     '${host_ip}'=='127.0.0.1' or '${host_ip}'=='localhost'    Run Keywords    Run     ${kill_btslog}
+    ...     AND     Run   ${kill_dpkg}
+    ...     AND     Run   ${kill_sherpa}
+    ...     AND     Run   ${kill_tcpdump}
+    ...     AND     Run    rm /tmp/admin_api_*.txt -f
+    ...     AND     Run    rm /tmp/disconnect*.ims2 -f
+    ...     AND     Run    rm ${EXECDIR}/admin_api_*.txt -f
+    ...     AND     Run    rm ${EXECDIR}/disconnect*.ims2 -f
+    ...     AND     Run    rm ${HOME}/SosReport*.tgz -f
+    ...     AND     Run    rm ${HOME}/WTS*.tgz -f
+    ...     AND     run keyword and ignore error   Run   command=cd ${EXECDIR}; find . -name '*disconnect*.ims2' -type f -print -exec rm -rf {} \\;
+    ...     AND     Run    rm /tmp/*.pcap* -rf
+    ...     AND     Run    rm /tmp/*.pcap -rf
+    ...     AND     Run    sudo rm /tmp/*.pcap* -rf
+    ...     AND     Dated log      Clean Up Env ===> Save sudo df -kh in df_kh.txt
+    ...     AND     Run    sudo df -kh > ${testCaseDir}/df_kh.txt
+    ...     AND     Dated log      Clean Up Env ===> Save sudo lsof -w /tmp in lsof_tmp.txt
+    ...     AND     Run    sudo lsof -w /tmp > ${testCaseDir}/lsof_tmp.txt
+    ...     ELSE    Run keywords    SSH.Connect To    ${host_ip}    ute    ute    alias=remote_connection
+    ...     AND     SSH.Execute    ${kill_btslog}    connection=remote_connection
+    ...     AND     SSH.Disconnect    connection=remote_connection
+
+Start capture Backhaul for DSS
+    ${capture_BH_GNB}=             set Backhaul Capture                     prefix=BH.XP
+    ${capture_BH_GNB}=             Initialize Filter XP message Capture     capture=${capture_BH_GNB}
+    set global variable            ${capture_BH_GNB}
+    common_Dss_Keywords.Start capture Backhaul XP for DSS New               capture=${capture_BH_GNB}
+
+Stop capture Backhaul for DSS
+    ${pdmlFile}      common_Dss_Keywords.Stop capture for Backhaul XP DSS New     capture=${capture_BH_GNB}
+    ...                                                             lua_path=/home/ute/tools/luashark/generated_luashark-9.1800.330/luashark.lua
+    [return]    ${pdmlFile}
+
+Start capture Bip and Xp for 1586
+    [Documentation]                1586-C : Start capture Bip and Xp for 1586
+    [Arguments]                    ${prefix}=XP_L1L2_BIP
+
+    # set a specific name to keep the trace
+    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}               Capture L1L2 Set Upon Config
+    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.prefix}         set Variable   ${prefix}
+    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.withTN}         set Variable   True
+    Set Suite Variable              ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}
+
+    ${capture_BH_GNB_ALL}=             set Backhaul Capture                     prefix=BH.XP.All
+    set global variable            ${capture_BH_GNB_ALL}
+    ${capture_BH_GNB_ALL}=             Initialize Filter XP message Capture     capture=${capture_BH_GNB_ALL}
+
+    # ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.filter}       Get Filter all BIP msgs
+    # ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.filter}       Catenate    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.filter}
+
+    # Initialize Capture                ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}
+    Capture Init                    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}   # ==== Capture Init Kw introduce 30s sleep , not very good !!!!
+    Capture Start                   ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}
+    common_Dss_Keywords.Start capture Backhaul XP for DSS New               capture=${capture_BH_GNB_ALL}
+
+Start capture Bip and Xp for 1586 OLD 24012022
+    [Documentation]                1586-C : Start capture Bip and Xp for 1586
+    [Arguments]                    ${prefix}=XP_L1L2_BIP
+
+    # set a specific name to keep the trace
+    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}               Capture L1L2 Set Upon Config
+    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.prefix}         set Variable   ${prefix}
+    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.withTN}         set Variable   True
+    Set Suite Variable              ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}
+
+    # Get SCF File (SCF.xml) in test setup
+    ${current_scf_fullname}    set Variable      ${LOG_PATH}/SCF.xml
+    scf.load_scf     ${current_scf_fullname}
+    ${ipAddr}        scf.get_value_from_scf   p_name=localIpAddr
+    ...              dist_name=MRBTS-${MRBTS_ID}/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1
+    ${ipAddress_XPIFREMOTE}  scf.get_value_from_scf   p_name=ipAddress
+    ...              dist_name=MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/XPAP-1/XPIF-1/XPIFREMOTE-1
+
+    ${filter_BH}       Catenate      '(src ${ipAddr} and dst ${ipAddress_XPIFREMOTE}) or (src ${ipAddress_XPIFREMOTE} and dst ${ipAddr})'
+    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.filter}       Get Filter all BIP msgs
+    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.filter}       Catenate    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.filter}    or ${filter_BH}
+    # ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.filter}       set variable        ${filter}
+    Dated log          CAPTURE_BH_GNB_FS_DSS.filter = ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.filter}
+    ${filterBH}   Catenate  '((ip.src == ${ipAddr}) && (ip.dst == ${ipAddress_XPIFREMOTE}) )
+    ...                       || ( (ip.src == ${ipAddress_XPIFREMOTE}) && (ip.dst == ${ipAddr}))'
+    set suite variable   ${filterBH}
+
+    # Initialize Capture                ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}
+    Capture Init                    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}   # ==== Capture Init Kw introduce 30s sleep , not very good !!!!
+    Capture Start                   ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}
+    Start capture BH data on GNB
+
+Stop capture Bip and Xp for 1586
+    [Arguments]
+    ${alias}                        SSH Connect                             host=${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.target.host}
+    Capture Stop                   ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH}
+    common_Dss_Keywords.Stop capture for Backhaul XP DSS New     capture=${capture_BH_GNB_ALL}    w_pdml=False    w_traces_archived=False
+    ...                                                          lua_path=/home/ute/tools/luashark/generated_luashark-9.1800.330/luashark.lua
+    Run               cp ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.path} ${PCAP_PATH_TMP_VM}
+    @{pcap_files_list}     set variable   ${PCAP_PATH_TMP_VM}    ${capture_BH_GNB_ALL.path}
+    Merge pcap files    ${pcap_files_list}    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.path}
+
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.path}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.path}    ${testCaseDir}
+    Dated Log     dss pcap file ${CAPTURE_L1L2_GNB_FS_ASIK_DSS_ATTACH.path} copied into ${testCaseDir}
+
+
+################################################################################################################################
+#               To test DSS PM counters
+################################################################################################################################
+
+
+Collect PM Counters File
+    ${pm_files_path}       Set Variable                 ${LOG_PATH}/PM
+    BuiltIn.Log     The PM counters file collected from gnb will be stored under : ${pm_files_path}
+    ${latest_pm_file_name}   Counters.Collect PM files from BTS  ${pm_files_path}
+    set Suite Variable    ${LATEST_FILE}       ${latest_pm_file_name}
+    # BuiltIn.Log     \n***Latest pm counters file : ${LATEST_FILE}  console=yes
+    Dated Log New Line     ***Latest pm counters file : ${LATEST_FILE}
+    # Log to console  \n***Latest pm counters file : ${LATEST_FILE} ***
+
+Collect PM
+
+#    Sleep        900s
+    Set suite variable    ${pmDir}    ${LOG_PATH}/PM
+    Create Directory      ${pmDir}
+    Dated log          LOG_PATH/PM:${pmDir}
+    ${pm_latest}       Collect PM files from BTS    ${pmDir}
+    Set suite variable    ${LATEST_FILE}    ${pm_latest}
+
+Check 1586 Counters
+    [Arguments]         ${iteration}=0
+
+    ${counter_values_M55332C00001}        Retrieve Latest Single Counter Value From Pm File         ${LATEST_FILE}               M55332C00001
+    ${counter_values_M55332C00002}        Retrieve Latest Single Counter Value From Pm File         ${LATEST_FILE}               M55332C00002
+    ${counter_values_M55332C00003}        Retrieve Latest Single Counter Value From Pm File         ${LATEST_FILE}               M55332C00003
+    ${counter_values_M55332C01001}        Retrieve Latest Single Counter Value From Pm File         ${LATEST_FILE}               M55332C01001
+
+    ${counter_values_M55332C01002}        Retrieve Latest Single Counter Value From Pm File         ${LATEST_FILE}               M55332C01002
+    ${counter_values_M55332C01003}        Retrieve Latest Single Counter Value From Pm File         ${LATEST_FILE}               M55332C01003
+    ${counter_values_M55332C02001}        Retrieve Latest Single Counter Value From Pm File         ${LATEST_FILE}               M55332C02001
+    ${counter_values_M55332C02002}        Retrieve Latest Single Counter Value From Pm File         ${LATEST_FILE}               M55332C02002
+
+    BuiltIn.Log       \n ***DSS DL Ratio: Number of DL Slots assigned to NR (M55332C00001)            console=yes
+    BuiltIn.Log          ***DSS DL Ratio: Total number of available DL Slots (M55332C02001)            console=yes
+    BuiltIn.Log          ***DSS DL Ratio: M55332C00001=${counter_values_M55332C00001}           console=yes
+    BuiltIn.Log          ***DSS DL Ratio: M55332C02001=${counter_values_M55332C02001}           console=yes
+    BuiltIn.Log          ***DSS DL Ratio: ${counter_values_M55332C00001}/${counter_values_M55332C02001}           console=yes
+    # Log to console  \n***DSS DL Ratio: ${counter_values_counter_values_1} ${counter_values_M55332C02001}  ***
+
+    BuiltIn.Log       \n ***DSS DL Ratio: Number of DL Slots assigned to NR with maximum share (M55332C00002)            console=yes
+    BuiltIn.Log          ***DSS DL Ratio: Number of DL Slots assigned to NR with minimum share (M55332C00003)            console=yes
+    BuiltIn.Log          ***DSS DL Ratio: M55332C00002=${counter_values_M55332C00002}           console=yes
+    BuiltIn.Log          ***DSS DL Ratio: M55332C00003=${counter_values_M55332C00003}           console=yes
+    BuiltIn.Log          ***DSS DL Ratio: ${counter_values_M55332C00002}/${counter_values_M55332C00003}           console=yes
+
+    ${dl_ratio}    Evaluate     (round(${counter_values_M55332C00001})/round(${counter_values_M55332C02001}))*100
+
+    BuiltIn.Log          \n***DSS DL Ratio : ${dl_ratio}           console=yes
+
+    BuiltIn.Log       \n ***DSS UL Ratio: Number of UL PRBs assigned to NR (M55332C01001)            console=yes
+    BuiltIn.Log          ***DSS UL Ratio: Total number of available UL PRBs (M55332C02002)            console=yes
+    BuiltIn.Log          ***DSS UL Ratio: M55332C01001=${counter_values_M55332C01001}            console=yes
+    BuiltIn.Log          ***DSS UL Ratio: M55332C02002=${counter_values_M55332C02002}            console=yes
+    BuiltIn.Log          ***DSS UL Ratio: ${counter_values_M55332C01001}/${counter_values_M55332C02002}           console=yes
+
+    BuiltIn.Log       \n ***DSS UL Ratio: Number of UL PRBs assigned to NR with maximum share (M55332C01002)            console=yes
+    BuiltIn.Log          ***DSS UL Ratio: Number of UL PRBs assigned to NR with minimum share (M55332C01003)            console=yes
+    BuiltIn.Log          ***DSS UL Ratio: M55332C01002=${counter_values_M55332C01002}           console=yes
+    BuiltIn.Log          ***DSS UL Ratio: M55332C01003=${counter_values_M55332C01003}            console=yes
+    BuiltIn.Log          ***DSS UL Ratio: ${counter_values_M55332C01002}/${counter_values_M55332C01003}           console=yes
+
+    ${ul_ratio}    Evaluate     (round(${counter_values_M55332C01001})/round(${counter_values_M55332C02002}))*100
+
+    BuiltIn.Log        \n***DSS UL Ratio : ${ul_ratio}           console=yes
+
+    # deviation_in_percent = 10 %, the target are 70% for DL DSS and 70 % for UL DSS , linked to DL and UL pattern used for the test
+    ${min}=                         Evaluate                                70 * (100 - 10) / 100
+    ${max}=                         Evaluate                                70 * (100 + 10) / 100
+    ${status}=                      Evaluate                                ${min} <= ${dl_ratio} <= ${max}
+    Run Keyword If                  '${status}'=='True'
+    ...    Dated Log                Average DL DSS Ratio REACHED: expected = 70 , current = ${dl_ratio}
+    ...    ELSE
+    ...    Dated Log                Average DL DSS RATIO NOT REACHED: expected = 70, current = ${dl_ratio}
+    Run Keyword If                  '${status}'!='True'                     Fail    DL DSS Ratio
+
+    ${status}=                      Evaluate                                ${min} <= ${ul_ratio} <= ${max}
+    Run Keyword If                  '${status}'=='True'
+    ...    Dated Log                Average UL DSS Ratio REACHED: expected = 70 , current = ${ul_ratio}
+    ...    ELSE
+    ...    Dated Log                Average UL DSS RATIO NOT REACHED: expected = 70, current = ${ul_ratio}
+    Run Keyword If                  '${status}'!='True'                     Fail    UL DSS Ratio
+
+    # 5min = 300 s
+    # DL RATIO = 70 %
+    # 300 * 1000 * 0.7 = 210000
+    # M55332C00002   Check value with tolerance = 10%
+    ${min}=                         Evaluate                                210000 * (100 - 10) / 100
+    ${max}=                         Evaluate                                210000 * (100 + 10) / 100
+    ${status}=                      Evaluate                                ${min} <= ${counter_values_M55332C00002} <= ${max}
+    Run Keyword If                  '${status}'=='True'
+    ...    Dated Log                M55332C00002 value REACHED: expected = 210000 , current = ${counter_values_M55332C00002}
+    ...    ELSE
+    ...    Dated Log                M55332C00002 value NOT REACHED: expected = 210000, current = ${counter_values_M55332C00002}
+    Run Keyword If                  '${status}'!='True'                     Fail    M55332C00002
+
+
+# get PM files
+Collect gNB files
+    Create directories for log
+    ${dest_dir}=    SET VARIABLE    ${LOG_PATH}
+    log to console       !!! dest_dir of PM counter collection :  ${LOG_PATH}
+    ${collection_name_dir}=    SET VARIABLE    gnb_pm_counters
+    5GC0001329-A_Counters_Keywords.Generic Collect PM files
+    ...    ${tl.gnbs[0].cu.oam_http_connection_details.addr}
+    ...    ${tl.gnbs[0].cu.oam_http_connection_details.username}
+    ...    ${tl.gnbs[0].cu.oam_http_connection_details.password}
+    ...    ${tl.gnbs[0].cu.oam_http_connection_details.port}
+    ...    ${dest_dir}
+    ...    ${collection_name_dir}
+
+
+# to get PM file at the end of  ths test
+Collect PM Counters file and filter last file coam
+    Collect PM Counters file coam
+    # Filter last PM Counters file coam
+
+Collect PM Counters file coam
+    [Arguments]         ${TEST_LOG_PATH}=${LOG_PATH}
+    BuiltIn.Log To Console    \nuploading pm file from coam
+    ${webservice}               Create Dictionary
+    ...            host=${tl.gnbs[0].cu.oam_http_connection_details.addr}
+    ...            user=${tl.gnbs[0].cu.oam_http_connection_details.username}
+    ...            password=${tl.gnbs[0].cu.oam_http_connection_details.password}
+    ...            port=443
+
+    tafpmcounters.create pm collector
+    ...    name=gnb_pm_counters
+    ...    webservice=${webservice}
+    ...    oam_type=coam
+    tafpmcounters.setup collectors
+    ...    names=gnb_pm_counters
+    tafpmcounters.collect collectors
+    ...    names=gnb_pm_counters
+    ...    target_dir=${TEST_LOG_PATH}
+    tafpmcounters.teardown collectors
+    ...    names=gnb_pm_counters
+
+Filter last PM Counters file coam
+    ${rc}    ${all_pm_file}    Run And Return Rc And Output    ls -r ${LOG_PATH}/${coam_pm_file_path}/PM*ANY.xml
+    ${result}    set variable if    '${rc}'=='${0}'    pass    fail
+    run keyword if     '${result}'=='fail'    Fail    no measurement file available
+    ${temp}    split to lines    ${all_pm_file}
+    ${pm_file_name_with_path}    set variable    ${temp[0]}
+    ${pm_file_name}    replace string     ${pm_file_name_with_path}    ${LOG_PATH}/${coam_pm_file_path}/    ${EMPTY}
+
+    Run    mv ${pm_file_name_with_path} ${LOG_PATH}/.
+    Run    rm ${LOG_PATH}/${coam_pm_file_path}/PM*ANY.xml
+    Run    mv ${LOG_PATH}/PM*ANY.xml ${LOG_PATH}/${coam_pm_file_path}/.
+
+    ${file_string}   Get Binary File   ${pm_file_name_with_path}
+    ${file_string}  Replace String    ${file_string}  ><  >\n<   count=-1
+    Create File    ${LOG_PATH}/pm.xml    ${file_string}
+
+    BuiltIn.Set Test Variable    ${pmCounter_xml_file}    ${LOG_PATH}/pm.xml
+
+    Run Keyword if    '${bts_type}'=='classical'    Return From Keyword    ${pm_file_name_with_path}
+
+    @{pm_parts}   split_string   ${pm_file_name}   _
+    ${pm_file_date}    set variable   ${pm_parts[2]}
+    @{pm_file_chars}    split string to characters    ${pm_file_date}
+    ${pm_file_yyyymmdd}    set variable    ${pm_file_chars[0]}${pm_file_chars[1]}${pm_file_chars[2]}${pm_file_chars[3]}-
+    ${pm_file_yyyymmdd}    set variable    ${pm_file_yyyymmdd}${pm_file_chars[4]}${pm_file_chars[5]}-${pm_file_chars[6]}${pm_file_chars[7]}
+
+    ${pm_file_time}    set variable   ${pm_parts[3]}
+    @{pm_file_chars}    split string to characters    ${pm_file_time}
+    ${pm_file_hhmmss}    set variable    ${pm_file_chars[0]}${pm_file_chars[1]}:${pm_file_chars[2]}${pm_file_chars[3]}:
+    ${pm_file_hhmmss}    set variable    ${pm_file_hhmmss}${pm_file_chars[4]}${pm_file_chars[5]}
+
+    ${pm_file}          set variable    ${pm_file_yyyymmdd} ${pm_file_hhmmss}
+
+    ${diff}    subtract date from date    ${pm_file}    ${time_before_detach}    result_format=number     exclude_millis=true
+    ${meas_period_sec}    evaluate    ${measurement_period_in_min}*60
+
+    ${result}    set variable if    0 < ${diff} < ${meas_period_sec}   pass    fail
+    run keyword if     '${result}'=='fail'    Fail    no valid measurement file found
+
+################################################################################################################################
+#              END :  To test PM
+################################################################################################################################
+
+Enable BLER on F1 side
+    [Documentation]                 KW used to enable BLER on DU side. BLER profile is supposed to be
+    ...                             configure inside WTS cfg file:
+    ...                                     <testModeBler index="0">
+    ...                                         <dlBlerTargetUe index="0">200</dlBlerTargetUe>
+    ...                                         <dlBlerTargetUe index="1">100</dlBlerTargetUe>
+    ...                                         <dlBlerTargetUe index="2">100</dlBlerTargetUe>
+    ...                                         <dlBlerTargetUe index="3">0</dlBlerTargetUe>
+    ...                                         <dlBlerTargetUe index="4">0</dlBlerTargetUe>
+    ...                                         <dlBlerTargetUe index="5">0</dlBlerTargetUe>
+    ...                                         <dlBlerTargetUe index="6">0</dlBlerTargetUe>
+    ...                                         <dlBlerTargetUe index="7">0</dlBlerTargetUe>
+    ...                                         <ulBlerTargetUe>0</ulBlerTargetUe>
+    ...                                     </testModeBler>
+    ...                             Call to taf function wtsemu.ue_testmode_set_param is replaced by a custom call as the option test_mode
+    ...                             no more exist and is now testmode (no _).
+    [Arguments]                     ${ueSetting}
+
+    ute_wtssim.setup_egate      egate_port=${tl.core.egate_port}
+    ...                         host_ip=${tl.core.default_ssh_connection_details.addr}
+    ...                         tool_dir=${tl.core.dir_path}
+    ...                         alias=egate
+    ...                         ssh_user=ute
+    ...                         ssh_pass=ute
+
+    ute_wtssim.execute_egate_command    cmd=ue_testmode_set id=${ueSetting.ue} bearer=2 testmode=bler profile_index=0 action=activate    alias=egate
+    ute_wtssim.teardown_egate    alias=egate
+
+Disable BLER on F1 side
+    [Documentation]                 KW used to disable BLER on DU side. . BLER profile is supposed to be
+    ...                             configure inside WTS cfg file
+    ...                             Call to taf function wtsemu.ue_testmode_set_param is replaced by a custom call as the option test_mode
+    ...                             no more exist and is now testmode (no _).
+    [Arguments]                     ${ueSetting}
+
+    ute_wtssim.setup_egate      egate_port=${tl.core.egate_port}
+    ...                         host_ip=${tl.core.default_ssh_connection_details.addr}
+    ...                         tool_dir=${tl.core.dir_path}
+    ...                         alias=egate
+    ...                         ssh_user=ute
+    ...                         ssh_pass=ute
+
+    ute_wtssim.execute_egate_command   cmd=ue_testmode_set id=${ueSetting.ue} bearer=2 testmode=bler profile_index=0 action=deactivate   alias=egate
+    ute_wtssim.teardown_egate    alias=egate
+
+######################################################################################################################
+#  Basic procedure
+######################################################################################################################
+
+Initialize Colors
+    [Documentation]    :   Initialize Colors
+    ${BLACK}   set variable    "\\033[30m"
+    ${black}=   Evaluate   "${BLACK}"
+    Set suite Variable  ${black}
+    ${red}=   Evaluate   "${RED}"
+    Set suite Variable  ${red}
+    ${blue}=   Evaluate   "${BLUE}"
+    Set suite Variable  ${blue}
+    ${green}=   Evaluate   "${GREEN}"
+    Set suite Variable  ${green}
+    ${normal}=   Evaluate   "${NORMAL}"
+    Set suite Variable  ${normal}
+
+Connect to test pc proxy
+    [Documentation]    :
+    ...    It is needed when there is different test_pc for each unit.
+    ...    In such case "tl.test_pc.connections" is required
+    [Arguments]    ${gnb_id}
+    ${gnb_test_pc}=    5GC001586_Keywords.Get Test PC for Object    ${tl.gnbs[${gnb_id}]}
+    ${alias}=    Set variable    gnb-${gnb_id}-test_pc
+    ssh.Connect_to      hostname=${gnb_test_pc.default_ssh_connection_details.addr}
+    ...                 username=${gnb_test_pc.default_ssh_connection_details.username}
+    ...                 password=${gnb_test_pc.default_ssh_connection_details.password}
+    ...                 alias=${alias}
+    [Return]    ${alias}
+
+
+Get Test PC for Object
+    [Documentation]    :
+    [Arguments]    ${obj}
+    ${result}=    Evaluate    [test_pc for test_pc in $tl.test_pcs for obj in test_pc.connections if obj is $obj][0]
+    [Return]    ${result}
+
+Connect to gNB Common Unit
+    [Documentation]    :
+    ...     setup ssh connection to Airscale (ASXX) and returns connection handle/alias
+    ...
+    ...     :param gnb_id:         Id of gnb                       [0.. ]  default=0
+    ...     :param du_id:          Id of DU                        [0.. ]  default=0
+    ...     :param comu_id:        Id of Common Unit               [0..1]  default=0
+    ...     :param alias:       (optional) connection alias  !! should not be used
+    ...
+    ...     :returns alias:     alias for ssh connection to Common Unit
+    ...
+    ...     **Example:**
+    ...
+    ...     | ${asxx_alias}=   connect.Connect to gNB Common Unit    gnb_id=0  du_id=0  comu_id=0
+    ...     | ssh.execute     command=uptime  connection=${asxx_alias}
+    ...
+    [Arguments]    ${gnb_id}=${0}  ${du_id}=${0}  ${comu_id}=${0}  ${alias}=ssh-gnb-${gnb_id}-${du_id}-${comu_id}
+    ${test_pc_connection_count}=   Get Length    ${tl.test_pc.connections}
+    # ${proxy}   Run keyword If   ${test_pc_connection_count}==0       5GC001586_Keywords.Connect to test pc proxy    gnb_id=${gnb_id}
+    # ...    ELSE    Set variable    ${None}
+    ${proxy}    Set variable    ${None}
+    ssh.Connect_to      hostname=${tl.gnbs[${gnb_id}].dus[${du_id}].airscale.common_units[${comu_id}].lmp_connection.addr}
+    ...                 username=${tl.gnbs[${gnb_id}].dus[${du_id}].airscale.common_units[${comu_id}].lmp_connection.username}
+    ...                 password=${tl.gnbs[${gnb_id}].dus[${du_id}].airscale.common_units[${comu_id}].lmp_connection.password}
+    ...                 alias=${alias}
+    ...                 proxy=${proxy}
+    ssh.Force Reconnect    ${alias}
+    [Return]    ${alias}
+
+Check Airscale Board Status
+    [Documentation]    [PRIVATE]
+    ...
+    ...     :param alias:               ssh connnection alias to common unit board
+    ...     :param board_id:            Board ID
+    ...     :param CCS_Daemon_node_id:  CC&S Node Id
+    [Arguments]     ${alias}  ${board_id}    ${CCS_Daemon_node_id}
+    ssh.Force Reconnect    ${alias}
+    ${sys_result}=  ssh.execute
+    ...     command=PYTHONPATH=/opt/hwmt/python python3 /opt/hwmt/python/hwapi/AdetS.py -s -p 15004 -n ${CCS_Daemon_node_id} | grep ${board_id}
+    ...     connection=${alias}
+    ...     timeout=60 sec
+    Should Contain  ${sys_result}   ready[0]
+
+Set Reset Loop Counter
+    [Documentation]                 INTERNAL USAGE
+    ...                             ddal -s ddal_boot_set_reset_loop_count 0
+    [Arguments]                     ${rlc_number}=0
+
+    Dated log                       Initialize reset_loop_count on ${GNB_DU.name} (command =ddal -s ddal_boot_set_reset_loop_count ${rlc_number})
+    ${alias}                        SSH Connect                          ${GNB_DU.sys[0].M}
+    ${file}                         SSH Cmd                              command=ddal -s ddal_boot_set_reset_loop_count ${rlc_number}
+    ...                             alias=${alias}
+
+Restart
+    [Tags]                          RESTART
+    [Arguments]                     ${isOAMRebooted}=${False}       ${OwnTLReset}=${False}    ${GNBCallback}=None
+
+    Run keyword if      '${OwnTLReset}'=='${False}'      Restart TL       isOAMRebooted=${isOAMRebooted}
+    ...                                                                   GNBCallback=${GNBCallback}
+    ...         ELSE       Private Restart Gnb Classical     isOAMRebooted=${isOAMRebooted}
+
+##################################################################################################################
+#  WTS , X2  and XP Link Setup
+##################################################################################################################
+
+execute eGate Command
+    [Arguments]                 ${command}    ${egate_alias}=egate    ${edaemon_alias}=edaemon
+    ute_wtssim.setup_egate      egate_port=${tl.core.egate_port}
+    ...                         host_ip=${tl.core.default_ssh_connection_details.addr}
+    ...                         tool_dir=${tl.core.dir_path}
+    ...                         alias=egate
+    ...                         ssh_user=ute
+    ...                         ssh_pass=ute
+    ute_wtssim.setup_edaemon    edaemon_port=${tl.core.edaemon_port}
+    ...                         host_ip=${tl.core.default_ssh_connection_details.addr}
+    ...                         tool_dir=${tl.core.dir_path}
+    ...                         alias=edaemon
+    # ute_wtssim.execute_egate_command_and_wait_for_data    cmd=pdn_connect_ue ue=1 pdn=2    alias=egate_alias
+    # ute_wtssim.execute_egate_command_and_wait_for_data    cmd=ue_dc_modify_enb ue=1 bearer_to_add=8
+    #      by=enb cause=RN_sCG_Mobility    alias=egate_alias
+    ute_wtssim.execute_egate_command    cmd=${command}    alias=egate
+    ute_wtssim.teardown_egate    alias=egate
+    ute_wtssim.teardown_edaemon    alias=edaemon
+
+Clean Old WTS Logs to remove
+    [Documentation]                 Clean unnecessary logs created
+    ${alias}            SSH connect     host=${HOST_EPCSIM}
+    Run Keyword And Ignore Error       ssh.execute    cd ${tl.core.dir_path} && sudo rm *.log.* && sudo rm *.tgz
+    ...                                                          connection=${alias}
+
+Setup WTS to remove
+    [Arguments]              ${remove_logs}=False
+
+    Run keyword if    '${remove_logs}'=='True'    SSH Connect    host=${HOST_EPCSIM}
+    Run keyword if    '${remove_logs}'=='True'    ssh.execute    cd ${tl.core.dir_path} && sudo rm *.log.* && sudo rm *.tgz
+    ...                                                          connection=${HOST_EPCSIM.alias}
+
+    CallSetup.WTS Setup
+
+Start WTS and setup X2 link to remove
+    [Arguments]                 ${egate_alias}=egate    ${edaemon_alias}=edaemon
+    Setup WTS    remove_logs=True
+    Launch WTS   egate_alias=${egate_alias}
+
+Start WTS to remove
+   [Arguments]                 ${egate_alias}=egate    ${edaemon_alias}=edaemon    ${shouldUseLua}=${False}    ${nbUe}=1
+    Setup WTS Only    shouldUseLua=${shouldUseLua}    nbUe=${nbUe}
+    Launch WTS   egate_alias=${egate_alias}
+
+Check wts in active state
+    [Documentation]    [PRIVATE]    check that wts is in state active
+    [Arguments]                 ${alias}=EPCSIM
+    Log To Console    \n***check if wts in active state with alias=${alias}***
+    Wait Until Keyword Succeeds    5 min    20 sec    5GC001586_Keywords.Check wts state   alias=${alias}
+    Log To Console    ***check if wts in active state ended
+
+Check wts state
+    [Documentation]    [PRIVATE]    check that wts is in state active
+    [Arguments]                 ${alias}=EPCSIM
+    wts.execute egate command and wait for data
+    ...    cmd=sim_state_disp
+    ...    pass_regexp=The state is ACTIVE   alias=${alias}
+
+Wait Xp link Up
+    [Documentation]    [PRIVATE]    wait Xp link up
+    [Arguments]                 ${alias}=EPCSIM
+    Wait Until Keyword Succeeds    2 min    20 sec    5GC001586_Keywords.Xp link setup Up   alias=${alias}
+
+Xp link Setup Up
+    [Arguments]          ${timeout}=20       ${alias}=EPCSIM
+    Log to console  \n***Activate eNBSim with XpAp interface [eNBId=${Param.Context.eNBId} and gNBId=${Param.Context.gNBId}] with alias=${alias}***
+    wts.execute egate command    cmd=enb_xp_param id=${Param.Context.eNBId} ignore_xp=off xp_listening_socket=on    alias=${alias}
+    wts.execute egate command    cmd=enb_xp_param id=${Param.Context.eNBId} xp_peers=${Param.Context.gNBId}    alias=${alias}
+    ${output}=    wts.execute egate command and wait for data    cmd=enb_xp_link_up enb=${Param.Context.eNBId} target=${Param.Context.gNBId}
+    ...                                            pass_regexp=(XpAP Link .* is up|Xp Link is already active)   timeout=${timeout}  alias=${alias}
+    ${output}         Get Lines Matching Regexp    ${output}    XpAP Link .* is up   partial_match=${TRUE}
+    Log to Console    ${output}
+    ${output}         Get Lines Matching Regexp    ${output}    Xp Link is already active   partial_match=${TRUE}
+    Log to Console    ${output}
+    # wts.execute egate command and wait for data    cmd=enb_xp_link_up enb=${Param.Context.eNBId} target=${Param.Context.gNBId}
+    # ...                                                pass_regexp=XpAP Link .* is up   timeout=${timeout}  alias=${alias}
+    # sometimes the link falls, and come back again after 4-5 seconds, so we add a sleep here
+    Traced sleep    10s
+    Log to console  \n***Activate eNBSim with XpAp interface completed ***
+
+Xp link Setup
+    [Arguments]                 ${alias}=EPCSIM
+    Log to console  \n***Activate eNBSim with XpAp interface [eNBId=${Param.Context.eNBId} and gNBId=${Param.Context.gNBId}] with alias=${alias}***
+
+    wts.execute egate command    cmd=enb_xp_param id=${Param.Context.eNBId} ignore_xp=off xp_listening_socket=on    alias=${alias}
+    wts.execute egate command    cmd=enb_xp_param id=${Param.Context.eNBId} xp_peers=${Param.Context.gNBId}    alias=${alias}
+    wts.execute egate command and wait for data    cmd=enb_xp_link_up enb=${Param.Context.eNBId} target=${Param.Context.gNBId}
+    ...                                              pass_regexp=XpAP Link .* is up   timeout=120  alias=${alias}
+    # sometimes the link falls, and come back again after 4-5 seconds, so we add a sleep here
+    Traced sleep    10s
+    Log to console  \n***Activate eNBSim with XpAp interface completed ***
+
+    ${ute_wtssim_interface}    Get Library Instance    wts
+    set suite variable     ${wtsObj}      ${ute_wtssim_interface}
+
+X2Ap link Setup to remove
+    [Arguments]                 ${alias}=EPCSIM
+    Log to console  \n***Activate eNBSim with X2Ap interface [eNBId=${Param.Context.eNBId} and gNBId=${Param.Context.gNBId}] with alias=${alias}***
+
+    wts.execute egate command and wait for data    cmd=enb_x2_link_up enb=${Param.Context.eNBId} target=${Param.Context.gNBId}
+    ...                                                     pass_regexp=X2AP Link .* is up    timeout=60   alias=${alias}
+    # sometimes the link falls, and come back again after 4-5 seconds, so we add a sleep here
+    Traced sleep    10s
+    Log to console  \n***Activate eNBSim with X2AP interface completed ***
+
+
+Store Current swconfig from Airphone
+    [Documentation]    :
+    ...    in case testcase needs to modify swconfig.txt on Airphone, collect current one as backup, Set path as Suite Variable ${P_ORIG_AP_SWCONFIG}
+    ...
+    ...    :param ue_id:      Id of ue                       [0.. ]  default=0
+    ...    :param comu_id:    Id of Common Unit              [0..1]  default=0
+    ...    :param target_dir: where to save original swconfig.txt, default with testline.Get Test Suite Config Directory
+    ...
+    ...    **Example:**
+    ...    | wts_ue.Store Current swconfig from Airphone
+    ...
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}    ${target_dir}=None
+    ${ORIG_SWCONFIG}=    5GC001586_Keywords.Get swconfig from Airphone    ue_id=${0}    comu_id=${0}    target_dir=${target_dir}
+    Run    mv ${ORIG_SWCONFIG} ${ORIG_SWCONFIG}.orig
+    Set Suite Variable    ${P_ORIG_AP_SWCONFIG}    ${ORIG_SWCONFIG}.orig
+
+Connect to Airphone Common Unit
+    [Documentation]    :
+    ...     setup ssh connection to Airphone Airscale (ASXX) and returns connection handle/alias
+    ...
+    ...     :param ue_id:             Id of UE                       [0.. ]  default=0
+    ...     :param ue_comu_id:        Id of AP Common Unit           [0..1]  default=0
+    ...     :param alias:       (optional) connection alias  !! should not be used
+    ...
+    ...     :returns alias:     alias for ssh connection to Common Unit
+    ...
+    ...     **Example:**
+    ...
+    ...     | ${ap_alias}=   connect.Connect to Airphone Common Unit    ue_id=0  ue_comu_id=0
+    ...     | ssh.execute     command=uptime  connection=${ap_alias}
+    ...
+    [Arguments]    ${ue_id}=${0}    ${ue_comu_id}=${0}  ${alias}=ssh-ap-${ue_id}-${ue_comu_id}
+    ssh.Connect_to      hostname=${tl.ues[${ue_id}].l1.common_units[${ue_comu_id}].lmp_connection.addr}
+    ...                 username=${tl.ues[${ue_id}].l1.common_units[${ue_comu_id}].lmp_connection.username}
+    ...                 password=${tl.ues[${ue_id}].l1.common_units[${ue_comu_id}].lmp_connection.password}
+    ...                 alias=${alias}
+    ssh.Force Reconnect    connection=${alias}
+    [Return]    ${alias}
+
+Get swconfig from Airphone
+    [Documentation]    :Author: Ch SAMSON
+    ...
+    ...     :param ue_id:         Id of gnb                       [0.. ]  default=0
+    ...     :param comu_id:       Id of Common Unit               [0..1]  default=0
+    ...     :param target_dir:    (default None) save swconfig to path
+    ...
+    ...     :return:   swconfig path for further usage
+    ...
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}    ${target_dir}=None
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    common_Dss_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+    ${ap_alias}=    5GC001586_Keywords.Connect to Airphone Common Unit    ue_id=${ue_id}    ue_comu_id=${comu_id}
+    ssh.Download File    remote_path=/ffs/run/swconfig.txt    local_path=${target_dir}/ap_swconfig.txt    connection=${ap_alias}
+    [Return]    ${target_dir}/ap_swconfig.txt
+
+
+Get APL3 log from Airphone
+    [Documentation]    :Author: Ch SAMSON
+    ...
+    ...     :param ue_id:         Id of gnb                       [0.. ]  default=0
+    ...     :param comu_id:       Id of Common Unit               [0..1]  default=0
+    ...     :param target_dir:    (default None) save swconfig to path
+    ...
+    ...     :return:   startup_l3_log for further usage
+    ...
+    [Arguments]    ${ue_id}=${0}    ${comu_id}=${0}    ${target_dir}=None
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    common_Dss_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+    ${ap_alias}=    5GC001586_Keywords.Connect to Airphone Common Unit    ue_id=${ue_id}    ue_comu_id=${comu_id}
+    Dated log                       Check the startup_l3.log file: zipped or not zipped
+    ssh.send command    ls -ltr /ram/startup_l3.log.xz   connection=${ap_alias}
+    ${output_1}=    ssh.read output   connection=${ap_alias}
+    ssh.send command    ls -ltr /ram/startup_l3.log   connection=${ap_alias}
+    ${output_2}=    ssh.read output   connection=${ap_alias}
+    ${lenght_1}                     Get Length                              ${output_1}
+    ${length_2}                     Get Length                              ${output_2}
+    Dated log                       AP startup_l3 length_xz:${lenght_1} - lenght_non_xz:${length_2}
+    ${APL3_log}=    Set Variable If                 ${lenght_1} != 0                        startup_l3.log.xz
+    ...                                             ${length_2} != 0                        startup_l3.log
+    ...                                                                                     startup_l3.log
+    ssh.Download File    remote_path=/ram/${APL3_log}    local_path=${target_dir}/ap_${APL3_log}    connection=${ap_alias}
+    [Return]    ${target_dir}/ap_${APL3_log}
+
+
+Collect egate log files
+    [Documentation]    Author: Ch SAMSON
+    ...    Run keyword before egate teardown
+    ...
+    ...
+    ...    :param target_dir:   directory to store the journal file
+    ...    :param wts_alias:    alias name to handle egate for ute_wtssim    default=ap_egate
+    ...
+    [Arguments]    ${target_dir}=None    ${wts_alias}=ap_egate
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    common_Dss_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+
+    ute_wtssim.setup_egate      egate_port=${tl.core.egate_port}
+    ...                         host_ip=${tl.core.default_ssh_connection_details.addr}
+    ...                         tool_dir=${tl.core.dir_path}
+    ...                         alias=ap_egate
+    ...                         ssh_user=ute
+    ...                         ssh_pass=ute
+
+    ute_wtssim.collect_egate_log_files    unzip=${False}    subdirectory=${target_dir}    alias=ap_egate
+
+    ${alias}            SSH Connect             host=${HOST_EPCSIM}
+    # option h added in case of WTS folder is a link
+    Dated Log      tar zcvfh WTS.tgz ${tl.core.dir_path}
+    ssh.execute    tar zcvfh WTS.tgz ${tl.core.dir_path}            connection=${alias}
+    ssh.execute    ls -l ${tl.core.dir_path}/* >ls-l-WTS.txt        connection=${alias}
+
+    csn.download_file               remote_path=/home/ute/WTS.tgz
+    ...                             local_path=${target_dir}/WTS.tgz
+    ...                             connection=${alias}
+    csn.download_file               remote_path=/home/ute/ls-l-WTS.txt
+    ...                             local_path=${target_dir}/ls-l-WTS.txt
+    ...                             connection=${alias}
+    Dated Log                  WTS log files stored to ${target_dir}
+
+    ute_wtssim.teardown_egate    alias=ap_egate
+
+Collect edaemon log files
+    [Documentation]    Author: Ch SAMSON
+    ...    Run keyword before edaemon teardown
+    ...
+    ...    :param target_dir:   directory to store the journal file
+    ...    :param edaemon_alias:    alias name to handle edaemon for ute_wtssim    default=ap_edaemon
+    ...
+    [Arguments]    ${target_dir}=None    ${edaemon_alias}=ap_edaemon
+    ${target_dir}=    Run Keyword If    '${target_dir}'=='None'    Get Testcase Log Directory
+    ...    ELSE    Set Variable    ${target_dir}
+    ute_wtssim.setup_egate      egate_port=${tl.core.egate_port}
+    ...                         host_ip=${tl.core.default_ssh_connection_details.addr}
+    ...                         tool_dir=${tl.core.dir_path}
+    ...                         alias=ap_edaemon
+    ...                         ssh_user=ute
+    ...                         ssh_pass=ute
+    ute_wtssim.collect edaemon log files    unzip=${False}    subdirectory=${target_dir}    alias=ap_edaemon
+    ute_wtssim.teardown_egate    alias=ap_edaemon
+
+########################################################################################################
+# cmd reset eGate
+########################################################################################################
+Reset_eGate
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+    Log to console  \n***Cmd Reset eGate alias=${alias}***
+    sleep   2
+    wts.execute egate command    cmd=reset   alias=${alias}
+
+#########################################################################################################
+#
+#               For 1586 CellSetup, 5g Call & Traffic
+#
+#########################################################################################################
+#########################################################################################################
+#   CRM DSS Cell Setup
+#########################################################################################################
+
+DSS_Cell_Setup
+#     [Arguments]                 ${testParam}=Param    ${alias}=default
+     [Arguments]                 ${alias}=default
+     [Documentation]    This keyword is used for DSS Ph2
+
+    Log to console   \n${blue}***DSS Phase-II CRM CellSetup BW=${Param.seq.bandwidth} with alias=${alias}*** ${normal}
+
+    wts.execute egate command    cmd=enb_dss_param id=${Param.Context.eNBId} feature_flag=on message_sets=V1,DMS2    alias=${alias}
+    Sleep   2
+    wts.execute egate command    cmd=enb_cell_param enb=${Param.Context.eNBId} id=1 lte_nr_dss_mode=DL_CRS_TDM_UL_FDM    alias=${alias}
+    Sleep   2
+    wts.execute egate command    cmd=enb_dss_configure_partnership enb=${Param.Context.eNBId} cell=1 dss_peer=${Param.Context.gNBId}:1
+    ...                                    alias=${alias}
+    sleep   2
+
+    ${cmd}    Catenate    enb_crm_cell_resource_reservation enb=${Param.Context.eNBId} cell=1 tgt_enb=${Param.Context.gNBId} tgt_cell=1
+    ...         assigned_dl_minimum_share_to_nr=15 assigned_dl_maximum_share_to_nr=70 assigned_dl_minimum_share_to_lte=15
+    ...         assigned_dl_maximum_share_to_lte=70 assigned_ul_minimum_share_to_nr=20 assigned_ul_maximum_share_to_nr=70
+
+    wts.execute egate command      cmd=${cmd}    alias=${alias}
+
+    # to simulate the EN DSS UL QoS LOAD INDICATION Timer = 80ms sent into DL coord rsp
+    ${cmd}    Catenate    enb_crm_param id=${Param.Context.eNBId} ul_qos_load_meas_timer=${Param.seq.qos_load_meas_timer}
+    ...                                      dl_qos_load_meas_timer=${Param.seq.qos_load_meas_timer}
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    # sleep   5
+    # increase the sleeping time betwenn cell resource resernation and dss estab partnership => 10 s instead of 5 s
+    # sometimes, the XP dont came up at the first time !!!
+    # 19:55:06.872 19:55:06.871 [37;41mACR[0m: ENB-1: Failed to connect to ENB-2 over SCTP: 9 - system connect()
+    #    error. errno=99 (Cannot assign requested address)
+    # 19:55:06.872 19:55:06.871 [37;41mACR[0m: ENB-1: Failed to connect to GNB-2 (10.0.1.111:32742[0]) over SCTP
+    sleep    30
+    wts.execute egate command   cmd=enb_dss_establish_partnership enb=${Param.Context.eNBId} cell=1 tgt_enb=${Param.Context.gNBId} tgt_cell=1
+    ...                                         alias=${alias}
+
+    # wts.execute egate command and wait for data cmd=enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    #     pass_regexp=CRM Partnership Creation timeout=15
+    sleep   10
+
+    5GC001586_Keywords.DSS DL Cell Resource Allocation    ${Param.seq.dl_allocated_normal_subframes}    ${alias}
+
+    # Param variable is visible under the test suite
+    5GC001586_Keywords.DSS UL Cell Resource Allocation     ${Param.seq.ULNbrOfPrb}    ${Param.scfFile.nrcell.msg1FrequencyStart}   ${alias}
+
+    sleep    10
+
+    log to console   \n${blue}***DSS CRM CELLSETUP BW=${Param.seq.bandwidth} completed*** ${normal}
+
+    ${output}    wts.execute egate command and wait for data      cmd=enb_crm_status enb=${Param.Context.eNBId} cell=1       alias=${alias}
+    Log To Console    \n*** enb_crm_status enb=${Param.Context.eNBId} cell=1
+    Log To Console    \n${output}
+
+
+DSS_Cell_Setup_M2
+#     [Arguments]                 ${testParam}=Param    ${alias}=default
+     [Arguments]                 ${alias}=default
+     [Documentation]    This keyword is used for DSS Ph2
+
+    Log to console  \n${blue}***DSS Phase-II CRM CellSetup BW=${Param.seq.bandwidth} with alias=${alias}*** ${normal}
+
+    wts.execute egate command    cmd=enb_dss_param id=${Param.Context.eNBId} feature_flag=on message_sets=V1,DMS2    alias=${alias}
+    Sleep   2
+    wts.execute egate command    cmd=enb_cell_param enb=${Param.Context.eNBId} id=1 lte_nr_dss_mode=DL_CRS_TDM_UL_FDM    alias=${alias}
+    Sleep   2
+    wts.execute egate command    cmd=enb_dss_configure_partnership enb=${Param.Context.eNBId} cell=1 dss_peer=${Param.Context.gNBId}:1
+    ...                                               alias=${alias}
+    sleep   2
+    ${cmd}    Catenate    enb_crm_cell_resource_reservation enb=${Param.Context.eNBId} cell=1 tgt_enb=${Param.Context.gNBId} tgt_cell=1
+    ...          assigned_dl_minimum_share_to_nr=15 assigned_dl_maximum_share_to_nr=70 assigned_dl_minimum_share_to_lte=15
+    ...          assigned_dl_maximum_share_to_lte=70 assigned_ul_minimum_share_to_nr=20 assigned_ul_maximum_share_to_nr=70
+    wts.execute egate command      cmd=${cmd}    alias=${alias}
+    # sleep   5
+    # increase the sleeping time betwenn cell resource resernation and dss estab partnership => 10 s instead of 5 s
+    # sometimes, the XP dont came up at the first time !!!
+    # 19:55:06.872 19:55:06.871 [37;41mACR[0m: ENB-1: Failed to connect to ENB-2 over SCTP: 9 - system connect()
+    #   error. errno=99 (Cannot assign requested address)
+    # 19:55:06.872 19:55:06.871 [37;41mACR[0m: ENB-1: Failed to connect to GNB-2 (10.0.1.111:32742[0]) over SCTP
+    sleep    30
+    wts.execute egate command  cmd=enb_dss_establish_partnership enb=${Param.Context.eNBId} cell=1 tgt_enb=${Param.Context.gNBId} tgt_cell=1
+    ...                                     alias=${alias}
+    # wts.execute egate command and wait for data cmd=enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=1
+    #     pass_regexp=CRM Partnership Creation timeout=15
+    sleep   10
+    5GC001586_Keywords.DSS DL Cell Resource Allocation    ${Param.seq.dl_allocated_normal_subframes}    ${alias}
+    # Param variable is visible under the test suite
+    5GC001586_Keywords.DSS UL Cell Resource Allocation     ${Param.seq.ULNbrOfPrb}    ${Param.seq.startPrb}   ${alias}
+    sleep    10
+    log to console  \n${blue}***DSS CRM CELLSETUP BW=${Param.seq.bandwidth} completed*** ${normal}
+
+DSS DL Cell Resource Allocation
+    [Arguments]     ${dl_allocated_normal_subframes}=0011101110-0111101110-0011101110-0111101110-0011101110-0111101110-0011101110-0111101110
+    ...             ${alias}=default
+    [Documentation]    This keyword is used for DSS Phase2
+    sleep   5
+    ${msg}    Catenate    DSS DL Cell Resource Allocation with allocation_start_time=immediate and
+    ...                    dl_allocated_normal_subframes=${dl_allocated_normal_subframes} with alias=${alias}
+    Dated Log New Line      ${msg}
+    ${cmd}    Catenate      enb_dss_resource_allocation enb=${Param.Context.eNBId} cell=1 tgt_enb=${Param.Context.gNBId} tgt_cell=1 dir=DL
+    ...                        allocation_start_time=immediate dl_allocated_normal_subframes=${dl_allocated_normal_subframes}
+    wts.execute egate command    cmd=${cmd}     alias=${alias}
+    log to console  \n***DSS DL Cell Resource Allocation completed***
+
+DSS UL Cell Resource Allocation
+    [Arguments]                 ${ULNbrOfPrb}=0x00000023     ${msg1FrequencyStart}=4      ${alias}=default
+    [Documentation]    This keyword is used for DSS Phase2
+    sleep   5
+    ${ULNbrOfPrb_decimal}              toDecimalStr     ${ULNbrOfPrb}
+    ${msg1FrequencyStart_decimal}       toDecimalStr     ${msg1FrequencyStart}
+    ${msg}    Catenate     DSS UL Cell Resource Allocation with msg1FrequencyStart=${msg1FrequencyStart_decimal} and
+    ...                        NbrOfPRB=${ULNbrOfPrb_decimal} with alias=${alias}
+    Dated Log New Line     ${msg}
+    # ${cmd}    Catenate    enb_dss_resource_allocation enb=${Param.Context.eNBId} cell=1 tgt_enb=${Param.Context.gNBId} tgt_cell=1 dir=UL
+    # ...                     allocation_start_time=immediate ul_allocated_prb_list=${msg1FrequencyStart_decimal},${ULNbrOfPrb_decimal}
+    ${pucchModeSelect}=     get pucchModeSelect from SCF
+    # 3 PRB area defined in case of longPUCCH
+    ${ul_allocated_prb_list}=     run Keyword if     '${pucchModeSelect}' == 'longPucch'
+    ...            set variable      0,3|${msg1FrequencyStart_decimal},${ULNbrOfPrb_decimal}|49,3
+    ...   ELSE     set variable      ${msg1FrequencyStart_decimal},${ULNbrOfPrb_decimal}
+    ${cmd}    Catenate    enb_dss_resource_allocation enb=${Param.Context.eNBId} cell=1 tgt_enb=${Param.Context.gNBId} tgt_cell=1 dir=UL
+    ...                     allocation_start_time=immediate ul_allocated_prb_list=${ul_allocated_prb_list}
+    wts.execute egate command    cmd=${cmd}   alias=${alias}
+    log to console  \n***DSS UL Cell Resource Allocation completed***
+
+Periodic DL Fast Allocation
+    [Arguments]                 ${alias}=default
+
+    ${msg_console}=   Catenate   ***DSS ${Param.Context.DSS_Phase} CRM Periodic DL Fast Allocation BW=${Param.seq.bandwidth} with alias=${alias}***
+    Log to console   \n${blue} ${msg_console} ${normal}
+
+    ${dl_allocated_normal_subframes}=  Catenate   0011101110-0111101110-0011101110-0111101110-0011101110-0111101110-0011101110-0111101110
+    # ${dl_allocated_normal_subframes}=      Catenate       ${Param.seq.dl_allocated_normal_subframes}
+
+    ${dl_prb_area_allocation_list}=    Catenate    SEPARATOR=  0:0,0+1:0,0+2:0,52+3:0,52+4:0,52+5:0,0+6:0,52+7:0,52+8:0,52+9:0,0+10:0,0+11:0,52+12:0,
+    ...    52+13:0,52+14:0,52+15:0,0+16:0,52+17:0,52+18:0,52+19:0,0+20:0,0+21:0,0+22:0,52+23:0,52+24:0,52+25:0,0+26:0,52+27:0,52+28:0,52+29:0,0+30:0,
+    ...    0+31:0,52+32:0,52+33:0,52+34:0,52+35:0,0+36:0,52+37:0,52+38:0,52+39:0,0+40:0,0+41:0,0+42:0,52+43:0,52+44:0,52+45:0,0+46:0,52+47:0,52+48:0,
+    ...    52+49:0,0+50:0,0+51:0,52+52:0,52+53:0,52+54:0,52+55:0,0+56:0,52+57:0,52+58:0,52+59:0,0+60:0,0+61:0,0+62:0,52+63:0,52+64:0,52+65:0,0+66:0,
+    ...    52+67:0,52+68:0,52+69:0,0+70:0,0+71:0,52+72:0,52+73:0,52+74:0,52+75:0,0+76:0,52+77:0,52+78:0,52+79:0,0
+
+    5GC001586_Keywords.DSS enb crm periodic allocation pattern   dl_allocated_normal_subframes=${dl_allocated_normal_subframes}
+    ...                                                          dl_prb_area_allocation_list=${dl_prb_area_allocation_list}
+    ...                                                          alias=${alias}
+
+    ${dl_allocated_normal_subframes}=  Catenate   1011111110-1111111110-1011111110-1111111110-1011111110-1111111110-1011111110-1111111110
+
+    ${dl_prb_area_allocation_list}=    Catenate    SEPARATOR=    0:0,52+1:0,0+2:0,52+3:0,52+4:0,52+5:0,36+6:0,52+7:0,52+8:0,52+9:0,0+10:0,52+11:0,
+    ...     52+12:0,52+13:0,52+14:0,52+15:0,36+16:0,52+17:0,52+18:0,52+19:0,0+20:0,52+21:0,0+22:0,52+23:0,52+24:0,52+25:0,36+26:0,52+27:0,52+28:0,
+    ...     52+29:0,0+30:0,52+31:0,52+32:0,52+33:0,52+34:0,52+35:0,36+36:0,52+37:0,52+38:0,52+39:0,0+40:0,52+41:0,0+42:0,52+43:0,52+44:0,52+45:0,
+    ...     36+46:0,52+47:0,52+48:0,52+49:0,0+50:0,52+51:0,52+52:0,52+53:0,52+54:0,52+55:0,36+56:0,52+57:0,52+58:0,52+59:0,0+60:0,52+61:0,0+62:0,
+    ...     52+63:0,52+64:0,52+65:0,36+66:0,52+67:0,52+68:0,52+69:0,0+70:0,52+71:0,52+72:0,52+73:0,52+74:0,52+75:0,36+76:0,52+77:0,52+78:0,52+79:0,0
+
+    5GC001586_Keywords.DSS enb crm periodic allocation pattern   dl_allocated_normal_subframes=${dl_allocated_normal_subframes}
+    ...                                                          dl_prb_area_allocation_list=${dl_prb_area_allocation_list}
+    ...                                                          alias=${alias}
+
+    5GC001586_Keywords.DSS DL Cell Periodic Resource Allocation Phase3     alias=${alias}
+
+    # Param variable is visible under the test suite
+    5GC001586_Keywords.DSS UL Cell Resource Allocation Phase3     ULNbrOfPrb=${Param.seq.ULNbrOfPrb}    msg1FrequencyStart=1
+    ...                                                           allocation_start_time=auto   alias=${alias}
+
+    sleep    2s    reason=make sure the cmd take affect
+
+    log to console   \n${blue}***DSS CRM Periodic DL Fast Allocation BW=${Param.seq.bandwidth} completed*** ${normal}
+
+    ${output}    wts.execute egate command and wait for data      cmd=enb_crm_status enb=${Param.Context.eNBId} cell=1       alias=${alias}
+    Log To Console    \n*** enb_crm_status enb=${Param.Context.eNBId} cell=1
+    Log To Console    \n${output}
+
+Periodic UL Fast Allocation
+    [Arguments]                 ${alias}=default
+
+    ${msg_console}=   Catenate   ***DSS ${Param.Context.DSS_Phase} CRM Periodic UL Fast Allocation BW=${Param.seq.bandwidth} with alias=${alias}***
+    Log to console   \n${blue} ${msg_console} ${normal}
+
+    ${ul_allocated_prb_list }=  Catenate   1,35
+
+    5GC001586_Keywords.DSS enb crm periodic allocation pattern UL   ul_allocated_prb_list=${ul_allocated_prb_list}
+    ...                                                             alias=${alias}
+
+    ${ul_allocated_prb_list }=  Catenate   1,20
+
+    5GC001586_Keywords.DSS enb crm periodic allocation pattern UL   ul_allocated_prb_list=${ul_allocated_prb_list}
+    ...                                                             alias=${alias}
+
+    5GC001586_Keywords.DSS UL Cell Periodic Resource Allocation Phase3     alias=${alias}
+
+    # Param variable is visible under the test suite
+
+    sleep    2s    reason=make sure the cmd take affect
+
+    log to console   \n${blue}***DSS CRM Periodic UL Fast Allocation BW=${Param.seq.bandwidth} completed*** ${normal}
+
+    ${output}    wts.execute egate command and wait for data      cmd=enb_crm_status enb=${Param.Context.eNBId} cell=1       alias=${alias}
+    Log To Console    \n*** enb_crm_status enb=${Param.Context.eNBId} cell=1
+    Log To Console    \n${output}
+
+Check DSS CellSetup Phase2
+    [Arguments]         ${pdmlFile}
+    run Keyword if    '${mcshark_present}'=='${False}'   Check DSS CellSetup       pdmlFile=${pdmlFile}
+    ...  ELSE                                            Check DSS CellSetup Phase2 Using MCShark   pdmlFile=${pdmlFile}
+
+TC 1586-CellSetup
+    [Documentation]                Generic test for 1586-C: test purpose is to setup X2, Xp and DSS
+    [Arguments]                    ${param}     ${alias}=default
+    Init Sequence                  ${param}
+    # Critical Step                  WTS Clear
+    5GC001586_Keywords.Restart     OwnTLReset=${False}    GNBCallback=5GC001586_Keywords.Set Reset Loop Counter
+    # Step                           Start capture Backhaul for DSS                               depends=5GC001586_Keywords.Restart
+    ${capture_BH_GNB}=             set Backhaul Capture                     prefix=BH.XP
+    set global variable              ${capture_BH_GNB}
+    ${capture_BH_GNB}=             Initialize Filter XP message Capture     capture=${capture_BH_GNB}
+    common_Dss_Keywords.Start capture Backhaul XP for DSS New               capture=${capture_BH_GNB}    suffix=DssCellSetup
+    Step                           common_Dss_Keywords.Start WTS           argument=${alias}      depends=5GC001586_Keywords.Restart
+    Step                           5GC001586_Keywords.Check wts in active state       argument=${alias}     depends=common_Dss_Keywords.Start WTS
+    Step                           5GC001586_Keywords.Wait Xp link Up                 argument=${alias}     depends=common_Dss_Keywords.Start WTS
+    Step                           common_Dss_command.X2Ap link Setup      argument=${alias}     depends=common_Dss_Keywords.Start WTS
+    # DSS_Cell_Setup use ${param} variable initialized into the Init Sequence Kw
+    Step                           5GC001586_Keywords.DSS_Cell_Setup        argument=${alias}        depends=5GC001586_Keywords.Wait Xp link Up
+    ${pdmlFile}                    Run Keyword if      '${TRACE_SHOULD_BE_STOP_AFTER_CELLSETUP}' == '1'
+    ...                            common_Dss_Keywords.Stop capture for Backhaul XP DSS New     capture=${capture_BH_GNB}
+    ...                                                                 lua_path=/home/ute/tools/luashark/generated_luashark-9.1800.330/luashark.lua
+    ...                                                                 suffix=DssCellSetup
+    Run Keyword if       ('${TRACE_SHOULD_BE_STOP_AFTER_CELLSETUP}' == '1') and ('${CELLSETUP_SHOULD_BE_CHECK}' == '1')
+    ...                            Step        Check DSS CellSetup Phase2       argument=${pdmlFile}       depends=5GC001586_Keywords.DSS_Cell_Setup
+
+    # Wait gNB cell 5g On air with globalCellId=1
+    Critical Step                  common_Dss_CellSetup.Wait gNB cell 5g On air      globalCellId=1
+    Critical Step                  5GC001586_Ue_command.Verify AP Classical Cell Setup
+    [Teardown]                     GenericTest.Display diagnosis
+
+
+TC 1586M2-5gCall
+    [Documentation]                Generic test for 1586-C: test purpose is to setup X2, Xp and DSS
+    [Arguments]                    ${param}     ${alias}=default
+    Init Sequence                  ${param}
+    5GC001586_Keywords.Restart     OwnTLReset=${False}     GNBCallback=5GC001586_Keywords.Set Reset Loop Counter
+    Step                     Start capture Bip and Xp for 1586     prefix=Xp.L1L2Bip.DssCellSetup
+    Step                     common_Dss_Keywords.Start WTS         argument=${alias}
+    Step                     5GC001586_Keywords.Check wts in active state       argument=${alias}     depends=common_Dss_Keywords.Start WTS
+    Step                     5GC001586_Keywords.Wait Xp link Up                 argument=${alias}     depends=common_Dss_Keywords.Start WTS
+    Step                     common_Dss_command.X2Ap link Setup     argument=${alias}            depends=common_Dss_Keywords.Start WTS
+    # DSS_Cell_Setup use ${param} variable initialized into the Init Sequence Kw
+    Step                     5GC001586_Keywords.DSS_Cell_Setup_M2        argument=${alias}        depends=5GC001586_Keywords.Wait Xp link Up
+    Step                     Stop capture Bip and Xp for 1586                                     depends=Start capture Bip and Xp for 1586
+    # Wait gNB cell 5g On air with globalCellId=1
+    Critical Step            common_Dss_CellSetup.Wait gNB cell 5g On air     globalCellId=1
+    Critical Step            5GC001586_Ue_command.Verify AP Classical Cell Setup
+    set test variable        ${logs_and_traces_flags['BackhaulTrace']}     ${True}
+    5GC001586_Keywords.Start/Stop BIP/backaul Traces  call_location=before_attach  collector_name=${collector_name}_attach
+    Critical Step            5GC001586_Keywords.Test SgNB Addition PRACH      depends=5GC001586_Ue_command.Verify AP Classical Cell Setup
+    [Teardown]    Run Keywords   5GC001586_Keywords.Start/Stop BIP/backaul Traces  call_location=after_attach  collector_name=${collector_name}_attach
+    ...              AND         set test variable        ${logs_and_traces_flags['BackhaulTrace']}     ${False}
+
+Check DSS CellSetup
+    [Documentation]      KW used to check DSS  CellSetup inside PDML file (LUA version)
+    [Arguments]                     ${pdmlFile}
+    ...                             ${dlAllocationSequenceNumber}=00000000
+    ...                             ${ulAllocationSequenceNumber}=00000000
+
+    Dated log                   Checking DSS CellSetup inside PDML file    ${pdmlFile}
+
+    Dated log                   ---Checking enDssSetupReq
+
+# XpDssMessage.XpDssMessage-Discriminator value = 02000000 means enDssSetupReq
+# check enDssSetupReq
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_XpDssMessage
+    ...                             path=.XpDssMessage.XpDssMessage-Discriminator$
+    ...                             kind="value"
+    ...                             value=02000000
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   ---Checking enDssSetupResp
+
+# XpDssMessage.XpDssMessage-Discriminator value = 03000000 means enDssSetupResp
+# check enDssSetupRsp
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_XpDssMessage
+    ...                             path=.XpDssMessage.XpDssMessage-Discriminator$
+    ...                             kind="value"
+    ...                             value=03000000
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+#    analyzer.check_list             pdmlFile=${pdmlFile}
+#    ...                             packetName=xp_dss_XpDssMessage
+#    ...                             path=xp_dss_xpdssmessage$
+#    ...                             kind="showname"
+#    ...                             value=enDssDlCellSubframeResourceCoordinationReq (Structure)
+#    ...                             startPacket=${1}
+#    ...                             endPacket=${-1}
+
+    Dated log                   ---Checking enDssDlCellSubframeResourceCoordinationResp
+
+# check enDssDlCellSubframeResourceCoordinationResp
+#    analyzer.check_list             pdmlFile=${pdmlFile}
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_XpDssMessage
+    ...                             path=.enDssDlQoSLoadMeasurementTimer.enDssDlQoSLoadMeasurementTimer-Items$
+    ...                             kind="value"
+    ...                             value=c800
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   ---Checking enDssUlCellSubframeResourceCoordinationResp
+
+# check enDssUlCellSubframeResourceCoordinationResp
+#    analyzer.check_list             pdmlFile=${pdmlFile}
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_XpDssMessage
+    ...                             path=.enDssUlQoSLoadMeasurementTimer.enDssUlQoSLoadMeasurementTimer-Items$
+    ...                             kind="value"
+    ...                             value=c800
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   ---Checking enDssDlSubframeResourceAllocationResp
+
+# check enDssDlSubframeResourceAllocationResp
+    # analyzer.check_list             pdmlFile=${pdmlFile}
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_XpDssMessage
+    ...                             path=.enDssDlSubframeResourceAllocationResp.dlAllocationSequenceNumber$
+    ...                             kind="value"
+    ...                             value=${dlAllocationSequenceNumber}
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   ---Checking enDssUlSubcarrierResourceAllocationResp
+
+# check enDssUlSubcarrierResourceAllocationResp
+#    analyzer.check_list             pdmlFile=${pdmlFile}
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_XpDssMessage
+    ...                             path=.enDssUlSubcarrierResourceAllocationResp.ulAllocationSequenceNumber$
+    ...                             kind="value"
+    ...                             value=${ulAllocationSequenceNumber}
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   End checking DSS CellSetup inside PDML file
+
+Check DSS CellSetup Phase2 Using MCShark
+    [Documentation]      KW used to check DSS  CellSetup inside PDML file
+    [Arguments]                     ${pdmlFile}
+    ...                             ${dlAllocationSequenceNumber}=00000000
+    ...                             ${ulAllocationSequenceNumber}=00000000
+
+    Dated log                   Checking DSS CellSetup inside PDML file    ${pdmlFile}
+
+    Dated log                   ---Checking enDssSetupReq
+
+# XpDssMessage.XpDssMessage-Discriminator value = 02000000 means enDssSetupReq
+# check enDssSetupReq
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_xpdssmessage
+    ...                             path=.xp_dss_messages_XpDssMessage_t.discriminator$
+    ...                             kind="value"
+    ...                             value=02000000
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   ---Checking enDssSetupResp
+
+# XpDssMessage.XpDssMessage-Discriminator value = 03000000 means enDssSetupResp
+# check enDssSetupRsp
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_xpdssmessage
+    ...                             path=.xp_dss_messages_XpDssMessage_t.discriminator$
+    ...                             kind="value"
+    ...                             value=03000000
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+#    analyzer.check_list             pdmlFile=${pdmlFile}
+#    ...                             packetName=xp_dss_XpDssMessage
+#    ...                             path=xp_dss_xpdssmessage$
+#    ...                             kind="showname"
+#    ...                             value=enDssDlCellSubframeResourceCoordinationReq (Structure)
+#    ...                             startPacket=${1}
+#    ...                             endPacket=${-1}
+
+    Dated log                   ---Checking enDssDlCellResourceAreaCoordinationResp
+
+# check enDssDlCellSubframeResourceCoordinationResp
+#    analyzer.check_list             pdmlFile=${pdmlFile}
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_xpdssmessage
+    ...                             path=.xp_dss_EnDssDlCrmSfInfo.enDssDlQoSLoadMeasurementTimer_item$
+    ...                             kind="value"
+    ...                             value=c800
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   ---Checking enDssUlCellSubframeResourceCoordinationResp
+
+# check enDssUlCellSubframeResourceCoordinationResp
+#    analyzer.check_list             pdmlFile=${pdmlFile}
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_xpdssmessage
+    ...                             path=.xp_dss_EnDssUlCrmScInfo.enDssUlQoSLoadMeasurementTimer_item$
+    ...                             kind="value"
+    ...                             value=c800
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   ---Checking enDssDlCellResourceAreaAllocationResp
+
+# check enDssDlCellResourceAreaAllocationResp
+    # analyzer.check_list             pdmlFile=${pdmlFile}
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_xpdssmessage
+    ...                             path=.xp_dss_messages_EnDssDlSubframeResourceAllocationResp_t.dlAllocationSequenceNumber$
+    ...                             kind="value"
+    ...                             value=${dlAllocationSequenceNumber}
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   ---Checking enDssUlSubcarrierResourceAllocationResp
+
+# check enDssUlSubcarrierResourceAllocationResp
+#    analyzer.check_list             pdmlFile=${pdmlFile}
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_xpdssmessage
+    ...                             path=.xp_dss_messages_EnDssUlSubcarrierResourceAllocationResp_t.ulAllocationSequenceNumber$
+    ...                             kind="value"
+    ...                             value=${ulAllocationSequenceNumber}
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   End checking DSS CellSetup inside PDML file
+
+Check enDssDlCellResourceAreaCoordinationUpdateInd
+    [Documentation]      KW used to check enDssDlCellResourceAreaCoordinationUpdateIndCellSetup inside PDML file
+    [Arguments]                     ${pdmlFile}
+    ...                             ${dlAllocationSequenceNumber}=00000000
+    ...                             ${ulAllocationSequenceNumber}=00000000
+
+    Dated log                   ---Checking DL CELL RESOURCE AREA COORDINATION Update procedure inside PDML file    ${pdmlFile}
+
+# XpDssMessage.XpDssMessage-Discriminator value = 00000029 means enDssDlCellResourceAreaCoordinationUpdateInd
+# check enDssDlCellResourceAreaCoordinationUpdateInd
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_XpDssMessage
+    ...                             path=.XpDssMessage.XpDssMessage-Discriminator$
+    ...                             kind="value"
+    ...                             value=29000000
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   End checking DL CELL RESOURCE AREA COORDINATION Update procedure inside PDML file
+
+Check enDssUlCellSubframeResourceCoordinationUpdate
+    [Documentation]      KW used to check DSS  enDssUlCellSubframeResourceCoordinationUpdate inside PDML file
+    [Arguments]                     ${pdmlFile}
+    ...                             ${dlAllocationSequenceNumber}=00000000
+    ...                             ${ulAllocationSequenceNumber}=00000000
+
+    Dated log                   Checking DSS enDssUlCellSubframeResourceCoordinationUpdate inside PDML file    ${pdmlFile}
+
+    Dated log                   ---Checking enDssUlCellSubframeResourceCoordinationUpdate
+
+# check enDssDlCellSubframeResourceCoordinationResp
+#    analyzer.check_list             pdmlFile=${pdmlFile}
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_XpDssMessage
+    ...                             path=.enDssDlQoSLoadMeasurementTimer.enDssDlQoSLoadMeasurementTimer-Items$
+    ...                             kind="value"
+    ...                             value=c800
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   ---Checking enDssUlCellSubframeResourceCoordinationUpdate
+
+    Dated log                   End checking DSS enDssUlCellSubframeResourceCoordinationUpdate inside PDML file
+
+Verify DSS Coordination Failure
+    [Documentation]      KW used to check UL DSS  Coordination Failure case inside PDML file
+    [Arguments]                     ${pdmlFile}
+    ...                             ${enDssFailureCause}=non_matching_resource_reservation
+
+    Dated log                   Checking DSS Coordination Failure inside PDML file    ${pdmlFile}
+
+    Dated log                   ---Checking enDssUlCellSubcarrierResourceCoordinationFail
+
+    Run Keyword if      '${enDssFailureCause}' == 'non_matching_resource_reservation'    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_XpDssMessage
+    ...                             path=.enDssUlCellSubcarrierResourceCoordinationFail.enDssFailureCause$
+    ...                             kind="value"
+    ...                             value=07000000
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Run Keyword if      '${enDssFailureCause}' == 'resource_conflict'    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_XpDssMessage
+    ...                             path=.enDssUlCellSubcarrierResourceCoordinationFail.enDssFailureCause$
+    ...                             kind="value"
+    ...                             value=0e000000
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   End checking DSS Coordination Failure inside PDML file
+
+Verify DSS Coordination Failure Using MCShark
+    [Documentation]      KW used to check UL DSS  Coordination Failure case inside PDML file
+    [Arguments]                     ${pdmlFile}
+    ...                             ${enDssFailureCause}=non_matching_resource_reservation
+
+    Dated log                   Checking DSS Coordination Failure inside PDML file    ${pdmlFile}
+
+    Dated log                   ---Checking enDssUlCellSubcarrierResourceCoordinationFail
+
+    Run Keyword if      '${enDssFailureCause}' == 'non_matching_resource_reservation'    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_xpdssmessage
+    # ...                             path=.enDssUlCellSubcarrierResourceCoordinationFail.enDssFailureCause$
+    ...                             path=.xp_dss_messages_EnDssUlCellSubcarrierResourceCoordinationFail_t.enDssFailureCause$
+    ...                             kind="value"
+    ...                             value=07000000
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Run Keyword if      '${enDssFailureCause}' == 'resource_conflict'    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_xpdssmessage
+    # ...                             path=.enDssUlCellSubcarrierResourceCoordinationFail.enDssFailureCause$
+    ...                             path=.xp_dss_messages_EnDssUlCellSubcarrierResourceCoordinationFail_t.enDssFailureCause$
+    ...                             kind="value"
+    ...                             value=0e000000
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   End checking DSS Coordination Failure inside PDML file
+
+# non_matching_resource_reservation
+# resource_conflict
+Verify DSS DL Coordination Failure
+    [Documentation]      KW used to check DL DSS  Coordination Failure case inside PDML file
+    [Arguments]                     ${pdmlFile}
+    ...                             ${enDssFailureCause}=non_matching_resource_reservation
+
+    Dated log                   Checking DSS Coordination Failure inside PDML file    ${pdmlFile}
+
+    Dated log                   ---Checking enDssDlCellSubcarrierResourceCoordinationFail
+
+#    analyzer.check_list             pdmlFile=${pdmlFile}
+
+    Run Keyword if      '${enDssFailureCause}' == 'non_matching_resource_reservation'    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_XpDssMessage
+    ...                             path=.enDssDlCellSubframeResourceCoordinationFail.enDssFailureCause$
+    ...                             kind="value"
+    ...                             value=07000000
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Run Keyword if      '${enDssFailureCause}' == 'resource_conflict'    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_XpDssMessage
+    ...                             path=.enDssDlCellSubframeResourceCoordinationFail.enDssFailureCause$
+    ...                             kind="value"
+    ...                             value=0e000000
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   End checking DSS DL Coordination Failure inside PDML file
+
+Verify DSS DL Coordination Failure using MCShark
+    [Documentation]      KW used to check DL DSS  Coordination Failure case inside PDML file
+    [Arguments]                     ${pdmlFile}
+    ...                             ${enDssFailureCause}=non_matching_resource_reservation
+
+    Dated log                   Checking DSS Coordination Failure inside PDML file    ${pdmlFile}
+
+    Dated log                   ---Checking enDssDlCellSubcarrierResourceCoordinationFail
+
+#    analyzer.check_list             pdmlFile=${pdmlFile}
+
+    Run Keyword if      '${enDssFailureCause}' == 'non_matching_resource_reservation'    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_xpdssmessage
+    # ...                             path=.enDssDlCellSubframeResourceCoordinationFail.enDssFailureCause$
+    ...                             path=.xp_dss_messages_EnDssDlCellSubframeResourceCoordinationFail_t.enDssFailureCause$
+    ...                             kind="value"
+    ...                             value=07000000
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Run Keyword if      '${enDssFailureCause}' == 'resource_conflict'    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=xp_dss_xpdssmessage
+    # ...                             path=.enDssDlCellSubframeResourceCoordinationFail.enDssFailureCause$
+    ...                             path=.xp_dss_messages_EnDssDlCellSubframeResourceCoordinationFail_t.enDssFailureCause$
+    ...                             kind="value"
+    ...                             value=0e000000
+    ...                             startPacket=${1}
+    ...                             endPacket=${-1}
+
+    Dated log                   End checking DSS DL Coordination Failure inside PDML file
+
+#################################################################################################################################################
+# 5g Call Setup
+#################################################################################################################################################
+
+DSS_5g_SA_UL_DL_Traffic to remove
+   [Arguments]         ${param}      ${ul_rate}=15      ${dl_rate}=80    ${alias}=default
+   Init Sequence       ${param}
+
+   Step       5GC001586_Keywords.Start capture Bip and Xp for 1586     argument=ULDL_TPUT_BH_L1L2_BIP
+   Step       Start Generating "${ul_rate}"mbps UL and "${dl_rate}"mbps DL Traffic for Ue="${Param.Context.UeId1}" on SA using alias "${alias}"
+   Step       5GC001586_Keywords.Stop capture Bip and Xp for 1586      depends=5GC001586_Keywords.Start capture Bip and Xp for 1586
+   Step       Display Ue Statistics       argument=${alias}
+
+  #FTS this Display diagnosis lead to a failure => please keep in touch with AF team as Stepings rules are not used as usual
+  #[Teardown]                      GenericTest.Display diagnosis
+
+DSS_5g_Call_SA to remove
+    [Arguments]                 ${alias}=default
+
+    ${UeId}   set variable     ${Param.Context.UeId1}
+    ${msg}=   Catenate    ***DSS ${Param.Context.DSS_Phase} 5gCAll SA [BW=${Param.seq.bandwidth},UeId=${UeId}] with alias=${alias}***
+    Log to console   \n${blue}${msg} ${normal}
+
+    5GC001586_Keywords.Set UE Parameters Before Register    ue_id=${UeId}    alias=${alias}
+    5GC001586_Keywords.UE Register To GNB                   ue_id=${UeId}    alias=${alias}
+    5GC001586_Keywords.UE PDU Session Setup                 ue_id=${UeId}    alias=${alias}
+
+    log to console   \n${blue}***DSS SA 5gCall BW=${Param.seq.bandwidth} completed*** ${normal}
+
+Set UE Parameters Before Register to remove
+  [Arguments]  ${ue_id}=1  ${pdu}=1  ${alias}=default
+  ${cmd}=    Catenate    set_pdu_param ue=${ue_id} pdu=${pdu} trf_type=internal
+  Dated Log New Line       ${cmd}
+  # csamson ; ${wtsObj} instead of wts
+  # wts.execute egate command     cmd=${cmd}      alias=${alias}
+  Call Method     ${wtsObj}   execute_egate_command     cmd=${cmd}      alias=${alias}
+
+UE Register To GNB to remove
+  [Arguments]  ${ue_id}=1  ${alias}=default
+  # ${pattern}    Set Variable    UE now in NG RM Registered state
+  ${pattern}    Set Variable    UE now in NG RM Registered
+  ${ue_nr_capabilities}=   Catenate    SEPARATOR=   E1201000014F5E0302C003044009041B38987C283809B0083FF30C7942C0E09804062280C0298C00283E236B0C6D1D
+  ...      262A08FE594932814105B260901831E31FF9863CA160703878089C02700040000000000841808DC9A1F00E41000000A41000002A41000004A494000069807C0DBCA9BC0
+  ...      CADD200A0800004B29202000032CA480800014B29202000072CA4A0800024B292120000AA5949005D038BA551740E269544D2A88AEC40700F0034020100000010
+  ${cmd}=    Catenate    ue_register id=${ue_id} ue_nr_capabilities=${ue_nr_capabilities}
+  Dated Log New Line       ${cmd}
+  # ${wtsObj.execute_egate_command_and_wait_for_data}     cmd=${cmd}   pass_regexp=${pattern}    timeout=30     alias=${alias}
+  ${output}     Call Method     ${wtsObj}    execute_egate_command_and_wait_for_data     cmd=${cmd}   pass_regexp=${pattern}
+  ...                                                                                    timeout=30     alias=${alias}
+  # ${output}     wts.execute egate command And Wait For Data    cmd=${cmd}
+  # ...                     pass_regexp=${pattern}    timeout=30     alias=${alias}
+  ${output}    String.Get Lines Matching Regexp    ${output}    ${pattern}    partial_match=True
+  Log To Console    \n${output}
+
+UE PDU Session Setup to remove
+  # [Arguments]  ${ue_id}=1  ${pdu}=1  ${gw}=1  ${fiveQi}=5  ${alias}=default
+  [Arguments]  ${ue_id}=1  ${pdu}=1  ${gw}=1  ${fiveQi}=6  ${alias}=default
+  ${pattern}    Set Variable    Initial Context Setup Successful for
+  ${cmd}=    Catenate    ue_pdu_session_setup pdu=${pdu} ue=${ue_id} nwslice=1 gw=${gw}
+  Dated Log New Line       ${cmd}
+  ${output}    wts.execute egate command    cmd=${cmd}    pass_regexp=${pattern}    timeout=30     alias=${alias}
+  ${output1}    String.Get Lines Matching Regexp    ${output}    ${pattern}    partial_match=True
+  Log To Console    \n${output1}
+
+# Start Generating ${ul_rate} mbps UL and ${dl_rate} mbps DL Traffic for Ue ${ue} on SA using alias ${alias}
+#  Keyword with embedded arguments
+Start tp remove Generating "${ul_rate}"mbps UL and "${dl_rate}"mbps DL Traffic for Ue="${Param.Context.UeId1}" on SA using alias "${alias}"
+    # [Arguments]    ${dl_rate}=1    ${ul_rate}=1    ${ue}=1    ${bearer}=2
+    # [Arguments]    ${alias}=default
+    [Documentation]
+    ...   Start generating Traffic for one UE. It is required to have attached UE and setup choosen bearer before.
+    ...
+    ...    :param dl_rate:  the volume of downlink traffic in megabits per second. Default value is 1mbit/s.
+    ...    :param ul_rate:  the volume of uplink traffic in megabits per second. Default value is 1mbit/s.
+    ...    :param ue: UE id
+    ...
+    ${pattern}    Set Variable    UDP DL TRF
+    ${cmd}=     Catenate         trf_data_start ue=${Param.Context.UeId1} pdu=1 qfi=1 trf_id=1 mbps=${dl_rate} dir=dl
+    ${output}      wts.execute egate command        cmd=${cmd}    pass_regexp=${pattern}    timeout=30    alias=${alias}
+    ${output}         Get Lines Matching Regexp    ${output}     ${pattern}    partial_match=True
+    Log to Console    ${output}
+    ${pattern}    Set Variable    UDP UL TRF:
+    ${cmd}=     Catenate         trf_data_start ue=${Param.Context.UeId1} pdu=1 qfi=1 trf_id=1 mbps=${ul_rate} dir=ul
+    ${output}      wts.execute egate command        cmd=${cmd}    pass_regexp=${pattern}     timeout=30    alias=${alias}
+    ${output}         Get Lines Matching Regexp    ${output}     ${pattern}    partial_match=True
+    Log to Console    ${output}
+    Log to Console     Started DL + UL Traffic for UE=${Param.Context.UeId1}
+
+Stop Generating Traffic to remove
+    [Arguments]    ${ue}=1    ${bearer}=2
+    [Documentation]    Stop generating traffic for one UE
+    ...    :param ue: UE id
+    ...    :param bearer: configured bearer
+    ...
+    Log to Console    Stopping DL + UL Traffic...
+    ${output}      wts.execute egate command        cmd=trf_data_stop ue=${ue} id=${bearer}
+    # ${output}   wts.read_wtsemu_output_until_re    expected=Traffic was stopped   timeout=10
+    # ${output}         Get Lines Matching Regexp    ${output}    Traffic was stopped   partial_match=${TRUE}
+
+Display Qfi stats to remove
+    [Arguments]    ${ue_id}=1     ${pdu_id}=1     ${qfi_id}=1    ${alias}=default
+    ${cmd}=   Catenate       qfi_stats ue=${ue_id} pdu=${pdu_id} qfi=${qfi_id} trf_id=1 dir=bi
+    ${output}    wts.execute egate command And Wait For Data     cmd=${cmd}    alias=${alias}
+    Log to Console    ${output}
+
+Display Ue Statistics to remove
+    # [Arguments]     ${ue_id}=1     ${pdu_id}=1     ${qfi_id}=1     ${alias}=default
+    [Arguments]     ${alias}=default
+    Display Qfi stats    ue_id=${Param.Context.UeId1}    alias=${alias}
+    ${cmd}=   Catenate     uec_stats display type=cell_data_pdcp enb=${Param.Context.gNBId} cell=1 format=short
+    ${output}    wts.execute egate command And Wait For Data     cmd=${cmd}      alias=${alias}
+    Log to Console    ${output}
+
+Test SgNB Addition PRACH
+    ${capture_path}      CallSetup.SgNB Addition to ENB          ueSetting=${UE_SIMPLE_CellDSS}
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${capture_path}
+    Run Keyword And Ignore Error    OperatingSystem.Copy File    ${capture_path}    ${testCaseDir}
+    Run Keyword And Ignore Error    common_Dss_SA_NSA.Read WTS Output For Pattern And Print matching Lines    ${UE_attach_pattern}   ${Timeout_NSA}
+
+Check numOfPrb on uldata_pushreceivereq for DSS
+
+    [Documentation]                 Retrieve from pdml value of numOfPrb
+    ...                            from message uldata_puschreceivereq and check prb allocation conditions.
+    [Arguments]                     ${pdmlFile}       ${NbrOfPRBToCheck}=0x00000023
+
+    # 0x00000023 (35 PRBs) is for UL ratio = 70 % with DSS BW=10MHz
+    ${NbOK}                    Evaluate     0
+    ${NbKO}                    Evaluate     0
+    Set Suite Variable              ${NbOK}
+    Set Suite Variable              ${NbKO}
+
+    # 1 - Retrieve from pdml all pucchReceiveReq
+    Dated log                       \tGetting all uldata_puschreceivereq
+    @{listAllPuschReq}              analyzer.get_match_from_paths
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=uldata_puschreceivereq
+    ...                             pathList=${FIELDS_PUSCHreceivereq}
+    ${lenPuschReq}                  get length                          ${listAllPuschReq}
+    Dated log                       \tNB of uldata_puschreceivereq:${lenPuschReq}
+    # 2 - For each puschReq, find corresponding puschResp (same numOfPrb)
+    FOR    ${packet}       IN          @{listAllPuschReq}
+
+    #       Retrieve numOfPrb  for current pucchReq
+             ${numOfPrb}            Get Value In Packet Match
+             ...                    packetMatch=${packet}
+             ...                    field=numOfPrb
+     # \       Dated log                 numOfPrb:${numOfPrb}
+         ${comp}                     compareInDecimal   ${numOfPrb}   ${NbrOfPRBToCheck}
+          Run Keyword If    ('${comp}'!='True')
+          ...   New Case KO
+    # \    Run Keyword If   ('${numOfPrb}'!='${NbrOfPRBToCheck}' )          #35 PRBs
+
+    END
+    ${PASSED_1}    Evaluate        (round(${NbKO})*100)/round(${lenPuschReq})
+
+    ${PASSED}             Convert to Number        ${PASSED_1}      2
+    Dated log              \t%nrOf_KO [numOfPrb!=${NbrOfPRBToCheck}]:${PASSED}%
+    # Should Be Equal    ${PASSED}          ${0}
+    # adaptaion needed because of long PUCCH activated by default
+    # for ex : for  10MHz with DL pattern allocation received from CRM with StartPRB=4 and NbrPRB=35 for 70% DL ratio, startPrb=12 and so NbrPRB=27
+    # with slot period=30ms because of long PUCCH
+    # Criteria should be : NbrPRB_CRM  - (startPrb_uldata_puschreceivereq - StartPRB_CRM) == NbrPRB_uldata_puschreceivereq for every slots
+    ${is_nbr_KO_as_expected}    evaluate    ${0.0} <= ${PASSED_1} <= ${10.0}
+    Run Keyword If                  '${is_nbr_KO_as_expected}'=='True'
+    ...    Log to Console            \t${green} Average Nbr numOfPrb!=${NbrOfPRBToCheck} REACHED: expected = 0 % , current = ${PASSED} % ${normal}
+    ...    ELSE
+    ...    Log to Console            \t${red} Average Nbr numOfPrb!=${NbrOfPRBToCheck} NOT REACHED: expected = 0 %, current = ${PASSED} % ${normal}
+    should be true    '${is_nbr_KO_as_expected}'=='True'    nrOf_KO is not as expected!
+
+
+Check startPrb on uldata_pushreceivereq for DSS
+
+    [Documentation]                 Retrieve from pdml value of startPrb
+     ...                            from message uldata_puschreceivereq and check prb allocation conditions.
+    [Arguments]                     ${pdmlFile}       ${startPrbToCheck}=0x00000004
+
+    # 0x00000004 as msg1StartFrequency = 4 into scf
+    ${NbOK}                  Evaluate    0
+    ${NbKO}                  Evaluate    0
+    Set Suite Variable              ${NbOK}
+    Set Suite Variable              ${NbKO}
+
+    # 1 - Retrieve from pdml all pucchReceiveReq
+    Dated log                       \tGetting all uldata_puschreceivereq
+    @{listAllPuschReq}              analyzer.get_match_from_paths
+    ...                             pdmlFile=${pdmlFile}
+    ...                             packetName=uldata_puschreceivereq
+    ...                             pathList=${FIELDS_PUSCHreceivereq}
+    ${lenPuschReq}                  get length                          ${listAllPuschReq}
+    Dated log                       \tNB of uldata_puschreceivereq:${lenPuschReq}
+    # 2 - For each puschReq, find corresponding puschResp (same startPrb)
+    FOR    ${packet}       IN          @{listAllPuschReq}
+
+    #       Retrieve startPrb  for current pucchReq
+             ${startPrb}            Get Value In Packet Match
+             ...                    packetMatch=${packet}
+             ...                    field=startPrb
+    #  \       Dated log                 startPrb:${startPrb}
+         ${comp}                     compareInDecimal   ${startPrb}   ${startPrbToCheck}
+          Run Keyword If    ('${comp}'!='True')
+          ...   New Case KO
+    #  \    Run Keyword If   ('${startPrb}'!='${startPrbToCheck}' )          #4
+    END
+    ${PASSED_1}    Evaluate        (round(${NbKO})*100)/round(${lenPuschReq})
+    ${PASSED}             Convert to Number        ${PASSED_1}      2
+    Dated log              \t%nrOf_KO [startPrb!=${startPrbToCheck}]:${PASSED}%
+    # Should Be Equal    ${PASSED}          ${0}
+    # adaptaion needed because of long PUCCH activated by default
+    # for ex : for  10MHz with DL pattern allocation received from CRM with StartPRB=4 and NbrPRB=35 for 70% DL ratio, startPrb=12 and so NbrPRB=27
+    # with slot period=30ms because of long PUCCH
+    # Criteria should be : NbrPRB_CRM  - (startPrb_uldata_puschreceivereq - StartPRB_CRM) == NbrPRB_uldata_puschreceivereq for every slots
+    ${is_nbr_KO_as_expected}    evaluate    ${0.0} <= ${PASSED_1} <= ${10.0}
+    Run Keyword If                  '${is_nbr_KO_as_expected}'=='True'
+    ...    Log to Console            \t${green} Average startPrb!=${startPrbToCheck} REACHED: expected = 0 % , current = ${PASSED} % ${normal}
+    ...    ELSE
+    ...    Log to Console            \t${red} Average startPrb!=${startPrbToCheck} NOT REACHED: expected = 0 %, current = ${PASSED} % ${normal}
+    should be true    '${is_nbr_KO_as_expected}'=='True'    nrOf_KO is not as expected!
+
+DTX calcul for DSS
+    [Documentation]                 Find the corresponding uldata_pucchreceiverespharqd
+    ...                             check the format and dtx
+    ...                             calculate the ratio of dtx in function of total number of uldata_pucchreceiverespharqd msgs
+    [Arguments]                         ${pucchFormatInput}
+    ...                                 ${pdmlFile}
+    # 1 - Retrieve from pdml all uldata_pucchreceiverespharqd
+    Dated log new line                  Getting all uldata_pucchreceiverespharqd
+    @{listAllPucchRespHarqD}            analyzer.get_match_from_paths
+    ...                                 pdmlFile=${pdmlFile}
+    ...                                 packetName=uldata_pucchreceiverespharqd
+    ...                                 pathList=${FIELDS_DTX}
+    ${lenPucchRespHarqD}                get length                                          ${listAllPucchRespHarqD}
+    Dated Log New Line                  Total number of PucchRespHarqD msgs: ${lenPucchRespHarqD}
+    ${counterDtx}                       Set Variable                                        ${0}
+    FOR    ${packet}   IN              @{listAllPucchRespHarqD}
+    #       Retrieve pucchFormat and dtx for current PucchRespHarqD
+                ${pucchFormat}              Get Value In Packet Match
+                ...                         packetMatch=${packet}
+                ...                         field=pucchFormat
+                ${dtx}                      Get Value In Packet Match
+                ...                         packetMatch=${packet}
+                ...                         field=dtx
+                Run Keyword If              ('${pucchFormat}'=='${pucchFormatInput}' and '${dtx}'!='0')
+                ...                         Increment counter for dtx                       counterDtx=${counterDtx}
+    END
+    Dated log                           pucchFormat:${pucchFormatInput}                          number of DTX:${counterDtx}
+    ${nonDtx}                           evaluate                                            (${lenPucchRespHarqD}-${counterDtx})
+    Dated log                           number of NON-DTX:${nonDtx}
+    ${ratioOfDtx}                       Run Keyword if                      ${lenPucchRespHarqD} > 0
+    ...                                 Percentage DTX                  ${lenPucchRespHarqD}     ${counterDtx}
+    ...                                 ELSE
+    ...                                 Dated log                THERE IS NO TRAFFIC !!!!
+    Run keyword if                      ${ratioOfDtx}==${0}                                 New Case OK
+    [Return]                            ${ratioOfDtx}
+
+Percentage DTX for DSS
+    [Arguments]                         ${totalPucchRespHarqD}
+    ...                                 ${totalDtx}
+    ${ratioOfDtx}                       Evaluate                                            (round(${totalDtx})/round(${totalPucchRespHarqD}))*100
+    ${ratioOfDtx}=                      convert to number                                   ${ratioOfDtx}       1
+    ${totalPercentage}                  Set Variable                                        100
+    ${rationNonTdx}                     Evaluate                                            ${totalPercentage}-${ratioOfDtx}
+    Dated log                           DTX=${ratioOfDtx}%    NonDtx=
+    [Return]                            ${ratioOfDtx}
+
+
+Increment counter for dtx
+    [Arguments]                         ${counterDtx}
+    ${counterDtx}                       evaluate                                            ${counterDtx}+1
+    set suite variable                  ${counterDtx}
+
+New Case OK
+    ${NbOK}                         Evaluate                            ${NbOK}+1
+    Set Suite Variable              ${NbOK}
+
+New Case KO
+    ${NbKO}                         Evaluate                            ${NbKO}+1
+    Set Suite Variable              ${NbKO}
+
+New Case NONE
+    ${NbNone}                       Evaluate                            ${NbNone}+1
+    Set Suite Variable              ${NbNone}
+
+Check UL Qos Load Indication MeasuredNgbrNnbrLoad
+    [Arguments]    ${pdmlFile}   ${value}=00    ${remove_zero_value}=True   ${with_verdict}=True
+
+    ${ul_ratio_to_check_hex}=    Convert to Hex     ${value}
+    ${cmd}=    Catenate     cat ${pdmlFile} | grep -i 'enDssUlQosLoadMeasurement.MeasuredNgbrNnbrLoad' |
+    ...                grep 'MeasuredNgbrNnbrLoad (Uint8)' | awk '{print $9}' | sed -e 's/value="//g' | sed -e 's/"/ /g' | awk '{print $1}'
+    ${MeasuredNgbrNnbrLoad}=    OperatingSystem.Run    ${cmd}
+    @{lines}    Split To Lines    ${MeasuredNgbrNnbrLoad}
+    Run Keyword If   '${remove_zero_value}' == 'True'       Remove Values From List     ${lines}     00
+    ${length}=    get length     ${lines}
+    @{MeasuredNgbrNnbrLoad}    Evaluate    map(lambda x: int(x, 16), @{lines})
+    Dated log   UL Qos MeasuredNgbrNnbrLoad = @{MeasuredNgbrNnbrLoad} and length = ${length}
+    ${avg_ul_MeasuredNgbrNnbrLoad}    Evaluate    round(round(sum(@{MeasuredNgbrNnbrLoad}), 1)/round(${length}, 1), 1)
+
+    Log many          [DATA TRANSFER] enDssUlQosLoadMeasurement MeasuredNgbrNnbrLoad average: ${avg_ul_MeasuredNgbrNnbrLoad}
+    Log To Console    \t\t\tUplink enDssUlQosLoadMeasurement.MeasuredNgbrNnbrLoad Avg:\t\t ${avg_ul_MeasuredNgbrNnbrLoad} %
+
+    # 2 % tolerance
+    ${min}=                         Evaluate                                ${value} * (100 - 2) / 100
+    ${max}=                         Evaluate                                ${value} * (100 + 2) / 100
+    ${status}=                      Evaluate                                ${min} <= ${avg_ul_MeasuredNgbrNnbrLoad} <= ${max}
+    Run Keyword If                  '${status}'=='True'
+    ...    Dated Log                Average UL DSS Ratio REACHED: expected = ${value} % , current = ${avg_ul_MeasuredNgbrNnbrLoad}
+    ...    ELSE
+    ...    Dated Log                Average UL DSS RATIO NOT REACHED: expected = ${value} %, current = ${avg_ul_MeasuredNgbrNnbrLoad}
+    Run Keyword If                  '${status}'!='True' and '${with_verdict}'=='True'                     Fail    UL DSS Ratio
+
+    ${cmd}=    Catenate    grep -n -i enDssUlQosLoadMeasurement.MeasuredNgbrNnbrLoad ${pdmlFile} |
+    ...                      grep -n -i 'value="${ul_ratio_to_check_hex}"' |
+    ...                      wc -l > ${LOG_PATH}/nbr_enDssUlQosLoadIndMeasuredNgbrNnbrLoad_parsed_${TEST_NAME}.txt
+    OperatingSystem.Run     ${cmd}
+    ${output_ul}    OperatingSystem.Run     cat ${LOG_PATH}/nbr_enDssUlQosLoadIndMeasuredNgbrNnbrLoad_parsed_${TEST_NAME}.txt
+    # Run Keyword If     '${with_verdict}'=='True'      Should Be True    (${output_ul}>20)
+    [Return]     ${avg_ul_MeasuredNgbrNnbrLoad}
+
+# cat L1L2_BIP_GNB_FS_UL_TPUT.5GC001586_D_TC_15_5GC001586-D_Check_UL_Tput_for_20Mhz.pdml |  grep "showname=\"MeasuredNgbrNnbrLoad (Uint8"
+#   |awk '{print $9}' | sed 's/value="//g' | sed 's/\"\/>//g'
+
+TC 1586-5gCall
+    [Documentation]                Test purpose is to test 5g DSS Call
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+    Run Keyword if         '${PCAP_XP_BIP_L1L2_ATTACH}' == '1'    Step     5GC001586_Keywords.Start capture Bip and Xp for 1586
+    Step         5GC001586_Keywords.Test SgNB Addition PRACH
+    Run Keyword if     '${PCAP_XP_BIP_L1L2_ATTACH}' == '1'       Step         5GC001586_Keywords.Stop capture Bip and Xp for 1586
+    ${pdmlFile}        Run Keyword if      '${TRACE_SHOULD_BE_STOP_AFTER_CELLSETUP}' == '0'
+    ...                           common_Dss_Keywords.Stop capture for Backhaul XP DSS New     capture=${capture_BH_GNB}
+    ...                                                                  lua_path=/home/ute/tools/luashark/generated_luashark-9.1800.330/luashark.lua
+    Run Keyword if   ('${TRACE_SHOULD_BE_STOP_AFTER_CELLSETUP}' == '0') and ('${CELLSETUP_SHOULD_BE_CHECK}' == '1')
+    ...                             Check DSS CellSetup          pdmlFile=${pdmlFile}
+    [Teardown]                      GenericTest.Display diagnosis
+
+
+Convert and Check Xp
+    [Documentation]                Generic test for 1586-C: test purpose is to check UL Tput
+    [Arguments]                    ${captureXp}     ${ul_ratio_to_check}=100
+    # Dated log            captureXp = ${captureXp}
+    Dated log                       Calculate UL throughput on gnb L2Lo case ...
+    Run Keyword And Ignore Error    Check UL Throughput
+    run Keyword if    '${mcshark_present}'=='${False}'    Dated log             Point AF_PATH and ENB_BUILD to local luashark XP package
+    run Keyword if    '${mcshark_present}'=='${False}'    Point AF_PATH to local luashark XP package
+    run Keyword if    '${mcshark_present}'=='${False}'    Point ENB_BUILD to local luashark XP package
+    Dated log                       pdml files generation from [${captureXp.path}] ...
+    # ${pdmlFileXP}=                  analyzer.pcap_to_pdml          ${captureXp.path}
+    ${pdmlFileXP}=   run Keyword if  "${mcshark_present}"=="False"  pcap.Convert pcap to pdml file without filtering          ${captureXp.path}
+    ...   ELSE                                                      pcap.Convert pcap to pdml file without filtering using McShark  ${captureXp.path}
+    Dated log                       Check UL Qos Load Indication MeasuredNgbrNnbrLoad ...
+    5GC001586_Keywords.Check UL Qos Load Indication MeasuredNgbrNnbrLoad    ${pdmlFileXP}  value=${ul_ratio_to_check}
+    5GC001586_Keywords.Check no UL Qos Load Indication MeasuredNgbrNnbrLoad upper 100    ${pdmlFileXP}
+
+Convert and Check Bip
+    [Documentation]                Generic test for 1586-C: test purpose is to check UL Tput
+    [Arguments]                    ${captureBip}
+    Dated log                       Check numOfPrb and startPrb on uldata_pushreceivereq ...
+    Point ENB_BUILD to luashark sw package
+    Point AF_PATH to current sw package
+    Dated log                       pcap.Convert pcap to pdml file [uldata_puschreceivereq filtered]...
+    ${pdmlFileBIP_UL}     pcap.Convert pcap to pdml file   ${captureBip.path}      message=uldata_puschreceivereq
+    Dated log                       Checking numOfPrb on uldata_pushreceivereq for DSS...
+    Check numOfPrb on uldata_pushreceivereq for DSS     ${pdmlFileBIP_UL}    ${param.seq.ULNbrOfPrb}
+    Dated log                       Checking startPrb on uldata_pushreceivereq for DSS...
+    Check startPrb on uldata_pushreceivereq for DSS     ${pdmlFileBIP_UL}    ${param.scfFile.nrcell.msg1FrequencyStart}
+    Dated log             Point AF_PATH to local luashark XP package
+    Point AF_PATH to local luashark XP package
+    Point ENB_BUILD to local luashark XP package
+
+TC 1586-UL_Tput_and_check
+    [Documentation]                Generic test for 1586-C: test purpose is to test UL Tput Only
+    [Arguments]                    ${param}
+    # Capture L1L2 Set Upon Config  => means that gnbMirroring.sh will be use
+    ${CaptureBIP}                   Capture L1L2 Set Upon Config             airscale=${GNB_DU}
+    # set a specific name to keep the trace
+    ${CaptureBIP.prefix}   set Variable   L1L2_BIP_GNB_FS
+    ${CaptureBIP.withTN}   set Variable   True
+    # filter UlData_PuschReceiveReq
+    Point ENB_BUILD to luashark sw package
+    Point AF_PATH to current sw package
+    ${CaptureBIP.filter}        Get msgId from lua package      ${param.seq.filtermsg}
+    Dated log          CaptureBIP.filter = ${CaptureBIP.filter}
+    Set Suite Variable       ${CaptureBIP}
+
+    # 2022-08-03 : remove this part since luaShark is not present anymore in UTE TL => replace by MCShark
+    # FOR   ${elementList}    IN    @{param.seq.filtermsg}
+    # \    ${elementList}=             Catenate     SEPARATOR=;     ${elementList}
+    # Dated log    Check messageId in luaShark for ${elementList}...
+    # ${f}    common_Dss_Keywords.Read L1L2 filter from luaShark    ${elementList}
+    # Dated log    ... messageId from luaShark for ${param.seq.filtermsg} is ${f}
+
+    Point AF_PATH to local luashark XP package
+    Point ENB_BUILD to local luashark XP package
+
+    ${CaptureXP}                set Backhaul Capture      prefix=XP_GNB_FS
+    Initialize Filter Backhaul Xn Capture                 capture=${CaptureXP}
+    Set test Variable       ${CaptureXP}
+
+    # Initialize Capture      ${CAPTURE_L1L2_GNB_FS_ASIK_DSS}
+    Capture Init                     ${CaptureBIP}   # Beware that 30s sleep is added by Capture Init Kw !!!!
+    ${aliasASIKGNB}       Run Keyword If       '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'    SSH Wait For Connect     ${GNB_DU.sys[0].M}
+    ${tput_log_file_path_gnb}      Run Keyword If     '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'
+    ...                                Start tput log capture    gnb_index=0    asik_alias=${aliasASIKGNB}
+    # Start capture BH data on GNB
+    Start capture Backhaul XP for DSS New      capture=${CaptureXP}    suffix=UL_Tput_and_check
+    Traffic UE UL    ueSetting=${UE_SIMPLE_CellDSS}  throughput=${param.seq.ul_throughput}
+    ...              duration=${param.seq.timeDuration}  shouldBeStop=True    shouldBeCheck=False   deviation=15
+    ...              captureCallback=Callback Capture L1L2
+    ...              capture=${CaptureBIP}  captureDuration=${param.seq.timeDuration}
+    Stop capture for Backhaul XP DSS New  capture=${CaptureXP}   w_pdml=False    w_traces_archived=False
+    ...                                   lua_path=/home/ute/tools/luashark/generated_luashark-9.1800.330/luashark.lua
+    ...                                   suffix=UL_Tput_and_check
+
+    # calculate waiting UL ratio based on L1L2 pcap traces
+    ${sum_prb}   ${sum_prb_5min}  ${ul_ratio_to_check}  ${sum_ul_prb_allocated_to_nr}=   Sum NbrOfPrb Info from L1L2 uldata_puschreceivereq_t Pcap
+    ...                                                                                                        ${param}
+    ...                                                                                                        ${CaptureBIP.path}
+    ${expected_ul_ratio_to_check}    set variable    100
+    ${aliasASIKGNB}    Run Keyword If   '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'    SSH Wait For Connect    ${GNB_DU.sys[0].M}
+    Run Keyword If   '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'   Check Throughput from aasyslog   asik_alias=${aliasASIKGNB}
+    ...                                                                       tput_log_file_path_gnb_combined=${tput_log_file_path_gnb}
+    Run Keyword If       '${UL_TPUT_SHOULD_BE_CHECK}' == '1'         Convert and Check Xp      ${CaptureXP}    ${expected_ul_ratio_to_check}
+    Run Keyword If       '${UL_TPUT_SHOULD_BE_CHECK}' == '1'         Convert and Check Bip     ${CaptureBIP}
+
+    [Teardown]         Run Keywords      Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CaptureXP.path}      AND
+    ...                         Run Keyword And Ignore Error    OperatingSystem.Copy File    ${CaptureXP.path}    ${testCaseDir}    AND
+    ...                         Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${CaptureBIP.path}     AND
+    ...                         Run Keyword And Ignore Error    OperatingSystem.Copy File    ${CaptureBIP.path}    ${testCaseDir}
+
+
+TC 1586-DL_UL_Tput
+    [Documentation]                Generic test for 1586-C: test purpose is to test DL/UL Tput
+    [Arguments]                    ${param}
+    Init Sequence                  ${param}
+    Dated log             Point AF_PATH to local luashark XP package
+    Point AF_PATH to local luashark XP package
+    Point ENB_BUILD to local luashark XP package
+    Dated log     SSH on ${GNB_DU.sys[0].M.sshId}
+    ${aliasASIKGNB}         SSH Wait For Connect                    ${GNB_DU.sys[0].M}
+    ${tput_log_file_path_gnb}      Run Keyword If     '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'    Start tput log capture    gnb_index=0
+    ...                                                                                                          asik_alias=${aliasASIKGNB}
+    ${status}   ${msg}      Run Keyword And Ignore Error    Traffic UE UL DL   ueSetting=${UE_SIMPLE_CellDSS}  throughput=15   shouldBeCheck=False
+    Dated log                       Calculate DL and UL throughput on gnb L2Lo case ...
+    Run Keyword And Ignore Error    Check UL DL Throughput
+    Run Keyword If       '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'   Check Throughput from aasyslog   asik_alias=${aliasASIKGNB}
+    ...                                                                                   tput_log_file_path_gnb_combined=${tput_log_file_path_gnb}
+    [Teardown]                      GenericTest.Display diagnosis
+
+
+####################################################################################################################################""
+#
+#       Common 1586 Teardown
+#
+####################################################################################################################################""
+
+Teardown 1586
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+
+    BuiltIn.Log      \nTest ${TEST_NAME} 1586 ending   console=yes
+    Produce Scout Data
+
+    # get Alarm at the end of the test and store it into a file
+    Dated log New Line  OAM Get Active Alarms to Save into file
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+
+    ${active_alarms}     OAM Get Active Alarms                   oam=${GNB_DU.oam}    textFormat=${False}
+
+    ${len}    Get Length    ${active_alarms}
+    ${alarm_id_list}    Create List
+    ${alarm_name_list}    Create List
+    ${faultId}=     set variable if    ${isAiC}        fault_id
+    ...                                                faultId
+    ${faultName}=     set variable if    ${isAiC}      fault_name
+    ...                                                faultName
+    FOR    ${i}    IN RANGE    ${len}
+          ${tmp_id}    Get From Dictionary    ${active_alarms[${i}]}    ${faultId}
+          ${tmp_name_id}    Get From Dictionary    ${active_alarms[${i}]}    ${faultName}
+          Append To List    ${alarm_id_list}    ${tmp_id}
+          Append To List    ${alarm_name_list}    ${tmp_name_id}
+    # Dated log     Active alarms: alarm_id_list=${alarm_id_list}
+    # Dated log     Active alarms: alarm_name_list=${alarm_name_list}
+    END
+    Append To File    ${testCaseDir}/OAM_Alarms_After_${TEST_NAME}.txt     Active Alarms Id List:\n${alarm_id_list}\n\n
+    Append To File    ${testCaseDir}/OAM_Alarms_After_${TEST_NAME}.txt     Active Alarms Name List:\n${alarm_name_list}\n\n
+
+    OAM Disconnect                          ${GNB_DU.oam}
+
+    # Restore WTS cfg file name
+    Run Keyword If   '${Param.seq.bandwidth}'!='10MHz'    restoreFilename
+
+    Dated Log         Collect /ram/startup_l3.log and egate_console.log from Airphone...
+    common_Dss_Keywords.Prepare Logs Directory Path    subdir=airphone
+    Run Keyword And Ignore Error     Collect EGATE console Logs
+    Run keyword and Ignore error      common_Dss_Keywords.Get APL3 log from Airphone         target_dir=${testCaseDir}/airphone
+
+    Dated Log         Collect /ffs/run/simmode/new_iphy.xml from Airphone...
+    Run keyword and Ignore error      common_Dss_Keywords.Get iPhy.xml file from Airphone    target_dir=${testCaseDir}/airphone
+
+    robot_extension.Run Keyword And Warn On Failure   Extract egate_command   dir=${testCaseDir}  egate_console=egate_console.log
+
+    # check here that there is no DSS alarm at the end of the test
+    common_Dss_Keywords.Check Dss active Alarm Should not be present
+
+    common_Dss_Keywords.Get Gnb Snapshot if TestCase Failed
+
+    # wts.stop_and_collect_wts_logs   subdirectory=${LOG_PATH}
+    wts.teardown_all_aliases_for_egate
+    wts.teardown_all_aliases_for_edaemon
+
+    [Teardown]      Run Keywords    GenericTest.Display diagnosis        AND
+    ...                             Collect Logs if needed   ${alias}    AND
+    ...                             set Suite Variable  ${testCaseDir}  None
+
+
+Teardown 1586 M2
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+
+    BuiltIn.Log      \nTest ${TEST_NAME} 1586 M2 ending   console=yes
+    Produce Scout Data
+
+    # get Alarm at the end of the test and store it into a file
+    Dated log New Line  OAM Get Active Alarms to Save into file
+    ${aliasGNB}                     OAM Connect                             ${GNB_DU.oam}
+
+    ${active_alarms}     OAM Get Active Alarms                   oam=${GNB_DU.oam}     textFormat=${False}
+    ${len}    Get Length    ${active_alarms}
+    ${alarm_id_list}    Create List
+    ${alarm_name_list}    Create List
+    FOR    ${i}    IN RANGE    ${len}
+         ${tmp_id}    Get From Dictionary    ${active_alarms[${i}]}    faultId
+         ${tmp_name_id}    Get From Dictionary    ${active_alarms[${i}]}    faultName
+         Append To List    ${alarm_id_list}    ${tmp_id}
+         Append To List    ${alarm_name_list}    ${tmp_name_id}
+
+    # Dated log     Active alarms: alarm_id_list=${alarm_id_list}
+    # Dated log     Active alarms: alarm_name_list=${alarm_name_list}
+
+    END
+    Append To File    ${LOG_PATH}/OAM_Alarms_After_${TEST_NAME}.txt     Active Alarms Id List:\n${alarm_id_list}\n\n
+    Append To File    ${LOG_PATH}/OAM_Alarms_After_${TEST_NAME}.txt     Active Alarms Name List:\n${alarm_name_list}\n\n
+
+    OAM Disconnect                          ${GNB_DU.oam}
+
+    # Restore WTS cfg file name
+    # Run Keyword If   '${Param.seq.bandwidth}'!='10MHz'    restoreFilename
+
+    Dated Log         Collect /ram/startup_l3.log and egate_console.log from Airphone...
+    common_Dss_Keywords.Prepare Logs Directory Path    subdir=airphone
+    Run Keyword And Ignore Error      Collect EGATE console Logs
+    Run keyword and Ignore error      common_Dss_Keywords.Get APL3 log from Airphone         target_dir=${testCaseDir}/airphone
+
+    Dated Log         Collect /ffs/run/simmode/new_iphy.xml from Airphone...
+    Run keyword and Ignore error      common_Dss_Keywords.Get iPhy.xml file from Airphone    target_dir=${testCaseDir}/airphone
+
+    # check here that there is no DSS alarm at the end of the test
+    common_Dss_Keywords.Check Dss active Alarm Should not be present
+
+    # wts.stop_and_collect_wts_logs   subdirectory=${LOG_PATH}
+    wts.teardown_all_aliases_for_egate
+    wts.teardown_all_aliases_for_edaemon
+
+    [Teardown]      Run Keywords    GenericTest.Display diagnosis   AND
+    ...                             Collect Logs if needed   ${alias}   AND
+    ...                             set Suite Variable  ${testCaseDir}  None
+
+
+Teardown 1586 if Failed TestCase
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+
+    BuiltIn.Log      \nTest ${TEST_NAME} 1586 TestCase ending   console=yes
+
+    Dated Log         Collect /ram/startup_l3.log and egate_console.log from Airphone...
+    Run Keyword And Ignore Error      Collect EGATE console Logs
+    Run keyword and Ignore error      common_Dss_Keywords.Get APL3 log from Airphone
+
+    Dated Log         Collect /ffs/run/simmode/new_iphy.xml from Airphone...
+    Run keyword and Ignore error      common_Dss_Keywords.Get iPhy.xml file from Airphone
+
+    Run Keyword If  '${TEST STATUS}' == 'FAIL'      Teardown 1586    alias=${alias}
+    set Suite Variable    ${testCaseDir}    None
+
+####################################################################################################################################
+
+Create Test Suite Folder
+    [Documentation]    create test suite folder
+    ${timeStamp}    get current date    result_format=%Y%m%d_%H%M%S
+    Set Suite Variable    ${testSuiteDir}    ${LOG_PATH}/${SUITE_NAME}/${timeStamp}
+    create directory    ${testSuiteDir}
+
+Get SosReport
+    [Documentation]      Get GNB Logs from Coam. Files are put inside LOG_PATH directory
+    # BTS snapshot.
+    Get GNB Logs from Coam
+
+Get GNB Logs from Coam
+    coam.connect to   bts_host=${tl.gnbs[0].cu.oam_http_connection_details.addr}   name=coam_admin
+    ${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    ${snapshot_path}=    set variable  ${LOG_PATH}/Snapshot_GNB_${timestamp}.zip
+    coam.get_snapshot     target_file_name=${snapshot_path}    timeout=720    connection=coam_admin
+    [Teardown]  coam.teardown    connection=coam_admin
+    [Return]         ${snapshot_path}
+
+
+# ln -s source_file myfile
+# ln -s classicalbts_log_collector_151020.sh classicalbts_log_collector.sh into Git
+Install classicalbts log collector into gNB
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist    {CURDIR}/../scripts/classicalbts_log_collector.sh
+    ${Myalias}                        SSH Wait For Connect                    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS.scriptDef.host}
+    Dated log     Upload classicalbts_log_collector.sh in gNB
+    SSH Upload Script           alias=${Myalias}        localPath=${CURDIR}/../scripts
+    ...                         scriptFile=classicalbts_log_collector.sh      remotePath=/ffs/run/config/scripts
+
+Install classicalbts log collector into Airphone
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist    {CURDIR}/../scripts/classicalbts_log_collector.sh
+    ${Myalias}                        SSH Wait For Connect                    ${AP_DU.sys[0].M}
+    Dated log     Upload classicalbts_log_collector.sh in Airphone
+    SSH Upload Script           alias=${Myalias}        localPath=${CURDIR}/../scripts
+    ...                         scriptFile=classicalbts_log_collector.sh      remotePath=/ffs/run/config/scripts
+
+
+Collect gNB Logs
+    Log many     collect all log ${TEST NAME}
+    ${tm}    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}    .    :
+    ${gNB_logName}=    catenate    SEPARATOR=_    ${TEST NAME[0:30].replace(" ", "_").replace("(", "").replace(")", "")}   gNB-${tm}.log
+    Run Keyword And Ignore Error    5GC001586_Keywords.LogCollector   ${gNB_logName}
+    # 29/07/2021 : dont reset cache here (before teardown), if not , stop the wtsemu process fails
+    # Conn.ResetCache
+
+Collect AirPhone Logs
+    return from Keyword if   '${GNB_DU.sys[0].M.boardType}'!='ASIK'
+    Log many     collect all log ${TEST NAME}
+    ${tm}    Get Current Date
+    ${tm}=    Remove String    ${tm.replace(' ','-')}    .    :
+    ${AirP_logName}=    catenate    SEPARATOR=_    ${TEST NAME[0:30].replace(" ", "_").replace("(", "").replace(")", "")}   AirP-${tm}.log
+    Run Keyword And Ignore Error    5GC001586_Keywords.Airphone LogCollector   ${AirP_logName}
+    # 29/07/2021 : dont reset cache here (before teardown), if not , stop the wtsemu process fails
+    # Conn.ResetCache
+
+Collect gNB snapshot via Aashell
+   [Arguments]    ${location}=/ram   ${target_dir}=None
+
+   ${local_target_dir}=    Run Keyword If    '${target_dir}'=='None'    common_Dss_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+
+    ssh.Connect to    ${GNB_DU.sys[0].M.sshConnection.addr}
+    ...               ${GNB_DU.sys[0].M.sshConnection.username}
+    ...               ${GNB_DU.sys[0].M.sshConnection.password}
+    ...                alias=ALIAS_GNB
+
+# (echo "log -a -z snapshot.zip";sleep 50)|telnet 0 15007
+# (echo "log -a -z snapshot.zip")|telnet 0 15007
+    Conn.Execute  cmd=rm -f /ram/snapshot_gnb*.zip   alias=ALIAS_GNB
+    # Conn.Execute  cmd=(echo "log -a -c full -z snapshot_gnb.zip"; sleep 50; echo "quit")|telnet 0 15007   alias=ALIAS_GNB
+    Conn.Execute  cmd=echo "log -a -z /ram/snapshot_gnb.zip" | nc 0 15007   alias=ALIAS_GNB
+    ${reply}    Conn.ReceiveUntil  match=AaShell>   alias=ALIAS_GNB
+    # AaSysComUserDeregister succeed!
+    ${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    Conn.DownloadFile  local_path=${local_target_dir}/Aashell_snapshot_gnb_${timestamp}.zip
+    ...                 remote_path=/ram/snapshot_gnb.zip   alias=ALIAS_GNB
+    Conn.Disconnect  alias=ALIAS_GNB
+
+LogCollector
+    [Arguments]    ${logName}=gNB.log    ${location}=/ffs/run/logs    ${target_dir}=None
+    return from keyword if    ${isAiC}
+    ${local_target_dir}=    Run Keyword If    '${target_dir}'=='None'    common_Dss_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+
+    ssh.Connect to    ${GNB_DU.sys[0].M.sshConnection.addr}
+    ...               ${GNB_DU.sys[0].M.sshConnection.username}
+    ...               ${GNB_DU.sys[0].M.sshConnection.password}
+    ...                alias=ALIAS_GNB
+
+    # /opt/trs/bin/trs-xpif-d execute dumpconfig
+    Conn.Execute  cmd=rm -f /tmp/xpif.dump   alias=ALIAS_GNB
+    Conn.Execute  cmd=/opt/trs/bin/trs-xpif-d execute dumpconfig     alias=ALIAS_GNB
+    Conn.DownloadFile  local_path=${local_target_dir}/xpif.dump   remote_path=/tmp/xpif.dump   alias=ALIAS_GNB
+    Run Keyword if   '${GNB_DU.sys[0].M.boardType}'!='ASIK'     Conn.Disconnect  alias=ALIAS_GNB
+    return from Keyword if   '${GNB_DU.sys[0].M.boardType}'!='ASIK'
+    Conn.Execute  cmd=rm -rf ${location}/*gNB*.log   alias=ALIAS_GNB
+    Conn.Execute  cmd=rm -rf ${location}/*gNB*.log.tgz   alias=ALIAS_GNB
+    Conn.Execute  cmd=/ffs/run/config/scripts/classicalbts_log_collector.sh -o ${location}/${logName}   alias=ALIAS_GNB
+    Conn.Execute  cmd=tar czvf ${location}/${logName}.tgz ${location}/${logName}/  alias=ALIAS_GNB
+    Conn.DownloadFile  local_path=${local_target_dir}${/}${logName}.tgz  remote_path=${location}/${logName}.tgz   alias=ALIAS_GNB
+    Conn.Disconnect  alias=ALIAS_GNB
+
+Airphone LogCollector
+    [Arguments]    ${logName}=AirP.log    ${location}=/ffs/run/logs    ${target_dir}=None
+
+    ${local_target_dir}=    Run Keyword If    '${target_dir}'=='None'    common_Dss_Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+
+    ssh.Connect to    ${AP_DU.sys[0].M.sshConnection.addr}
+    ...               ${AP_DU.sys[0].M.sshConnection.username}
+    ...               ${AP_DU.sys[0].M.sshConnection.password}
+    ...                alias=ALIAS_GNB
+    Conn.Execute  cmd=rm -rf ${location}/*AirP*.log   alias=ALIAS_GNB
+    Conn.Execute  cmd=rm -rf ${location}/*AirP*.log.tgz   alias=ALIAS_GNB
+    Conn.Execute  cmd=/ffs/run/config/scripts/classicalbts_log_collector.sh -o ${location}/${logName}   alias=ALIAS_GNB
+    Conn.Execute  cmd=tar czvf ${location}/${logName}.tgz ${location}/${logName}/  alias=ALIAS_GNB
+    Conn.DownloadFile  local_path=${local_target_dir}${/}${logName}.tgz  remote_path=${location}/${logName}.tgz   alias=ALIAS_GNB
+    Conn.Disconnect  alias=ALIAS_GNB
+
+Collect all logs
+    [Documentation]      Get GNB Logs from Coam. Files are put inside testCaseDir directory
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+
+    ${timestamp}=    DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    ${scf}=    set variable  SCF_GNB_${timestamp}_${SUITE_NAME}_${TEST_NAME}_${TEST STATUS}.xml
+    ${swconfig}=    set variable  swconfig_GNB_${timestamp}_${SUITE_NAME}_${TEST_NAME}_${TEST STATUS}.txt
+
+    # Save current SCF file used during test cases
+    ${current_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=${scf}
+    Set Suite Variable              ${current_scf_file}
+    Dated Log         Current 1586 SCF file stored to ${current_scf_file}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${current_scf_file}    ${testCaseDir}
+
+    # Get swconfig file that will be used during 1586 tests
+    ${alias_gnb}                    SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${LOG_PATH}/${swconfig}
+    ...                             connection=${alias_gnb}
+    Dated Log                  Current 1586 swconfig file stored to ${LOG_PATH}/${swconfig}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${LOG_PATH}/${swconfig}    ${testCaseDir}
+
+    Run keyword if      "${TEST STATUS}" == "FAIL"    Dated Log          Collect AirPhone snapshot via Aashell...
+    Run keyword if      "${TEST STATUS}" == "FAIL"    Collect AirPhone snapshot via Aashell
+
+    Dated Log         Collect /ram/startup_l3.log from Airphone...
+    Run keyword and Ignore error      5GC001586_Keywords.Get APL3 log from Airphone
+
+    ${COLLECT_LOGS}           Set Variable if
+    ...                       "${TEST STATUS}" == "FAIL" and "${EXCLUDE_LOGS_IF_FAIL}" == "0"
+    ...                       1    ${COLLECT_LOGS}
+
+    Return From Keyword If    "${COLLECT_LOGS}" == "0"
+
+    # BTS snapshot.
+    # defined into /ebs/xxxxxx/my_virtual_env/robotws5g/resources/sites/NPS/SWENG/robot/coam_gnb_classical.robot
+    Dated Log New Line         Get gNB snapshot...
+    ${status}   ${snapshot_path}    Run Keyword if  '${get_snapshot}' == '1'       5GC001586_Keywords.Get GNB Logs from Coam
+    Run Keyword And Ignore Error    OperatingSystem.File Should Exist   ${snapshot_path}
+    Run Keyword And Ignore Error    OperatingSystem.Move File    ${snapshot_path}    ${testCaseDir}
+    Dated Log     gNB snapshot ${snapshot_path} generated and copied into ${testCaseDir}
+
+    Dated Log         Collect WTS logs...
+    5GC001586_Keywords.Collect edaemon log files
+    5GC001586_Keywords.Collect egate log files
+
+    Dated Log         Collect Current swconfig from Airphone...
+    5GC001586_Keywords.Store Current swconfig from Airphone
+
+    Dated Log          Collect gNB Logs...
+    5GC001586_Keywords.Collect gNB Logs
+
+    Dated Log          Collect gNB snapshot via Aashell...
+    5GC001586_Keywords.Collect gNB snapshot via Aashell
+
+    Dated Log          Collect Airphone Logs...
+    5GC001586_Keywords.Collect AirPhone Logs
+
+Collect Logs
+    [Arguments]                 ${alias}=${HOST_EPCSIM.alias}
+    Run Keyword And Ignore Error         common_Dss_Keywords.Get testcase log directory
+    Run Keyword And Ignore Error         common_Dss_Keywords.Collect all logs     ${alias}
+
+Software Converter
+    [Documentation]    Compatibility with KW: Check Current Software Version
+    ...   param: ${input_version} put full or short software version name with dots or commas
+    ...   param: ${manipulator} can increace or decrease number of software version
+    [Arguments]    ${input_version}    ${manipulator}=0
+    ${manipulator}    convert to integer    ${manipulator}
+    ${input_version}    replace string   ${input_version}    .    _
+    @{string_split}   split string    ${input_version}    _
+    # to manage sw knife like 5G20A_GNB_0009_001800_000744_182cc_  ;  5G20A_GNB_0009_001800_000668_0ilsj_
+    ${string_split2}     set variable    ${string_split[:5]}
+    dated log         swversion split result=${string_split2}
+    ${length_list}   get length    ${string_split2}
+    @{sw_version}    create list
+    @{reverse_list}    Evaluate    list(range(${length_list}-1, ${length_list}-4, -1))
+    FOR    ${i}    IN    @{reverse_list}
+         ${trunk}    get from list    ${string_split2}    ${i}
+         ${trunk}    convert to integer    ${trunk}
+         append to list    ${sw_version}    ${trunk}
+    END
+    ${master}    get from list    ${sw_version}    2
+    ${stream}    get from list    ${sw_version}    1
+    ${version}    get from list    ${sw_version}    0
+    Set Suite Variable     ${convert_version}    ${master}.${stream}.${version+${manipulator}}
+    Set Suite Variable     ${master_version}     ${master}
+    [Return]    ${convert_version}   ${master_version}
+
+Get Orignal Configuration 1586
+   [Arguments]                   ${BACKUP_DIR}=original_config_files
+
+    # Save current  SCF file
+    ${file_name}   set variable     SCF_1586.xml
+    ${original_scf_file}            OAM Get SCF File                file=${file_name}
+    Set Suite Variable              ${original_scf_file}
+    Dated Log New Line         Original SCF file stored to ${original_scf_file}
+    Run keyword and Ignore error   OperatingSystem.Copy File    ${LOG_PATH}/${file_name}   ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    # Get swconfig file that will be restored during test suite teardown
+    ${status}    ${alias_gnb}        Run keyword and Ignore error        SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    Run keyword and Ignore error     csn.download_file               remote_path=${SWCONFIG_PATH}
+    ...                             local_path=${LOG_PATH}/swconfig_to_be_restored.txt
+    ...                             connection=${alias_gnb}
+    Dated Log                  Default swconfig file stored to ${LOG_PATH}/swconfig_to_be_restored.txt
+    Run keyword and Ignore error   OperatingSystem.Copy File    ${LOG_PATH}/swconfig_to_be_restored.txt
+    ...                                                         ${LOG_PATH}/${BACKUP_DIR}/swconfig_to_be_restored.txt
+
+    # Get EPC file configuration:
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.download_file               remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/basic_wts_to_be_restored.cfg
+    ...                             connection=${alias_epc}
+    Dated Log                  Default basic cfg file stored to ${LOG_PATH}/basic_wts_to_be_restored.cfg
+    Run keyword and Ignore error    OperatingSystem.Copy File    ${LOG_PATH}/basic_wts_to_be_restored.cfg
+    ...                                                          ${LOG_PATH}/${BACKUP_DIR}/basic_wts_to_be_restored.cfg
+
+    ${file_name}   set variable     new_iphy_to_be_restored.xml
+    Run keyword and Ignore error      Get iPhy.xml file from Airphone    target_dir=${LOG_PATH}    file_name=${file_name}
+    Dated Log                  Default /ffs/run/simmode/new_iphy.xml from Airphone stored to ${LOG_PATH}/${file_name}
+    Run keyword and Ignore error    OperatingSystem.Copy File    ${LOG_PATH}/${file_name}
+    ...                                                          ${LOG_PATH}/${BACKUP_DIR}/${file_name}
+
+    # Get AP configuration file
+    ${ap_configfile}                Get XML AirPhoneConfig Path
+    run Keyword if      '${ap_configfile}' != '${empty}'     csn.download_file          remote_path=${tl.core.dir_path}/${ap_configfile}
+    ...                             local_path=${LOG_PATH}/ApOamConfig_to_be_restored.xml
+    ...                             connection=${alias_epc}
+    Dated Log                  Default AP Oam Config file stored to ${LOG_PATH}/ApOamConfig_to_be_restored.xml
+    Run keyword and Ignore error    OperatingSystem.Copy File    ${LOG_PATH}/ApOamConfig_to_be_restored.xml
+    ...                                                          ${LOG_PATH}/${BACKUP_DIR}/ApOamConfig_to_be_restored.xml
+
+Restore Orignal Configuration 1586
+
+   # Get swconfig file that will be restored during test suite teardown
+    ${status}   ${alias_gnb}       Run keyword and Ignore error         SSH Wait For Connect                ${GNB_DU.sys[0].M}
+    Run keyword and Ignore error   csn.upload_file                 remote_path=${SWCONFIG_PATH}
+    ...                                                            local_path=${LOG_PATH}/swconfig_to_be_restored.txt
+    ...                                                            connection=${alias_gnb}
+
+    Run keyword and Ignore error     SSH Exec                   command=crasign ${SWCONFIG_PATH}           alias=${alias_gnb}
+
+    Dated Log                 swconfig file has been restored to default (${LOG_PATH}/swconfig_to_be_restored.txt)
+
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    csn.upload_file                 remote_path=${tl.core.dir_path}/${tl.core.cfg_filename}
+    ...                             local_path=${LOG_PATH}/basic_wts_to_be_restored.cfg
+    ...                             connection=${alias_epc}
+
+    Dated Log                basic cfg file has been restored to default (${LOG_PATH}/basic_wts_to_be_restored.cfg)
+
+    ${file_name}   set variable     new_iphy_to_be_restored.xml
+    Run keyword and Ignore error      common_Dss_Keywords.Restore iPhy.xml file to Airphone    local_dir=${LOG_PATH}    file_name=${file_name}
+    Dated Log            /ffs/run/simmode/new_iphy.xml has been restored with default ${LOG_PATH}/${file_name}
+
+    ${ap_configfile}                Get XML AirPhoneConfig Path
+    return from Keyword if     '${ap_configfile}'=='${EMPTY}'
+    ${alias_epc}                    SSH Wait For Connect                ${HOST_EPCSIM}
+    run Keyword if      '${ap_configfile}' != '${empty}'     csn.upload_file         remote_path=${tl.core.dir_path}/${ap_configfile}
+    ...                             local_path=${LOG_PATH}/ApOamConfig_to_be_restored.xml
+    ...                             connection=${alias_epc}
+
+    Dated Log            ApOamConfig has been restored to default (${LOG_PATH}/ApOamConfig_to_be_restored.xml)
+
+Install MCShark if Needed
+    [Arguments]               ${current_sw_version}=None
+    ${mcshark_present}  ${MCShark}=    pcap.Check MCShark if present
+    ${logs_dir}=    run Keyword if   "${mcshark_present}"=="False"
+    ...                        common_Dss_Keywords.Prepare Logs Directory Path   resultDir=${LOG_PATH}   subdir=install_Logs    with_timestamp=True
+    ...   ELSE                 set variable    None
+    run Keyword if   "${mcshark_present}"=="False"    pcap.Install wslte plugins for MCShark    sw_version=${current_sw_version}
+    ...                                                                                         local_dir=${logs_dir}
+    ...   ELSE     Dated log    wslte plugins for MCShark ${MCShark} already installed
+    # update variable
+    ${mcshark_present}   ${MCShark}=      pcap.Check MCShark if present
+    ${msg}=   run Keyword if   "${mcshark_present}"=="True"    StringTool.getHeaderLine    MCShark plugin   ${MCShark}
+    ...   ELSE                                        StringTool.getHeaderLine    MCShark plugin     Not installed
+    run Keyword if   "${msg}"!="${EMPTY}"      Dated log      ${msg}
+    set suite variable    ${mcshark_present}
+
+set WS preference
+    ${pref_items}=  set Variable   decode_as_entry: tcp.port,29211,(none),SYSCOM
+    ${profile_name}=   pcap.wireshark.CreatePersonalConfProfile   pref_items=${pref_items}
+    ...                                        profie_path=/home/ute/.config/wireshark/profiles
+    ...                                        profile_name=customized_profile
+    ...                                        filename=decode_as_entries
+    Dated log    ${profile_name} created or updated with ${pref_items} ...
+    ${profile_name}=   pcap.wireshark.CreatePersonalConfProfile   pref_items=${pref_items}
+    ...                                        profie_path=/home/ute/.config
+    ...                                        profile_name=wireshark
+    ...                                        filename=decode_as_entries
+    Dated log    ${profile_name} created or updated with ${pref_items} ...
+
+Test Suite Setup for 1586
+    [Documentation]          Test suite setup for all 1586 TCs.
+    ...                      It calls Test Suite Setup common KW and:
+    ...                      Saves existing configuration files (swconfig + WTS)
+    ...                      Configure common SCF parameters
+    ...                      Configure common swconfig parameters
+    ...                      Configure common WTS parameters
+    [Arguments]               ${default_mcs}=0
+
+    # Call to generic test suite setup KW
+    setup.Suite Setup
+
+    # 5GC001586_Keywords.Initialize Colors
+
+    MyConstants.hello
+    ${mcshark_present}   ${MCShark}=      pcap.Check MCShark if present
+    ${msg}=   run Keyword if   "${mcshark_present}"=="True"    StringTool.getHeaderLine    MCShark plugin   ${MCShark}
+    ...   ELSE                                        StringTool.getHeaderLine    MCShark plugin     Not installed
+    run Keyword if   "${msg}"!="${EMPTY}"      Dated log      ${msg}
+    set suite variable    ${mcshark_present}
+    Dated Log New Line    COLLECT_LOGS if TEST STATUS is FAIL and EXCLUDE_LOGS_IF_FAIL == 0
+    Dated Log             COLLECT_LOGS if COLLECT_LOGS == 1
+    Dated log             default_test_strategy : WAIT_5G_CELL_ONAIR = ${WAIT_5G_CELL_ONAIR}
+    Dated log             default_test_strategy : W_AP_UDPLOG = ${W_AP_UDPLOG}
+    Dated Log             default_test_strategy : SHOULD_BE_COMMISSIONED_GNB_FIRST = ${SHOULD_BE_COMMISSIONED_GNB_FIRST}
+    Dated log             default_test_strategy : SHOULD_UPDATE_SCF_AND_RAD = ${SHOULD_UPDATE_SCF_AND_RAD}
+    Dated log             default_test_strategy : SHOULD_UPDATE_RAD = ${SHOULD_UPDATE_RAD}
+    Dated log             default_test_strategy : CELLSETUP_SHOULD_BE_CHECK = ${CELLSETUP_SHOULD_BE_CHECK}
+    Dated log             default_test_strategy : UL_TPUT_SHOULD_BE_CHECK = ${UL_TPUT_SHOULD_BE_CHECK}
+    Dated log             default_test_strategy : SHOULD_BE_RECOMMISSIONED_GNB = ${SHOULD_BE_RECOMMISSIONED_GNB}
+    Dated log             default_test_strategy : COLLECT_LOGS = ${COLLECT_LOGS}
+    Dated log             default_test_strategy : EXCLUDE_LOGS_IF_FAIL = ${EXCLUDE_LOGS_IF_FAIL}
+    Dated log             default_test_strategy : PCAP_XP_BIP_L1L2_ATTACH = ${PCAP_XP_BIP_L1L2_ATTACH}
+    Dated log             default_test_strategy : REMOVE_PDML_FILE_END_TEST_SUITE = ${REMOVE_PDML_FILE_END_TEST_SUITE}
+    Dated log             default_test_strategy : TRAFFIC_DL_RATE = ${TRAFFIC_DL_RATE}
+    Dated log             default_test_strategy : TRAFFIC_UL_RATE = ${TRAFFIC_UL_RATE}
+    Dated log             default_test_strategy : UL_DL_TPUT_CHECK_BASED_AASYSLOG = ${UL_DL_TPUT_CHECK_BASED_AASYSLOG}
+    Dated log             default_test_strategy : UL_TPUT_CHECK_BASED_TTITRACE = ${UL_TPUT_CHECK_BASED_TTITRACE}
+    Dated log             default_test_strategy : WITH_UPLOAD_1586_CONFIGURATION = ${WITH_UPLOAD_1586_CONFIGURATION}
+    Dated log             default_test_strategy : WITH_MCSHARK_INSTALLATION = ${WITH_MCSHARK}
+    Dated log             default_test_strategy : SharkTool = ${SharkTool}
+
+    common_Dss_Keywords.gNB BackupSCF
+    common_Dss_Keywords.Create Test Suite Folder
+    common_Dss_Keywords.Clean Old WTS Logs
+    common_Dss_Keywords.Get Testline Name
+    run keyword and ignore error     5GC001586_Keywords.Get Orignal Configuration 1586
+    robot_extension.Run Keyword And Warn On Failure    5GC001586_Keywords.Init Trace color
+    common_Dss_Keywords.Connect to COAM ADMIN
+
+    ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    Set Suite Variable              ${test_scf_file}
+    ${nodeType}=     set variable if   ${isAic}     Vdu
+    ...                                             Classical
+    ${cellDepType}=   5GC001586_Kw_TestSetup.get cellDepType from SCF    nodeType=${nodeType}
+    ${TestDSS10Mhz_1586_M1.Context.cellDepType}      set variable    ${cellDepType}
+    # the scope of 1586 is NSA gNB configuration
+    # run Keyword if    '${TestDSS10Mhz_1586_M1.Context.cellDepType}' == 'SA+NSA'
+    # ...                                         5GC001586_Kw_TestSetup.update eNbId and gNBId In Context   ${TestDSS10Mhz_1586_M1}   2   1
+    # manage only NSA gNB configuration case for the moment => the scope of 1586 is NSA gNB configuration
+    # => update here needed to update UE_SIMPLE_CellDSS above, BEWARE that at this moment , cellDepType is still SA+NSA configured
+    # the SCF modifications from SA+NSA to NSA is managed in Kw "Test Line Preparation for NSA Only" which is called later !!!
+    5GC001586_Kw_TestSetup.update eNbId and gNBId In Context   ${TestDSS10Mhz_1586_M1}   1   2
+    ${TestDSS10Mhz_1586_M1.scfFile.nrdsslte.eNodeBId}    set variable     ${TestDSS10Mhz_1586_M1.Context.eNBId}
+
+    # SCF.xml is used by procedure verifyFeatureActivation
+    ${test_scf_file}             OAM Get SCF File            dir=${LOG_PATH}      file=SCF.xml
+    Set Suite Variable              ${test_scf_file}
+    Dated Log                  Current 1586 SCF file stored to ${test_scf_file}
+
+    Run Keyword If   '${WITH_UPLOAD_1586_CONFIGURATION}' == '0'     run Keyword
+    ...            5GC001586_Kw_TestSetup.Update SpecificParameters to setup DSS configuration In WTS Cfg File    ${TestDSS10Mhz_1586_M1}
+
+    # &{UE_SIMPLE_CellDSS}                ue=1                                    profile=1
+    # ...                                 bearer=2                                testMode=False
+    # ...                                 trf_id=1                                burst=${None}
+    # ...                                 throughput=${DEFAUT_THROUGHPUT}         testModeValue=csi_report_override
+    # ...                                 target_gnb=2                            target_cells=1
+
+    #define UE profile for Mono-Ue tests (cell-2.1)
+    ${UE_SIMPLE_CellDSS}                 Tools.Dictionary Get              ${UE_SIMPLE}
+    ${UE_SIMPLE_CellDSS.target_gnb}      set Variable          ${TestDSS10Mhz_1586_M1.Context.gNBId}
+    ${UE_SIMPLE_CellDSS.target_cells}    set Variable          1
+    ${UE_SIMPLE_CellDSS.ue}              set Variable          ${TestDSS10Mhz_1586_M1.Context.UeId1}
+    Set Suite Variable              ${UE_SIMPLE_CellDSS}
+
+    #define UE profiles for MUE tests
+    ${UE_PROFILE1}         Tools.Dictionary Get       ${UE_SIMPLE}
+    ${UE_PROFILE1.target_gnb}        set Variable      ${TestDSS10Mhz_1586_M1.Context.gNBId}
+    ${UE_PROFILE1.target_cells}      set Variable      1
+    Set To Dictionary     ${UE_PROFILE1}      ue       ${TestDSS10Mhz_1586_M1.Context.UeId1}
+    ${UE_PROFILE2}         Tools.Dictionary Get        ${UE_SIMPLE}
+    ${UE_PROFILE2.target_gnb}        set Variable      ${TestDSS10Mhz_1586_M1.Context.gNBId}
+    ${UE_PROFILE2.target_cells}      set Variable      1
+    Set To Dictionary     ${UE_PROFILE2}      ue       ${TestDSS10Mhz_1586_M1.Context.UeId2}
+    ${UE_PROFILE3}         Tools.Dictionary Get        ${UE_SIMPLE}
+    ${UE_PROFILE3.target_gnb}        set Variable      ${TestDSS10Mhz_1586_M1.Context.gNBId}
+    ${UE_PROFILE3.target_cells}      set Variable      1
+    Set To Dictionary     ${UE_PROFILE3}      ue       ${TestDSS10Mhz_1586_M1.Context.UeId3}
+    ${UE_PROFILE4}         Tools.Dictionary Get        ${UE_SIMPLE}
+    ${UE_PROFILE4.target_gnb}        set Variable      ${TestDSS10Mhz_1586_M1.Context.gNBId}
+    ${UE_PROFILE4.target_cells}      set Variable      1
+    Set To Dictionary     ${UE_PROFILE4}      ue       ${TestDSS10Mhz_1586_M1.Context.UeId4}
+    ${UE_PROFILE5}         Tools.Dictionary Get        ${UE_SIMPLE}
+    ${UE_PROFILE5.target_gnb}        set Variable      ${TestDSS10Mhz_1586_M1.Context.gNBId}
+    ${UE_PROFILE5.target_cells}      set Variable      1
+    Set To Dictionary     ${UE_PROFILE5}      ue       ${TestDSS10Mhz_1586_M1.Context.UeId5}
+    Set Suite Variable    ${UE_PROFILE1}
+    Set Suite Variable    ${UE_PROFILE2}
+    Set Suite Variable    ${UE_PROFILE3}
+    Set Suite Variable    ${UE_PROFILE4}
+    Set Suite Variable    ${UE_PROFILE5}
+
+    ${CAPTURE_L1L2_GNB_FS_ASIK_DSS}                Capture L1L2 Set Upon Config
+    Set Suite Variable              ${CAPTURE_L1L2_GNB_FS_ASIK_DSS}
+
+    Dated log                       Get SW Version from OAM
+    ${sw_version}=    Fetch common OAM SW version
+    Set Suite Variable              ${my_sw_version}                           ${sw_version}
+    Set Suite Metadata    gNB sw    ${sw_version}
+
+    ${ap_version}=    robot_extension.Run Keyword And Warn On Failure       common_DSS_Keywords.Get Airphone SW version
+
+    5GC001586_Keywords.Software Converter    ${my_sw_version}    0
+    ${sw_version_list}     Split String   ${my_sw_version}   _
+    Set Suite Variable     ${trunk}     False
+    Set Suite Variable     ${branch}     None
+    Run Keyword If                  '${master_version}' == '0'        Set Suite Variable     ${trunk}     False
+    Run Keyword If                  '${master_version}' == '9999'     Set Suite Variable     ${trunk}     True
+    ${branch}              Get From List    ${sw_version_list}    0
+    Dated log                       \tGNB_SW_VERSION=${my_sw_version}
+    Dated log                       \tconvert_version=${convert_version}
+    Dated log                       \tmaster_version=${master_version}
+    Dated log                       \ttrunk=${trunk}
+    Dated log                       \tbranch=${branch}
+    set suite variable     ${branch}
+
+    ${sw_version}=       pcap.Get Software Version
+    Set Suite Variable     ${current_sw_version_for_lua_gNB}     ${my_sw_version}
+    Dated log      sw version for lua gNB is ${current_sw_version_for_lua_gNB}
+
+    run Keyword if    '${trunk}' == 'True'         set WS preference
+    run Keyword if    '${WITH_MCSHARK}' == '1'     Install MCShark if Needed     current_sw_version=${current_sw_version_for_lua_gNB}
+
+    # needed to install only once
+    run Keyword if    not ${isAiC}     Dated Log         First Do install Mirroring scripts in gNB
+    run Keyword if    not ${isAiC}     common_Dss_Keywords.Get gNB mirroring into local repo  scriptDef=${CAPTURE_L1L2_GNB_FS_ASIK_DSS.scriptDef}
+    run Keyword if    not ${isAiC}     common_Dss_Keywords.Mirror Script Install for DSS      scriptDef=${CAPTURE_L1L2_GNB_FS_ASIK_DSS.scriptDef}
+    ...                                                                                       PathToScriptsRepo=${LOCAL_REPO_DIR}
+
+    ${the var}=    Get Variable Value    ${AF_PATH}
+    ${AF_PATH is set}=      Set Variable If    """${the var}""" != 'None'    ${True}    ${False}
+    Dated log     AF_PATH is set to ${AF_PATH is set} => set it to empty if False
+    set suite variable    ${AF_PATH is set}
+    run Keyword if   "${AF_PATH is set}"=="False"      set suite variable   ${AF_PATH}     ${empty}
+    ${the var}=    Get Variable Value    ${ENB_BUILD}
+    ${ENB_BUILD is set}=      Set Variable If    """${the var}""" != 'None'    ${True}    ${False}
+    Dated log     ENB_BUILD is set to ${ENB_BUILD is set} => set it to empty if False
+    set suite variable     ${ENB_BUILD is set}
+    run Keyword if   "${ENB_BUILD is set}"=="False"      set suite variable   ${ENB_BUILD}     ${empty}
+    Dated log    AF_PATH is ${AF_PATH}
+    Dated log    ENB_BUILD is ${ENB_BUILD}
+
+    Dated Log    First Do install Xp LuaShark
+    # make implode  => zip src dir to generated_luashark-9.1800.330.zip if needed
+    ${output}=   run   command= ls ${CURDIR}/../9.1800.330/generated_luashark-9.1800.330.zip
+    log many     ${output}
+    ${contains}=    Run Keyword And Return Status    Should Contain    ${output}     No such file or directory
+    run keyword if    "${contains}"=="${True}"     run    command=cd ${CURDIR}/../9.1800.330 && make implode
+    Do install Xp LuaShark into home     ${CURDIR}/../9.1800.330/generated_luashark-9.1800.330.zip
+
+    run Keyword if   "${mcshark_present}"=="False"    Dated log             Point AF_PATH and ENB_BUILD to local luashark XP package
+    run Keyword if   "${mcshark_present}"=="False"    Point AF_PATH to local luashark XP package
+    run Keyword if   "${mcshark_present}"=="False"    Point ENB_BUILD to local luashark XP package
+
+    Run Keyword if    '${AP_DU.sys[0].M.boardType}'=='ASIK'    run Keywords     Dated log    Install classicalbts log collector into Airphone   AND
+    ...                                                                         5GC001586_Keywords.Install classicalbts log collector into Airphone
+
+
+Test suite teardown for 1586
+    [Documentation]          Test suite teardown for all 1586 TCs.
+    ...                      Restores existing configuration files
+
+    run keyword and ignore error     5GC001586_Keywords.Restore Orignal Configuration 1586
+    Run Keyword If     '${REMOVE_PDML_FILE_END_TEST_SUITE}' == '1'   OperatingSystem.Remove File    ${LOG_PATH}/*.pdml
+    Run Keyword If     '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'   Dated Log              Recommissioning gNB with original SCF file
+    Run Keyword If     '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'   Run Keyword and Ignore Error  OAM Perform Full Commissioning   ${original_scf_file}
+    ${isOAMRebooted}      Run Keyword If        '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'      SSH Was OAM Rebooted         ${GNB_DU}
+    ...                             timeout=60
+    # If gNB was rebooted after re-commissioning, wait until it's ready again.
+    Run Keyword If   '${SHOULD_BE_RECOMMISSIONED_GNB}' == '1'  Run Keyword If  '${isOAMRebooted}' == 'True'  Airscale Wait for Ready  ${GNB_DU}
+    common_Dss_Keywords.Conn.ResetCache
+
+
+7738_DSS_CRM_Cell_Setup_Phase3 to remove
+#     [Arguments]                 ${testParam}=Param    ${alias}=default
+     [Arguments]                 ${alias}=default
+
+    Log to console   \n${blue}***DSS ${Param.Context.DSS_Phase} CRM CellSetup BW=${Param.seq.bandwidth} with alias=${alias}*** ${normal}
+
+    wts.execute egate command    cmd=enb_dss_param id=${Param.Context.eNBId} feature_flag=on message_sets=V1,DMS3    alias=${alias}
+    Sleep   2
+    wts.execute egate command    cmd=enb_cell_param enb=${Param.Context.eNBId} id=1 lte_nr_dss_mode=DSS_PHASE_3 antenna_ports_num=2    alias=${alias}
+    Sleep   2
+    wts.execute egate command    cmd=enb_cell_dss_feature enb=${Param.Context.eNBId} id=1 nr_dl_peak_rate_increase=on    alias=${alias}
+    Sleep   2
+    wts.execute egate command    cmd=enb_cell_dss_feature enb=${Param.Context.eNBId} id=1 superfast_allocation=on    alias=${alias}
+    Sleep   2
+
+    ${cmd}    Catenate          enb_dss_cell_param enb=${Param.Context.eNBId} id=1 dl_resource_sharing_algo=${Param.seq.wtsDlResourceSharingAlgo}
+    wts.execute egate command    cmd=${cmd}    alias=${alias}
+    Sleep   2
+    wts.execute egate command    cmd=enb_dss_configure_partnership enb=${Param.Context.eNBId} cell=1 dss_peer=${Param.Context.gNBId}:1
+    ...                                    alias=${alias}
+    sleep   2
+
+    ${cmd}    Catenate    enb_crm_cell_resource_reservation enb=${Param.Context.eNBId} cell=1 tgt_enb=${Param.Context.gNBId} tgt_cell=1
+    ...         assigned_dl_minimum_share_to_nr=15 assigned_dl_maximum_share_to_nr=70 assigned_dl_minimum_share_to_lte=15
+    ...         assigned_dl_maximum_share_to_lte=70 assigned_ul_minimum_share_to_nr=20 assigned_ul_maximum_share_to_nr=70
+
+    wts.execute egate command      cmd=${cmd}    alias=${alias}
+
+    # to simulate the EN DSS UL QoS LOAD INDICATION Timer = 80ms sent into DL coord rsp
+    ${cmd}    Catenate    enb_crm_param id=${Param.Context.eNBId} ul_qos_load_meas_timer=${Param.seq.ul_qos_load_meas_timer}
+    ...                                      dl_qos_load_meas_timer=${Param.seq.dl_qos_load_meas_timer}
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    sleep    30
+    # wts.execute egate command   cmd=enb_dss_establish_partnership enb=${Param.Context.eNBId} cell=1 tgt_enb=${Param.Context.gNBId} tgt_cell=1
+    # ...                                         alias=${alias}
+    ${pattern}    Set Variable    EN DSS UL Cell Subcarrier Resource Coordination success on remote NE
+    ${cmd}      Catenate       enb_dss_establish_partnership enb=${Param.Context.eNBId} cell=1 tgt_enb=${Param.Context.gNBId} tgt_cell=1
+    ${output}    wts.Execute Egate Command And Wait For Data    cmd=${cmd}
+    ...    pass_regexp=${pattern}    timeout=30     alias=${alias}
+    ${output}    String.Get Lines Matching Regexp    ${output}    ${pattern}    partial_match=True
+    Log To Console    \n${output}
+
+    sleep   10
+
+    5GC001586_Keywords.Reset DL Reservation    alias=${alias}
+    Sleep    2s    reason=make sure the cmd take affect
+    5GC001586_Keywords.Reset UL Reservation    alias=${alias}
+    Sleep    2s    reason=make sure the cmd take affect
+
+    ${cmd}    Catenate    enb_dss_dl_resource_cell_reservation cell=1 enb=${Param.Context.eNBId}
+    ...                                           prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    ${cmd}    Catenate    enb_dss_dl_resource_cell_reservation cell=1 enb=${Param.Context.eNBId}
+    ...                     reserved_fixed_normal_subframes=0000000000-0000000000-0000000000-0000000000-0000000000-0000000000-0000000000-0000000000
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    ${cmd}    Catenate    enb_dss_dl_resource_cell_reservation cell=1 enb=${Param.Context.eNBId} min_lte_nr_dss_ratio=30 max_lte_nr_dss_ratio=70
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    ${cmd}    Catenate    enb_dss_cell_resource_coordination enb=${Param.Context.eNBId} cell=1 tgt_enb=${Param.Context.gNBId} tgt_cell=1 dir=DL
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    ${cmd}    Catenate    enb_dss_ul_resource_cell_reservation cell=1 enb=${Param.Context.eNBId} minimum_prb_share=30 maximum_prb_share=70
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    ${cmd}    Catenate    enb_dss_cell_resource_coordination enb=${Param.Context.eNBId} cell=1 tgt_enb=${Param.Context.gNBId} tgt_cell=1 dir=UL
+    Dated Log New Line       ${cmd}
+    wts.execute egate command      cmd=${cmd}      alias=${alias}
+
+    Sleep    2s    reason=make sure the cmd take affect
+
+    ${output}    wts.execute egate command and wait for data      cmd=enb_crm_status enb=${Param.Context.eNBId} cell=1       alias=${alias}
+    Log To Console    \n${output}
+
+    Sleep    2s    reason=make sure the cmd take affect
+
+    ${dl_prb_area_allocation_list}=    Catenate    SEPARATOR=    0:0,28+1:0,0+2:0,52+3:0,52+4:0,52+5:0,28+6:0,52+7:0,52+8:0,52+9:0,52+10:0,28+11:0,
+    ...    52+12:0,52+13:0,52+14:0,52+15:0,28+16:0,52+17:0,52+18:0,52+19:0,52+20:0,28+21:0,0+22:0,52+23:0,52+24:0,52+25:0,28+26:0,52+27:0,52+28:0,
+    ...    52+29:0,52+30:0,28+31:0,52+32:0,52+33:0,52+34:0,52+35:0,28+36:0,52+37:0,52+38:0,52+39:0,52+40:0,28+41:0,0+42:0,52+43:0,52+44:0,52+45:0,
+    ...    28+46:0,52+47:0,52+48:0,52+49:0,52+50:0,28+51:0,52+52:0,52+53:0,52+54:0,52+55:0,28+56:0,52+57:0,52+58:0,52+59:0,52+60:0,28+61:0,0+62:0,
+    ...    52+63:0,52+64:0,52+65:0,28+66:0,52+67:0,52+68:0,52+69:0,52+70:0,28+71:0,52+72:0,52+73:0,52+74:0,52+75:0,28+76:0,52+77:0,52+78:0,52+79:0,52
+
+    # ${dl_pattern}=      Catenate       1011111111-1111111111-1011111111-1111111111-1011111111-1111111111-1011111111-1111111111
+    ${dl_pattern}=      Catenate       ${Param.seq.dl_allocated_normal_subframes}
+    5GC001586_Keywords.DSS DL Cell Resource Allocation Phase3   dl_allocated_normal_subframes=${dl_pattern}
+    ...                                                         dl_prb_area_allocation_list=${dl_prb_area_allocation_list}
+    ...                                                         alias=${alias}
+
+    # Param variable is visible under the test suite
+    # 5GC001586_Keywords.DSS UL Cell Resource Allocation Phase3     35    1   ${alias}
+    5GC001586_Keywords.DSS UL Cell Resource Allocation Phase3     ${Param.seq.ULNbrOfPrb}    1    immediate   ${alias}
+
+    sleep    2s    reason=make sure the cmd take affect
+
+    log to console   \n${blue}***DSS CRM CELLSETUP BW=${Param.seq.bandwidth} completed*** ${normal}
+
+    ${output}    wts.execute egate command and wait for data      cmd=enb_crm_status enb=${Param.Context.eNBId} cell=1       alias=${alias}
+    Log To Console    \n*** enb_crm_status enb=${Param.Context.eNBId} cell=1
+    Log To Console    \n${output}
+
+Sum NbrOfPrb based on pcap puschreceivereq traces
+    [Arguments]                    ${param}
+    Dated log     ==========> SumOfPrb from UlData_PuschReceiveReq pcap file
+    # 70 % UL Ratio case
+    # based on pcap analysis for 10MHz , NbrOfPrb = 4470 over 20 sfn
+    # so, NbrOfPrb over 1024 sfn = 228864
+    # based on pcap analysis for 15MHz , NbrOfPrb = 6680 over 20 sfn
+    # so, NbrOfPrb over 1024 sfn = 342016
+    # based on pcap analysis for 20MHz , NbrOfPrb = 9020 over 20 sfn
+    # so, NbrOfPrb over 1024 sfn = 461824
+    ${sum_ul_prb_allocated_to_nr_over_1024_sfn}    set variable if
+    ...                            '${param.seq.bandwidth}'=='10MHz'       228864
+    ...                            '${param.seq.bandwidth}'=='15MHz'       342016
+    ...                                                                    461824
+    ${pattern}=     set variable if   '${mcshark_present}'=='${False}'    ICOM_5G/UlData_PuschReceiveReq
+    ...                                                                   UlData_PuschReceiveReq
+    ${SharkTool}=   set variable if   '${mcshark_present}'=='${False}'    LUA_SHARK
+    ...                                                                   MC_SHARK
+    ${sum_prb}  ${cpt_sfn}   ${sum_prb_5min}   ${ul_ratio}  ${sum_ul_prb_allocated_to_nr}=   nps_1586_tools.SumOfPrb_UlData_PuschReceiveReq
+    ...                                                                                                 ${param.seq.ULNbrOfPrb}
+    ...                                                                                                 ${sum_ul_prb_allocated_to_nr_over_1024_sfn}
+    ...                                                                                                 ${pattern}
+    ...                                                                                                 ${SharkTool}
+    [return]    ${sum_prb}   ${cpt_sfn}   ${sum_prb_5min}   ${ul_ratio}   ${sum_ul_prb_allocated_to_nr}
+
+Sum NbrOfPrb Info from L1L2 uldata_puschreceivereq_t Pcap
+    [Documentation]                Generic test for 1586: test purpose is to UL Qos Ind from L1L2 pcap
+    [Arguments]                    ${param}   ${capture}
+    Dated log     ==========> Extract sfn, slot And nbOfPrb from _5g_l1_ul_l2_ps_uldata_puschreceivereq_t Pcap
+    Extract sfn, slot And nbOfPrb from _5g_l1_ul_l2_ps_uldata_puschreceivereq_t Pcap        ${capture}
+    ${sum_prb}  ${cpt_sfn}  ${sum_prb_5min}  ${ul_ratio}  ${sum_ul_prb_allocated_to_nr}=  Sum NbrOfPrb based on pcap puschreceivereq traces  ${param}
+    Dated log                      SumOfPrb puschreceivereq over 1024 sfn = ${sum_prb}
+    Dated log                      SumOfPrb puschreceivereq over 5min = ${sum_prb_5min}
+    Dated log                      SumOfPrb allocated to nr over 1024 sfn = ${sum_ul_prb_allocated_to_nr}
+    Dated log                      UL Ratio [used for acceptance criteria] = ${ul_ratio} %
+    [return]     ${sum_prb}   ${sum_prb_5min}    ${ul_ratio}   ${sum_ul_prb_allocated_to_nr}
+
+# UlData_PuschReceiveReq.PuschReceiveReq.sfn
+# UlData_PuschReceiveReq.PuschReceiveReq.slot
+# UlData_PuschReceiveReq.grants_item_0.rnti
+# UlData_PuschReceiveReq.grants_item_0.startPrb
+# UlData_PuschReceiveReq.grants_item_0.numOfPrb
+
+# Info;sfn;slot;rnti;startPrb;numOfPrb
+Extract sfn, slot And nbOfPrb from _5g_l1_ul_l2_ps_uldata_puschreceivereq_t Pcap
+    [Arguments]                     ${File}
+    [Documentation]                 Extract sfn slot and nbOfPrb _5g_l1_ul_l2_ps_uldata_puschreceivereq_t info from Pcap
+
+    Dated log                   Extract sfn, slot and nbOfPrb uldata_puschreceivereq info from PCAP file    ${File}
+
+    set test variable   ${pcapprocessed_nbOfPrb_l1_ul_l2_ps_uldata_puschreceivereq}
+    ...                                 pcapprocessed_Extract_nbOfPrb_l1_ul_l2_ps_uldata_puschreceivereq.txt
+    set test variable   ${pcapprocessed_nbOfPrb_l1_ul_l2_ps_uldata_puschreceivereq_path}
+    ...                                 ${testCaseDir}/${pcapprocessed_nbOfPrb_l1_ul_l2_ps_uldata_puschreceivereq}
+    ${cmd1}=    Set Variable If   '${mcshark_present}'=='${False}'   tshark -X lua_script:/opt/luashark/generated_luashark/luashark.lua
+    ...                                                              tshark
+    ${cmd}    catenate      ${cmd1} -r
+    ...        ${File} -T fields -Y "icom_5g" -e _ws.col.Info
+    ...           -e UlData_PuschReceiveReq.PuschReceiveReq.sfn
+    ...           -e UlData_PuschReceiveReq.PuschReceiveReq.slot
+    ...           -e UlData_PuschReceiveReq.grants_item_0.rnti
+    ...           -e UlData_PuschReceiveReq.grants_item_0.numOfPrb
+    ...           -E header=y -E separator=';' > ${pcapprocessed_nbOfPrb_l1_ul_l2_ps_uldata_puschreceivereq_path}
+    ${cmd_mcshark}    Catenate      ${cmd1} -r
+    ...        ${File} -T fields -Y "uldata_puschreceivereq" -e _ws.col.Info
+    ...           -e 3gpp.sfn
+    ...           -e 3gpp.slot
+    ...           -e 3gpp.rnti
+    ...           -e UlData_puschReceiveReqGrant_t.numOfPrb
+    ...           -E header=y -E separator=';' > ${pcapprocessed_nbOfPrb_l1_ul_l2_ps_uldata_puschreceivereq_path}
+    run Keyword if    '${mcshark_present}'=='${False}'   Run       ${cmd}
+    ...  ELSE                                            Run       ${cmd_mcshark}
+    # remove space if present
+    Run      command=sed -i -e 's/ //g' ${pcapprocessed_nbOfPrb_l1_ul_l2_ps_uldata_puschreceivereq_path}
+
+    ${extract_col_info}   OperatingSystem.grep file        ${pcapprocessed_nbOfPrb_l1_ul_l2_ps_uldata_puschreceivereq_path}   _ws.col.Info
+    ${pattern}=     set variable if   '${mcshark_present}'=='${False}'    ICOM_5G/UlData_PuschReceiveReq
+    ...                                                                   UlData_PuschReceiveReq
+    ${extract}  OperatingSystem.grep file  ${pcapprocessed_nbOfPrb_l1_ul_l2_ps_uldata_puschreceivereq_path}
+    ...                                    ${pattern}
+    run keyword if  len($extract)==0     fail   UlData_PuschReceiveReq not found
+    OperatingSystem.copy file    ${pcapprocessed_nbOfPrb_l1_ul_l2_ps_uldata_puschreceivereq_path}
+    ...                          ${testCaseDir}/msg_nbOfPrb_UlData_PuschReceiveReq_pcap.csv
+
+Check no DL Qos Load Indication MeasuredNgbrNnbrLoad upper 100
+    [Arguments]    ${pdmlFile}
+    Dated log           ${pdmlFile}
+
+    ${cmd}=    Catenate     cat ${pdmlFile} | grep -i 'dssDlQosLoadMeasurement.measuredNgbrNnbrLoad' | grep 'measuredNgbrNnbrLoad (Uint8)' |
+    ...                                             awk '{print $9}' | sed -e 's/value="//g' | sed -e 's/"/ /g' | awk '{print $1}'
+    ${MeasuredNgbrNnbrLoad}=    OperatingSystem.Run    ${cmd}
+    @{lines}    Split To Lines    ${MeasuredNgbrNnbrLoad}
+    ${length}=    get length     ${lines}
+    @{MeasuredNgbrNnbrLoad}    Evaluate    map(lambda x: int(x, 16), @{lines})
+    Dated log   DL MeasuredNgbrNnbrLoad = @{MeasuredNgbrNnbrLoad} and length = ${length}
+    ${avg_dl_MeasuredNgbrNnbrLoad}    Evaluate    round(round(sum(@{MeasuredNgbrNnbrLoad}), 1)/round(${length}, 1), 1)
+    ${NbrElt}  ${list_dl_MeasuredNgbrNnbrLoad_upper_100}=   nps_2574_tools.check_dl_MeasuredNgbrNnbrLoad_upper_100    ${MeasuredNgbrNnbrLoad}
+    Dated log   DL MeasuredNgbrNnbrLoad upper 100 = @{list_dl_MeasuredNgbrNnbrLoad_upper_100} and length = ${NbrElt}
+    ${avg_dl_MeasuredNgbrNnbrLoad_upper_100}    run Keyword if   '${NbrElt}'!='0'
+    ...              Evaluate    round(round(sum(@{list_dl_MeasuredNgbrNnbrLoad_upper_100}), 1)/round(${NbrElt}, 1), 1)
+    ...  ELSE        set variable    0
+    Log many          [DATA TRANSFER] DL dssDlQosLoadMeasurement MeasuredNgbrNnbrLoad average: ${avg_dl_MeasuredNgbrNnbrLoad}
+    Log To Console    \t\t\tDownlink dssDlQosLoadMeasurement.MeasuredNgbrNnbrLoad Avg:\t\t ${avg_dl_MeasuredNgbrNnbrLoad} %
+    Log many          [DATA TRANSFER] DL dssDlQosLoadMeasurement MeasuredNgbrNnbrLoad List upper 100 : ${avg_dl_MeasuredNgbrNnbrLoad_upper_100}
+    Log To Console    \t\t\tDL dssDlQosLoadMeasurement MeasuredNgbrNnbrLoad List upper 100 Avg:\t\t ${avg_dl_MeasuredNgbrNnbrLoad_upper_100} %
+
+Check no UL Qos Load Indication MeasuredNgbrNnbrLoad upper 100
+    [Arguments]    ${pdmlFile}
+    Dated log           ${pdmlFile}
+
+    ${cmd}=    Catenate     cat ${pdmlFile} | grep -i 'enDssUlQosLoadMeasurement.MeasuredNgbrNnbrLoad' |
+    ...                grep 'MeasuredNgbrNnbrLoad (Uint8)' | awk '{print $9}' | sed -e 's/value="//g' | sed -e 's/"/ /g' | awk '{print $1}'
+    ${MeasuredNgbrNnbrLoad}=    OperatingSystem.Run    ${cmd}
+    @{lines}    Split To Lines    ${MeasuredNgbrNnbrLoad}
+    Remove Values From List     ${lines}     00
+    ${length}=    get length     ${lines}
+    @{MeasuredNgbrNnbrLoad}    Evaluate    map(lambda x: int(x, 16), @{lines})
+    Dated log   UL MeasuredNgbrNnbrLoad = @{MeasuredNgbrNnbrLoad} and length = ${length}
+    ${avg_ul_MeasuredNgbrNnbrLoad}    Evaluate    round(round(sum(@{MeasuredNgbrNnbrLoad}), 1)/round(${length}, 1), 1)
+    ${NbrElt}  ${list_ul_MeasuredNgbrNnbrLoad_upper_100}=   nps_1586_tools.check_MeasuredNgbrNnbrLoad_upper_100    ${MeasuredNgbrNnbrLoad}
+    Dated log   UL MeasuredNgbrNnbrLoad upper 100 = @{list_ul_MeasuredNgbrNnbrLoad_upper_100} and length = ${NbrElt}
+    ${avg_ul_MeasuredNgbrNnbrLoad_upper_100}    run Keyword if   '${NbrElt}'!='0'
+    ...              Evaluate    round(round(sum(@{list_ul_MeasuredNgbrNnbrLoad_upper_100}), 1)/round(${NbrElt}, 1), 1)
+    ...  ELSE        set variable    0
+    Log many          [DATA TRANSFER] UL dssUlQosLoadMeasurement MeasuredNgbrNnbrLoad average: ${avg_ul_MeasuredNgbrNnbrLoad}
+    Log To Console    \t\t\Uplink dssUlQosLoadMeasurement.MeasuredNgbrNnbrLoad Avg:\t\t ${avg_ul_MeasuredNgbrNnbrLoad} %
+    Log many          [DATA TRANSFER] UL dssUlQosLoadMeasurement MeasuredNgbrNnbrLoad List upper 100 : ${avg_ul_MeasuredNgbrNnbrLoad_upper_100}
+    Log To Console    \t\t\Uplink dssUlQosLoadMeasurement MeasuredNgbrNnbrLoad List upper 100 Avg:\t\t ${avg_ul_MeasuredNgbrNnbrLoad_upper_100} %
+
+5GC001586 build UEs list
+    [Arguments]                     ${CallType}=NSA    ${UEnb}=1    ${CellID}=1
+    ${UEsList}                      Run Keyword If    "${CallType}" == "NSA"
+    ...                             5GC001586 build UEs list NSA      UEnb=${UEnb}    CellID=${CellID}
+    ...                             ELSE IF           "${CallType}" == "SA"
+    ...                             5GC001586 build UEs list SA       UEnb=${UEnb}    CellID=${CellID}
+    ...                             ELSE
+    ...                             Create List
+    [return]                        ${UEsList}
+
+5GC001586 build UEs list NSA
+    [Arguments]                     ${UEnb}=1    ${CellID}=1
+    ${UEsList}                      Create List
+    FOR    ${UEid}    IN RANGE    1    ${UEnb}+1
+            &{UEcurrent}=                   Copy Dictionary          ${UE_SIMPLE}
+            Set To Dictionary               ${UEcurrent}      ue                 ${UEid}
+            Set To Dictionary               ${UEcurrent}      target_cells       ${CellID}
+            Append To List                  ${UEsList}    ${UEcurrent}
+    END
+    [return]                        ${UEsList}
+
+5GC001586 build UEs list SA
+    [Arguments]                     ${UEnb}=1    ${CellID}=1
+    ${UEsList}                      Create List
+    FOR    ${UEid}    IN RANGE    1    ${UEnb}+1
+            &{UEcurrent}=                   Copy Dictionary          ${UE_SIMPLE}
+            Set To Dictionary               ${UEcurrent}      ue                 ${UEid}
+            Set To Dictionary               ${UEcurrent}      pdu                ${UEid}
+            Set To Dictionary               ${UEcurrent}      target_cells       ${CellID}
+            Append To List                  ${UEsList}    ${UEcurrent}
+    END
+    [return]                        ${UEsList}
+
+Create Header Csv Test result
+    [Arguments]          ${target_dir}=None           ${text}=Extract INF/.uplane/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp from SYSLOG...
+    ${local_target_dir}=    Run Keyword If    '${target_dir}'=='None'    Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+    ${timeStamp}=    DateTime.Get current date    exclude_millis=True    result_format=%Y%m%d-%H%M%S
+    ${testCase}    Replace String    ${TEST_NAME[0:30]}    ${SPACE}    _
+    ${testCase}    Replace String    ${testCase}    .    _
+    ${testCase}    Remove String     ${testCase}    [1]
+    ${testCase}    Remove String     ${testCase}    [1.0]
+    ${testCase}    Remove String     ${testCase}    [2.0]
+    ${testCase}    Remove String     ${testCase}    [
+    ${testCase}    Remove String     ${testCase}    ]
+    ${filename}   set Variable
+    ...               CellSetupLogger-SYSLOG-${testCase}-${timeStamp}.log
+    Run Keyword And Ignore Error    OperatingSystem.touch    ${local_target_dir}/${filename}
+    Run Keyword And Ignore Error    OperatingSystem.run      echo "${text}" > ${local_target_dir}/${filename}
+    set suite variable      ${log_file_results}       ${local_target_dir}/${filename}
+    ${filename}   set Variable      egate_commands.log
+    ${timeStamp}    get current date    result_format=%Y%m%d_%H%M%S
+    ${timeStamp}=    Remove String    ${timeStamp.replace(' ','-')}
+    Run Keyword And Ignore Error    OperatingSystem.touch    ${local_target_dir}/${filename}
+    Run Keyword And Ignore Error    OperatingSystem.run      echo "${timeStamp} : ${filename}" > ${local_target_dir}/${filename}
+    set suite variable      ${log_file_egate_command}       ${local_target_dir}/${filename}
+
+Log Test results
+    [Arguments]                    ${text}
+    Run Keyword And Ignore Error    OperatingSystem.run      echo "${text}" >> ${log_file_results}
+
+Log egate command results
+    [Arguments]                    ${text}
+    Run Keyword And Ignore Error    OperatingSystem.run      echo "${text}" >> ${log_file_egate_command}
+
+Extract egate_command
+    [Documentation]   Analyzing this kind of egate trace
+    ...    [session 1]: sim_log_set
+    [Arguments]     ${dir}=${EMPTY}     ${egate_console}=egate_console.log
+
+    ${commandToRun}     Catenate
+    ...     cat ${dir}/${egate_console} | grep
+    ...     '\\[session'
+    ${msg}=        Catenate   ${consTraceColorBgYellow}${consTraceColorBlack}no [session found${defColor}
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${egate_console} | grep "\\[session"
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${output}
+    run Keyword if    ${isEmpty}      dated log   ${msg}
+    Return From Keyword If      ${isEmpty}
+    ${egate_cmd}  nps_dss_tools.extract_session_from_egateconsole   ${output}
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${egate_cmd}
+    run Keyword if    ${isEmpty}         log to console      no [session found: ${egate_cmd}
+    ${msg}=        Catenate   ${consTraceColor}no [session found${defColor}
+    return from Keyword if   ${isEmpty}     dated log   ${msg}
+    ${text}=    Catenate      egate_command FROM ${dir}/${egate_console} :
+    Log egate command results      ${text}
+    ${text}=    Catenate      =============================================================
+    Log egate command results      ${text}
+    FOR    ${egate_cmd_elt}    IN    @{egate_cmd}
+        # ${text}=    Catenate     ${egate_cmd_elt}
+        Log egate command results      ${egate_cmd_elt}
+    END
+    # [Return]        ${egate_cmd}
+
+Extract L2-PS/src/sgnl/psCell/CellSetupLogger
+    [Documentation]   Analyzing this kind of Syslog trace
+    ...    INF/.uplane/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp:
+    [Arguments]     ${dir}=/tmp/btslog2     ${syslog}=/tmp/
+
+    ${commandToRun}     Catenate
+    ...     cat ${dir}/${syslog} | grep
+    ...     'INF/.uplane/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp:'
+    ${msg}=        Catenate   ${consTraceColorBgYellow}${consTraceColorBlack}no L2-PS/src/sgnl/psCell/CellSetupLogger found${defColor}
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${syslog} | grep "INF/.uplane/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp:"
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${output}
+    run Keyword if    ${isEmpty}      dated log   ${msg}
+    Return From Keyword If      ${isEmpty}
+    ${bbrm_err}  nps_1586_tools.extract_L2_PS_CellSetupLogger_from_syslog   ${output}
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${bbrm_err}
+    run Keyword if    ${isEmpty}         log to console      no INF/.uplane/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp: found: ${bbrm_err}
+    ${msg}=        Catenate   ${consTraceColor}no INF/.uplane/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp: found${defColor}
+    return from Keyword if   ${isEmpty}     dated log   ${msg}
+    ${text}=    Catenate      Extract L2-PS/src/sgnl/psCell/CellSetupLogger FROM ${syslog} :
+    Log Test results      ${text}
+    ${text}=    Catenate      =============================================================
+    Log Test results      ${text}
+    FOR    ${bbrm_err_elt}    IN    @{bbrm_err}
+        ${text}=    Catenate     line ${bbrm_err_elt[0]} : ${bbrm_err_elt[1]}
+        Log Test results      ${text}
+    END
+    [Return]        ${bbrm_err}
+
+Extract INF/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp
+    [Documentation]   Analyzing this kind of Syslog trace
+    ...    INF/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp:
+    [Arguments]     ${dir}=/tmp/btslog2     ${syslog}=/tmp/
+
+    ${commandToRun}     Catenate
+    ...     cat ${dir}/${syslog} | grep
+    ...     'INF/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp:'
+    ${msg}=        Catenate   ${consTraceColorBgYellow}${consTraceColorBlack}no INF/L2-PS/src/sgnl/psCell/CellSetupLogger found${defColor}
+    ${output}=        OperatingSystem.Run
+    ...    command=cat ${dir}/${syslog} | grep "INF/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp:"
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${output}
+    run Keyword if    ${isEmpty}      dated log   ${msg}
+    Return From Keyword If      ${isEmpty}
+    ${bbrm_err}  nps_1586_tools.extract_INF_L2_PS_CellSetupLogger_from_syslog   ${output}
+    ${isEmpty}    Run Keyword And Return Status       should be empty       ${bbrm_err}
+    run Keyword if    ${isEmpty}         log to console      no INF/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp: found: ${bbrm_err}
+    ${msg}=        Catenate   ${consTraceColor}no INF/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp: found${defColor}
+    return from Keyword if   ${isEmpty}     dated log   ${msg}
+    ${msg}=        Catenate   ${consTraceColor}INF/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp: found${defColor}
+    dated log     ${msg}
+    ${text}=    Catenate      Extract INF/L2-PS/src/sgnl/psCell/CellSetupLogger FROM ${syslog} :
+    Log Test results      ${text}
+    ${text}=    Catenate      =============================================================
+    Log Test results      ${text}
+    FOR    ${bbrm_err_elt}    IN    @{bbrm_err}
+        ${text}=    Catenate     line ${bbrm_err_elt[0]} : ${bbrm_err_elt[1]}
+        Log Test results      ${text}
+    END
+    [Return]        ${bbrm_err}
+
+Extract L2-PS/src/sgnl/psCell/CellSetupLogger from Syslogs
+   ${commandToRun}     Catenate     cd /tmp/btslog2; find . -name "*.LOG" -type f | sed -e 's/^\\.\\///g'
+   ${ret}    ${syslogfiles}     Run Keyword And Ignore Error    Run   ${commandToRun}
+   ${sysLog_files}    Split String    ${syslogfiles}    separator=\n
+   FOR    ${syslog}    IN    @{sysLog_files}
+         dated log    Computing syslog File ${consTraceColor}${syslog}${defColor}...
+         ${contains_no_Syslogs}=     Run Keyword And Return Status       Should Not Contain     ${syslog}     ${EMPTY}
+         # ${contains_no_Syslogs}==True   => Syslog are not present !!!
+         Run Keyword if   '${contains_no_Syslogs}' == 'False'    robot_extension.Run Keyword And Warn On Failure
+         ...                                                               Extract L2-PS/src/sgnl/psCell/CellSetupLogger      syslog=${syslog}
+         ...    ELSE                                             dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+         Run Keyword if   '${contains_no_Syslogs}' == 'False'    robot_extension.Run Keyword And Warn On Failure
+         ...                                                               Extract INF/L2-PS/src/sgnl/psCell/CellSetupLogger.cpp    syslog=${syslog}
+         ...    ELSE                                             dated log    ${consTraceColorRed}syslog are not present !!!${defColor}
+   END
+
+################ for traces purposes ##############
+
+Start Backhaul Traces
+    [Arguments]  ${bh_trace_collector_name}
+    Return from keyword if    '${logs_and_traces_flags['BackhaulTrace']}'=='False'
+    Run keyword and ignore error  Start Collection of gNB BH Traces  bh_trace_collector_name=${bh_trace_collector_name}
+
+Start L1_L2 Traces
+    [Arguments]  ${bip_trace_collector_name}
+    Return from keyword if   '${logs_and_traces_flags['L1L2BIPTrace']}'=='False' and '${logs_and_traces_flags['AP_L1L2BIPTrace']}'=='False'
+    Run keyword and ignore error  Start Collection of Airphone L1 L2 Traces  bip_trace_collector_name=ue_${bip_trace_collector_name}
+    Run keyword and ignore error  Start Collection of gNB L1 L2 Traces  bip_trace_collector_name=${bip_trace_collector_name}
+
+Stop BIP Traces
+    [Arguments]  ${STOP_BIP_TRACES}   ${bip_trace_collector_name}
+    ...          ${stop_delay_tti}={0}  ${stop_delay_bip}={0}
+    Run Keyword if  ${STOP_BIP_TRACES}  BuiltIn.Sleep    ${stop_delay_bip}  reason=Wait for the delay set by the user in the JSON
+    Run Keyword if  ${STOP_BIP_TRACES}  5GC001586_Keywords.Stop L1_L2 Traces  bip_trace_collector_name=${bip_trace_collector_name}
+
+Stop BH Traces
+    [Arguments]  ${STOP_BH_TRACES}   ${bh_trace_collector_name}
+    # Run Keyword if  ${STOP_BH_TRACES}  BuiltIn.Sleep    ${stop_delay_bip}  reason=Wait for the delay set by the user in the JSON
+    Run Keyword if  ${STOP_BH_TRACES}  5GC001586_Keywords.Stop gNB BH Trace Collection  bh_trace_collector_name=${bh_trace_collector_name}
+
+Stop L1_L2 Traces
+    [Arguments]  ${bip_trace_collector_name}
+    Return from keyword if   '${logs_and_traces_flags['L1L2BIPTrace']}'=='False' and '${logs_and_traces_flags['AP_L1L2BIPTrace']}'=='False'
+    Run keyword and ignore error  5GC001586_Keywords.Stop Collection of gNB L1 L2 Traces
+    ...  bip_trace_collector_name=${bip_trace_collector_name}
+    Run keyword and ignore error  5GC001586_Keywords.Stop Collection of Airphone L1 L2 Traces
+    ...  bip_trace_collector_name=ue_${bip_trace_collector_name}
+
+Start Collection of Airphone L1 L2 Traces
+    [Arguments]  ${bip_trace_collector_name}
+    Return from keyword if    '${logs_and_traces_flags['AP_L1L2BIPTrace']}'=='False'
+    Run keyword and ignore error    Run Keyword  bip_trace_ap.Start Airphone BIP Traces  collector=ue_${bip_trace_collector_name}
+
+
+Stop Collection of Airphone L1 L2 Traces
+    [Arguments]  ${bip_trace_collector_name}
+    Return from keyword if    '${logs_and_traces_flags['AP_L1L2BIPTrace']}'=='False'
+    Run keyword and ignore error  Run Keyword  bip_trace_ap.Stop Airphone BIP Traces
+    ...  collector=ue_${bip_trace_collector_name}
+    ...  target_dir=${testCaseDir}
+
+Start Collection of gNB L1 L2 Traces
+    [Arguments]  ${bip_trace_collector_name}
+    Return from keyword if    '${logs_and_traces_flags['L1L2BIPTrace']}' == 'False'
+    Run keyword and ignore error    Run Keyword  bip_trace.Start BIP Traces           collector=${bip_trace_collector_name}
+
+
+Stop Collection of gNB L1 L2 Traces
+    [Arguments]  ${bip_trace_collector_name}
+    Return from keyword if    '${logs_and_traces_flags['L1L2BIPTrace']}' == 'False'
+    Run keyword and ignore error  Run Keyword  bip_trace.Stop BIP Traces
+    ...  collector=${bip_trace_collector_name}
+    ...  target_dir=${testCaseDir}
+
+
+Start Collection of gNB BH Traces
+    [Arguments]  ${bh_trace_collector_name}    ${bh_filter}='sctp or udp'
+    Return from keyword if    '${logs_and_traces_flags['BackhaulTrace']}' == 'False'
+    # by default, bh filter is sctp
+    ${backhaul_gnb_collector}=  Run Keyword And Continue On Failure  Run Keyword
+    ...                            tcpdump.Start Tcpdump on TestPc with options
+    # ...                                                          options=-i eth3 -U -s0 'sctp or udp'
+    ...                                                          options=-i eth3 -U -s0 ${bh_filter}
+    ...                                                          collector=${bh_trace_collector_name}
+    set suite variable  ${backhaul_gnb_collector}
+
+Stop gNB BH Trace Collection
+    [Arguments]  ${bh_trace_collector_name}
+    Return from keyword if    '${logs_and_traces_flags['BackhaulTrace']}' == 'False'
+    Run keyword and ignore error  5GC001586_Keywords.Stop Backhaul gNB trace capture
+    ...  bh_trace_collector_name=${bh_trace_collector_name}
+
+Start X2 Trace Collection
+    Return from keyword if    '${logs_and_traces_flags['X2Trace']}' == 'False'
+    ${backhaul_collector}=  Run Keyword And Continue On Failure  Run Keyword
+    ...                            tcpdump.Start Tcpdump on TestPc with options
+    ...                                                          options=-i eth3 -U sctp
+    ...                                                          collector=testpc_backhaul_tcpdump
+    set test variable  ${backhaul_collector}
+
+
+Stop X2 Trace Collection
+    [Arguments]  ${s1x2_logs_collector_name}
+    Return from keyword if    '${logs_and_traces_flags['X2Trace']}' == 'False'
+    Run keyword and ignore error  5GC001586_Keywords.Stop Backhaul trace capture
+    ...  s1x2_logs_collector_name=${s1x2_logs_collector_name}
+
+
+Start BH Trace Collection
+    Return from keyword if    '${logs_and_traces_flags['CellSetup_BH']}' == 'False'
+    ${backhaul_collector}=  Run Keyword And Continue On Failure  Run Keyword
+    ...                            tcpdump.Start Tcpdump on TestPc with options
+    ...                                                          options=-i eth3 -U sctp or udp
+    ...                                                          collector=testpc_backhaul_tcpdump
+    set suite variable  ${backhaul_collector}
+
+
+Stop BH Trace Collection
+    [Arguments]  ${s1x2_logs_collector_name}
+    Return from keyword if    '${logs_and_traces_flags['CellSetup_BH']}' == 'False'
+    Run keyword and ignore error  5GC001586_Keywords.Stop Backhaul trace capture
+    ...  s1x2_logs_collector_name=${s1x2_logs_collector_name}
+
+
+Stop Backhaul trace capture
+    [Arguments]  ${s1x2_logs_collector_name}
+    ${path_to_tcpdump}=    run Keyword  tcpdump.Stop Tcpdump on TestPc with options
+    ...  collector=${backhaul_collector}
+    ...  target_dir=${testCaseDir}/${s1x2_logs_collector_name}
+
+
+Stop Backhaul gNB trace capture
+    [Arguments]  ${bh_trace_collector_name}
+    ${path_to_tcpdump}=    run Keyword  tcpdump.Stop Tcpdump on TestPc with options
+    ...  collector=${backhaul_gnb_collector}
+    ...  target_dir=${testCaseDir}/${bh_trace_collector_name}
+
+
+Start/Stop BIP/backaul Traces
+    [Arguments]  ${call_location}  ${collector_name}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${collector_name}
+    ${collector_name}=      set Variable if    '${status}'=='FAIL'    FDD_DSS_default_scenario    ${collector_name}
+    ${bip_start_point}=     set variable     ${start_end_trace_point['get_biptrace_start_point']}
+    ${bip_stop_point}=      set variable     ${start_end_trace_point['get_biptrace_stop_point']}
+    ${backaul_start_point}=  set variable     ${start_end_trace_point['get_backhaul_start_point']}
+    ${backaul_stop_point}=   set variable     ${start_end_trace_point['get_backhaul_stop_point']}
+    ${bip_trace_collector_name}=  Set Variable  l1_l2_${collector_name}
+    ${bip_trace_stop_points}=  Create List  failed_attach  ${bip_stop_point}
+    ${backaul_stop_point}=  Create List  failed_attach  ${backaul_stop_point}
+    ${bh_trace_collector_name}=  Set Variable  backhaul_${collector_name}
+    Run Keyword if  "${call_location}"=="${backaul_start_point}"
+    ...      5GC001586_Keywords.Start Backhaul Traces  bh_trace_collector_name=${bh_trace_collector_name}
+    Run Keyword if  "${call_location}"=="${bip_start_point}"
+    ...      5GC001586_Keywords.Start L1_L2 Traces  bip_trace_collector_name=${bip_trace_collector_name}
+    ${STOP_BIP_TRACES}=  Run Keyword and return status
+    ...  List Should Contain Value  ${bip_trace_stop_points}  ${call_location}
+    ${STOP_BH_TRACES}=  Run Keyword and return status
+    ...  List Should Contain Value  ${backaul_stop_point}  ${call_location}
+    5GC001586_Keywords.Stop BIP Traces  ${STOP_BIP_TRACES}   ${bip_trace_collector_name}    ${0}  ${0}
+    5GC001586_Keywords.Stop BH Traces  ${STOP_BH_TRACES}  ${bh_trace_collector_name}

@@ -1,0 +1,388 @@
+heat_template_version: 2016-10-14
+description: 'v77: Instantiate network configuration needed by RCP 2.0 redundant reference configuration'
+parameters:
+  internal_subnets:
+    type: json
+    description: internal network subnets and allocation pools
+    default:
+      internal:
+      - 192.168.1.0/24
+      - 192.168.1.2
+      - 192.168.1.165
+      internal_srv:
+      - 169.254.0.0/24
+      - 169.254.0.2
+      - 169.254.0.165
+  internal_segment_ids:
+    description: Internal network segment ids
+    type: json
+    default:
+      internal: 0
+      internal_srv: 0
+  name_prefix:
+    type: string
+    description: Prefix to use in resource names to help differentiate them from similar resources of other stacks
+    default: rcp
+  vif_model:
+    type: string
+    description: interface driver type for internal interfaces
+    constraints:
+    - allowed_values:
+      - virtio
+      - avp
+  internal_ip_version:
+    type: number
+    description: IP version of internal network
+    default: 4
+    constraints:
+      - allowed_values: [4, 6]
+  internal_srv_ip_version:
+    type: number
+    description: IP version of internal service network
+    default: 4
+    constraints:
+      - allowed_values: [4, 6]
+  external_networks:
+    description: External network uuids
+    type: json
+    default: {}
+  provider_name:
+    description: provider net name for management and internal networks
+    type: string
+
+resources:
+  internal_net:
+    type: OS::Neutron::Net
+    properties:
+      name:
+        str_replace:
+          template: '%prefix%-internal-net'
+          params:
+            '%prefix%': {get_param: name_prefix}
+            $version: {get_param: internal_ip_version}
+      value_specs:
+        if:
+          - equals:
+            - {get_param: [internal_segment_ids, internal]}
+            - 0
+          - provider:network_type: vlan
+            provider:physical_network: {get_param: provider_name}
+          - provider:network_type: vlan
+            provider:physical_network: {get_param: provider_name}
+            provider:segmentation_id: {get_param: [internal_segment_ids, internal]}
+
+  internal_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      name:
+        str_replace:
+          template: '%prefix%-internal-subnet'
+          params:
+            '%prefix%': {get_param: name_prefix}
+            $version: {get_param: internal_ip_version}
+      network: {get_resource: internal_net}
+      cidr:
+        get_param: [internal_subnets, internal, 0]
+      ip_version: {get_param: internal_ip_version}
+      allocation_pools:
+      - start:
+          get_param: [internal_subnets, internal, 1]
+        end:
+          get_param: [internal_subnets, internal, 2]
+  internal_srv_net:
+    type: OS::Neutron::Net
+    properties:
+      name:
+        str_replace:
+          template: '%prefix%-internal_srv-net'
+          params:
+            '%prefix%': {get_param: name_prefix}
+            $version: {get_param: internal_srv_ip_version}
+      value_specs:
+        if:
+          - equals:
+            - {get_param: [internal_segment_ids, internal_srv]}
+            - 0
+          - provider:network_type: vlan
+            provider:physical_network: {get_param: provider_name}
+          - provider:network_type: vlan
+            provider:physical_network: {get_param: provider_name}
+            provider:segmentation_id: {get_param: [internal_segment_ids, internal_srv]}
+
+  internal_srv_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      name:
+        str_replace:
+          template: '%prefix%-internal_srv-subnet'
+          params:
+            '%prefix%': {get_param: name_prefix}
+            $version: {get_param: internal_srv_ip_version}
+      network: {get_resource: internal_srv_net}
+      cidr:
+        get_param: [internal_subnets, internal_srv, 0]
+      ip_version: {get_param: internal_srv_ip_version}
+      allocation_pools:
+      - start:
+          get_param: [internal_subnets, internal_srv, 1]
+        end:
+          get_param: [internal_subnets, internal_srv, 2]
+
+  upue_net_config:
+    type: RCP::Networks::Layout
+    properties:
+      net_list:
+        yaql:
+          expression: $.data.distinct([$['uuid']])
+          data:
+          - {map_merge: [{get_param: [external_networks, f1u]}, {name: fronthaul}, {vif: {get_param: vif_model}}, {role: external}, {type: physical}]}
+          - {map_merge: [{get_param: [external_networks, s1u]}, {name: backhaul}, {vif: {get_param: vif_model}}, {role: external}, {type: physical}]}
+          - {map_merge: [{get_param: [external_networks, x2u]}, {name: x2}, {vif: {get_param: vif_model}}, {role: external}, {type: physical}]}
+
+  cpif_net_config:
+    type: RCP::Networks::Layout
+    properties:
+      net_list:
+        yaql:
+          expression: $.data.distinct([$['uuid']])
+          data:
+          - {map_merge: [{ip-roles: {get_param: [external_networks, f1c, ip-roles]}}, {fixed_ips: {get_param: [external_networks, f1c, fixed_ips]}}, {uuid: {get_param: [external_networks, f1c, uuid]}}, {name: fronthaul}, {vif: {get_param: vif_model}}, {role: external}, {type: logical}]}
+          - {map_merge: [{ip-roles: {get_param: [external_networks, x2c, ip-roles]}}, {fixed_ips: {get_param: [external_networks, x2c, fixed_ips]}}, {uuid: {get_param: [external_networks, x2c, uuid]}}, {name: backhaul}, {vif: {get_param: vif_model}}, {role: external}, {type: logical}]}
+
+  cpif_0_net_config:
+    type: RCP::Networks::Layout
+    properties:
+      net_list:
+        yaql:
+          expression: $.data.distinct([$['uuid']])
+          data:
+          - {map_merge: [{ip-roles: []}, {fixed_ips: {get_param: [external_networks, f1c, fixed_ips_0]}}, {uuid: {get_param: [external_networks, f1c, uuid]}}, {name: fronthaul}, {vif: {get_param: vif_model}}, {role: external}, {type: physical}]}
+          - {map_merge: [{ip-roles: []}, {fixed_ips: {get_param: [external_networks, x2c, fixed_ips_0]}}, {uuid: {get_param: [external_networks, x2c, uuid]}}, {name: backhaul}, {vif: {get_param: vif_model}}, {role: external}, {type: physical}]}
+
+  cpif_1_net_config:
+    type: RCP::Networks::Layout
+    properties:
+      net_list:
+        yaql:
+          expression: $.data.distinct([$['uuid']])
+          data:
+          - {map_merge: [{ip-roles: []}, {fixed_ips: {get_param: [external_networks, f1c, fixed_ips_1]}}, {uuid: {get_param: [external_networks, f1c, uuid]}}, {name: fronthaul}, {vif: {get_param: vif_model}}, {role: external}, {type: physical}]}
+          - {map_merge: [{ip-roles: []}, {fixed_ips: {get_param: [external_networks, x2c, fixed_ips_1]}}, {uuid: {get_param: [external_networks, x2c, uuid]}}, {name: backhaul}, {vif: {get_param: vif_model}}, {role: external}, {type: physical}]}
+
+  oam_net_config:
+    type: RCP::Networks::Layout
+    properties:
+      net_list:
+        yaql:
+          expression: $.data.distinct([$['uuid']])
+          data:
+          - {map_merge: [{get_param: [external_networks, oam]}, {name: oam}, {vif: {get_param: vif_model}}, {role: oam}, {type: physical}]}
+          - {map_merge: [{get_param: [external_networks, f1m]}, {name: fronthaul}, {vif: {get_param: vif_model}}, {role: external}, {type: physical}]}
+
+outputs:
+  networks:
+    description: node type spesific network interface configuration
+    value:
+      oam:
+        count:
+          yaql:
+            expression: $.data.len() + 3
+            data: {get_attr: [oam_net_config, net_config]}
+        net_list_0:
+          yaql:
+            expression: $.data.internal_list.concat($.data.external_list).concat($.data.others)
+            data:
+              internal_list:
+              - name: internal
+                uuid: {get_resource: internal_net}
+                role: internal
+                vif: {get_param: vif_model}
+                fixed_ips: []
+              - name: internal_srv
+                uuid: {get_resource: internal_srv_net}
+                role: internal
+                vif: {get_param: vif_model}
+                fixed_ips: []
+              external_list: {get_attr: [oam_net_config, net_config]}
+              others:
+              - name: tracing
+                uuid: {get_param: [external_networks, tracing, uuid]}
+                role: external
+                ip-roles: [Tracing]
+                type: physical
+                vif: {get_param: vif_model}
+                fixed_ips: []
+      as:
+        count: 3
+        net_list_0:
+        - name: internal
+          uuid: {get_resource: internal_net}
+          role: internal
+          vif: {get_param: vif_model}
+          fixed_ips: []
+        - name: internal_srv
+          uuid: {get_resource: internal_srv_net}
+          role: internal
+          vif: {get_param: vif_model}
+          fixed_ips: []
+        - name: tracing
+          uuid: {get_param: [external_networks, tracing, uuid]}
+          role: external
+          ip-roles: [Tracing]
+          vif: {get_param: vif_model}
+          fixed_ips: []
+        net_list_1:
+        - name: internal
+          uuid: {get_resource: internal_net}
+          role: internal
+          vif: {get_param: vif_model}
+          fixed_ips: []
+        - name: internal_srv
+          uuid: {get_resource: internal_srv_net}
+          role: internal
+          vif: {get_param: vif_model}
+          fixed_ips: []
+        - name: tracing
+          uuid: {get_param: [external_networks, tracing, uuid]}
+          role: external
+          ip-roles: [Tracing]
+          type: physical
+          vif: {get_param: vif_model}
+          fixed_ips: []
+        count_logical: 0
+        net_list_logical: []
+      cpif:
+        count:
+          yaql:
+            expression: $.data.len() + 3
+            data: {get_attr: [cpif_0_net_config, net_config]}
+        count_logical:
+          yaql:
+            expression: $.data.len()
+            data: {get_attr: [cpif_net_config, net_config]}
+        net_list_logical: {get_attr: [cpif_net_config, net_config]}
+        net_list_0:
+          yaql:
+            expression: $.data.internal_list.concat($.data.external_list).concat($.data.others)
+            data:
+              internal_list:
+              - name: internal
+                uuid: {get_resource: internal_net}
+                role: internal
+                vif: {get_param: vif_model}
+                fixed_ips: []
+              - name: internal_srv
+                uuid: {get_resource: internal_srv_net}
+                role: internal
+                vif: {get_param: vif_model}
+                fixed_ips: []
+              external_list: {get_attr: [cpif_0_net_config, net_config]}
+              others:
+              - name: tracing
+                uuid: {get_param: [external_networks, tracing, uuid]}
+                role: external
+                ip-roles: [Tracing]
+                type: physical
+                vif: {get_param: vif_model}
+                fixed_ips: []
+        net_list_1:
+          yaql:
+            expression: $.data.internal_list.concat($.data.external_list).concat($.data.others)
+            data:
+              internal_list:
+              - name: internal
+                uuid: {get_resource: internal_net}
+                role: internal
+                vif: {get_param: vif_model}
+                fixed_ips: []
+              - name: internal_srv
+                uuid: {get_resource: internal_srv_net}
+                role: internal
+                vif: {get_param: vif_model}
+                fixed_ips: []
+              external_list: {get_attr: [cpif_1_net_config, net_config]}
+              others:
+              - name: tracing
+                uuid: {get_param: [external_networks, tracing, uuid]}
+                role: external
+                ip-roles: [Tracing]
+                type: physical
+                vif: {get_param: vif_model}
+                fixed_ips: []
+      upue:
+        count:
+          yaql:
+            expression: $.data.len() + 3
+            data: {get_attr: [upue_net_config, net_config]}
+        net_list_0:
+          yaql:
+            expression: $.data.internal_list.concat($.data.external_list).concat($.data.others)
+            data:
+              internal_list:
+              - name: internal
+                uuid: {get_resource: internal_net}
+                role: internal
+                vif: {get_param: vif_model}
+                fixed_ips: []
+              - name: internal_srv
+                uuid: {get_resource: internal_srv_net}
+                role: internal
+                vif: {get_param: vif_model}
+                fixed_ips: []
+              external_list: {get_attr: [upue_net_config, net_config]}
+              others:
+              - name: tracing
+                uuid: {get_param: [external_networks, tracing, uuid]}
+                role: external
+                ip-roles: [Tracing]
+                type: physical
+                vif: {get_param: vif_model}
+                fixed_ips: []
+      sn:
+        count: 1
+        net_list_0:
+        - name: internal
+          uuid: {get_resource: internal_net}
+          role: internal
+          vif: {get_param: vif_model}
+          fixed_ips: []
+      uvm:
+        count: 1
+        net_list_0:
+        - name: internal
+          uuid: {get_resource: internal_net}
+          role: internal
+          vif: {get_param: vif_model}
+          fixed_ips: []
+      db:
+        count: 1
+        net_list_0:
+        - name: internal
+          uuid: {get_resource: internal_net}
+          role: internal
+          vif: {get_param: vif_model}
+          fixed_ips: []
+        net_list_1:
+        - name: internal
+          uuid: {get_resource: internal_net}
+          role: internal
+          vif: {get_param: vif_model}
+          fixed_ips: []
+  service_ip_map:
+    description: internal-service-ip-pool metadata parameter
+    value:
+      internal-service-ip-pool:
+        internal:
+          cidr:
+            get_param: [internal_subnets, internal, 0]
+          exclude_range_start:
+            get_param: [internal_subnets, internal, 1]
+          exclude_range_end:
+            get_param: [internal_subnets, internal, 2]
+        internal_srv:
+          cidr:
+            get_param: [internal_subnets, internal_srv, 0]
+          exclude_range_start:
+            get_param: [internal_subnets, internal_srv, 1]
+          exclude_range_end:
+            get_param: [internal_subnets, internal_srv, 2]

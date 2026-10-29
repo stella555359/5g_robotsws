@@ -1,0 +1,322 @@
+*** Settings ***
+Documentation
+...   contact: Oleksandr Kulieshov
+
+Library     ute_ue
+Library     taf.sbts.oam.coam.admin  WITH NAME  admin
+Library     taf.collectors.ttitrace_4g    WITH NAME    ttitrace_4g
+Resource    ../../resources/ca_INTER_RAT.robot
+Resource    ../../resources/ca_IWK.robot
+
+
+*** Variables ***
+${LTE_ANCHOR_CELL_ID}                        # ID of LTE Anchor cell for which LTE4750 will be tested
+${LTE_CELL_ID}                               # ID of LTE DSS cell for which LTE4750 will be tested
+${LTE_EXPECTED_UL_TPUT_MBPS}                 # [Mbit/sec] Value of expected throughput in LTE DSS cell
+${NR_EXPECTED_UL_TPUT_MBPS}                  # [Mbit/sec] Value of expected throughput in NR DSS cell and LTE anchor cell
+${LNRELGNBCELL_ID}                           # ID of LNRELGNBCELL_A cell for 'Set Test Variables For CB005860 Test' check
+${NR_UE_CAPABILITY}                          # NR UE capability
+${LTE_UE_CAPABILITY}                         # LTE UE capability
+${LTE_UL_THROUGHPUT}                         # LTE UL throughput in Mbits/sec for 'Start data transfer' KW in 'Step 4: Perform LTE UL Data Transfer'
+${NR_UL_THROUGHPUT}                          # NR UL throughput in Mbits/sec for 'Start data transfer' KW in 'Step 3: Perform 5G UL Data Transfer'
+${RECOMMISSIONING_TIMEOUT}     600           # Timeout for recommissioning procedure (value in seconds)
+${BLANKED_PUCCH}                             # Expected value for 'blankedPucch' parameter.
+
+*** Keywords ***
+TC__IWK__ul_single_user_performance_with_concurrent_lte_and_nr_traffic_10MHz_70__CB005860
+
+    Set Tags    CA-INTER_RAT    AUTHOR-szymon.kotlinski@nokia.com OWNER-mariusz.daniel@nokia.com
+    ...         MAINTAINER-szymon.kotlinski@nokia.com  PHASE-CRT   SW-SBTS22R1    FEATURE-CB005860    GROUP_IN_CHARGE-WRO_2_Vrf
+
+    Preconditions
+    Step 1: Change DSS Related Parameters On eNB Side
+    Step 2: Change DSS Related Parameters On gNB Side
+    Step 3: Perform 5G UL Data Transfer
+    Step 4: Perform LTE UL Data Transfer
+    Step 5: Stop 5G Data Transfer
+
+
+Preconditions
+    Log  \n*** Preconditions ***  console=True
+    Set Test Variables For CB005860 Test Single BTS  ${LNRELGNBCELL_ID}    ${CONNECTIVITY}
+    Log  List of LTE DSS cells: ${LTE_DSS_CELL_ID_LIST}  console=True
+    Log  List of NR DSS cells: ${NR_DSS_CELL_ID_LIST}  console=True
+    Check Preconditions For CB005860 Test  ${BLANKED_PUCCH}
+    Create Global Variables
+    Start Wireshark Log Collection For IWK Test  options=-i any host ${MPLANE_IP} and not udp port 2152 -s 0 -W 1
+    ...                                          replace_enb=False  replace_gnb=False
+    Require UE  LTE_UE  ${LTE_UE_CAPABILITY}
+    Require UE  NR_UE  ${NR_UE_CAPABILITY}
+    Log  Preconditions passed!  console=True
+
+
+Create Global Variables
+    ${cell_ratio_dict_dl} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_RATIO_DICTIONARY_DL}    ${cell_ratio_dict_dl}
+    ${cell_min_ratio_dict_dl} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_CELL_MIN_RATIO_DICT_DL}    ${cell_min_ratio_dict_dl}
+    ${cell_max_ratio_dict_dl} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_CELL_MAX_RATIO_DICT_DL}    ${cell_max_ratio_dict_dl}
+    ${cell_ratio_dict_ul} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_RATIO_DICTIONARY_UL}       ${cell_ratio_dict_ul}
+    ${cell_min_ratio_dict_ul} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_CELL_MIN_RATIO_DICT_UL}    ${cell_min_ratio_dict_ul}
+    ${cell_max_ratio_dict_ul} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_CELL_MAX_RATIO_DICT_UL}    ${cell_max_ratio_dict_ul}
+
+    ${cell_nr_ratio_dict_dl} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_NR_RATIO_DICTIONARY_DL}    ${cell_nr_ratio_dict_dl}
+    ${cell_nr_ratio_dict_ul} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_NR_RATIO_DICTIONARY_UL}    ${cell_nr_ratio_dict_ul}
+    ${nr_cell_min_ratio_dict_dl} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_NR_CELL_MIN_RATIO_DICT_DL}    ${nr_cell_min_ratio_dict_dl}
+    ${nr_cell_max_ratio_dict_dl} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_NR_CELL_MAX_RATIO_DICT_DL}    ${nr_cell_max_ratio_dict_dl}
+    ${nr_cell_min_ratio_dict_ul} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_NR_CELL_MIN_RATIO_DICT_UL}    ${nr_cell_min_ratio_dict_ul}
+    ${nr_cell_max_ratio_dict_ul} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_NR_CELL_MAX_RATIO_DICT_UL}    ${nr_cell_max_ratio_dict_ul}
+
+    ${cell_max_cr_pg_dl} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_CELL_MAX_CR_PG_DL}     ${cell_max_cr_pg_dl}
+    ${cell_max_cr_ra_4_dl} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_CELL_MAX_CR_RA_4_DL}   ${cell_max_cr_ra_4_dl}
+    ${cell_max_cr_ra_dl} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_CELL_MAX_CR_RA_DL}     ${cell_max_cr_ra_dl}
+    ${cell_max_cr_ra_dl_ho} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_CELL_MAX_CR_RA_DL_HO}  ${cell_max_cr_ra_dl_ho}
+    ${cell_max_cr_sib_dl} =  Create Dictionary
+    Set Test Variable  ${ORIGINAL_CELL_MAX_CR_SIB_DL}    ${cell_max_cr_sib_dl}
+
+    ${lte_dss_cell_20MHz_id_list} =  Create List
+    FOR  ${lte_dss_cell_20MHz_id}  IN  @{LTE_DSS_CELL_ID_LIST}
+        ${status} =  Run Keyword And Return Status
+        ...  Check Element In SCF  ${PARSED_SCF_ENB}  LNCEL_FDD  LNCEL-${lte_dss_cell_20MHz_id}/  /p[@name='dlChBw']
+        ...  <p name="dlChBw">20 MHz</p>
+        Run Keyword If  ${status}  Append To List  ${lte_dss_cell_20MHz_id_list}  ${lte_dss_cell_20MHz_id}
+    END
+    Set Test Variable  ${LTE_DSS_CELL_20MHz_ID_LIST}  ${lte_dss_cell_20MHz_id_list}
+    Log  List of LTE DSS cells 20Mhz: ${LTE_DSS_CELL_20MHz_ID_LIST}  console=True
+
+    ${nr_dss_cell_20MHz_id_list} =  Create List
+    FOR  ${nr_dss_cell_20MHz_id}  IN  @{NR_DSS_CELL_ID_LIST}
+        ${status} =  Run Keyword And Return Status
+        ...  Check Element In SCF  ${PARSED_SCF_GNB}  NRCELL_FDD  NRCELL-${nr_dss_cell_20MHz_id}/  /p[@name='chBwDl']
+        ...  <p name="chBwDl">20MHz</p>
+        Run Keyword If  ${status}  Append To List  ${nr_dss_cell_20MHz_id_list}  ${nr_dss_cell_20MHz_id}
+    END
+    Set Test Variable  ${NR_DSS_CELL_20MHz_ID_LIST}  ${nr_dss_cell_20MHz_id_list}
+    Log  List of NR DSS cells 20Mhz: ${NR_DSS_CELL_20MHz_ID_LIST}  console=True
+
+
+Step 1: Change DSS Related Parameters On eNB Side
+    Log  \n*** Step 1: Change DSS Related Parameters On eNB Side ***  console=True
+    Change DSS Related Parameters On eNB Side  delta_name=enb_configuration
+
+
+Change DSS Related Parameters On eNB Side
+    [Arguments]  ${delta_name}
+
+    Create Delta  ${delta_name}
+    ${min_nr_dss_ratio_dl} =  Set Variable If  '${delta_name}' == 'enb_configuration'
+    ...  95  ${ORIGINAL_CELL_MIN_RATIO_DICT_DL['${LTE_CELL_ID}']}
+    ${max_nr_dss_ratio_dl} =  Set Variable If  '${delta_name}' == 'enb_configuration'
+    ...  95  ${ORIGINAL_CELL_MAX_RATIO_DICT_DL['${LTE_CELL_ID}']}
+    ${min_nr_dss_ratio_ul} =  Set Variable If  '${delta_name}' == 'enb_configuration'
+    ...  65  ${ORIGINAL_CELL_MIN_RATIO_DICT_UL['${LTE_CELL_ID}']}
+    ${max_nr_dss_ratio_ul} =  Set Variable If  '${delta_name}' == 'enb_configuration'
+    ...  70  ${ORIGINAL_CELL_MAX_RATIO_DICT_UL['${LTE_CELL_ID}']}
+    ${max_cr_pg_dl} =     Set Variable If  '${delta_name}' == 'enb_configuration'  50  ${ORIGINAL_CELL_MAX_CR_PG_DL['${LTE_CELL_ID}']}
+    ${max_cr_ra_4_dl} =   Set Variable If  '${delta_name}' == 'enb_configuration'  50  ${ORIGINAL_CELL_MAX_CR_RA_4_DL['${LTE_CELL_ID}']}
+    ${max_cr_ra_dl} =     Set Variable If  '${delta_name}' == 'enb_configuration'  50  ${ORIGINAL_CELL_MAX_CR_RA_DL['${LTE_CELL_ID}']}
+    ${max_cr_ra_dl_ho} =  Set Variable If  '${delta_name}' == 'enb_configuration'  50  ${ORIGINAL_CELL_MAX_CR_RA_DL_HO['${LTE_CELL_ID}']}
+    ${max_cr_sib_dl} =    Set Variable If  '${delta_name}' == 'enb_configuration'  50  ${ORIGINAL_CELL_MAX_CR_SIB_DL['${LTE_CELL_ID}']}
+
+    Append Parameter Update To Delta  ${LTE_LNBTS_DISTNAME}/LNCEL-${LTE_CELL_ID}  maxCrPgDl    ${max_cr_pg_dl}     delta_id=${delta_name}
+    Append Parameter Update To Delta  ${LTE_LNBTS_DISTNAME}/LNCEL-${LTE_CELL_ID}  maxCrRa4Dl   ${max_cr_ra_4_dl}   delta_id=${delta_name}
+    Append Parameter Update To Delta  ${LTE_LNBTS_DISTNAME}/LNCEL-${LTE_CELL_ID}  maxCrRaDl    ${max_cr_ra_dl}     delta_id=${delta_name}
+    Append Parameter Update To Delta  ${LTE_LNBTS_DISTNAME}/LNCEL-${LTE_CELL_ID}  maxCrRaDlHo  ${max_cr_ra_dl_ho}  delta_id=${delta_name}
+    Append Parameter Update To Delta  ${LTE_LNBTS_DISTNAME}/LNCEL-${LTE_CELL_ID}  maxCrSibDl   ${max_cr_sib_dl}    delta_id=${delta_name}
+
+    Run Keyword If  '${delta_name}' == 'enb_configuration'  Set LTE Global Dictionary
+    ...  lte_cell_id=${LTE_CELL_ID}  list_name=lteNrDssDlRatio
+    Run Keyword If  '${delta_name}' == 'enb_configuration'  Set LTE Global Dictionary
+    ...  lte_cell_id=${LTE_CELL_ID}  list_name=lteNrDssUlRatio
+
+    Append LteNrDssDlRatio/LteNrDssUlRatio To LTE Delta  delta_name=${delta_name}  list_name=lteNrDssDlRatio
+    ...  min_nr_dss_ratio=${min_nr_dss_ratio_dl}  max_nr_dss_ratio=${max_nr_dss_ratio_dl}
+    ...  original_ratio_dictionary=${ORIGINAL_RATIO_DICTIONARY_DL['${LTE_CELL_ID}']}
+    ...  lte_cell_id=${LTE_CELL_ID}
+    Append LteNrDssDlRatio/LteNrDssUlRatio To LTE Delta  delta_name=${delta_name}  list_name=lteNrDssUlRatio
+    ...  min_nr_dss_ratio=${min_nr_dss_ratio_ul}  max_nr_dss_ratio=${max_nr_dss_ratio_ul}
+    ...  original_ratio_dictionary=${ORIGINAL_RATIO_DICTIONARY_UL['${LTE_CELL_ID}']}
+    ...  lte_cell_id=${LTE_CELL_ID}
+
+    ${delta}  Get Delta  delta_id=${delta_name}
+    Set Test Variable  ${ENB_PARAMETERS_CHANGED}  True
+    Log  Delta for eNB side is: \n${delta}  console=True
+    Perform Delta Recommissioning  ${delta}
+    Log  \nDSS parameters changed successfully on eNB side.  console=True
+
+
+Set LTE Global Dictionary
+    [Arguments]  ${lte_cell_id}  ${list_name}
+    ${direction} =  Set Variable If  '${list_name}' == 'lteNrDssDlRatio'  DL  UL
+    ${ratio_dict} =  Get LteNrDssDlRatio/LteNrDssUlRatio Dictionary From SCF   ul_dl_ratio_name=${list_name}
+
+    Set To Dictionary  ${ORIGINAL_RATIO_DICTIONARY_${direction}}  ${lte_cell_id}  ${ratio_dict}
+    Set To Dictionary  ${ORIGINAL_CELL_MIN_RATIO_DICT_${direction}}  ${lte_cell_id}  ${ratio_dict['minNrDssRatio']}
+    Set To Dictionary  ${ORIGINAL_CELL_MAX_RATIO_DICT_${direction}}  ${lte_cell_id}  ${ratio_dict['maxNrDssRatio']}
+
+    ${max_cr_pg_dl} =  Get Parameter Value From SCF  ${PARSED_SCF_ENB}  LNCEL  LNCEL-${lte_cell_id}  /p[@name='maxCrPgDl']
+    ...  dist_name_substring=True
+    Set To Dictionary  ${ORIGINAL_CELL_MAX_CR_PG_DL}   ${lte_cell_id}  ${max_cr_pg_dl}
+    ${max_cr_ra_4_dl} =  Get Parameter Value From SCF  ${PARSED_SCF_ENB}  LNCEL  LNCEL-${lte_cell_id}  /p[@name='maxCrRa4Dl']
+    ...  dist_name_substring=True
+    Set To Dictionary  ${ORIGINAL_CELL_MAX_CR_RA_4_DL}   ${lte_cell_id}  ${max_cr_ra_4_dl}
+    ${max_cr_ra_dl} =  Get Parameter Value From SCF  ${PARSED_SCF_ENB}  LNCEL  LNCEL-${lte_cell_id}  /p[@name='maxCrRaDl']
+    ...  dist_name_substring=True
+    Set To Dictionary  ${ORIGINAL_CELL_MAX_CR_RA_DL}   ${lte_cell_id}  ${max_cr_ra_dl}
+    ${max_cr_ra_dl_ho} =  Get Parameter Value From SCF  ${PARSED_SCF_ENB}  LNCEL  LNCEL-${lte_cell_id}  /p[@name='maxCrRaDlHo']
+    ...  dist_name_substring=True
+    Set To Dictionary  ${ORIGINAL_CELL_MAX_CR_RA_DL_HO}   ${lte_cell_id}  ${max_cr_ra_dl_ho}
+    ${max_cr_sib_dl} =  Get Parameter Value From SCF  ${PARSED_SCF_ENB}  LNCEL  LNCEL-${lte_cell_id}  /p[@name='maxCrSibDl']
+    ...  dist_name_substring=True
+    Set To Dictionary  ${ORIGINAL_CELL_MAX_CR_SIB_DL}   ${lte_cell_id}   ${max_cr_sib_dl}
+
+Append LteNrDssDlRatio/LteNrDssUlRatio To LTE Delta
+    [Arguments]  ${delta_name}  ${list_name}  ${min_nr_dss_ratio}  ${max_nr_dss_ratio}  ${original_ratio_dictionary}  ${lte_cell_id}
+    ${parameters_dict} =  Create Dictionary   &{original_ratio_dictionary}
+    ...                                       minNrDssRatio=${min_nr_dss_ratio}
+    ...                                       maxNrDssRatio=${max_nr_dss_ratio}
+    Append Complex Item To Delta      ${LTE_LNBTS_DISTNAME}/LNCEL-${LTE_CELL_ID}/DSSNR-0
+    ...                               ${list_name}
+    ...                               ${delta_name}
+    ...                               &{parameters_dict}
+
+
+Step 2: Change DSS Related Parameters On gNB Side
+    Log  \n*** Step 2: Change DSS Related Parameters On gNB Side ***  console=True
+    Change DSS Related Parameters On gNB Side  gnb_configuration
+
+
+Change DSS Related Parameters On gNB Side
+    [Arguments]  ${delta_name}
+    Create Delta  ${delta_name}
+    ${min_nr_dss_ratio_dl} =  Set Variable If  '${delta_name}' == 'gnb_configuration'
+    ...  95  ${ORIGINAL_NR_CELL_MIN_RATIO_DICT_DL['${NR_CELL_ID}']}
+    ${max_nr_dss_ratio_dl} =  Set Variable If  '${delta_name}' == 'gnb_configuration'
+    ...  95  ${ORIGINAL_NR_CELL_MAX_RATIO_DICT_DL['${NR_CELL_ID}']}
+    ${min_nr_dss_ratio_ul} =  Set Variable If  '${delta_name}' == 'gnb_configuration'
+    ...  65  ${ORIGINAL_NR_CELL_MIN_RATIO_DICT_UL['${NR_CELL_ID}']}
+    ${max_nr_dss_ratio_ul} =  Set Variable If  '${delta_name}' == 'gnb_configuration'
+    ...  70  ${ORIGINAL_NR_CELL_MAX_RATIO_DICT_UL['${NR_CELL_ID}']}
+
+    Run Keyword If  '${delta_name}' == 'gnb_configuration'  Set NR Global Dictionary
+    ...  nr_cell_id=${NR_CELL_ID}  list_name=lteNrDssDlRatio
+    Run Keyword If  '${delta_name}' == 'gnb_configuration'  Set NR Global Dictionary
+    ...  nr_cell_id=${NR_CELL_ID}  list_name=lteNrDssUlRatio
+
+    Append LteNrDssDlRatio/LteNrDssUlRatio To NR Delta  delta_name=${delta_name}  list_name=lteNrDssDlRatio
+    ...  min_nr_dss_ratio=${min_nr_dss_ratio_dl}  max_nr_dss_ratio=${max_nr_dss_ratio_dl}
+    ...  original_ratio_dictionary=${ORIGINAL_NR_RATIO_DICTIONARY_DL['${NR_CELL_ID}']}
+    ...  nr_cell_id=${NR_CELL_ID}
+    Append LteNrDssDlRatio/LteNrDssUlRatio To NR Delta  delta_name=${delta_name}  list_name=lteNrDssUlRatio
+    ...  min_nr_dss_ratio=${min_nr_dss_ratio_ul}  max_nr_dss_ratio=${max_nr_dss_ratio_ul}
+    ...  original_ratio_dictionary=${ORIGINAL_NR_RATIO_DICTIONARY_UL['${NR_CELL_ID}']}
+    ...  nr_cell_id=${NR_CELL_ID}
+    ${delta}  Get Delta  delta_id=${delta_name}
+    Set Test Variable  ${GNB_PARAMETERS_CHANGED}  True
+    Log  Delta for gNB side is: \n${delta}  console=True
+    Perform Delta Recommissioning  ${delta}
+
+    Wait Until Keyword Succeeds  5m  10s  _Verify Bts States For Iwk Test Helper
+
+    Log  \nDSS parameters changed successfully on gNB side.  console=True
+
+
+Set NR Global Dictionary
+    [Arguments]  ${nr_cell_id}  ${list_name}
+    ${direction} =  Set Variable If  '${list_name}' == 'lteNrDssDlRatio'  DL  UL
+    ${ratio_dict} =  Get LteNrDssDlRatio/LteNrDssUlRatio Dictionary From SCF   ${PARSED_SCF_GNB}  NRDSSLTE
+    ...  ${NR_NRCEL_DISTNAME}/NRDSSLTE-1
+    ...  ul_dl_ratio_name=${list_name}
+    Set To Dictionary  ${ORIGINAL_NR_RATIO_DICTIONARY_${direction}}  ${nr_cell_id}  ${ratio_dict}
+    Set To Dictionary  ${ORIGINAL_NR_CELL_MIN_RATIO_DICT_${direction}}  ${nr_cell_id}  ${ratio_dict['minNrDssRatio']}
+    Set To Dictionary  ${ORIGINAL_NR_CELL_MAX_RATIO_DICT_${direction}}  ${nr_cell_id}  ${ratio_dict['maxNrDssRatio']}
+
+
+
+Append LteNrDssDlRatio/LteNrDssUlRatio To NR Delta
+    [Arguments]  ${delta_name}  ${list_name}  ${min_nr_dss_ratio}  ${max_nr_dss_ratio}  ${original_ratio_dictionary}  ${nr_cell_id}
+    ${parameters_dict} =  Create Dictionary   &{original_ratio_dictionary}
+    ...                                       minNrDssRatio=${min_nr_dss_ratio}
+    ...                                       maxNrDssRatio=${max_nr_dss_ratio}
+    Append Complex Item To Delta      ${NR_NRBTS_DISTNAME}/NRCELL-${NR_CELL_ID}/NRDSSLTE-1
+    ...                               ${list_name}
+    ...                               ${delta_name}
+    ...                               &{parameters_dict}
+
+
+Step 3: Perform 5G UL Data Transfer
+    Log  \n=== Step 3: Perform 5G UL Data Transfer ===  console=True
+
+    Prepare UE For Data Transfer  NR_UE  ${NR_CALL_CELL_ID}
+    Start Data Transfer  NR_DT  NR_UE  ul  throughput=${NR_UL_THROUGHPUT} Mbits/sec  protocol=tcp
+    ...                  max_segment_size=1400  duration=300s  buffer=32M  apn=${APN}
+    Log  \n5G Data Transfer started  console=True
+
+
+Step 4: Perform LTE UL Data Transfer
+    Log  \n=== Step 4: Perform LTE UL Data Transfer ===  console=True
+
+    Prepare UE For Data Transfer  LTE_UE  ${LTE_CELL_ID}
+    Start Data Transfer  LTE_DT  LTE_UE  ul  throughput=${LTE_UL_THROUGHPUT} Mbits/sec  protocol=tcp
+    ...                  max_segment_size=1400  duration=90s  buffer=32M  apn=${APN}
+    Log  \nLTE Data Transfer started  console=True
+    Log To Console  Wait 30s for stabilize t-put
+    Sleep  30
+
+    Collect 4G TTI Trace   cell_id=${LTE_CELL_ID}
+    ...                    trace_time=10s
+    ...                    output_path=${LOG_PATH}/tti_trace_LTE_DSS
+
+    Run Keyword And Ignore Error  Await Data Transfer Finish  LTE_DT
+    Log  \nWait until LTE Data Transfer is finished  console=True
+    Run Keyword And Continue On Failure  Verify Average Throughput With Deviation  LTE_DT  ${LTE_EXPECTED_UL_TPUT_MBPS} Mbits/sec  20%
+
+    Log  \nAverage T-put of LTE data transfer is OK  console=True
+    Stop Datatransfer  LTE_DT
+
+
+Step 5: Stop 5G Data Transfer
+    Log  \n=== Step 5: Stop 5G Data Transfer ===  console=True
+    Verify Average Throughput With Deviation  NR_DT  ${NR_EXPECTED_UL_TPUT_MBPS} Mbits/sec  20%
+    Stop Datatransfer  NR_DT
+    Log  \nAverage T-put of 5G data transfer is OK  console=True
+
+
+Reconfiguration Teardown
+    Log  \n=== Start reconfiguration teardown ===  console=True
+    Run Keyword If  ${ENB_PARAMETERS_CHANGED}  Run Keywords
+    ...  Log  \nLTE site recommissioning ongoing  console=True
+    ...  AND  Change DSS Related Parameters On eNB Side  enb_reconfiguration
+    Run Keyword If  ${GNB_PARAMETERS_CHANGED}  Run Keywords
+    ...  Log  \n5G site recommissioning ongoing  console=True
+    ...  AND  Change DSS Related Parameters On gNB Side  gnb_reconfiguration
+    Wait Until Keyword Succeeds  5m  10s  _Verify Bts States For Iwk Test Helper
+    Log  \n=== Reconfiguration Teardown successfully PASSED ===  console=True
+
+
+TC Setup
+    Inter RAT Test Setup
+
+
+TC Teardown
+    Log  \n=== Test Specific Teardown ===  console=True
+    Stop Data Transfers For All Ues
+    Detach UE  LTE_UE
+    Detach UE  NR_UE  timeout=60
+    Stop Wireshark Log Collection For IWK Test
+    Reconfiguration Teardown
+    Inter RAT Test Teardown

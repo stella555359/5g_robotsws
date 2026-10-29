@@ -1,0 +1,861 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   Test-Suite-Setup-Resources-Keywords.robot
+...               Prerequisite :
+...               Scope :
+...               Test Case Scenario author   : christophe.samson@nokia.com
+...               Creation Date               : 10-02-2024
+...               Modified Date               : 10-02-2024
+...               Last Modified by            : christophe.samson@nokia.com
+...               Version   Date          Author                                   Notes
+...               0.1       10-02-2024    christophe.samson@nokia.com              Creation
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Libraries
+Library      taf.transport.ssh                                   WITH NAME          ssh
+Library      taf.sbts.oam.coam.admin.interface
+Library      taf.sbts.oam.coam.admin                             WITH NAME          coam
+Library      taf.collectors.pmcounters                           WITH NAME          tafpmcounters
+Library      taf.collectors.tcpdump                              WITH NAME          tcpdump
+Library      taf.collectors.core                                 WITH NAME          core
+Library      ute_wtssim
+Library      taf.config.wts                                      WITH NAME          wts_cfg
+Library      ta_emss
+# Library      ta_messaging
+Library      re
+Library      XML    True
+Library      json
+Library      ute_admin_infomodel
+Library      ute_tshark
+Library      ta5g_tshark
+
+# Libraries SWENG
+Library      ../../../../../../resources/SWENG/python/StringTool.py
+Library      ../../../../../../resources/SWENG/python/ScfVendorOperations.py
+
+# Libraries ET
+Library      ../../../../resources/python/linux_cmds.py
+Library      testsuite/Paris/RRM/ET/resources/common/TtiTrace/python/ttitrace.py       WITH NAME          nps_ttitraces_tools
+Library      ../../../../resources/python/robot_extension.py            WITH NAME          robot_extension
+Library      ../python/template_functions.py    WITH NAME          template
+
+# Libraries TARF
+Library      ../python/Constants-features.py     WITH NAME          MyConstants
+Library      ../python/Dev_lib.py
+Library      ../python/avg_dl_data.py
+Library      ../python/avg_ul_data.py
+Library      ../python/tools.py                   WITH NAME          nps_tarf_tools
+Library      ../python/tarf-lib.py
+Library      testsuite/Paris/RRM/ET/resources/common/TtiTrace/python/tti_analyzer_framework/set_pandas.py         WITH NAME     set_pandas
+Library      testsuite/Paris/RRM/ET/resources/common/TtiTrace/python/tti_analyzer_framework/tti_dataframe.py      WITH NAME     tti_dataframe
+Library      ../python/tti_analysis/check_nack.py
+Library      ../python/tti_analysis/check_ul_dtx_crc.py
+Library      ../python/file.py
+Library      ../python/set_ta_ssh_telnet.py        WITH NAME          set_ta_ssh_telnet
+Library      ../python/set_ta_xml.py               WITH NAME          set_ta_xml
+Library      ../python/csirs_checker.py            WITH NAME          csirs_checker
+Library      ../python/trs_checker.py              WITH NAME          trs_checker
+Library      ../python/syslogs_analysis.py         WITH NAME          syslogs_analysis
+
+# Resources SWENG
+Resource      ../../../../../../resources/SWENG/robot/GenericTest.robot
+Resource      ../../../../../../resources/SWENG/robot/Counters.robot
+Resource      ../../../../../../resources/SWENG/robot/SetConfig.robot
+Resource      ../../../../../../resources/SWENG/robot/Setup.robot
+Resource      ../../../../../../resources/SWENG/robot/CallSetup.robot
+Resource      ../../../../../../resources/SWENG/robot/Capture.robot
+Resource      ../../../../../../resources/SWENG/robot/Traffic.robot
+Resource      ../../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource      ../../../../../../resources/SWENG/robot/Oam.robot
+Resource      ../../../../../../resources/SWENG/robot/Tools.robot
+Resource      ../../../../../../resources/SWENG/robot/Restart.robot
+Resource      ../../../../../../resources/SWENG/robot/Scf.robot
+Resource      ../../../../../../resources/SWENG/robot/Container.robot
+Resource      ../../../../../../resources/SWENG/robot/Sherpa.robot
+Resource      ../../../../../../resources/SWENG/robot/PacketSearch.robot
+Resource      ../../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+Resource      ../../../../../../resources/SWENG/robot/KPIs.robot
+
+# Resources TtiTraces
+Resource     ../../../../resources/common/TtiTrace/ttitrace.robot
+
+# Resources TRF
+Resource    configuration_id.robot
+Resource    btslog.robot
+Resource    apUDPlog.robot
+Resource    DedicatedXmlConfig.robot
+Resource    testcase-Keywords.robot
+Resource    Scenario-Common-Keywords.robot
+Resource    TARF-Keywords.robot
+Resource    Ue-Wts-Commands-Keywords.robot
+Resource    connect.robot
+
+# Resources TRF features
+Variables    ../python/Constants-features.py
+
+*** Variables ***
+
+${FeatureId}                 CB012738
+${DEFAULT_S1_MME_SCTP}=      sctp
+${DEFAULT_UU_LESS_1000}=     less 1000
+
+*** Keywords ***
+
+# ------------------------------------------------------------------------------------------------------------------------------------
+
+Clean Up Env
+    [Arguments]    ${host_ip}=localhost
+    [Documentation]    This keyword is to clean up testline process such as btslog and so on.
+    ...    Examples:
+    ...    | Clean Up Env |
+    ${HOME}=    Get Environment Variable    name=HOME
+    Run Keyword If     '${host_ip}'=='127.0.0.1' or '${host_ip}'=='localhost'    Run Keywords    Run     ${kill_btslog}
+    ...     AND     Run   ${kill_dpkg}
+    ...     AND     Run   ${kill_sherpa}
+    ...     AND     Run    rm /tmp/admin_api_*.txt -f
+    ...     AND     Run    rm /tmp/disconnect*.ims2 -f
+    ...     AND     Run    rm ${EXECDIR}/admin_api_*.txt -f
+    ...     AND     Run    rm ${EXECDIR}/disconnect*.ims2 -f
+    ...     AND     Run    rm ${HOME}/SosReport*.tgz -f
+    ...     AND     Run    rm ${HOME}/WTS*.tgz -f
+    ...     AND     run keyword and ignore error   Run   command=cd ${EXECDIR}; find . -name '*disconnect*.ims2' -type f -print -exec rm -rf {} \\;
+    ...     AND     Run    rm /tmp/*.pcap* -rf
+    ...     AND     Run    sudo rm /tmp/*.pcap* -rf
+    ...     AND     run keyword and ignore error      OperatingSystem.Run     command=ssh-keygen -f "/home/ute/.ssh/known_hosts" -R "10.0.1.2"
+    ...     ELSE    Run keywords    SSH.Connect To    ${host_ip}    ute    ute    alias=remote_connection
+    ...     AND     SSH.Execute    ${kill_btslog}    connection=remote_connection
+    ...     AND     SSH.Disconnect    connection=remote_connection
+
+Get Host IP
+    [Documentation]    This keyword is to get testline control host intranet IP.
+    ...    Examples:
+    ...    | ${host_ip} | Get Host IP |
+    # ${command}    Set Variable    sudo ifconfig eth0|awk -F "[ :]+" 'NR==2 {print $3}'
+    ${command}    Set Variable    hostname -i
+    ${rc}    ${output}=    OperatingSystem.Run and Return RC and Output    ${command}
+    Set Suite Metadata    Host IP    ${output}
+    Set Suite Variable    ${Host IP}    ${output}
+    [Return]    ${output}
+
+Get Host Name
+    [Documentation]    This keyword is to get testline control host name.
+    ...    Examples:
+    ...    | ${host_name} | Get Host Name |
+    ${rc}    ${output}=    OperatingSystem.Run and Return RC and Output    hostname
+    Set Suite Metadata    Host Name    ${output}
+    Set Suite Variable    ${Host Name}    ${output}
+    Set Suite Variable    ${Host_Name}    ${output}
+    [Return]    ${output}
+
+Init Trace color
+    ${consTraceColor}               Evaluate                    "${CYAN}"
+    ${consTraceColorBlack}          Evaluate                    "${BLACK}"
+    ${consTraceColorRed}            Evaluate                    "${RED}"
+    ${consTraceColorGreen}          Evaluate                    "${GREEN}"
+    ${consTraceColorYellow}         Evaluate                    "${YELLOW}"
+    ${consTraceColorBgBlue}         Evaluate                    "${BG_BLUE}"
+    ${consTraceColorBgYellow}       Evaluate                    "${BG_YELLOW}"
+    ${consTraceColorBgRed}          Evaluate                    "${BG_RED}"
+    ${defColor}                     Evaluate                    "${NORMAL}"
+    Set Suite Variable              ${consTraceColor}
+    Set Suite Variable              ${consTraceColorBlack}
+    Set Suite Variable              ${consTraceColorRed}
+    Set Suite Variable              ${consTraceColorGreen}
+    Set Suite Variable              ${consTraceColorYellow}
+    Set Suite Variable              ${consTraceColorBgBlue}
+    Set Suite Variable              ${consTraceColorBgYellow}
+    Set Suite Variable              ${defColor}
+    Set Suite Variable              ${consTraceColorBgRed}
+
+Init Variables
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${COLLECT_LOGS}
+    ${COLLECT_LOGS}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                        ${COLLECT_LOGS}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${SHOULD_BE_COMMISSIONED_GNB_FIRST}
+    ${SHOULD_BE_COMMISSIONED_GNB_FIRST}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                        ${SHOULD_BE_COMMISSIONED_GNB_FIRST}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${UPDATE_SCF}
+    ${UPDATE_SCF}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                      ${UPDATE_SCF}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${SHOULD_BE_COMMISSIONED_GNB_FIRST_TO_REVIEW_LATER}
+    ${SHOULD_BE_COMMISSIONED_GNB_FIRST_TO_REVIEW_LATER}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                        ${SHOULD_BE_COMMISSIONED_GNB_FIRST_TO_REVIEW_LATER}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${WITH_APPLY_DELTA_COMMISSIONING}
+    ${WITH_APPLY_DELTA_COMMISSIONING}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                      ${WITH_APPLY_DELTA_COMMISSIONING}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${WAIT_5G_CELL_ONAIR}
+    ${WAIT_5G_CELL_ONAIR}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                        ${WAIT_5G_CELL_ONAIR}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${ENABLE_TEST_TEARDOWN}
+    ${ENABLE_TEST_TEARDOWN}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                        ${ENABLE_TEST_TEARDOWN}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${EXCLUDE_LOGS_IF_FAIL}
+    ${EXCLUDE_LOGS_IF_FAIL}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                        ${EXCLUDE_LOGS_IF_FAIL}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${SHOULD_UPDATE_DEBUG_L2PS_RAD}
+    ${SHOULD_UPDATE_DEBUG_L2PS_RAD}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                        ${SHOULD_UPDATE_DEBUG_L2PS_RAD}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${GET_AND_UPDATE_BSR_SW}
+    ${GET_AND_UPDATE_BSR_SW}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                      ${GET_AND_UPDATE_BSR_SW}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${GET_BSR_SW_BASED_ARTIFACTORY}
+    ${GET_BSR_SW_BASED_ARTIFACTORY}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                      ${GET_BSR_SW_BASED_ARTIFACTORY}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${GET_BSR_SW_BASED_GIT}
+    ${GET_BSR_SW_BASED_GIT}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                      ${GET_BSR_SW_BASED_GIT}
+
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${DBGlogs}
+    ${DBGlogs}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                   ${DBGlogs}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${W_CUSTOMCONFIG}
+    ${W_CUSTOMCONFIG}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                          ${W_CUSTOMCONFIG}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${w_CleanUp_wtsFiles}
+    ${w_CleanUp_wtsFiles}  set Variable if    '${status}'=='FAIL'    1
+    ...                                                          ${w_CleanUp_wtsFiles}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${w_isUnitaryTest}
+    ${w_isUnitaryTest}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                          ${w_isUnitaryTest}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${W_SUITE_SETUP_FROM_SCRATCH}
+    ${W_SUITE_SETUP_FROM_SCRATCH}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                                      ${W_SUITE_SETUP_FROM_SCRATCH}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${W_DEBUG_INFO}
+    ${W_DEBUG_INFO}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                        ${W_DEBUG_INFO}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${W_AP_UDPLOG}
+    ${W_AP_UDPLOG}  set Variable if    '${status}'=='FAIL'    True
+    ...                                                       ${W_AP_UDPLOG}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${AUTO_ANALYSIS_FLAG}
+    ${AUTO_ANALYSIS_FLAG}  set Variable if    '${status}'=='FAIL'    True
+    ...                                                       ${AUTO_ANALYSIS_FLAG}
+    ${AUTO_ANALYSIS_FLAG}  set Variable if    '${AUTO_ANALYSIS_FLAG}'=='True'     ${True}      ${False}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${W_CUSTOM_LUA_FILE_TO_USED}
+    ${W_CUSTOM_LUA_FILE_TO_USED}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                                     ${W_CUSTOM_LUA_FILE_TO_USED}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${W_ERR_L2PS_SYSLOG_ALLOWED}
+    ${W_ERR_L2PS_SYSLOG_ALLOWED}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                                     ${W_ERR_L2PS_SYSLOG_ALLOWED}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${LOGS_COMPRESSION}
+    ${LOGS_COMPRESSION}  set Variable if    '${status}'=='FAIL'    True
+    ...                                                            ${LOGS_COMPRESSION}
+    ${LOGS_COMPRESSION}  set Variable if    '${LOGS_COMPRESSION}'=='True'     ${True}      ${False}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${logs_and_traces_flags_L1L2BIPTrace}
+    ${logs_and_traces_flags_L1L2BIPTrace}  set Variable if    '${status}'=='FAIL'    False
+    ...                                                                              ${logs_and_traces_flags_L1L2BIPTrace}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${LOGGING_POLICY}
+    ${LOGGING_POLICY}  set Variable if    '${status}'=='FAIL'    NO_TRAFFIC_NO_SNAPSHOT_NO_INFOMODEL_LOGS_POLICY
+    ...                                                          ${LOGGING_POLICY}
+    ${LOGGING_POLICY}  set Variable if
+    ...        '${LOGGING_POLICY}'=='NO_LOGS_POLICY'                                     NO_LOGS_POLICY
+    ...        '${LOGGING_POLICY}'=='NO_TRAFFIC_NO_SNAPSHOT_NO_INFOMODEL_LOGS_POLICY'    NO_TRAFFIC_NO_SNAPSHOT_NO_INFOMODEL_LOGS_POLICY
+    ...        '${LOGGING_POLICY}'=='LOGS_POLICY_CRT'                                    LOGS_POLICY_CRT
+    ...        '${LOGGING_POLICY}'=='LOGS_POLICY'                                        LOGS_POLICY
+    ...                                                                                  LOGS_POLICY
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${W_OnlineChange_deltaComm}
+    ${W_OnlineChange_deltaComm}  set Variable if    '${status}'=='FAIL'    0
+    ...                                                                    ${W_OnlineChange_deltaComm}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${SKIP_COUNTERS}
+    ${SKIP_COUNTERS}  set Variable if    '${status}'=='FAIL'    True
+    ...                                                         ${SKIP_COUNTERS}
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${NB_ROBUSTNESS_RUN_TIMES}
+    ${NB_ROBUSTNESS_RUN_TIMES}  set Variable if    '${status}'=='FAIL'    ${3}
+    ...                                                                   ${NB_ROBUSTNESS_RUN_TIMES}
+    Set Global Variable             ${LOGGING_POLICY}
+    Set Suite Variable              ${COLLECT_LOGS}
+    Set Suite Variable              ${SHOULD_BE_COMMISSIONED_GNB_FIRST}
+    Set Suite Variable              ${SHOULD_BE_COMMISSIONED_GNB_FIRST_TO_REVIEW_LATER}
+    Set Suite Variable              ${UPDATE_SCF}
+    Set Suite Variable              ${WITH_APPLY_DELTA_COMMISSIONING}
+    Set Suite Variable              ${WAIT_5G_CELL_ONAIR}
+    Set Suite Variable              ${ENABLE_TEST_TEARDOWN}
+    Set Suite Variable              ${EXCLUDE_LOGS_IF_FAIL}
+    Set Suite Variable              ${SHOULD_UPDATE_DEBUG_L2PS_RAD}
+    Set Suite Variable              ${GET_AND_UPDATE_BSR_SW}
+    Set Suite Variable              ${GET_BSR_SW_BASED_GIT}
+    Set Suite Variable              ${GET_BSR_SW_BASED_ARTIFACTORY}
+    Set Suite Variable              ${W_CUSTOMCONFIG}
+    Set Suite Variable              ${DBGlogs}
+    Set Suite Variable              ${w_CleanUp_wtsFiles}
+    Set Suite Variable              ${w_isUnitaryTest}
+    Set Suite Variable              ${W_SUITE_SETUP_FROM_SCRATCH}
+    Set Suite Variable              ${W_DEBUG_INFO}
+    Set Suite Variable              ${W_AP_UDPLOG}
+    Set Suite Variable              ${AUTO_ANALYSIS_FLAG}
+    Set Suite Variable              ${W_CUSTOM_LUA_FILE_TO_USED}
+    Set Suite Variable              ${W_ERR_L2PS_SYSLOG_ALLOWED}
+    Set Global Variable             ${LOGS_COMPRESSION}
+    Set Global Variable             ${logs_and_traces_flags_L1L2BIPTrace}
+    Set Suite Variable              ${W_OnlineChange_deltaComm}
+    Set Suite Variable              ${SKIP_COUNTERS}
+    Set Suite Variable              ${NB_ROBUSTNESS_RUN_TIMES}
+
+Create log path Folder
+    ${LOG_PATH}     Set Variable        ${OUTPUT_DIR}
+    set Suite Variable     ${LOG_PATH}
+
+Configure VM interfaces
+    Run and return rc and output     sudo ip sudo ip addr add 10.0.1.121 dev eth3
+    Run and return rc and output     sudo ip addr add 10.0.1.131 dev eth3
+    Run and return rc and output     sudo ip addr add 10.0.1.132 dev eth3
+    Run and return rc and output     sudo ip addr add 10.0.1.133 dev eth3
+    Run and return rc and output     sudo ip addr add 10.0.1.134 dev eth3
+    Run and return rc and output     sudo ip addr add 10.0.1.135 dev eth3
+    Run and return rc and output     sudo ip addr add 10.0.1.136 dev eth3
+    Run and return rc and output     sudo ip addr add 10.0.1.137 dev eth3
+    Run and return rc and output     sudo ip addr add 10.0.1.138 dev eth3
+    Run and return rc and output     sudo ip addr add 10.0.1.139 dev eth3
+    Run and return rc and output     sudo ip addr add 10.0.1.140 dev eth3
+    Run and return rc and output     sudo ip addr add 10.0.1.141 dev eth3
+
+Private Set Iphy Ip
+  dated log   ===configure IPs on PC ===
+  # ${ifconfig}=    Execute Cmd On Pc   /sbin/ifconfig -a eth4 | grep 10.0.2.1
+  ${ifconfig}=    Execute Cmd On Pc   ip a | grep eth4 | grep '10.0.2.1/24'
+  dated log   ifconfig eth4=${ifconfig}
+  ${status_eth4}  ${message}=   Run Keyword And Ignore Error    should contain    ${ifconfig}     inet 10.0.2.1
+  ${ifconfig}=    Execute Cmd On Pc    ip a | grep eth3 | grep 10.0.1.121
+  dated log   ifconfig eth3=${ifconfig}
+  ${status_eth3}  ${message}=   Run Keyword And Ignore Error    should contain    ${ifconfig}     inet 10.0.1.121
+  return from Keyword If     '${status_eth4}'=='PASS' and '${status_eth3}'=='PASS'
+  Execute Cmd On Pc     sudo ip addr add 10.0.2.1/24 dev eth4
+  dated log   10.0.1.121~155 is configured for your use
+  FOR  ${number}  IN RANGE  121  156
+    Execute Cmd On Pc    sudo ip addr add 10.0.1.${number}/24 dev eth3
+  END
+  dated log    proxy server ip is 10.0.2.80
+  dated log    10.0.2.90~100 is configured for more proxy servers
+  FOR  ${number}  IN RANGE  90  101
+    Execute Cmd On Pc    sudo ip addr add 10.0.2.${number}/24 dev eth4
+  END
+  dated log    AMF ip is 10.0.1.1
+  dated log    10.0.1.9~15 10.0.1.100~10.0.1.109 is configured for you to set more AMFs
+  FOR  ${number}  IN RANGE  9  16
+    Execute Cmd On Pc    sudo ip addr add 10.0.1.${number}/24 dev eth3
+  END
+  FOR  ${number}  IN RANGE  100  110
+    Execute Cmd On Pc    sudo ip addr add 10.0.1.${number}/24 dev eth3
+  END
+  Execute Cmd On Pc      ip addr show eth3
+  Execute Cmd On Pc      ip addr show eth4
+
+Private Update TL for UTE Env
+    [Documentation]                 To be used as FIRST keyword in Suite Setup
+    ...                             Patch testline configure with missing configuration
+    # if "tl.core" is defined --> nothing to do
+    Return From Keyword If          ${tl.core}
+    # define "_lteemu" and "core" object for "tl" variable
+    ReadConfig.add_wts_to_tl_variable    ${tl}
+    # add the list of addresses in IP_LIST to the test VM
+    # Configure needed IP addresses for WTS
+    # "Configure needed IP addresses for WTS" Kw Time execution is too long !!!! around 30s !!!
+    Private Set Iphy Ip
+    # if WTS config files do not exist then copy them otherwise exit the KW
+    ${core_alias}=       Connect to Core Vm
+    ${tl.core.cfg_filename}    set Variable     basic_setup.cfg    # need to force it here because it is initialized with "add_wts_to_tl_variable"
+    dated log    cfg_filename is ${consTraceColorYellow}${tl.core.cfg_filename}${defColor} in "tl" variable
+    ${file_exist}=     ssh.File Exists         ${tl.core.dir_path}/${tl.core.cfg_filename}     connection=${core_alias}
+    ${msg}=
+    ...    set variable  ${consTraceColorBgRed}${consTraceColorYellow}Missing of WTS configuration file ${tl.core.cfg_filename}!${defColor}
+    Run Keyword If      ${file_exist}     BuiltIn.Log  WTS config file exist, nothing to do
+    ...   ELSE                            BuiltIn.Log  ${msg}    console=True     level=ERROR
+    Run Keyword If      not ${file_exist}   BuiltIn.Fatal Error   [ ERROR ] - Missing of WTS configuration file ${tl.core.cfg_filename}
+    Return From Keyword If          ${file_exist}
+    # Copy Config Files For WTS
+
+Light Suite Setup From Scratch
+    [Arguments]  ${full_light_suite_setup}=${True}
+    Log To Console             ${consTraceColorBgRed}${consTraceColorYellow}Light Suite Setup From Scratch${defColor}
+    Print Line With Title      title=Initializing some global variables
+    Create log path Folder
+    testcase-Keywords.Create Test Suite Folder
+    Print Header Line    name=LOG_PATH    value=${LOG_PATH}
+    # UteTools.Update TL for UTE Env
+    Private Update TL for UTE Env
+    Set suite variable     ${tl.gnbs[0].cu.oam_http_connection_details.port}    443
+    Call Method    ${HOST_EPCSIM}     setSshConnection     ${tl.core.default_ssh_connection_details}
+    set suite Variable        ${HOST_EPCSIM}
+    # dated log      HOST_EPCSIM=${HOST_EPCSIM}
+    # Explore the basic_setup.cfg file
+    ${BasicPathname}                set variable                            /opt/iphy/latest/basic_setup.cfg
+    ${SaUeId_FindCmd}               set variable                            grep -n suci ${BasicPathname}
+    ${NsaUeId_FindCmd}              set variable                            grep -n imsi ${BasicPathname}
+    ${getFirstItemCmd}              set variable                            cut -d '=' -f2 | cut -d ' ' -f1 | sort -n | head -1
+    ${FIRST_SA_UE_ID}               OperatingSystem.run                     ${SaUeId_FindCmd} | ${getFirstItemCmd}
+    ${FIRST_NSA_UE_ID}              OperatingSystem.run                     ${NsaUeId_FindCmd} | ${getFirstItemCmd}
+    Set Suite Variable              ${FIRST_SA_UE_ID}
+    Set Suite Variable              ${FIRST_NSA_UE_ID}
+    TOPO Read
+    # csamson : 19/06/2025 : remove the use of Dynamic discovery as bsh/bsoc tools dont work anymore
+    # Get TL Info Struct
+    # once is enough !!!
+    Run Keyword if    '${W_CUSTOM_LUA_FILE_TO_USED}'=='0' and ${full_light_suite_setup}
+    ...                                                       Setup.Cleanup WTS Config File      keepAllUeDataInCfgFile=${False}
+    ${mrbts_str}=  Scenario-Common-Keywords.Get distNames from gNB SCF  regex=MRBTS-[0-9]+
+    ${nrbts_str}=  Scenario-Common-Keywords.Get distNames from gNB SCF  regex=MRBTS-[0-9]+/NRBTS-[0-9]+
+    ${nrcell_str}=  Scenario-Common-Keywords.Get distNames from gNB SCF  regex=MRBTS-[0-9]+/NRBTS-[0-9]+/NRCELL-[0-9]+
+    sort List     ${nrcell_str}
+    dated log     mrbts_str=${mrbts_str}
+    dated log     nrbts_str=${nrbts_str}
+    dated log     nrcell_str=${nrcell_str}
+    ${mrbts_id}=    Remove String     ${mrbts_str[0]}     MRBTS-
+    ${nrbts_id}=    Remove String     ${nrbts_str[0]}     MRBTS-${mrbts_id}/NRBTS-
+    Set Suite Variable    ${MRBTS_ID}    ${mrbts_id}
+    Set Suite Variable    ${NRBTS_ID}    ${nrbts_id}
+    Set Suite Variable    ${NRCELL_DIST_NAME}    ${nrcell_str[0]}
+    Set Suite Variable    ${gscnParameterName}   gscnOrSsPbchArfcn
+    Run Keyword If    ${full_light_suite_setup}    OAM Get GNB BTS Info            oam=${GNB_DU.oam}
+    Run Keyword If    ${full_light_suite_setup}    OAM Get GNB BTS Info            oam=${GNB_DU.oam}
+    Run Keyword If    ${full_light_suite_setup}    Captures.Update Capture
+    Setup.Init PM Audit
+
+Check And Kill admin API Process
+    [Documentation]    This keyword is used to check status of admin api process and kill the process if it is still running
+    ${rc}    ${op}    Run And Return Rc And Output     ps -aef | grep -i admin | grep -v grep
+    ${status}    Run Keyword And Return Status    Should Not Be Empty    ${op}
+    Run Keyword If    ${status}     Run And Return Rc And Output    sudo pkill node
+
+Suite Setup Feature-Common
+    [Documentation]
+    ...     Conditions:     it needs no conditions
+    ...     Actions:        it performs the generic suite setup and backup the configurations files
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        suite setup is passed
+    [Arguments]          ${test_dictParam}
+    ...                  ${Kw TestLine Preparation}=${EMPTY}
+    ...                  ${yamlPathname}=${EMPTY}
+    set_ta_ssh_telnet.init_ta_ssh_telnet
+    set_ta_xml.init_ta_xml
+    Clean Up Env
+    CleanUp basic*step2*.* file
+    Check And Kill admin API Process
+    Get Host IP
+    Get Host Name
+    testline-Keywords.Get Topology from Common Agent File
+    MyConstants.Hello
+    Test-Suite-Setup-Resources-Keywords.Init Trace color
+    Init Variables
+    set_pandas.init_pandas
+    # Run Keyword And Ignore Error      Kill Useless Local Hosts
+    ${msg}=     Run Keyword If  '${w_isUnitaryTest}'=='1'
+    ...                         set Variable   ${consTraceColorBgRed}${consTraceColorYellow}w_isUnitaryTest = ${w_isUnitaryTest}${defColor}
+    ...            ELSE         set Variable   w_isUnitaryTest = ${w_isUnitaryTest}
+    # Run Keyword If             '${w_isUnitaryTest}' == '1'     Dated log             default_test_strategy : ${msg}
+    # return from Keyword if     '${w_isUnitaryTest}' == '1'
+    StringTool.printLineWithTitle     title=default_test_strategy
+    ${reserve_file}=    Set Variable     /opt/ute/reservation.json
+    ${file_exist}=    Run Keyword And Return Status    OperatingSystem.file_should_exist    ${reserve_file}
+    ${cmd}=   run Keyword if   "${file_exist}"=="True"    Catenate
+    ...                                           python -c 'import json;print(json.load(open("${reserve_file}"))["topology"])'
+    ${ret}    ${ret_cmd}=       run Keyword if   "${file_exist}"=="True"       OperatingSystem.Run And Return Rc And Output    ${cmd}
+    ${cfg_file_path}=  Set Variable If
+    # ...                            '${ret_cmd}'=='CLOUD_5G_I_MP_AP_LOOO'        ${path_config_custom}/CLOUD_5G_I_MP_AP_LOOO/${cfg_file_6Cells}
+    ...                            '${ret_cmd}'=='CLOUD_5G_O_E_AP_LOO_8DL8UL'   ${path_config_custom}/CLOUD_5G_O_E_AP_LOO_8DL8UL/${cfg_file_4Cells}
+    ...                            '${ret_cmd}'=='CLOUD_5G_O_E_AP_LOO'          ${path_config_custom}/${cfg_file_4Cells}
+    ...                                                                         /opt/wts/latest/basic_setup.cfg
+    ${CfgFileName}=      nps_tarf_tools.return_basename    ${cfg_file_path}
+    Dated log             default_test_strategy : W_CUSTOMCONFIG = ${W_CUSTOMCONFIG} [${CfgFileName}]
+    Dated log             default_test_strategy : W_SUITE_SETUP_FROM_SCRATCH = ${W_SUITE_SETUP_FROM_SCRATCH}
+    Dated log             default_test_strategy : W_CUSTOM_LUA_FILE_TO_USED = ${W_CUSTOM_LUA_FILE_TO_USED}
+    Dated log             default_test_strategy : LOGS_COMPRESSION = ${LOGS_COMPRESSION}
+    Dated log             default_test_strategy : LOGGING_POLICY = ${LOGGING_POLICY}
+    StringTool.printLineWithTitle   title=-
+    # WA : install specific cfg file when using VARIANT_SANSA_FS_CPRI_CMWV_FDD+ECPRI_CMWV_TDD_AEQE
+    Run Keyword if   '${W_CUSTOMCONFIG}' == '1'
+    ...                      Run Keywords     Dated log             default_test_strategy : install wts cfg file [CUSTOMCONFIG: ${cfg_file_path}]
+    ...                           AND         Setup.copy custom basic file        file=${cfg_file_path}
+    ...                           AND         OperatingSystem.Run   cp /opt/wts/latest/basic_setup.cfg.ori /tmp
+    OperatingSystem.Run      cp ${cfg_capa_file} /opt/wts/latest
+    TARF-Keywords.Connect to COAM ADMIN    bts_host=192.168.255.129
+    ${yamlPathname}    Set Variable if    '${W_CUSTOMCONFIG}'=='0'    ${EMPTY}
+    ...                                                               ${yamlPathname}
+    Run Keyword if   '${W_SUITE_SETUP_FROM_SCRATCH}' == '1'
+    ...            Setup.Suite Setup From Scratch    automaticTeardown=${False}   yamlPathname=${yamlPathname}
+    ...    ELSE
+    ...            Light Suite Setup From Scratch    full_light_suite_setup=${False}
+    TARF-Keywords.Create CellSetup Test result
+    # return from Keyword
+    Run Keyword If             '${w_isUnitaryTest}' == '1'     Dated log             default_test_strategy : ${msg}
+    return from Keyword if     '${w_isUnitaryTest}' == '1'
+    ${test_scf_file}             COAM Get SCF        local_dir_path=${LOG_PATH}      file=SCF.xml    alias=coam_gnb
+    Set Suite Variable           ${test_scf_file}
+    Run Keyword if     '${WITH_APPLY_DELTA_COMMISSIONING}'=='1' and '${Kw TestLine Preparation}'!='${EMPTY}'
+    ...                          Run Keywords       ${Kw TestLine Preparation}      output_scf=${test_scf_file}
+    ...                              AND            Set Suite Variable              ${test_scf_file}
+    # End Of TL preparation
+    # return from Keyword
+    ${rc}    ${output}    robot_extension.Run Keyword And Warn On Failure      OperatingSystem.Run And Return Rc And Output
+    ...                                        mv /tmp/ls-l-WTS-initial.txt ${LOG_PATH}
+    import variables        ${CURDIR}/../python/Features-Variables.py
+    testcase-Keywords.Create Test Suite Folder
+    ${ts_log_dir}     set variable      ${testSuiteDir}
+    set suite variable     ${ts_log_dir}
+    TARF-Keywords.Get Original TL Configuration Files
+    # BEWARE that original_config_files dir is created by Kw Get Original TL Configuration Files !!!
+    ${rc}    ${output}    robot_extension.Run Keyword And Warn On Failure      OperatingSystem.Run And Return Rc And Output
+    ...                                        mv /tmp/basic_setup.cfg.ori ${LOG_PATH}/original_config_files/basic_setup.${SUITE NAME}.cfg.ori
+    ${msg}=     Run Keyword If  '${w_isUnitaryTest}'=='1'  set Variable   ${consTraceColorRed}w_isUnitaryTest = ${w_isUnitaryTest}${defColor}
+    ...            ELSE                                    set Variable   w_isUnitaryTest = ${w_isUnitaryTest}
+    Run Keyword If             '${w_isUnitaryTest}'=='1'      Dated log             default_test_strategy : ${msg}
+    Run Keyword If             '${w_isUnitaryTest}'=='1'      Dated log             default_test_strategy : LOGGING_POLICY = ${LOGGING_POLICY}
+    return from Keyword if     '${w_isUnitaryTest}' == '1'
+    robot_extension.Run Keyword And Warn On Failure                              testcase-Keywords.Get Testline Name
+    ${ret}   ${UE type}=      robot_extension.Run Keyword And Warn On Failure    Get UE type
+    ${ret}   ${ap_version}=   robot_extension.Run Keyword And Warn On Failure    testline-Keywords.Get Airphone SW version
+    robot_extension.Run Keyword And Warn On Failure                              Get WTS Version
+    robot_extension.Run Keyword And Warn On Failure                              Get PYTHON Version
+    run keyword and ignore error    OperatingSystem.Run    ${pythonFullPath} -c "import warnings;warnings.simplefilter('ignore', ResourceWarning)"
+    ${ret}   ${gnb_sw_version}         robot_extension.Run Keyword And Warn On Failure    TARF-Keywords.Fetch common OAM SW version
+    Set Suite Metadata    gNB sw    ${gnb_sw_version}
+    ${release}          Get Regexp Matches     ${gnb_sw_version}          (SBTS.+)_ENB.*       1
+    ${release_short}=     nps_tarf_tools.get_short_release    ${release[0]}
+    Set Suite Metadata    gNB short release    ${release_short}
+    Set suite variable    ${release_short}
+    ${l1l2ItfVersion_present}=   Run Keyword And Return Status   Should Match Regexp     ${release[0]}     ^SBTS25R[2-9]|SBTS00$
+    ${l1l2ItfVersion}=    Run Keyword If    ${l1l2ItfVersion_present}   set variable     l1swOrLonerVersion
+    ...                      ELSE                                       set variable     l1fpgaVersion
+    ${L1swLonerIft}=    nps_tarf_tools.isL1swLonerIft    ${release[0]}
+    StringTool.printLineWithTitle     title=TL info
+    ${msg}=   StringTool.getHeaderLine    Host IP        ${Host IP}
+    dated log      ${msg}
+    ${msg}=   StringTool.getHeaderLine    Host Name      ${Host Name}
+    dated log      ${msg}
+    ${msg}=   StringTool.getHeaderLine    Topology Label    ${TOPOLOGY_LABEL}
+    dated log      ${msg}
+    ${msg}=   StringTool.getHeaderLine    Topology Variant   ${TOPOLOGY_VARIANT}
+    dated log      ${msg}
+    ${msg}=    StringTool.getHeaderLine   Current gNB SW Version   ${gnb_sw_version}
+    dated log      ${msg}
+    ${msg}=    StringTool.getHeaderLine   gNB short release   ${release_short}
+    dated log      ${msg}
+    ${msg}=    StringTool.getHeaderLine   Ue Type        ${UE type}
+    dated log      ${msg}
+    ${msg}=    StringTool.getHeaderLine   AirPhone Sw Version       ${ap_version}
+    dated log      ${msg}
+    ${msg}=    StringTool.getHeaderLine   WTS_VERSION       ${WTS_VERSION}
+    dated log      ${msg}
+    ${msg}=    StringTool.getHeaderLine   l1l2ItfVersion       ${l1l2ItfVersion}
+    dated log      ${msg}
+    ${msg}=    StringTool.getHeaderLine   L1swLonerIft(for testing purpose)       ${L1swLonerIft}
+    dated log      ${msg}
+    StringTool.printLineWithTitle     title=-
+    BuiltIn.Log     TestLineHostName\=${Host Name}           level=INFO     html=Yes     console=no
+    BuiltIn.Log     TestLineHostIP\=${Host IP}               level=INFO     html=True    console=no
+    BuiltIn.Log     activeBuildVersion\=${gnb_sw_version}    level=INFO     html=True    console=no
+    BuiltIn.Log     activeIphyVersion\=${ap_version}         level=INFO     html=True    console=no
+    robot_extension.Run Keyword And Warn On Failure    testline-Keywords.Save Current Workspace Info
+    robot_extension.Run Keyword And Warn On Failure    testline-Keywords.Save Modified Files in Git
+    nps_tarf_tools.display_dictionnary_parameters_of_the_TestCase    ${test_dictParam}
+    nps_tarf_tools.display_dictionnary_parameters_CAPTURE_of_the_TestCase    ${CAPTURE}
+    ${w_generic_capture}               Get From Dictionary     ${test_dictParam}     w_generic_capture
+    ${isCaptureCPRT}                   Get From Dictionary     ${test_dictParam}     w_CaptureCPRT
+    ${isCaptureL1L2}                   Get From Dictionary     ${test_dictParam}     w_CaptureL1L2
+    ${isCaptureCORE}                   Get From Dictionary     ${test_dictParam}     w_CaptureCORE
+    ${w_check_9890_using_sherpa}       Get From Dictionary     ${test_dictParam}     w_check_9890_using_sherpa
+    ${w_convert_TtiPcap_to_excelCsv}   Get From Dictionary     ${test_dictParam}     w_convert_TtiPcap_to_excelCsv
+    ${w_Basic_Call_to_Setup_Wtsemu}    Get From Dictionary     ${test_dictParam}     w_Basic_Call_to_Setup_Wtsemu
+    ${enable_sherpa}                   Get From Dictionary     ${test_dictParam}     w_enable_sherpa_Traces
+    ${w_GetL1L2Bip}                    Get From Dictionary     ${test_dictParam}     w_GetL1L2Bip
+    ${w_GetTtiTrace}                   Get From Dictionary     ${test_dictParam}     w_GetTtiTrace
+    ${w_ue_detach}                     Get From Dictionary     ${test_dictParam}     w_ue_detach
+    ${w_DISPLAY_ue_stats_nr_15min}     Get From Dictionary     ${test_dictParam}     w_DISPLAY_ue_stats_nr_15min
+    ${GetTtiTraceTime}                 Get From Dictionary     ${CAPTURE}     GetTtiTraceTime
+    ${Getl1l2TraceTime}                Get From Dictionary     ${CAPTURE}     Getl1l2TraceTime
+    ${GetSherpaTraceTime}              Get From Dictionary     ${CAPTURE}     GetSherpaTraceTime
+    ${GetTtiTraceNumOfEvent}           Get From Dictionary     ${CAPTURE}     GetTtiTraceNumOfEvent
+    Run Keyword If     ${w_GetTtiTrace} and not ${w_generic_capture}
+    ...     BuiltIn.Log    Set w_generic_capture=true If w_GetTtiTrace==true, please check the config...    level=WARN    console=yes
+    Run Keyword If     ${isCaptureCPRT} and not ${w_generic_capture}
+    ...     BuiltIn.Log    Set w_generic_capture=true If isCaptureCPRT==true, please check the config...    level=WARN    console=yes
+    Set Suite Variable      ${GetTtiTraceTime}
+    Set Suite Variable      ${GetTtiTraceNumOfEvent}
+    Set Suite Variable      ${Getl1l2TraceTime}
+    Set Suite Variable      ${GetSherpaTraceTime}
+    Set Suite Variable      ${enable_sherpa}
+    Set Suite Variable      ${w_check_9890_using_sherpa}
+    Set Suite Variable      ${w_generic_capture}
+    Set Suite Variable      ${w_convert_TtiPcap_to_excelCsv}
+    Set Suite Variable      ${w_Basic_Call_to_Setup_Wtsemu}
+    Set Suite Variable      ${isCaptureCPRT}
+    Set Suite Variable      ${isCaptureL1L2}
+    Set Suite Variable      ${isCaptureCORE}
+    Set Suite Variable      ${enable_sherpa}
+    Set Suite Variable      ${w_GetTtiTrace}
+    Set Suite Variable      ${w_ue_detach}
+    Set Suite Variable      ${w_DISPLAY_ue_stats_nr_15min}
+    Set Suite Variable      ${w_GetL1L2Bip}
+    Get_Private_variables_Suite_setup
+    ${scf_suite_setup_backup}         COAM Get SCF   file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable      ${scf_suite_setup_backup}
+    # Dated Log               SCF backup file = ${scf_suite_setup_backup}
+    ${LuaFileName}=      Run Keyword If    '${LuaFileToUsed_path}' != '$[EMPTY}'    nps_tarf_tools.return_basename     ${LuaFileToUsed_path}
+    ...                     ELSE                                                    set Variable        ${EMPTY}
+    StringTool.printLineWithTitle     title=default_test_strategy
+    Dated log             default_test_strategy : LOGS_COMPRESSION = ${LOGS_COMPRESSION}
+    Dated log             default_test_strategy : LOGGING_POLICY = ${LOGGING_POLICY}
+    Dated log             default_test_strategy : w_CleanUp_wtsFiles = ${w_CleanUp_wtsFiles}
+    Dated log             default_test_strategy : W_SUITE_SETUP_FROM_SCRATCH = ${W_SUITE_SETUP_FROM_SCRATCH}
+    Dated log             default_test_strategy : W_CUSTOM_LUA_FILE_TO_USED = ${W_CUSTOM_LUA_FILE_TO_USED} [${LuaFileName}]
+    Dated log             default_test_strategy : W_DEBUG_INFO = ${W_DEBUG_INFO}
+    Dated log             default_test_strategy : W_AP_UDPLOG = ${W_AP_UDPLOG}
+    Dated log             default_test_strategy : AUTO_ANALYSIS_FLAG = ${AUTO_ANALYSIS_FLAG}
+    Dated log             default_test_strategy : W_CUSTOMCONFIG = ${W_CUSTOMCONFIG}
+    Dated Log             default_test_strategy : SHOULD_BE_COMMISSIONED_GNB_FIRST = ${SHOULD_BE_COMMISSIONED_GNB_FIRST}
+    Dated log             default_test_strategy : UPDATE_SCF = ${UPDATE_SCF}
+    Dated log             default_test_strategy : WITH_APPLY_DELTA_COMMISSIONING = ${WITH_APPLY_DELTA_COMMISSIONING}
+    Dated log             default_test_strategy : W_OnlineChange_deltaComm = ${W_OnlineChange_deltaComm}
+    Dated log             default_test_strategy : WAIT_5G_CELL_ONAIR = ${WAIT_5G_CELL_ONAIR}
+    Dated Log             default_test_strategy : COLLECT_LOGS = ${COLLECT_LOGS}
+    Dated log             default_test_strategy : EXCLUDE_LOGS_IF_FAIL = ${EXCLUDE_LOGS_IF_FAIL}
+    Dated log             default_test_strategy : ENABLE_TEST_TEARDOWN = ${ENABLE_TEST_TEARDOWN}
+    Dated Log             default_test_strategy : SKIP_COUNTERS = ${SKIP_COUNTERS}
+    Dated Log             default_test_strategy : NB_ROBUSTNESS_RUN_TIMES = ${NB_ROBUSTNESS_RUN_TIMES}
+    Dated log             default_test_strategy : SharkTool = ${TestSharkTool}
+    Dated log             default_test_strategy : SHOULD_UPDATE_DEBUG_L2PS_RAD = ${SHOULD_UPDATE_DEBUG_L2PS_RAD}
+    ${msg}=     Run Keyword If  '${w_isUnitaryTest}'=='1'  set Variable   ${consTraceColorRed}w_isUnitaryTest = ${w_isUnitaryTest}${defColor}
+    ...           ELSE                                     set Variable   w_isUnitaryTest = ${w_isUnitaryTest}
+    Dated log             default_test_strategy : ${msg}
+    Dated log             default_test_strategy : GET_AND_UPDATE_BSR_SW = ${GET_AND_UPDATE_BSR_SW}
+    Dated log             default_test_strategy : GET_BSR_SW_BASED_GIT = ${GET_BSR_SW_BASED_GIT}
+    Dated log             default_test_strategy : GET_BSR_SW_BASED_ARTIFACTORY = ${GET_BSR_SW_BASED_ARTIFACTORY}
+    Dated log             default_test_strategy : W_ERR_L2PS_SYSLOG_ALLOWED = ${W_ERR_L2PS_SYSLOG_ALLOWED}
+    Dated log             default_test_strategy : logs_and_traces_flags_L1L2BIPTrace = ${logs_and_traces_flags_L1L2BIPTrace}
+    StringTool.printLineWithTitle   title=-
+    ${mcshark_present}   ${MCShark}    ${debian_release}    ${code_name}=      Check MCShark if present
+    ${msg}=    StringTool.getHeaderLine    Debian Release     ${debian_release}
+    run Keyword if   "${msg}"!="${EMPTY}"      Dated log      ${msg}
+    ${msg}=    StringTool.getHeaderLine    Debian Codename    ${code_name}
+    run Keyword if   "${msg}"!="${EMPTY}"      Dated log      ${msg}
+    ${msg}=   run Keyword if   "${mcshark_present}"=="True"    StringTool.getHeaderLine    MCShark plugin   ${MCShark}
+    ...            ELSE                                        StringTool.getHeaderLine    MCShark plugin   Not installed
+    run Keyword if   "${msg}"!="${EMPTY}"      Dated log      ${msg}
+    set suite variable    ${mcshark_present}
+    Get and Update BSR SW package
+    # Gnblogs is deprecated
+    # robot_extension.Run Keyword And Warn On Failure      clone Gnblogs Tool
+    Run Keyword If    '${W_DEBUG_INFO}'=='1'   Run keywords       Set Debug Mode    ${True}   #need to be comment at the delivery time
+    ...                                              AND          BuiltIn.log    DBGlogs is set ON !!!    level=INFO    console=yes
+    ...     ELSE                               Set Debug Mode          ${False}
+    Set Global Variable     ${setup}    pass
+    Scenario-Common-Keywords.Initialize Test Suite
+    Scenario-Common-Keywords.Get Config Info for cOAM
+    Run Keyword If    '${setup}'=='pass'      Set Global Variable     ${setup}    pass
+
+Get and Update BSR SW package
+    StringTool.printLineWithTitle   title=-
+    ${warning_msg}=     Catenate     [ WARNING ] : BEWARE THAT GET_BSR_SW_BASED_GIT==1 and GET_BSR_SW_BASED_ARTIFACTORY==1 is not allowed!!!
+    Run Keyword If    '${GET_BSR_SW_BASED_GIT}' == '1' and '${GET_BSR_SW_BASED_ARTIFACTORY}' == '1'
+    ...       dated log     ${consTraceColorBgYellow}${consTraceColorBlack}${warning_msg}${defColor}
+    Run Keyword if   '${GET_AND_UPDATE_BSR_SW}' == '1' and '${GET_BSR_SW_BASED_GIT}' == '1' and '${GET_BSR_SW_BASED_ARTIFACTORY}' == '0'
+    ...                      Run Keywords   dated log        =====> Get and Update BSR SW [BSR_AEQE_6_H6_ALN60_ARP60_P00_COVERAGE_00424_00001.zip]
+    ...                            AND      Get and Update BSR SW Using Git
+    ...                                           ${SQR44_L2ET_GOLDEN_FILE_ADDRESS}
+    ...                                           BSR     BSR_AEQE_6_H6_ALN60_ARP60_P00_COVERAGE_00424_00001.zip   /home/ute/BSR
+    Run Keyword if   '${GET_AND_UPDATE_BSR_SW}' == '1' and '${GET_BSR_SW_BASED_GIT}' == '1' and '${GET_BSR_SW_BASED_ARTIFACTORY}' == '0'
+    ...                      Run Keywords   dated log        =====> Get and Update BSR SW [BSR_AEQE_2_H2_ALN60_ARP60_P00_COVERAGE_00420_00001.zip]
+    ...                            AND      Get and Update BSR SW Using Git
+    ...                                           ${SQR44_L2ET_GOLDEN_FILE_ADDRESS}
+    ...                                           BSR     BSR_AEQE_2_H2_ALN60_ARP60_P00_COVERAGE_00420_00001.zip   /home/ute/BSR
+    Run Keyword if   '${GET_AND_UPDATE_BSR_SW}' == '1' and '${GET_BSR_SW_BASED_GIT}' == '1' and '${GET_BSR_SW_BASED_ARTIFACTORY}' == '0'
+    ...                      Run Keywords   dated log        =====> Get and Update BSR SW [BSR_AEQE_4_H4_ALN60_ARP60_P00_COVERAGE_00422_00001.zip]
+    ...                            AND      Get and Update BSR SW Using Git
+    ...                                           ${SQR44_L2ET_GOLDEN_FILE_ADDRESS}
+    ...                                           BSR     BSR_AEQE_4_H4_ALN60_ARP60_P00_COVERAGE_00422_00001.zip   /home/ute/BSR
+    Run Keyword if   '${GET_AND_UPDATE_BSR_SW}' == '1' and '${GET_BSR_SW_BASED_GIT}' == '1' and '${GET_BSR_SW_BASED_ARTIFACTORY}' == '0'
+    ...                      Run Keywords   dated log        =====> Get and Update BSR SW [BSR_AEQE_1_H1_ALN60_ARP60_P00_COVERAGE_00418_00001.zip]
+    ...                            AND      Get and Update BSR SW Using Git
+    ...                                           ${SQR44_L2ET_GOLDEN_FILE_ADDRESS}
+    ...                                           BSR     BSR_AEQE_1_H1_ALN60_ARP60_P00_COVERAGE_00418_00001.zip   /home/ute/BSR
+    Run Keyword if   '${GET_AND_UPDATE_BSR_SW}' == '1' and '${GET_BSR_SW_BASED_GIT}' == '1' and '${GET_BSR_SW_BASED_ARTIFACTORY}' == '0'
+    ...                      Run Keywords   dated log        =====> Get and Update BSR SW [BSR_AEQE_8_H8_ALN60_ARP60_P00_COVERAGE_00426_00001.zip]
+    ...                            AND      Get and Update BSR SW Using Git
+    ...                                           ${SQR44_L2ET_GOLDEN_FILE_ADDRESS}
+    ...                                           BSR     BSR_AEQE_8_H8_ALN60_ARP60_P00_COVERAGE_00426_00001.zip   /home/ute/BSR
+    Run Keyword if   '${GET_AND_UPDATE_BSR_SW}' == '1' and '${GET_BSR_SW_BASED_ARTIFACTORY}' == '1' and '${GET_BSR_SW_BASED_GIT}' == '0'
+    ...                      Run Keywords   dated log        =====> Get and Update BSR SW [BSR_AEQE_6_H6_ALN60_ARP60_P00_COVERAGE_00424_00001.zip]
+    ...                            AND      Get and Update BSR SW
+    ...                                         https://artifactory-espoo1.ext.net.nokia.com/artifactory/mnpute-rotta-local/csamson
+    ...                                         CB009836     BSR_AEQE_6_H6_ALN60_ARP60_P00_COVERAGE_00424_00001.zip   /home/ute/BSR
+    Run Keyword if   '${GET_AND_UPDATE_BSR_SW}' == '1' and '${GET_BSR_SW_BASED_GIT}' == '1' and '${GET_BSR_SW_BASED_ARTIFACTORY}' == '0'
+    ...                      Run Keywords   dated log        =====> Get and Update BSR SW [BSR_AEHC_4_H4_ALN60_ARP60_P00_COVERAGE_00422_00001.zip]
+    ...                            AND      Get and Update BSR SW Using Git
+    ...                                           ${SQR44_L2ET_GOLDEN_FILE_ADDRESS}
+    ...                                           BSR     BSR_AEHC_4_H4_ALN60_ARP60_P00_COVERAGE_00422_00001.zip   /home/ute/BSR
+    Run Keyword if   '${GET_AND_UPDATE_BSR_SW}' == '1' and '${GET_BSR_SW_BASED_GIT}' == '1' and '${GET_BSR_SW_BASED_ARTIFACTORY}' == '0'
+    ...                      Run Keywords   dated log        =====> Get and Update BSR SW [BSR_AEHC_2_H2_ALN60_ARP60_P00_COVERAGE_00420_00001.zip]
+    ...                            AND      Get and Update BSR SW Using Git
+    ...                                           ${SQR44_L2ET_GOLDEN_FILE_ADDRESS}
+    ...                                           BSR     BSR_AEHC_2_H2_ALN60_ARP60_P00_COVERAGE_00420_00001.zip   /home/ute/BSR
+
+Suite Teardown Feature-Common
+    [Documentation]
+    ...     Conditions:     it needs no conditions
+    ...     Actions:        it restores the files when the test is finished
+    ...     Checks:         it needs no checks
+    ...     Verdict:        suite teardown is passed
+    return from Keyword if     '${w_isUnitaryTest}' == '1'
+    robot_extension.Run Keyword And Warn On Failure     Kw Check Syslog and Alarms    w_check_alarms=false
+    Run Keyword If    '${setup}'!='pass'     Dev_lib.analyze_logs    test_status=FAIL
+    run keyword and ignore error   Restore Orignal Configuration
+    run keyword and ignore error   Scenario-Common-Keywords.Capture Snapshot and restore config
+    ${scf_suite_teardown_restore}=    Get Variable Value    ${scf_suite_setup_backup}    None
+    run keyword and ignore error      coam.Teardown All Aliases For Admin
+
+Test Setup for Feature-Common
+    set Suite Variable    ${testCaseDir}    None
+    testcase-Keywords.Get testcase log directory
+    testcase-Keywords.Prepare Test Name
+    testcase-Keywords.Prepare Logs Directory Path    subdir=gnblogs_tool
+    testcase-Keywords.Prepare Logs Directory Path    subdir=postprocess_results
+    testcase-Keywords.Prepare Logs Directory Path    subdir=ap_udpsyslogs
+    set test variable      ${postprocess_results}     postprocess_results
+    ${configuration_directory}=    testcase-Keywords.Prepare Logs Directory Path    subdir=config
+    Set suite variable    ${configuration_directory}
+    ${ts_log_dir}     set variable     ${testCaseDir}
+    set suite variable     ${ts_log_dir}
+    Create Header Csv Test result
+    Create Trace List
+    Create Test Results List
+    # Test-Suite-Setup-Resources-Keywords.Log config in result file
+    # for SCOUT
+    ${NO_REPORT_SCOUT_FLAG}=    run keyword and return status  list should contain value  ${TEST TAGS}  SKIP_SCOUT_REPORT
+    ${host_vm_ip}=  configuration_id.Get Host IP Address  host_index=1
+    IF   not ${NO_REPORT_SCOUT_FLAG}
+        Run Keyword And Ignore Error    configuration_id.Start Testline Scout Monitor  host_vm_ip=${host_vm_ip}
+        run keyword and ignore error    reporting.Set SCOUT TC ID for Reporting
+    END
+    # End for SCOUT
+    set test variable  ${csiRsFile}    ${testCaseDir}/resultCsiRs_${TEST NAME[0:30]}.log
+    Append To File     ${csiRsFile}   ------------------------------------------------------\n
+    Append To File     ${csiRsFile}   ${FeatureId} ${TEST NAME}\n
+    Append To File     ${csiRsFile}   ------------------------------------------------------\n
+    robot_extension.Run Keyword And Warn On Failure   CleanUpSysLogs
+    robot_extension.Run Keyword And Warn On Failure   TARF-Keywords.Start Tcpdump on TestPc   interface=eth3   option=-s0 sctp or icmp
+    robot_extension.Run Keyword And Warn On Failure   TARF-Keywords.Start Tcpdump on TestPc   interface=eth4   option=-f less 1000 -s 65535
+    Run Keyword And Ignore Error     start_default_tshark_on_s1_mme_and_uu_interfaces_for_testcase      log_dirpath=${testCaseDir}/tshark
+    robot_extension.Run Keyword And Warn On Failure   btslog.Start Btslog
+    robot_extension.Run Keyword And Warn On Failure   apUDPlog.Start To Capture Iphy Udplog      target_dir=${testCaseDir}/ap_udpsyslogs
+    ${test_scf_file}             COAM Get SCF        local_dir_path=${LOG_PATH}      file=SCF.xml    alias=coam_gnb
+    Set Suite Variable           ${test_scf_file}
+    Display Important NIDD param
+
+Test Teardown for Feature-Common
+    BuiltIn.Log      \nTest ${TEST_NAME} ${FeatureId} ending   console=yes
+    Return From Keyword If     '${w_isUnitaryTest}' == '1'
+    robot_extension.Run Keyword And Warn On Failure   TARF-Keywords.Stop Tcpdump on TestPc  interface=eth3   target_dir=${testCaseDir}
+    robot_extension.Run Keyword And Warn On Failure   TARF-Keywords.Stop Tcpdump on TestPc  interface=eth4   target_dir=${testCaseDir}
+    Run Keyword and Ignore Error    stop_default_tshark_on_s1_mme_and_uu_interfaces_for_testcase
+    ${ret}    ${syslogpath}=     robot_extension.Run Keyword And Warn On Failure   btslog.Stop Btslog    target_dir=${testCaseDir}
+    ${fileExists}=     nps_tarf_tools.file_exists   ${syslogpath}
+    ${ret}    ${syslog_filename}   Run Keyword If   ${fileExists}==${True}
+    ...                                           Run Keyword And Ignore Error    nps_tarf_tools.return_basename   ${syslogpath}
+    ...                              ELSE         ObtainVariablesKeyword
+    robot_extension.Run Keyword And Warn On Failure   TARF-Keywords.declare Trace in Trace List    Type=SysLog  Savedir=${testCaseDir}/btslog
+    ...                          file_name=${syslog_filename}   Trigger=TestSetup
+    robot_extension.Run Keyword And Warn On Failure   apUDPlog.Stop Capture Iphy Udplog
+    robot_extension.Run Keyword And Warn On Failure   Display Test Results List
+    # robot_extension.Run Keyword And Warn On Failure   Display Trace List
+    Append To File   ${csiRsFile}   \n********************************************************************
+    Append To File   ${csiRsFile}   \n********************************************************************\n\n
+    Kw Check Syslog and Alarms
+    ${is_error_not_in_syslogs}=    syslogs_analysis.check_no_fatality_error_in_syslogs    path_to_syslog_tgz=${syslogpath}
+    run keyword and continue on failure    should be True    ${is_error_not_in_syslogs}
+    teardownP1
+    robot_extension.Run Keyword And Warn On Failure   TARF-Keywords.Extract egate_command    dir=${testCaseDir}  egate_console=egate_console.log
+    robot_extension.Run Keyword And Warn On Failure   ute-wtssim-ue-Keywords.Stop RRC Log
+    Run Keyword And Ignore Error    Test-Suite-Setup-Resources-Keywords.xpif_trs_LogCollector
+    Run Keyword If Test Failed     Set Test Variable    ${test_status}    FAIL
+    Run Keyword If Test Passed     Set Test Variable    ${test_status}    PASS
+    Dev_lib.analyze_logs    test_status=${test_status}
+    robot_extension.Run Keyword And Warn On Failure  Scenario-Common-Keywords.Report Test Result to Reporting Portal
+    teardownP2
+    Run Keyword And Ignore Error    run    command=ps -ef|grep cli_syslog.py|grep -v grep|awk '{print $2}' | xargs kill -9
+
+
+Teardow Kw
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${TEST NAME OK}
+    run Keyword if   '${status}'=='PASS'    set test variable   ${TEST NAME}   ${TEST NAME OK}
+    StringTool.printLineWithTitle   title=Test ${TEST NAME} Teardown
+    ${status}  ${message}=   Run Keyword And Ignore Error      Variable Should Exist     ${sw_generic_capture_started}
+    run Keyword if   '${status}'=='FAIL'    set test variable   ${sw_generic_capture_started}   ${False}
+    Run Keyword if   '${w_generic_capture}' == 'True' and ${sw_generic_capture_started} == ${True}
+    ...                                                 Run Keyword And Ignore Error        Captures CB012738 Stop
+    robot_extension.Run Keyword And Warn On Failure     Run Keyword if     ${gnb_logs_started} == ${True}
+    ...                                                                                         TARF-Keywords.Stop collect log by gnb tool
+    robot_extension.Run Keyword And Warn On Failure     Check if ESTATUS5G_NOTOK present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if FaultID 6505 SSD Log Storage Overdraw present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if FaultID IncorrectCellParameterSettingAI present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if MaxRlcRetransmission exceeded present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if ERR/.uplane/L2-PS present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if ERR/L2-PS present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if resource allocation failed present in Syslogs
+    # robot_extension.Run Keyword And Warn On Failure     Display SLOTTYPE configuration from Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Extract L2-PS/src/sgnl/psCell/CellSetupLogger from Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Extract [CSIRS] from Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Kw Check errors in Syslog
+    robot_extension.Run Keyword And Warn On Failure     Kw Check CPLANE errors in Syslog
+    Check Alarm Cleared All cells    nbCell=${C_Cell.totalNbOfCell}
+    Display diagnosis
+
+Kw Check Syslog and Alarms
+    [arguments]    ${w_check_alarms}=true
+    robot_extension.Run Keyword And Warn On Failure     Check if ESTATUS5G_NOTOK present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if FaultID 6505 SSD Log Storage Overdraw present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if FaultID IncorrectCellParameterSettingAI present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if MaxRlcRetransmission exceeded present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if ERR/.uplane/L2-PS present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if ERR/L2-PS present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if resource allocation failed present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if ENDSSULSUBCARRIERRESOURCEALLOCATIONFAIL present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Check if ENDSSDLRESOURCEALLOCATIONFAIL present in Syslogs
+    robot_extension.Run Keyword And Warn On Failure     Kw Check errors in Syslog
+    robot_extension.Run Keyword And Warn On Failure     Kw Check CPLANE errors in Syslog
+    return from keyword if    '${w_check_alarms}'!='true'
+    ${CellList}=    template.identify_required_nr_cells
+    ${totalNbOfCell}=    get length   ${CellList}
+    dated log     CellList=${CellList} and totalNbOfCell=${totalNbOfCell}
+    Check Alarm Cleared All cells    nbCell=${totalNbOfCell}
+
+xpif_trs_LogCollector
+    [Arguments]  ${target_dir}=None  ${gnb_id}=${0}   ${du_id}=${0}   ${common_unit_id}=${0}
+    ${local_target_dir}=    Run Keyword If    '${target_dir}'=='None'    testcase-Keywords.Get testcase log directory
+    ...    ELSE    Set Variable    ${target_dir}
+
+    ${alias_gnb}   connect.Connect to Node Common Unit   node_id=${gnb_id}   du_id=${du_id}   comu_id=${common_unit_id}
+
+    # /opt/trs/bin/trs-xpif-d execute dumpconfig
+    Connection.Execute  cmd=rm -f /tmp/xpif.dump   alias=${alias_gnb}
+    Connection.Execute  cmd=/opt/trs/bin/trs-xpif-d execute dumpconfig     alias=${alias_gnb}
+    Connection.DownloadFile  local_path=${local_target_dir}/xpif.dump   remote_path=/tmp/xpif.dump   alias=${alias_gnb}
+    Connection.Disconnect  alias=${alias_gnb}
+
+Log config in result file
+    [Arguments]    ${config}=None
+    ${resultFile}    Set Variable     ${testCaseDir}/resultFile_${TEST NAME}.log
+    Set Test Variable    ${resultFile}
+    Append To File   ${resultFile}  ------------------------------------------------------\n
+    Append To File   ${resultFile}   TEST NAME: ${TEST NAME}\n
+    Append To File   ${resultFile}   TEST CONFIG: ${config}\n
+    Append To File   ${resultFile}  ------------------------------------------------------\n
+
+
+Log CRM config in result CRM file
+    [arguments]     ${trace_dir}
+    ${resultFileCRM}    Set Variable     ${trace_dir}/resultFileCRM_${SUITE NAME}.log
+    Set suite Variable    ${resultFileCRM}
+    Append To File   ${resultFileCRM}    \n========================================================
+    Append To File   ${resultFileCRM}    \nSUITE NAME: ${SUITE NAME}
+    Append To File   ${resultFileCRM}    \n========================================================
+    Append To File   ${resultFileCRM}    \n
+
+Log config in result CellSetup file
+    [Arguments]     ${trace_dir}    ${config}=None
+    ${resultCellSetupFile}    Set Variable     ${trace_dir}/resultFileCellSetup_${SUITE NAME}.log
+    Set suite Variable    ${resultCellSetupFile}
+    Append To File   ${resultCellSetupFile}  ------------------------------------------------------\n
+    Append To File   ${resultCellSetupFile}   TEST NAME: ${SUITE NAME}\n
+    Append To File   ${resultCellSetupFile}   TEST CONFIG: ${config}\n
+    Append To File   ${resultCellSetupFile}  ------------------------------------------------------\n
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------

@@ -1,0 +1,114 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  verification of 5GC002255-G CA(FDD+TDD)-DSS-PRB Blanking Interaction
+...               Prerequisite : GNB and Airphone should be installed
+...               Scope : Reach a cell setup state, and perfom basic tests : 
+...                       Ue Register, CRNTI checks, ...
+...                       
+...
+...               Test Case Scenario author   : gabriel.becerra_eslava@nokia.com
+...               Test Case Scenario author   : gabriel.becerra_eslava@nokia.com
+...               Test Case automation author : gabriel.becerra_eslava@nokia.com
+...               Test Case automation contact: gabriel.becerra_eslava@nokia.com
+...               Creation Date               : 02-December-2021
+...               Modified Date               : 02-December-2021
+...               Last Modified by            : gabriel.becerra_eslava@nokia.com
+
+Library           taf.lteemu                              WITH NAME    lteemu
+
+Resource          ../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../resources/SWENG/robot/CallSetup.robot
+Variables         ../../../resources/SWENG/python/ReadConfig.py
+Resource          robot/CNI-64716_Keywords.robot
+Resource          ../../../resources/SWENG/robot/Scf.robot
+
+# Library           resources/python/BrkPoint_KW.py
+
+Force Tags        CA_5G_SW_FR-Villarceaux   RRM
+...               PY36
+...               master_classicalbts_all 
+...               CONFIGURED    5G_RAN    RAN_5G
+
+Suite Setup       Setup.suite setup from scratch             #    automaticTeardown=${True}  is set in 5GC002255_Keywords.robot
+Suite Teardown    Setup.Suite Teardown       reset_ap=${True}
+
+*** Variables ***
+
+# preset of variables for QC settings
+${Startup}      FAILED
+${CellSetup}    FAILED
+${TestCheck}    FAILED
+
+
+*** Test Cases ***
+
+CNI_64716_Check_CQI_to_MCS_with_DL_Traffic
+    [Tags]                   CRT    CLOUD_5G_I_LO_AP_LO_SANSA_FS_ECPRI_CMWV_TDD
+    ...                      SBTS00    SBTS23R1    SBTS22R4
+    [Documentation]                 Carrier Aggregation 2255-1390
+    Init Sequence                   _
+    Step                            CNI_64716_gNB_Startup_Ok
+    Step                            CNI_64716_Cell_Setup_Register_PDU
+    Step                            Check_CQI_to_MCS_with_DL_Traffic
+
+#  following TC are only for result MAPPING on QC ##    
+gNB_Startup_Ok
+    [Tags]                   CRT    CLOUD_5G_I_LO_AP_LO_SANSA_FS_ECPRI_CMWV_TDD
+    ...                      SBTS00    SBTS23R1    SBTS22R4
+    [Documentation]   The aim of this test is to check that gNB startup is ok with the cpri link 
+    ...               and RU simulators AAHF(TDD)									
+    Run Keyword if    '${Startup}' == 'FAILED'    FAIL    dependencies issue
+
+Cell_Setup_Register_PDU
+    [Tags]                   CRT    CLOUD_5G_I_LO_AP_LO_SANSA_FS_ECPRI_CMWV_TDD
+    ...                      SBTS00    SBTS23R1    SBTS22R4
+    [Documentation]   The aim of this test is to check that gNB cell setup Register and PDU Session are OK						
+    Run Keyword if    '${CellSetup}' == 'FAILED'    FAIL    dependencies issue
+    
+[1][1.0] CNI-64716_1_Check_CQI_to_MCS_with_DL_Traffic
+    [Tags]                   CRT    CLOUD_5G_I_LO_AP_LO_SANSA_FS_ECPRI_CMWV_TDD
+    ...                      SBTS00    SBTS23R1    SBTS22R4
+    [Documentation]   The aim of this test is to check that Counter Values for MCS are correct
+    Run Keyword if    '${TestCheck}' == 'FAILED'    FAIL    dependencies issue
+
+*** Keywords ***
+
+CNI_64716_gNB_Startup_Ok
+    [Tags]  RESTART_STARTUP
+    CNI-64716_Keywords.Set SCF Context
+    Restart.Restart TL
+    ${Startup}             set variable    PASS
+    Set Suite Variable    ${Startup}
+
+CNI_64716_Cell_Setup_Register_PDU
+    [Tags]  Cell_Setup    
+    CallSetup.Setup Wtsemu SA
+    sleep   60s
+    CallSetup.UE Register    ue=1
+    CallSetup.Launch PDU Session    ue=1    pdu=1    gw=1    
+    ${CellSetup}             set variable    PASS
+    Set Suite Variable    ${CellSetup}
+
+Check_CQI_to_MCS_with_DL_Traffic
+    ${ueSetting}        set variable    ${BASIC_UE_SA}
+    ${ueSetting.pdu}    set variable    1
+    ${ueSetting.ue}     set variable    1
+    Traffic.Traffic UE DL    throughput=550    ueSetting=${ueSetting}    shouldBeCheck=False    shouldBeStop=False
+    wtsemu.csi_override_testmode_nr    profile_id=3    ri=1    ri_mode=fixed    cqi=8     cqi_mode=fixed   cqi_min=0   cqi_max=15
+    wtsemu.csi_override_testmode_nr    profile_id=4    ri=1    ri_mode=fixed    cqi=10    cqi_mode=fixed   cqi_min=0   cqi_max=15
+	Dated Log           Wait 10 minutes for PM Counters	
+    wtsemu.ue_testmode_set_nr    id=1    testmode=csi_override    profile_id=3    action=activate
+    sleep   300s
+    wtsemu.ue_testmode_set_nr    id=1    testmode=csi_override    profile_id=4    action=activate
+    sleep   300s      	
+    CNI-64716_Keywords.Collect PM Counters File
+    CNI-64716_Keywords.Check MCS Values	
+    ${TestCheck}    set variable    PASS
+    Set Suite Variable    ${TestCheck}
+

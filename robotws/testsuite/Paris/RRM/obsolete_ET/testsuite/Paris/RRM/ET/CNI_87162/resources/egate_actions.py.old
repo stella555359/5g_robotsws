@@ -1,0 +1,244 @@
+from testsuite.Paris.RRM.ET.resources_KRK.python.utilities import (
+    logger_console, logger_warning, logger_console_info
+)
+from robot.libraries.BuiltIn import BuiltIn
+from robot.errors import ExecutionFailed
+import time
+import operator as op
+import re
+
+
+def run_egate_command(cmd, delay=2, pass_regexp=None, fail_regexp=None, timeout=None):
+    BuiltIn().get_library_instance('ta5g_egate')._ute_wtssim_instance.execute_egate_command(
+        cmd, pass_regexp=pass_regexp, fail_regexp=fail_regexp, timeout=timeout
+    )
+    time.sleep(delay)
+
+
+def set_ue_capabilities(ue_param_id, ue_nr_capabilities=None, ue_eutra_nr_capabilities=None):
+    cmd = "ue_param id={}".format(ue_param_id)
+    if ue_nr_capabilities:
+        cmd += " ue_nr_capabilities={}".format(ue_nr_capabilities)
+    if ue_eutra_nr_capabilities:
+        cmd += " ue_eutra_nr_capabilities={}".format(ue_eutra_nr_capabilities)
+    run_egate_command(cmd)
+
+
+def start_traffic_stream(ue, dir, trf_id=2, *args, **kwargs):
+    delay = kwargs.pop("delay", 2)
+    command = "trf_data_start ue={} dir={} trf_id={}".format(ue, dir, trf_id)
+    for key, value in kwargs.items():
+        command += " {}={}".format(key, value)
+    run_egate_command(command, delay=delay)
+
+
+def stop_traffic_stream(ue, trf_id, *args, **kwargs):
+    delay = kwargs.pop("delay", 2)
+    command = "trf_data_stop ue={} trf_id={}".format(ue, trf_id)
+    for key, value in kwargs.items():
+        command += " {}={}".format(key, value)
+    run_egate_command(command, delay=delay)
+
+
+def prepare_internal_traffic_generator(ue_id=1, pdu_id=1):
+    logger_console("Set internal traffic generator for SA")
+    run_egate_command('set_pdu_param ue={} pdu={} trf_type=internal'.format(ue_id, pdu_id))
+
+
+def check_throughput_is(operator, value, unit="mbps", column="Current", *args, **kwargs):
+    OPERATORS = {
+        ">": op.gt, ">=": op.ge, "<": op.lt,
+        "<=": op.le, "==": op.eq, "!=": op.ne
+    }
+    parser_instance = BuiltIn().get_library_instance('ta_egate_cmd_parser')
+    ue_stats_nr = parser_instance.get_command("ue_stats_nr")
+    data = ue_stats_nr(**kwargs).execute_and_parse()
+    for cellidx in data:
+        value_raw = data[cellidx][column]["value"]
+        unit_raw = data[cellidx][column]["unit"]
+        real_value = float(value_raw)
+        real_unit = "" if unit_raw is None else unit_raw.lower()
+        msg = "Average tput for {} is {}{} which does not meet requirements: {}{}"
+        assert real_unit == unit, "Checking unit is different from unit present: {} vs {}".format(unit, real_unit)
+        assert OPERATORS[operator](real_value, float(value)), msg.format(cellidx, real_value, real_unit,
+                                                                         operator, value)
+
+
+def _get_throughput_stats(column="Current", *args, **kwargs):
+    parser_instance = BuiltIn().get_library_instance('ta_egate_cmd_parser')
+    ue_stats_nr = parser_instance.get_command("ue_stats_nr")
+    data = ue_stats_nr(**kwargs).execute_and_parse()
+    tput_dict = {}
+    for cellidx in data:
+        if cellidx.startswith('CellIndex-'):
+            cid = cellidx.split('-')[-1]
+            tput_dict.setdefault(cid, {})
+            value_raw = data[cellidx][column]["value"]
+            unit_raw = data[cellidx][column]["unit"]
+            real_value = float(value_raw)
+            unit = "" if unit_raw is None else unit_raw.lower()
+            tput_dict[cid]["value"] = real_value
+            tput_dict[cid]["unit"] = unit
+    return tput_dict
+
+
+def assert_traffic_is_present_on_scell(scell_id="1", *args, **kwargs):
+    tput_stats = _get_throughput_stats(column="Current", *args, **kwargs)
+    assert tput_stats[str(scell_id)]["value"] > 0, "Traffic is not present on the scell - cellid: {}".format(scell_id)
+    assert tput_stats[str(scell_id)]["unit"] == "mbps", "Wrong unit type: {}".format(
+        tput_stats[str(scell_id)]["unit"])
+
+
+def assert_traffic_is_missing_on_scell(scell_id="1", *args, **kwargs):
+    tput_stats = _get_throughput_stats(column="Current", *args, **kwargs)
+    assert tput_stats[str(scell_id)]["value"] == 0, "Traffic is present on the scell - cellid: {}".format(scell_id)
+
+
+def assert_traffic_is_present_on_at_least_one_scell(scell_ids, *args, **kwargs):
+    tput_stats = _get_throughput_stats(column="Current", *args, **kwargs)
+    for scell_id in scell_ids:
+        if tput_stats[str(scell_id)]["value"] > 0:
+            logger_console_info("Traffic is present on scell: {}".format(scell_id))
+            break
+    else:
+        raise AssertionError("Traffic is missing from all scells: {}".format(scell_ids))
+
+
+def assert_traffic_is_present_on_pcell(pcell_id="0", *args, **kwargs):
+    tput_stats = _get_throughput_stats(column="Current", *args, **kwargs)
+    assert tput_stats[str(pcell_id)]["value"] > 0, "Traffic is not present on the pcell - cellid: {}".format(pcell_id)
+    assert tput_stats[str(pcell_id)]["unit"] == "mbps", "Wrong unit type: {}".format(
+        tput_stats[str(pcell_id)]["unit"])
+
+
+def assert_traffic_is_present_on_scell_and_missing_from_pcell(pcell_id="0", scell_id="1", *args, **kwargs):
+    tput_stats = _get_throughput_stats(column="Current", *args, **kwargs)
+    assert tput_stats[str(scell_id)]["value"] > 0, "Traffic is not present on the scell - cellid: {}".format(scell_id)
+    assert tput_stats[str(scell_id)]["unit"] == "mbps", "Wrong unit type: {}".format(
+        tput_stats[str(scell_id)]["unit"])
+    assert tput_stats[str(pcell_id)]["value"] == 0, "Traffic is present on the pcell - cellid: {}".format(pcell_id)
+
+
+def assert_traffic_is_present_on_scell_and_ignore_negligible_traffic_from_pcell(pcell_id="0", scell_id="1",
+                                                                                *args, **kwargs):
+    tput_stats = _get_throughput_stats(column="Current", *args, **kwargs)
+    assert tput_stats[str(scell_id)]["value"] > 0, "Traffic is not present on the scell - cellid: {}".format(scell_id)
+    assert tput_stats[str(scell_id)]["unit"] == "mbps", "Wrong unit type: {}".format(
+        tput_stats[str(scell_id)]["unit"])
+
+    pcell_tput_value = tput_stats[str(pcell_id)]["value"]
+    if tput_stats[str(pcell_id)]["unit"] == "mbps":
+        assert pcell_tput_value <= 1.5, "Traffic present on the pcell is too big - cellid: {}".format(pcell_id)
+    elif tput_stats[str(pcell_id)]["unit"] == "kbps":
+        assert pcell_tput_value <= 1500, "Traffic present on the pcell is too big - cellid: {}".format(pcell_id)
+    else:
+        if pcell_tput_value != 0:
+            raise AssertionError("Unsupported unit type: {}".format(tput_stats[str(pcell_id)]["unit"]))
+
+
+def assert_traffic_is_present_on_scell_and_ignore_negligible_traffic_from_pcell_retry_loop(
+        pcell_id="0", scell_id="1", retries=2, *args, **kwargs):
+    while retries > 0:
+        try:
+            assert_traffic_is_present_on_scell_and_ignore_negligible_traffic_from_pcell(
+                pcell_id, scell_id, *args, **kwargs
+            )
+            break
+        except AssertionError as e:
+            retries -= 1
+            if retries <= 0:
+                raise
+            logger_console_info("Assertion error occurred ({}), I will retry validation (retries left: {})".format(
+                repr(e), retries))
+            time.sleep(1)
+
+
+def assert_traffic_is_present_on_pcell_and_missing_from_scell(pcell_id="0", scell_id="1", *args, **kwargs):
+    tput_stats = _get_throughput_stats(column="Current", *args, **kwargs)
+    assert tput_stats[str(pcell_id)]["value"] > 0, "Traffic is not present on the pcell - cellid: {}".format(pcell_id)
+    assert tput_stats[str(pcell_id)]["unit"] == "mbps", "Wrong unit type: {}".format(
+        tput_stats[str(pcell_id)]["unit"])
+    assert tput_stats[str(scell_id)]["value"] == 0, "Traffic is present on the scell - cellid: {}".format(scell_id)
+
+
+def assert_traffic_is_present_both_on_pcell_scell(pcell_id="0", scell_id="1", *args, **kwargs):
+    tput_stats = _get_throughput_stats(column="Current", *args, **kwargs)
+    assert tput_stats[str(pcell_id)]["value"] > 0, "Traffic is not present on the pcell - cellid: {}".format(pcell_id)
+    assert tput_stats[str(pcell_id)]["unit"] == "mbps", "Wrong unit type: {}".format(
+        tput_stats[str(pcell_id)]["unit"])
+    assert tput_stats[str(scell_id)]["value"] > 0, "Traffic is not present on the scell - cellid: {}".format(scell_id)
+    assert tput_stats[str(scell_id)]["unit"] == "mbps", "Wrong unit type: {}".format(
+        tput_stats[str(scell_id)]["unit"])
+
+
+def get_throughput_data(*args, **kwargs):
+    return _get_throughput_stats(column="Average", *args, **kwargs)
+
+
+def assert_throughput_did_not_change_noticeably(previous_data, deviation_percent=10, *args, **kwargs):
+    dev_coef = deviation_percent * 0.01
+    present_data = _get_throughput_stats(column="Average", *args, **kwargs)
+    assert len(previous_data) == len(present_data), "Inconsistent number of cells to compare was given"
+    for cell in previous_data.keys():
+        previous_unit = previous_data[cell]["unit"]
+        present_unit = present_data[cell]["unit"]
+        previous_value = previous_data[cell]["value"]
+        present_value = present_data[cell]["value"]
+        assert previous_unit == present_unit, "Different unit types: {} vs {}".format(previous_unit, present_unit)
+        assert previous_value != 0, "Traffic from previous data is not present - cellid: {}".format(cell)
+        assert present_value != 0, "Traffic from present data is not present - cellid: {}".format(cell)
+        assert previous_value - previous_value * dev_coef < present_value < \
+               previous_value + previous_value * dev_coef, \
+               "Traffic deviated more than {}% - cellid: {}".format(deviation_percent, cell)
+
+
+def verify_if_ping_pong_did_not_occur():
+    ta5g_egate = BuiltIn().get_library_instance('ta5g_egate')
+    ta5g_egate.wait_for_egate_console_output(expected_message=None, timeout=10,
+                                             unexpected_message="SCellIndex.*deactivated successfully at airphone")
+
+
+def configure_beam_modes_mu_mimo():
+    logger_console("Add 2 beam modes...")
+    run_egate_command("beam_control_testmode_nr profile_id=1 ueBeamIndexInitial=0,1 csirs_bestbeam=1 "
+                      "csirs_rsrp_best=-44 csirs_rsrp_avg=-50")
+    run_egate_command("beam_control_testmode_nr profile_id=2 ueBeamIndexInitial=1,0 csirs_bestbeam=6 "
+                      "csirs_rsrp_best=-45 csirs_rsrp_avg=-120")
+
+
+def set_ue_testmode_nr_beam_control(ue_id=1):
+    run_egate_command("ue_testmode_set_nr id={} testmode=beam_control action=activate profile_id={} "
+                      "beamaction=attach".format(ue_id, ue_id))
+
+
+def set_ue_testmode_nr_csi_override(ue_id=1, profile_id=3):
+    run_egate_command("ue_testmode_set_nr id={} testmode=csi_override action=activate profile_id={}".format(
+        ue_id, profile_id))
+
+
+def set_ue_testmode_nr_bler(ue_id=1, action="activate", profile_id=1, scell=1):
+    run_egate_command("ue_testmode_set_nr id={} testmode=bler action={} profile_id={} scell={}".format(
+        ue_id, action, profile_id, scell))
+
+
+def csi_override_testmode_nr(profile_id=3, pmi=852):
+    run_egate_command("csi_override_testmode_nr profile_id={} cqi_mode=fixed cqi=15 ri_mode=fixed ri=3 "
+                      "pmi_mode=fixed pmi={} cri_mode=fixed cri=2 li_mode=fixed li=0".format(profile_id, pmi))
+
+
+def configure_bler_test_mode():
+    run_egate_command("bler_testmode_nr profile_id=1 dl_bler=1000,1000,1000,1000,1000,1000,1000,1000")
+
+
+def wait_until_egate_print_appears(regex, retry=30, retry_interval=10):
+    while retry > 0:
+        run_egate_command("set_log flush")
+        with open("/opt/wts/latest/egate_console.log") as egate_console:
+            egate_console_content = egate_console.read()
+            regex_string = re.compile(regex)
+            if len(regex_string.findall(egate_console_content)) > 0:
+                break
+        retry -= 1
+        time.sleep(retry_interval)
+    else:
+        raise ExecutionFailed(message=f"Pattern {regex} was not found in egate_console.log.")

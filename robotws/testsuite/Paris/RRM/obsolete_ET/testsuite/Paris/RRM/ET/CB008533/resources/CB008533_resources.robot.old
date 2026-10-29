@@ -1,0 +1,667 @@
+*** Settings ***
+Documentation
+...      == COPYRIGHT ==
+...          Nokia Networks
+...      == AUTHORS U-PLANE ==
+...        - Michal Obszarny  <michal.obszarny@nokia.com>
+...        - Jakub Drabina    <jakub.drabina@nokia.com>
+...        - Marcin Gorczyca  <marcin.gorczyca@nokia.com>
+...        - Lukasz Gdowski   <lukasz.gdowski@nokia.com>
+...      == MAINTAINER ==
+...        - N/A
+...      == MODIFICATIONS ==
+...         2024-09-05       tony.huynh-quang@nokia.com        Verify resourceSetToAddModList IE whether PUCCH resources were allocated correctly
+...                                                            for BF enabled for FTTF 4CC CA NR-UE
+
+
+Library     OperatingSystem
+Library     ute_fsmaccess
+Library     ute_wtssim
+Library     ta_emss
+Library     ta_logcollector
+Library     ta_messaging
+Library     ta5g_pm_counters
+Library     ta5g_testline_management
+Library     taf.collectors.l2stream3     WITH NAME  tcl
+Library     taf.collectors.core          WITH NAME  tcc
+Library     taf.converters.eventdecoder  WITH NAME  tce
+Library    taf.sw.scout                  WITH NAME  scout
+Library    taf.sw.reporting_portal       WITH NAME  reporting_portal
+
+Resource    ../../resources_KRK/robot/common_keywords.robot
+Library     ../../resources_KRK/python/traffic_handling.py
+Library     CB008533_tti_trace_keywords.py
+Library     CB008533_resources.py
+Variables   ta5g_global_var
+Variables   ta_messaging_filters.py
+
+
+*** Variables ***
+${ENABLE_CP_RT_DEBUG_LOGS}=     0x590072=1 #ENABLE CP_RT DEBUG LOGS
+${ENABLE_CP_NRT_DEBUG_LOGS}=    0x41001b=1 #ENABLE CP_NRT DEBUG LOGS
+${PM_COUNTERS_PERIOD_DIVIDER}=  0x340000=5 #shorten PM counters collecting period
+${PM_COUNTERS_PERIOD_SECOND_DIVIDER}=  0x9D0000=5 #shorten PM counters collecting period
+@{SWCONFIG_FLAGS_LIST}=  ${ENABLE_CP_RT_DEBUG_LOGS}  ${ENABLE_CP_NRT_DEBUG_LOGS}  ${PM_COUNTERS_PERIOD_DIVIDER}  ${PM_COUNTERS_PERIOD_SECOND_DIVIDER}
+#${airphone_xml}=                ${EXECDIR}${/}..${/}robotws${/}custom-config${/}Krakow${/}CB008533${/}AirPhone_FDD_TDD_6Cells_L1B_SANSA_4CC_CA.xml
+#${lc_config}=                   ${EXECDIR}${/}..${/}robotws${/}custom-config${/}Krakow${/}CB008533${/}lc_config.yaml
+
+*** Keywords ***
+# ------------ EMSSIM and EPCSIM connection, Aliases and others precondition ------------
+Change weightForSCellSelection for Cell-2 and Cell-4
+    Configure    {'MOC': 'NRCELL', 'ID': 2, 'weightForSCellSelection': '40'}
+    Configure    {'MOC': 'NRCELL', 'ID': 4, 'weightForSCellSelection': '20'}
+    BuiltIn.sleep  10
+
+# ------------ Register and Deregister NR-UE ------------
+Establish PDU session for NR-UE${UE_ID} message flow check
+    Expect message flow
+    ...    gNB2:F1AP_UEContextSetupRequest (CUtoDURRCInformation is present) as UEContextSetupRequest
+    ...    gNB2:F1AP_UEContextSetupResponse (DUtoCURRCInformation is present) as UEContextSetupResponse
+    ...    gNB2:F1AP_UEContextModificationRequest (SCell-ToBeSetupMod-List is present) as UEContextModificationRequest
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse
+    ...    gNB2:F1AP_UEContextModificationRequest as UEContextModificationRequest_2nd
+    ...    gNB2:F1AP_UEContextModificationResponse (sCellToAddModList is present) as UEContextModificationResponse_2nd
+    ...    UE_${UE_ID}:NR-RRC_RRCReconfiguration as RRCReconfiguration
+    ...    UE_${UE_ID}:NR-RRC_RRCReconfigurationComplete as RRCReconfigurationComplete
+    ...    UE_${UE_ID}:NR-RRC_RRCReconfiguration as RRCReconfiguration_2nd
+    ...    UE_${UE_ID}:NR-RRC_RRCReconfigurationComplete as RRCReconfigurationComplete_2nd
+    ...    alias=Established_PDU_UE${UE_ID}   overall_timeout=20
+
+# ------------ Throughput ------------
+Wait ${seconds}s for throughput stable
+    BuiltIn.sleep  ${seconds}
+
+# ------------ TTI Traces collection ------------
+Start TTI trace collection
+    ${configurations}=  tcc.Load Configurations    ${CURDIR}/CB008533_tti_trace_collectors.yaml
+    tcc.Create Collectors    names=l2stream3    configurations=${configurations['collectors']}
+    tcl.Set Suite Alias     alias=l2stream3
+    tcc.Setup Collectors    names=l2stream3
+    tcc.Start Collectors    names=l2stream3
+    Log to console    ${\n}TTI traces collecting started
+
+Stop TTI trace collection
+    Log to console    Stopping TTI traces collecting
+    tcc.Stop Collectors    names=l2stream3
+    tcc.Collect Collectors    names=l2stream3
+    tcc.Teardown Collectors    names=l2stream3
+
+Convert TTI trace from pcap
+    [Arguments]  ${format}  ${directory_name}
+    Log to console    Converting TTI traces to ${format}
+    tce.Create eventDecoder Converter
+    ...  name=ttitrace_converter
+    ...  input_file_path=${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/l2stream3/tcpdump/tcpdump.pcap
+    ...  output_file_format=${format}
+    ...  output_file_path=${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/output
+    tce.Convert
+    ...  name=ttitrace_converter
+    Remove Directory  ${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/${directory_name}/    recursive=True
+    Move Files	    ${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/output*     ${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/${directory_name}/
+    Move Directory	${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/l2stream3/  ${OUTPUTDIR}/${SUITENAME}/${TESTNAME}/${directory_name}/
+
+Collect TTI Traces during ${duration} seconds and save to directory ${directory_name}
+    ${parent_directory}  Set variable  ${directory_name}
+    Set Test Variable  ${parent_directory}
+    Start TTI trace collection
+    Log to console    Collecting duration is ${duration}
+    BuiltIn.sleep  ${duration}
+    Stop TTI trace collection
+    Convert TTI trace from pcap  format=excelCsv  directory_name=${directory_name}
+
+# ------------ ta_messaging messages verification ------------
+
+Verify SCell-ToBeSetupMod-List IE whether TDD Cell and FDD Cell were selected to 4CC CA for NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${selected_SCells_for_FTTF_4CC_CA_in_UE_CON_MOD_REQ}
+    ...  message_alias=UEContextModificationRequest
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+Verify sCellToAddModList IE whether TDD Cells and FDD Cell were added as SCells for NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${added_SCells_for_FTTF_4CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+Verify sCellToAddModList IE whether TDD Cells and FDD Cell with higher weightForSCellSelection were added as SCells for NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${added_SCells_for_FTTF_4CC_CA_in_UE_CON_MOD_RESP_Cell_2_higher_weight}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+Verify spCellConfig and sCellToAddModList IEs whether maxMIMO-Layers DL and UL configuration was correct for NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${maxMIMO_Layers_for_FTTF_4CC_CA_in_UE_CON_MOD_RESP}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+Verify whether pCSI and HARQ AN and CRI of the best CSI-RS reporting configuration was sent for SCell-2 for FTTF 4CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${CSIReportConfigToAddModList_for_BF_enabled_with_BR_for_FTTF_4CC_CA_in_UE_CON_MOD_RESP_for_SCell_2_and_SCell_3}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+Verify resourceSetToAddModList IE whether PUCCH resources were allocated correctly for BF enabled for FTTF 4CC CA NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+#    ...      ${resourceSetToAddModList_for_BF_enabled_for_FTTF_4CC_CA_in_UE_CON_MOD_RESP_for_SCell_2_and_SCell_3}
+    ...      ${resourceSetToAddModList_for_BF_enabled_for_FTTF_4CC_CA_in_UE_CON_MOD_RESP_for_SCell_2_and_SCell_3_mod}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+    Verify starting PRB for set1 resources are different
+
+Verify SCellToAddModList IE whether each SCell has CSI-RS configuration
+    Verify That Message Fulfills Query
+    ...      ${CSIRS_configuration_for_each_SCell}
+    ...  message_alias=UEContextModificationResponse_2nd
+    ...  flow_alias=Established_PDU_UE1
+
+Verify allowedBC-ListMRDC IE whether CA_n71A-n5A-n77A-n41A band combination was selected to 4CC CA for NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${BandComb_Index_and_allowedFeatureSetsList_for_FTTF_3CC_CA_in_UE_CON_MOD_REQ}
+    ...  message_alias=UEContextModificationRequest
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+Verify allowedBC-ListMRDC IE whether CA_n71A-n5A-n77A-n41A band combination was selected to 4CC CA with higher weight for NR-UE${UE_ID}
+    Verify That Message Fulfills Query
+    ...      ${BandComb_Index_and_allowedFeatureSetsList_for_FTTF_3CC_CA_in_UE_CON_MOD_REQ_with_higher_weight}
+    ...  message_alias=UEContextModificationRequest
+    ...  flow_alias=Established_PDU_UE${UE_ID}
+
+# ------------ PM counters keywords ------------
+Verify counters for successful 4CC FFTT CA
+    Wait for next full PM Interval
+    ${pm_counter_file}=    Get Latest Unpacked Full Pm Counters File
+    Verify Any Counters In File
+        ...    M55138C03001    1    GNB_SCELL_3_ADMI_REQ_SA
+        ...    M55138C03002    1    GNB_SCELL_3_ADMI_SUCC_SA
+        ...    M55139C03001    1    GNB_DU_SCELL_3_ADMI_REQ_SA
+        ...    M55139C03002    1    GNB_DU_SCELL_3_ADMI_SUCC_SA
+        ...    M55118C09502    1    RRC_RECONF_ADD3DLSCELL_SUCC_SA
+        ...    M55118C09503    1    RRC_RECONF_ADD3DLSCELL_ATT_SA
+        ...    M55118C09501   >20   UE_PCELL_3_CONF_SCELL_DL_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-1
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55138C03001    0    GNB_SCELL_3_ADMI_REQ_SA
+        ...    M55138C03002    0    GNB_SCELL_3_ADMI_SUCC_SA
+        ...    M55139C03001    0    GNB_DU_SCELL_3_ADMI_REQ_SA
+        ...    M55139C03002    0    GNB_DU_SCELL_3_ADMI_SUCC_SA
+        ...    M55118C09502    0    RRC_RECONF_ADD3DLSCELL_SUCC_SA
+        ...    M55118C09503    0    RRC_RECONF_ADD3DLSCELL_ATT_SA
+        ...    M55118C09501    0    UE_PCELL_3_CONF_SCELL_DL_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-3
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55138C03001    0    GNB_SCELL_3_ADMI_REQ_SA
+        ...    M55138C03002    0    GNB_SCELL_3_ADMI_SUCC_SA
+        ...    M55139C03001    0    GNB_DU_SCELL_3_ADMI_REQ_SA
+        ...    M55139C03002    0    GNB_DU_SCELL_3_ADMI_SUCC_SA
+        ...    M55118C09502    0    RRC_RECONF_ADD3DLSCELL_SUCC_SA
+        ...    M55118C09503    0    RRC_RECONF_ADD3DLSCELL_ATT_SA
+        ...    M55118C09501    0    UE_PCELL_3_CONF_SCELL_DL_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-4
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55138C03001    0    GNB_SCELL_3_ADMI_REQ_SA
+        ...    M55138C03002    0    GNB_SCELL_3_ADMI_SUCC_SA
+        ...    M55139C03001    0    GNB_DU_SCELL_3_ADMI_REQ_SA
+        ...    M55139C03002    0    GNB_DU_SCELL_3_ADMI_SUCC_SA
+        ...    M55118C09502    0    RRC_RECONF_ADD3DLSCELL_SUCC_SA
+        ...    M55118C09503    0    RRC_RECONF_ADD3DLSCELL_ATT_SA
+        ...    M55118C09501    0    UE_PCELL_3_CONF_SCELL_DL_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-6
+        ...    file_path=${pm_counter_file}
+
+Verify counters for successful 4CC FFTT CA not increased
+    Wait for next full PM Interval
+    ${pm_counter_file}=    Get Latest Unpacked Full Pm Counters File
+    Verify Any Counters In File
+        ...    M55138C03001    0    GNB_SCELL_3_ADMI_REQ_SA
+        ...    M55138C03002    0    GNB_SCELL_3_ADMI_SUCC_SA
+        ...    M55139C03001    0    GNB_DU_SCELL_3_ADMI_REQ_SA
+        ...    M55139C03002    0    GNB_DU_SCELL_3_ADMI_SUCC_SA
+        ...    M55118C09502    0    RRC_RECONF_ADD3DLSCELL_SUCC_SA
+        ...    M55118C09503    0    RRC_RECONF_ADD3DLSCELL_ATT_SA
+        ...    M55118C09501    0    UE_PCELL_3_CONF_SCELL_DL_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-1
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55138C03001    0    GNB_SCELL_3_ADMI_REQ_SA
+        ...    M55138C03002    0    GNB_SCELL_3_ADMI_SUCC_SA
+        ...    M55139C03001    0    GNB_DU_SCELL_3_ADMI_REQ_SA
+        ...    M55139C03002    0    GNB_DU_SCELL_3_ADMI_SUCC_SA
+        ...    M55118C09502    0    RRC_RECONF_ADD3DLSCELL_SUCC_SA
+        ...    M55118C09503    0    RRC_RECONF_ADD3DLSCELL_ATT_SA
+        ...    M55118C09501    0    UE_PCELL_3_CONF_SCELL_DL_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-3
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55138C03001    0    GNB_SCELL_3_ADMI_REQ_SA
+        ...    M55138C03002    0    GNB_SCELL_3_ADMI_SUCC_SA
+        ...    M55139C03001    0    GNB_DU_SCELL_3_ADMI_REQ_SA
+        ...    M55139C03002    0    GNB_DU_SCELL_3_ADMI_SUCC_SA
+        ...    M55118C09502    0    RRC_RECONF_ADD3DLSCELL_SUCC_SA
+        ...    M55118C09503    0    RRC_RECONF_ADD3DLSCELL_ATT_SA
+        ...    M55118C09501    0    UE_PCELL_3_CONF_SCELL_DL_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-4
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55138C03001    0    GNB_SCELL_3_ADMI_REQ_SA
+        ...    M55138C03002    0    GNB_SCELL_3_ADMI_SUCC_SA
+        ...    M55139C03001    0    GNB_DU_SCELL_3_ADMI_REQ_SA
+        ...    M55139C03002    0    GNB_DU_SCELL_3_ADMI_SUCC_SA
+        ...    M55118C09502    0    RRC_RECONF_ADD3DLSCELL_SUCC_SA
+        ...    M55118C09503    0    RRC_RECONF_ADD3DLSCELL_ATT_SA
+        ...    M55118C09501    0    UE_PCELL_3_CONF_SCELL_DL_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-6
+        ...    file_path=${pm_counter_file}
+
+Verify counters for successful 3CC FTT CA
+    Wait for next full PM Interval
+    ${pm_counter_file}=    Get Latest Unpacked Full Pm Counters File
+    Verify Any Counters In File
+        ...    M55138C02501    1    GNB_SCELL_2_ADMI_REQ_SA
+        ...    M55138C02502    1    GNB_SCELL_2_ADMI_SUCC_SA
+        ...    M55138C01503    0    GNB_SCELL_ADMI_UNSUCC_SA
+        ...    M55139C01501    1    GNB_DU_SCELL_2_ADMI_REQ_SA
+        ...    M55139C01502    1    GNB_DU_SCELL_2_ADMI_SUCC_SA
+        ...    M55118C07001  >200    UE_PCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07002  <300    UE_SCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07003    1    RRC_RECONF_ADD2DLSCELL_SUCC_SA
+        ...    M55118C07004    1    RRC_RECONF_ADD2DLSCELL_ATT_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-1
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55138C02501    0    GNB_SCELL_2_ADMI_REQ_SA
+        ...    M55138C02502    0    GNB_SCELL_2_ADMI_SUCC_SA
+        ...    M55138C01503    0    GNB_SCELL_ADMI_UNSUCC_SA
+        ...    M55139C01501    0    GNB_DU_SCELL_2_ADMI_REQ_SA
+        ...    M55139C01502    0    GNB_DU_SCELL_2_ADMI_SUCC_SA
+        ...    M55118C07001    0    UE_PCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07002  >200    UE_SCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07002  <300    UE_SCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07003    0    RRC_RECONF_ADD2DLSCELL_SUCC_SA
+        ...    M55118C07004    0    RRC_RECONF_ADD2DLSCELL_ATT_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-2
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55138C02501    0    GNB_SCELL_2_ADMI_REQ_SA
+        ...    M55138C02502    0    GNB_SCELL_2_ADMI_SUCC_SA
+        ...    M55138C01503    0    GNB_SCELL_ADMI_UNSUCC_SA
+        ...    M55139C01501    0    GNB_DU_SCELL_2_ADMI_REQ_SA
+        ...    M55139C01502    0    GNB_DU_SCELL_2_ADMI_SUCC_SA
+        ...    M55118C07001    0    UE_PCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07002  >200    UE_SCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07002  <300    UE_SCELL_2_CONF_SCELL_DL_SA
+        ...    M55118C07003    0    RRC_RECONF_ADD2DLSCELL_SUCC_SA
+        ...    M55118C07004    0    RRC_RECONF_ADD2DLSCELL_ATT_SA
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-6
+        ...    file_path=${pm_counter_file}
+
+
+# -------------- DSS Setup --------------
+Setup DSS
+    Activate XP Link
+    BuiltIn.sleep  2
+    Activate XP Link
+    BuiltIn.sleep  30
+    Setup DSS on Cell1
+    BuiltIn.sleep  10
+    Setup DSS on Cell2
+    BuiltIn.sleep  10
+    Setup DSS on Cell3
+    BuiltIn.sleep  10
+
+
+Activate XP Link
+    Execute egate command
+    ...    cmd=enb_xp_param id=1 ignore_xp=off xp_listening_socket=on
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_xp_param id=1 xp_peers=2
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_xp_link_up enb=1 target=2
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_x2_link_up enb=1 target=2
+    BuiltIn.sleep    2
+
+
+Setup DSS on Cell1
+    Execute egate command
+    ...    cmd=enb_dss_param id=1 feature_flag=on message_sets=V1,DMS3
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_cell_param id=1 enb=1 antenna_ports_num=2 lte_nr_dss_mode=DSS_PHASE_3
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_cell_dss_feature enb=1 id=1 nr_dl_peak_rate_increase=on
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_cell_dss_feature enb=1 id=1 superfast_allocation=on
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_cell_dss_param id=1 enb=1 dl_resource_sharing_algo=dl_buffer_level_based
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_configure_partnership enb=1 cell=1 dss_peer=2:3
+    BuiltIn.sleep    2
+    Setup on egate cell resource reservation on enb1 cell1 gnb2 cell3
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_crm_param id=1 dl_qos_load_meas_timer=200 ul_qos_load_meas_timer=200
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_establish_partnership enb=1 cell=1 tgt_enb=2 tgt_cell=3
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_dl_cell_resource_reservation enb=1 cell=1
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_ul_cell_resource_reservation enb=1 cell=1
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_dl_cell_resource_reservation enb=1 cell=1 prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    BuiltIn.sleep    2
+    Setup on egate dl cell resource reservation on enb1 cell1
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_dl_cell_resource_reservation enb=1 cell=1 min_lte_nr_dss_ratio=30 max_lte_nr_dss_ratio=100
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_cell_resource_coordination enb=1 cell=1 tgt_enb=2 tgt_cell=3 dir=DL
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_ul_cell_resource_reservation enb=1 cell=1 minimum_prb_share=30 maximum_prb_share=70
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_cell_resource_coordination enb=1 cell=1 tgt_enb=2 tgt_cell=3 dir=UL
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_crm_status enb=1 cell=1
+    BuiltIn.sleep    2
+    Setup on egate high allocation on enb1 cell1 gnb2 cell3
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_resource_allocation enb=1 cell=1 tgt_enb=2 tgt_cell=3 dir=UL allocation_start_time=immediate ul_allocated_prb_list=6,30
+    BuiltIn.sleep    2
+
+
+Setup DSS on Cell2
+    Execute egate command
+    ...    cmd=enb_dss_param id=1 feature_flag=on message_sets=V1,DMS3
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_cell_param id=2 enb=1 antenna_ports_num=2 lte_nr_dss_mode=DSS_PHASE_3
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_cell_dss_feature enb=1 id=2 nr_dl_peak_rate_increase=on
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_cell_dss_feature enb=1 id=2 superfast_allocation=on
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_cell_dss_param id=2 enb=1 dl_resource_sharing_algo=dl_buffer_level_based
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_configure_partnership enb=1 cell=2 dss_peer=2:5
+    BuiltIn.sleep    2
+    Setup on egate cell resource reservation on enb1 cell2 gnb2 cell5
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_crm_param id=2 dl_qos_load_meas_timer=200 ul_qos_load_meas_timer=200
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_establish_partnership enb=1 cell=2 tgt_enb=2 tgt_cell=5
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_dl_cell_resource_reservation enb=1 cell=2
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_ul_cell_resource_reservation enb=1 cell=2
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_dl_cell_resource_reservation enb=1 cell=2 prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    BuiltIn.sleep    2
+    Setup on egate dl cell resource reservation on enb1 cell2
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_dl_cell_resource_reservation enb=1 cell=2 min_lte_nr_dss_ratio=30 max_lte_nr_dss_ratio=100
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_cell_resource_coordination enb=1 cell=2 tgt_enb=2 tgt_cell=5 dir=DL
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_ul_cell_resource_reservation enb=1 cell=2 minimum_prb_share=30 maximum_prb_share=70
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_cell_resource_coordination enb=1 cell=2 tgt_enb=2 tgt_cell=5 dir=UL
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_crm_status enb=1 cell=2
+    BuiltIn.sleep    2
+    Setup on egate high allocation on enb1 cell2 gnb2 cell5
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_resource_allocation enb=1 cell=2 tgt_enb=2 tgt_cell=5 dir=UL allocation_start_time=immediate ul_allocated_prb_list=6,30
+    BuiltIn.sleep    2
+
+
+Setup DSS on Cell3
+    Execute egate command
+    ...    cmd=enb_dss_param id=1 feature_flag=on message_sets=V1,DMS3
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_cell_param id=3 enb=1 antenna_ports_num=2 lte_nr_dss_mode=DSS_PHASE_3
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_cell_dss_feature enb=1 id=3 nr_dl_peak_rate_increase=on
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_cell_dss_feature enb=1 id=3 superfast_allocation=on
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_cell_dss_param id=3 enb=1 dl_resource_sharing_algo=dl_buffer_level_based
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_configure_partnership enb=1 cell=3 dss_peer=2:6
+    BuiltIn.sleep    2
+    Setup on egate cell resource reservation on enb1 cell3 gnb2 cell6
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_crm_param id=3 dl_qos_load_meas_timer=200 ul_qos_load_meas_timer=200
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_establish_partnership enb=1 cell=3 tgt_enb=2 tgt_cell=6
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_dl_cell_resource_reservation enb=1 cell=3
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_ul_cell_resource_reservation enb=1 cell=3
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_dl_cell_resource_reservation enb=1 cell=3 prb_area_reservation_list=0,0,0-10-none+0,0,5-10-none+0,0,9-10-none
+    BuiltIn.sleep    2
+    Setup on egate dl cell resource reservation on enb1 cell3
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_dl_cell_resource_reservation enb=1 cell=3 min_lte_nr_dss_ratio=30 max_lte_nr_dss_ratio=100
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_cell_resource_coordination enb=1 cell=3 tgt_enb=2 tgt_cell=6 dir=DL
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_ul_cell_resource_reservation enb=1 cell=3 minimum_prb_share=30 maximum_prb_share=70
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_cell_resource_coordination enb=1 cell=3 tgt_enb=2 tgt_cell=6 dir=UL
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_crm_status enb=1 cell=3
+    BuiltIn.sleep    2
+    Setup on egate high allocation on enb1 cell3 gnb2 cell6
+    BuiltIn.sleep    2
+    Execute egate command
+    ...    cmd=enb_dss_resource_allocation enb=1 cell=3 tgt_enb=2 tgt_cell=6 dir=UL allocation_start_time=immediate ul_allocated_prb_list=6,30
+    BuiltIn.sleep    2
+
+# -------------- DSS Verification --------------
+
+Verify counters for high/medium/small allocation
+    Wait for next full PM Interval
+    ${pm_counter_file}=    Get Latest Unpacked Full Pm Counters File
+
+    Verify Any Counters In File
+        ...    M55332C00001    190000-211000   EN_DSS_DL_NR_SLOTS,
+        ...    M55332C02001    290000-310000   EN_DSS_NBR_AVLBL_DL_SLOTS
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-2/NRCELL-3
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55332C00001    120000-140000   EN_DSS_DL_NR_SLOTS,
+        ...    M55332C02001    290000-310000   EN_DSS_NBR_AVLBL_DL_SLOTS
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-2/NRCELL-5
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55332C00001     80000-100000   EN_DSS_DL_NR_SLOTS,
+        ...    M55332C02001    290000-310000   EN_DSS_NBR_AVLBL_DL_SLOTS
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-2/NRCELL-6
+        ...    file_path=${pm_counter_file}
+
+Verify counters for small/high/medium allocation
+    Wait for next full PM Interval
+    ${pm_counter_file}=    Get Latest Unpacked Full Pm Counters File
+
+    Verify Any Counters In File
+        ...    M55332C00001    100000-120000   EN_DSS_DL_NR_SLOTS,
+        ...    M55332C02001    290000-310000   EN_DSS_NBR_AVLBL_DL_SLOTS
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-2/NRCELL-3
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55332C00001    190000-210000   EN_DSS_DL_NR_SLOTS,
+        ...    M55332C02001    290000-310000   EN_DSS_NBR_AVLBL_DL_SLOTS
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-2/NRCELL-5
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55332C00001    110000-130000   EN_DSS_DL_NR_SLOTS,
+        ...    M55332C02001    290000-310000   EN_DSS_NBR_AVLBL_DL_SLOTS
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-2/NRCELL-6
+        ...    file_path=${pm_counter_file}
+
+Verify counters for medium/small/high allocation
+    Wait for next full PM Interval
+    ${pm_counter_file}=    Get Latest Unpacked Full Pm Counters File
+    Set test variable  ${pm_counter_file}
+    Verify Any Counters In File
+        ...    M55332C00001    110000-130000   EN_DSS_DL_NR_SLOTS,
+        ...    M55332C02001    290000-310000   EN_DSS_NBR_AVLBL_DL_SLOTS
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-2/NRCELL-3
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55332C00001     90000-115000   EN_DSS_DL_NR_SLOTS,
+        ...    M55332C02001    290000-310000   EN_DSS_NBR_AVLBL_DL_SLOTS
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-2/NRCELL-5
+        ...    file_path=${pm_counter_file}
+
+    Verify Any Counters In File
+        ...    M55332C00001    190000-210000   EN_DSS_DL_NR_SLOTS,
+        ...    M55332C02001    290000-310000   EN_DSS_NBR_AVLBL_DL_SLOTS
+        ...    local_moid=PLMN-PLMN/MRBTS-1/NRBTS-2/NRCELL-6
+        ...    file_path=${pm_counter_file}
+
+Report DSS counters to RP
+    Get counters value and report to rp  counters=M55332C00001,M55332C02001  filepath=${pm_counter_file}  localmoid=NRCELL-3
+
+Verify traffic rates are correct for Step 1
+    #UE1
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE1 on SCell-0 is about 12.0 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE1 on SCell-2 is about 7.0 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE1 on SCell-3 is about 4.4 MBps
+
+    #UE2
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE2 on SCell-0 is about 12.0 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE2 on SCell-2 is about 7.0 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE2 on SCell-3 is about 4.4 MBps
+
+    #UE3
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE3 on SCell-0 is about 12.0 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE3 on SCell-2 is about 7.0 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE3 on SCell-3 is about 4.4 MBps
+
+
+Verify traffic rates are correct for Step 2
+    #UE1
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE1 on SCell-0 is about 5.2 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE1 on SCell-2 is about 11.0 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE1 on SCell-3 is about 6.9 MBps
+
+    #UE2
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE2 on SCell-0 is about 5.2 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE2 on SCell-2 is about 11.0 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE2 on SCell-3 is about 6.9 MBps
+
+    #UE3
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE3 on SCell-0 is about 5.2 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE3 on SCell-2 is about 11.0 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE3 on SCell-3 is about 6.9 MBps
+
+
+Verify traffic rates are correct for Step 3
+    #UE1
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE1 on SCell-0 is about 7.2 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE1 on SCell-2 is about 4.2 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE1 on SCell-3 is about 11.2 MBps
+
+    #UE2
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE2 on SCell-0 is about 7.2 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE2 on SCell-2 is about 4.2 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE2 on SCell-3 is about 11.2 MBps
+
+    #UE3
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE3 on SCell-0 is about 7.2 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE3 on SCell-2 is about 4.2 MBps
+    Run keyword and continue on failure    Verify that DL throughput for NR-UE3 on SCell-3 is about 11.2 MBps
+
+
+Call Scout Services
+    [Documentation]                 Launch Scout services to produce data for RP.
+    [Arguments]                     ${wait_for_success}    ${timeout}   ${use_scout_internal_id}    ${alias}
+    ${scout_monitor_status}=        Run Keyword And Return Status
+    ...                             scout.get_testline_monitor_status   alias=${alias}
+    ${scout_scf_id}=                scout.request_scf                   wait_for_success=${wait_for_success}
+    ...                                                                 timeout=${timeout}
+    ...                                                                 use_scout_internal_id=${use_scout_internal_id}
+    ...                                                                 alias=${alias}
+    # ${TC_ID}=                       Set Variable                        ute:id:${scout_scf_id}
+    # Set Tags                        ${TC_ID}
+    # Run Keyword If                  not ${use_scout_internal_id} and '${scout_scf_id}'!='None'
+    # ...                             reporting_portal.add_to_test_data   data={"tc_execution_id": "${scout_scf_id}"}
+
+
+Produce Scout Data
+    [Documentation]                 Prepare Scout environment then call Scout service to produce data for Reporting Portal.
+    [Arguments]                     ${wait_for_success}=True
+    ...                             ${timeout}=60
+    ...                             ${alias}=conn_alias
+    ${status}    ${tl_name}=        Run Keyword and Ignore Error    get_testline_name
+    Run Keyword and Ignore Error    scout.setup_scout               scout_testline_name=${tl_name}      alias=conn_alias
+    ${use_scout_internal_id}=       Set Variable                    ${False}
+    Run Keyword and Ignore Error    Call Scout Services             wait_for_success=${wait_for_success}
+    ...                                                             timeout=${timeout}
+    ...                                                             use_scout_internal_id=${use_scout_internal_id}
+    ...                                                             alias=${alias}
+    Run Keyword and Ignore Error    scout.teardown_scout_api        alias=${alias}

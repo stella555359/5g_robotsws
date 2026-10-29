@@ -1,0 +1,166 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Main keyword used for 5GC000522 feature tests cases
+...
+...               Automation author           : yann.ah.herve@nokia.com
+...               Automation contact          : davide.bacchiega@nokia.com
+...               Creation Date               : 30-Sept-2021
+...               Modified Date               : 12-Jan-2024
+...               Last Modified by            : imen.mestiri@nokia.com
+...               Modification:
+...               07-March-2022:
+...               Use of UE capabilities and TM BLER to cover all MCS 256QAM instead of RAD param to set MCS to use
+...               12-Jan-2024                 : Adding TC_522_256QAM for VRAN4
+
+Resource          resources/robot/5GC000522_Keywords.robot
+
+*** Keywords ***
+
+TC_522_256QAM
+    [Documentation]                 Generic test for 5GC000522 TCs (256QAM introduction)
+    ...                             This is the automated TCs related to 5GC000522 technical debt
+    ...                             (ECERD-25910). It's the automated test orignally done by Bengalore
+    ...                             team at 5G19 timeframe. So, a long time ago.
+    ...                             3 scenario were done: DL trafic with MCS 20, 24 and 27.
+    ...                             Here is an overiew of TCs strategy:
+    ...                             Test are done in TDD cmW and classical TLs.
+    ...                             256QAM support is supposed to be set inside UE capabilities.
+    ...                             256QAM tests are only significant in case of a full stack TL.
+    ...                             1. In the original TCs, L.A. was disabled and dllaIniMcs was set
+    ...                                to the wanted MCS. For some reason, this method to choose MCS
+    ...                                no more works well. It seems there is some compensation (MCS reduction ?)
+    ...                                which lead to MCS changes despite L.A. is disabled.
+    ...                                I have also tried to disable MCS reduction but there was still MCS variations.
+    ...                                So, instead of disabling L.A. and fix MCS inside SCF, MCS is hardcoded
+    ...                                by using rad param. In fact, it does not change a lot of things as in
+    ...                                all cases RAD params need to be used...
+    ...                                06-Dec-2021: TM BLER is now used to cover all MCS 256QAM (RAD params should be
+	...                                removed)
+    ...                                03-March-2022: UE capabilities are introduced on top of TM to check all MCS in
+    ...           	                   Rank 1 and in Rank 2 and second one in Rank2
+    ...                             2. Additional DMRS is disabled, as it was introduced after 5GC000522.
+    ...                             3. PTRS is set according to UE capabilities.
+    ...                             4. MCS, pdschTbTransmitPower are checked inside BIP.
+    ...                             5. 256QAM MCS counters are also checked at the end of the scenario.
+
+    [Arguments]                     ${duplexing_mode}
+    ...                             ${ue_capas}
+    ...                             ${expected_layers_rrc}
+    ...                             ${expected_rank_bip}
+
+    # Set parameters inside SCF: 256QAM, Additional DMRS,...
+    Set 256QAM Config
+
+    # Set MIMO layers inside UE capabilities inside UE configuration file
+    Modify Field in WtsEmu Cfg File     field=ue_nr_capabilities    value=${ue_capas}
+    Modify Field in WtsEmu Cfg File     field=ue_eutra_nr_capabilities    value=${eutra_nr_with_CAClass}
+
+    # Restart TL anyway because of RAD param updates.
+    Restart TL
+
+    ${CaptureBIP_DL}                   Capture L1L2 Set Upon Config             airscale=${GNB_DU}
+
+    WTS Setup
+
+    # Cellsetup is now done, Sherpa can be enabled if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}           Activate Sherpa
+
+    # UE attach to 4G+5G (NSA)
+    ${CaptureCorePath}            SgNB Addition to ENB            ueSetting=${UE_SIMPLE}
+
+    # Rank
+    Run Keyword If                  '${expected_rank_bip}'=='0x00000002'
+    ...                             Update RI reported values       ueSetting=${UE_SIMPLE}      ri_value=1
+
+    # Check nb of MIMO layers is set to 2 by gNB inside reconfiguration message:
+    ${pdmlFile}=                    analyzer.pcap_to_pdml          ${CaptureCorePath}
+
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=.*/nr-rrc.pdsch_ServingCellConfig/.*/nr-rrc.maxMIMO_Layers$
+    ...                             value=${expected_layers_rrc}
+
+    # Check PTRS configuration in DL/UL traffic
+    Check 256QAM in DL Traffic      duplexing_mode=${duplexing_mode}
+
+    # Detach UE
+    UE Detach Enb                   ueSetting=${UE_SIMPLE}
+
+    # Retrieve counters and compare with a reference
+    # Verify Object Counter cumulative values
+    Verify Counter Cumulative Values With Margin
+
+TC_522_256QAM_VR
+    [Documentation]                 Generic test for 5GC000522 TCs (256QAM introduction)
+    ...                             This is the automated TCs related to 5GC000522 technical debt
+    ...                             (ECERD-25910). It's the automated test orignally done by Bengalore
+    ...                             team at 5G19 timeframe. So, a long time ago.
+    ...                             3 scenario were done: DL trafic with MCS 20, 24 and 27.
+    ...                             Here is an overiew of TCs strategy:
+    ...                             Test are done in TDD cmW and classical TLs.
+    ...                             256QAM support is supposed to be set inside UE capabilities.
+    ...                             256QAM tests are only significant in case of a full stack TL.
+    ...                             1. In the original TCs, L.A. was disabled and dllaIniMcs was set
+    ...                                to the wanted MCS. For some reason, this method to choose MCS
+    ...                                no more works well. It seems there is some compensation (MCS reduction ?)
+    ...                                which lead to MCS changes despite L.A. is disabled.
+    ...                                I have also tried to disable MCS reduction but there was still MCS variations.
+    ...                                So, instead of disabling L.A. and fix MCS inside SCF, MCS is hardcoded
+    ...                                by using rad param. In fact, it does not change a lot of things as in
+    ...                                all cases RAD params need to be used...
+    ...                                06-Dec-2021: TM BLER is now used to cover all MCS 256QAM (RAD params should be
+	...                                removed)
+    ...                                03-March-2022: UE capabilities are introduced on top of TM to check all MCS in
+    ...           	                   Rank 1 and in Rank 2 and second one in Rank2
+    ...                             2. Additional DMRS is disabled, as it was introduced after 5GC000522.
+    ...                             3. PTRS is set according to UE capabilities.
+    ...                             4. MCS, pdschTbTransmitPower are checked inside BIP.
+    ...                             5. 256QAM MCS counters are also checked at the end of the scenario.
+
+    [Arguments]                     ${duplexing_mode}
+    ...                             ${ue_capas}
+    ...                             ${expected_layers_rrc}
+    ...                             ${expected_rank_bip}
+
+    # Set parameters inside SCF: 256QAM, Additional DMRS,...
+    Set MRBTSID and NRBTSID
+    Set 256QAM Config VRAN4
+
+    # Set MIMO layers inside UE capabilities inside UE configuration file
+    Modify Field in WtsEmu Cfg File     field=ue_nr_capabilities    value=${ue_capas}
+    Modify Field in WtsEmu Cfg File     field=ue_eutra_nr_capabilities    value=${eutra_nr_with_CAClass}
+
+    # Restart TL anyway because of RAD param updates.
+    Restart TL
+
+    ${CaptureBIP_DL}                   Capture L1L2 Set Upon Config             airscale=${GNB_DU}      isMirror=${True}
+    Capture Init                       ${CaptureBIP_DL}                            withTN=True
+
+    WTS Setup
+
+    # Cellsetup is now done, Sherpa can be enabled if needed
+    Run Keyword If                  ${enable_sherpa} == ${True}           Activate Sherpa
+
+    # UE attach to 4G+5G (NSA)
+    ${CaptureCorePath}            SgNB Addition to ENB            ueSetting=${UE_SIMPLE}
+
+    # Rank
+    Run Keyword If                  '${expected_rank_bip}'=='0x00000002'
+    ...                             Update RI reported values       ueSetting=${UE_SIMPLE}      ri_value=1
+
+    # Check nb of MIMO layers is set to 2 by gNB inside reconfiguration message:
+    ${pdmlFile}=                    analyzer.pcap_to_pdml          ${CaptureCorePath}
+
+    analyzer.check_list             pdmlFile=${pdmlFile}
+    ...                             packetName=SgNBAdditionRequestAcknowledge
+    ...                             path=.*/nr-rrc.pdsch_ServingCellConfig/.*/nr-rrc.maxMIMO_Layers$
+    ...                             value=${expected_layers_rrc}
+
+    # Check PTRS configuration in DL/UL traffic
+    Check 256QAM in DL Traffic      duplexing_mode=${duplexing_mode}
+
+    # Detach UE
+    UE Detach Enb                   ueSetting=${UE_SIMPLE}
+
+    # Retrieve counters and compare with a reference
+    # Verify Object Counter cumulative values
+    Verify Counter Cumulative Values With Margin VRAN

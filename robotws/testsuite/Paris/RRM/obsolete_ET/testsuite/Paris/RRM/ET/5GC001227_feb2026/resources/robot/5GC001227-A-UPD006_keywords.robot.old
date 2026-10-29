@@ -1,0 +1,193 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Keywords for UPD006
+...               Prerequisite :
+...               Scope : keywords for 5GC001227
+...
+...               Test Case Scenario author   : ilakcoumi.pareemanen@nokia.com
+...               Test Case Scenario contact  : ilakcoumi.pareemanen@nokia.com
+...               Test Case automation author : ilakcoumi.pareemanen@nokia.com
+...               Test Case automation contact: ilakcoumi.pareemanen@nokia.com
+...               Creation Date               : 11-01-2022
+...               Version History   Date            Author                      Notes
+...               0.1               11-01-2022      ilakcoumi.pareemanen@nokia.com   Creation
+...               0.2               19-01-2022      ilakcoumi.pareemanen@nokia.com   Modification
+...               0.3               FB2213          ying.yw.wu@nokia.com        Add UL max scheduled ue Check 
+
+Library             ../../../resources/python/luashark_tools.py
+Resource          taf/rfrl/common_resources/robot/preconditions.robot
+
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../../../resources/SWENG/robot/Container.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/PacketSearch.robot
+
+Resource          ./Config1227.robot
+Resource          ./5GC001227-Common_keywords.robot
+
+Variables           ../../../../../resources/SWENG/python/Colors.py
+
+*** Variables ***
+# Variables for ue profile and traffic
+${CallType}                 SA           # NSA or SA (for all UEs)
+${Cell}                     1            # Target cell (must be index 1, 2, 3, 4, 5...)
+${DLthroughput_pdcch}       20           # DL throughput in Mbps
+${ULthroughput_pdcch}       10           # UL throughput in Mbps
+#Variables to Build UEs list and Setup WTS Lua
+${gNbID}              2            # Value of the Target_gnb  
+${CellID}             1            # Retrieved from NRCELL_ID_LIST items [1, 2, 3, 4, 5, 6, None, None, None]
+${UEnb}               5            # Number of UEs to "attach/traffic/detach" simultaneously per cell
+${nbUe}               5
+${Num_Of_UE}          5
+${loopIND}            1
+${LoopNb}             1            # Number of loops "attach/traffic/detach"
+
+*** Keywords ***
+TC 1227 PDCCH grants check
+    [Documentation]     Test to check that maimum 4 grants is permitted within a slot/SFN 
+    ...                 A ratio of 24 % is applied on rdMaxNumStreamPrbL1Ratio RAD parameter
+    ...                 Check Counters M55308C17002   Maximum number of Scheduled (FDM and MU-MIMO) UEs on PDSCH per slot on CELL-1
+
+    [Arguments]            ${params}        ${Vendor_Param}
+    Set Suite Variable     ${params}
+    Init Sequence          ${params}
+    Step                   Set RAD Params Of 1227
+    Step                   Config1227.Vendor File Config With Specific Settings     argument=${Vendor_Param}        
+    Step                   Config1227.Update 1227 Params in OAM SCF
+    Critical Step          Restart TL
+    ${UEsList}             Build UEs list SA PDCCH 5UEs Cell1             UEnb=${Num_Of_UE}
+    Multi Cells Setup SANSA 1227    CallType=${CallType}    UEsList=${UEsList}
+    Step                   Activate Sherpa On All Cells
+    Step                   Wait In Seconds
+    Step                   TC 1227 SA Call of n UE PDCCH      # Multi Cells Setup SANSA 1227 must be be called before running this step.
+    Step                   Stop Sherpa Collection
+    Step                   sleep         argument=360s
+    Step                   Collect PM Counters File
+    Step                   Check Maximum number of Scheduled Ues UL on Cell 1
+    Step                   Check Maximum number of Scheduled Ues DL on Cell 1
+
+TC 1227 SA Call of n UE PDCCH
+    [Documentation]                 Keyword to attach n UEs on n target cells with/wo DL/UL traffic
+    ...                             NOTE: If both DL and UL throughput are not null,
+    ...                             DL and UL traffic are launched simultaneously
+    ...                             NOTE: Keyword "Multi Cells Setup SANSA 1227" must be be called before
+   ...                              running this step to initiate Lua config file with nb of UE
+    [Arguments]
+    ${UEsList}                  Build UEs list SA PDCCH 5UEs Cell1             UEnb=${Num_Of_UE}
+    ${UEnb_attached}            Evaluate                0
+    FOR    ${loopIND}    IN RANGE    1    ${LoopNb}+1
+        ${UEsAttached}         SA Attach PDCCH     UEsList=${UEsList}  
+        Sleep                  5s
+        Traffic PDCCH     UEsList=${UEsAttached}     DLtput=${DLthroughput_pdcch}    ULtput=${ULthroughput_pdcch}
+        Sleep                  5s
+       # UE Detach              UEsList=${UEsAttached}
+        ${UE_attached_loop}    get length         ${UEsAttached}
+#       ${UEnb_attached}       Evaluate           ${UEnb_attached} + ${UE_attached_loop}
+    END
+
+Build UEs list SA PDCCH 5UEs Cell1
+    [Arguments]                    ${UEnb}=1    ${CellID}=1
+    ${UEsList}                      Create List
+    FOR    ${UEid}    IN RANGE    1    ${UEnb}+1
+            &{UEcurrent}=                   Copy Dictionary          ${BASIC_UE_SA}
+            Set To Dictionary               ${UEcurrent}      ue                 ${UEid}
+            Set To Dictionary               ${UEcurrent}      pdu                ${UEid}
+#           Set To Dictionary               ${UE_current}     qfi                ${UEid}
+#           Set To Dictionary               ${UE_current}     trf_id             ${UEid}
+            Set To Dictionary               ${UEcurrent}      target_gnb         ${gNbID}
+            Set To Dictionary               ${UEcurrent}      target_cells       ${CellID}
+            Append To List                  ${UEsList}    ${UEcurrent}
+            Dated Log New Line    Targetcell:${NRCELL_DN_LIST[${Cell}-1]} UE_ID:${UEid}
+    END
+	[return]                        ${UEsList}
+
+SA Attach PDCCH
+    [Arguments]                    ${UEsList}
+    ${UEsAttached}=                Create List
+    ${nbUE}                        get length    ${UEsList}
+    FOR    ${UEcurrent}    IN      @{UEsList}
+        Dated Log New Line         - SA Call on cell ${UEcurrent.target_cells}: UE ${UEcurrent.ue} / ${nbUE}
+        ${RegStatus}=              Run Keyword And Return Status
+        ...                        UE Register    ue=${UEcurrent.ue}
+        #Verify AP Classical UE attach SA
+        ${Status}=                 Run Keyword If    ${RegStatus}
+        ...                        Run Keyword And Return Status
+        ...                        Launch PDU Session    ue=${UEcurrent.ue}    pdu=${UEcurrent.ue}    gw=${UEcurrent.ue}    nwslice=1
+        Run Keyword If             ${Status}
+        ...                        Append to list              ${UEsAttached}        ${UEcurrent}
+    END
+    [Return]                        ${UEsAttached}
+
+Traffic PDCCH
+    [Arguments]            ${UEsList}     ${DLtput}=0    ${ULtput}=0
+    ${nbUe}                get length    ${UEsList}
+    Run Keyword If         ${DLtput} != 0 and ${ULtput} != 0    run keywords
+    ...                    Dated Log New Line    === Launch DL/UL traffic on ${nbUE} UE(s) ===
+    ...                    AND
+    ...                    Run Keyword And Ignore Error        Traffic UEs UL DL     ueSettingList=${UEsList}
+    ...                                                        dlThroughput=${DLtput}    ulThroughput=${ULtput}
+	...                                                        shouldBeCheck= False      shouldBeStop= False
+    ...                    ELSE IF    ${DLtput} != 0    run keywords
+    ...                    Dated Log New Line    === Launch DL traffic on ${nbUE} UE(s) ===
+    ...                    AND
+    ...                    Run Keyword And Ignore Error        Traffic UEs DL        ueSettingList=${UEsList}
+    ...                                                        throughput=${DLtput}    shouldBeCheck= False
+    ...                                                        shouldBeStop= False  
+    ...                    ELSE IF    ${ULtput} != 0    run keywords
+    ...                    Dated Log New Line    === Launch UL traffic on ${nbUE} UE(s) ===
+    ...                    AND
+    ...                    Run Keyword And Ignore Error        Traffic UEs UL        ueSettingList=${UEsList}
+    ...                                                        throughput=${ULtput}    shouldBeCheck= False
+    ...                                                        shouldBeStop= False
+ 
+Collect PM Counters File
+    [Documentation]                 KW to get counters and store in specific directory with day date
+    ${date}                         Get Current Date
+    ${date_in_dir_name}             Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                  Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+    BuiltIn.Log                     The PM counters file collected from gnb will be stored under : ${log_path_pm}
+    ${pm_latest}                    Counters.Collect PM files from BTS    ${log_path_pm}
+    set Suite Variable              ${LATEST_FILE}       ${pm_latest}
+    set Suite Variable              ${log_path_pm}
+    Dated log                       ${log_path_pm}
+    BuiltIn.Log                     Latest pm counters file : ${LATEST_FILE}
+
+
+Check Maximum number of Scheduled Ues DL on Cell 1
+    [Documentation]                 M55308C17002  
+    ...                             M55308C17002   Maximum number of Scheduled (FDM and MU-MIMO) UEs on PDSCH per slot on CELL-1
+    Dated Log New Line          =================================================================
+    Dated Log                      PM Counter M55308C17002 analysis in ${log_path_pm}
+    Dated Log                   =================================================================
+    ${Id_Cell}              Set Variable         1
+    ${Id_Counter}           Set Variable         M55308C17002  
+    ${Value_Counter}=       Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                     ${LATEST_FILE}      ${Id_Counter}       ${Id_Cell}
+    Dated Log               ==== ${Id_Counter} Max Number of Scheduled UE DL : ${Value_Counter}
+    ${expected_val_max}     Set Variable      4
+    ${expected_val_min}     Set Variable      3
+    Should Be True          ${expected_val_min} <= ${Value_Counter} <= ${expected_val_max}
+
+
+Check Maximum number of Scheduled Ues UL on Cell 1
+    [Documentation]                 M55308C18002  
+    ...                             M55308C18002   Maximum number of Scheduled (FDM and MU-MIMO) UEs on PDSCH per slot on CELL-1
+    Dated Log New Line          =================================================================
+    Dated Log                      PM Counter M55308C18002 analysis in ${log_path_pm}
+    Dated Log                   =================================================================
+    &{expected_dict}      Create Dictionary     counter=M55308C18002    obj=NRCELL      objId=1
+    ${expected_val}       Set Variable      4
+    ${comparison}         Set Variable      '=='
+    ${foundOrNot}         Counters.Check At Least One Value Is In Criteria From Pm Files For Object With ID     ${log_path_pm}
+    ...                   ${expected_val}      ${comparison}      &{expected_dict}
+    Should Be True       '${foundOrNot}'=='True'
+

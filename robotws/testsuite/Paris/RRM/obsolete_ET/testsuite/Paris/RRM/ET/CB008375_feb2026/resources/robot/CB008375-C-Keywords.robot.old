@@ -1,0 +1,625 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+#
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   CB008375 Common Keywords
+...               Scope : Common keywords for CB008375 sub-features
+#
+...               Test Case Scenario author : vincent.boulet@nokia.com
+...               Creation Date             : 2024-08-19
+...               Modified Date             : 2025-04-18
+#
+#                 Version    Date       Author                          Notes
+...               0.1        FB2417     vincent.boulet@nokia.com        Creation robot and TC for SA
+...               0.2        FB2418     vincent.boulet@nokia.com        Introduce new RAD parameters for PCMD
+...               0.3        FB2419     vincent.boulet@nokia.com        Code sharing with CB008375-D to check generation of dump and snapshot files
+...               0.4        FB2419     vincent.boulet@nokia.com        Correction for detecting the alarm
+...               0.5        FB2420     vincent.boulet@nokia.com        Presentation changes
+...               0.6        FB2420     vincent.boulet@nokia.com        Test Teardown is introduced with KW Procedure Scout Data
+...               1.0        FB2508     vincent.boulet@nokia.com        Change to detect alarm earlier
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Libraries
+Library                               OperatingSystem
+Library                               ../../../../../resources/SWENG/python/Archi.py
+
+# Resources
+Resource                              ../../../resources/common/TtiTrace/ttitrace.robot
+Resource                              ../../../../../resources/SWENG/robot/Container.robot
+Resource                              ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource                              ../../../../../resources/SWENG/robot/KPIs.robot
+Resource                              ../../../../../resources/SWENG/robot/Scf.robot
+Resource                              ../../../../../resources/SWENG/robot/Syslogs.robot
+Resource                              ../../../../../resources/SWENG/robot/Tools.robot
+Resource                              ../../../../../resources/SWENG/robot/Topology.robot
+Resource                              ../../../../../resources/SWENG/robot/Traffic.robot
+
+*** Variables ***
+${TestSharkTool}                      MC_SHARK
+${AUTO_SAVE_DEBUG_DATA}               ${True}
+${CALL_ENABLED}                       ${True}
+#vbo#n/a#${SUITE_DEBUG_MODE}          ${True}
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+*** Keywords ***
+# Suite #
+Suite Setup Common Private
+    [Arguments]             ${keep_all_data_in_file}=${False}
+
+    Dated Log                         ----Suite Setup Common Private----
+    ${timestamp_suite_setup}=         DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    Set Suite Variable                ${timestamp_suite_setup}
+    Setup.Suite Setup From Scratch    automaticTeardown=${True}    keepAllUeDataInCfgFile=${keep_all_data_in_file}
+    Backup.Backup Files
+    ${scf_suite_setup_backup}=        Oam.OAM Get SCF File    file=SCF_DU_Backup.xml
+    Set Suite Variable                ${scf_suite_setup_backup}
+    Dated Log                         > DU backup file is ${scf_suite_setup_backup}
+    ${scf_vcu_suite_setup_backup}=    Run Keyword If    ${isAic}    Oam.OAM Get Cu SCF File    file=SCF_CU_Backup.xml
+    Run Keyword If    ${isAic}        Run Keywords    Set Suite Variable    ${scf_vcu_suite_setup_backup}
+    ...    AND    Dated Log           > CU backup file is ${scf_vcu_suite_setup_backup}
+    Dated Log                         ----------------------------------
+
+
+Test Teardown Common Private
+    Dated Log                         ----Test Teardown Common Private----
+    GenericTest.Display diagnosis
+    Dated Log                         ----Produce Scout Data----
+    Produce Scout Data
+    Dated Log                         ----Restore And Clean environment----
+    Save and Clear Egate Console Log    pattern=TestTeardown
+    Restore Files
+    Run Keyword If    ${AUTO_SAVE_DEBUG_DATA}    Run Keywords    Run    cp -f /opt/wts/latest/egate_console.log ${LOG_PATH}
+    ...    AND    Dated Log           > Save the egate_console.log because AUTO_SAVE_DEBUG_DATA mode is set
+    # Saving snapshots for debugging if AUTO_SAVE_DEBUG_DATA mode is set
+    Dated Log                         > Get snapshot just if requested and not already generated after failure...
+    ${snapshot_path}=                 Set Variable    ${LOG_PATH}/SNAPSHOT_GNB*.zip
+    ${status}   ${ret}   Run Keyword And Ignore Error    OperatingSystem.File Should Exist    ${snapshot_path}
+    Run Keyword If   "${status}" == "PASS"
+    ...    Dated Log                  > ${snapshot_path} is already present
+    ...         ELSE IF    ${AUTO_SAVE_DEBUG_DATA}    Setup.Get Snapshot
+    # Restoring backups scf
+    ${scf_suite_teardown_restore}=    Get Variable Value    ${scf_suite_setup_backup}    None
+    ${scf_vcu_suite_teardown_restore}=    Run Keyword If    ${isAic}    Get Variable Value    ${scf_vcu_suite_setup_backup}    None
+    Run Keyword If    ${isAic}        Oam.OAM Perform Full Commissioning    scf_file=${scf_vcu_suite_teardown_restore}    oam=${GNB_CU.oam}
+    Oam.OAM Perform Full Commissioning    scf_file=${scf_suite_teardown_restore}    oam=${GNB_DU.oam}
+    Run Keyword If    ${isAic}        Restart.Wait Airphone Available
+    ...         ELSE                  Oam.OAM wait available
+    # Cleaning-up debugging files if AUTO_SAVE_DEBUG_DATA mode is not set
+    Run Keyword If    not ${AUTO_SAVE_DEBUG_DATA}    Run Keywords    Run    rm -f ${LOG_PATH}/*.pdml
+    ...    AND    Dated Log           > Remove the generated pdml files because AUTO_SAVE_DEBUG_DATA mode is not set
+    ...    AND                        Run    rm -f ${LOG_PATH}/*._*.pcap
+    ...    AND    Dated Log           > Remove the intermediate pcap files because AUTO_SAVE_DEBUG_DATA mode is not set
+    ...    AND                        Run    rm -f ${scf_suite_setup_backup}
+    ...    AND    Dated Log           > Remove the scf_suite_setup_backup because AUTO_SAVE_DEBUG_DATA mode is not set
+    Run Keyword If    not ${AUTO_SAVE_DEBUG_DATA} and ${isAic}    Run Keywords    Run    rm -f ${scf_vcu_suite_setup_backup}
+    ...    AND    Dated Log           > Remove the scf_vcu_suite_setup_backup because AUTO_SAVE_DEBUG_DATA mode is not set
+    Run                               rm -f ${LOG_PATH}/SCF.xml
+    ${timestamp_suite_teardown}=      DateTime.Get Current Date    result_format=%Y%m%d-%H%M%S
+    Set Suite Variable                ${timestamp_suite_teardown}
+    Dated Log                         ---------------------------------------------
+    Dated Log                         > RUNTIME: ${timestamp_suite_setup} -> ${timestamp_suite_teardown}
+    Dated Log                         ---------------------------------------------
+    Run                               mv ${LOG_PATH} ${OUTPUT_DIR}/Logs/Results
+    Run keyword if    '${TEST_STATUS}'=='FAIL'    Test Teardown if Fail
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# RAD Parameters #
+Set RAD Parameters Common Private
+    [Arguments]             ${rad_0x58087A_val}=${None}
+    ...                     ${rad_0x580466_val}=${None}
+    ...                     ${rad_0x580129_val}=${None}
+    ...                     ${rad_0x570022_val}=${None}
+    ...                     ${rad_0x57002C_val}=${None}
+    ...                     ${rad_0x5B0234_val}=${None}
+    ...                     ${rad_0x5B023E_val}=${None}
+    ...                     ${rad_0x5A00A4_val}=${None}
+    ...                     ${rad_0x5A00A5_val}=${None}
+    ...                     ${rad_0x5A0609_val}=${None}
+    ...                     ${rad_0x5A0610_val}=${None}
+
+    @{list_rad_param}=                Create List
+    #
+    #L2PS#rdTriggerFaultL2PS#disabled#
+    &{rad_0x58087A}=    Run Keyword If    ${rad_0x58087A_val} != ${None}    Create Dictionary    field=0x58087a    value=${rad_0x58087A_val}
+    Run Keyword If    ${rad_0x58087A_val} != ${None}    Append To List    ${list_rad_param}    ${rad_0x58087A}
+    #L2PS#rdPsTraceEnabled#disabled#
+    &{rad_0x580466}=    Run Keyword If    ${rad_0x580466_val} != ${None}    Create Dictionary    field=0x580466    value=${rad_0x580466_val}
+    Run Keyword If    ${rad_0x580466_val} != ${None}    Append To List    ${list_rad_param}    ${rad_0x580466}
+    #L2PS#rdPcmdEnabled#
+    &{rad_0x580129}=    Run Keyword If    ${rad_0x580129_val} != ${None}    Create Dictionary    field=0x580129    value=${rad_0x580129_val}
+    Run Keyword If    ${rad_0x580129_val} != ${None}    Append To List    ${list_rad_param}    ${rad_0x580129}
+    #
+    #L2LO#rdL2LoTraceEnabled#disabled#
+    &{rad_0x570022}=    Run Keyword If    ${rad_0x570022_val} != ${None}    Create Dictionary    field=0x570022    value=${rad_0x570022_val}
+    Run Keyword If    ${rad_0x570022_val} != ${None}    Append To List    ${list_rad_param}    ${rad_0x570022}
+    #L2LO#rdPcmdEnable#
+    &{rad_0x57002C}=    Run Keyword If    ${rad_0x57002C_val} != ${None}    Create Dictionary    field=0x57002c    value=${rad_0x57002C_val}
+    Run Keyword If    ${rad_0x57002C_val} != ${None}    Append To List    ${list_rad_param}    ${rad_0x57002C}
+    #
+    #L2HIDu#rdRlcPcmdTraceReportEnabled#disabled#
+    &{rad_0x5B0234}=    Run Keyword If    ${rad_0x5B0234_val} != ${None}    Create Dictionary    field=0x5b0234    value=${rad_0x5B0234_val}
+    Run Keyword If    ${rad_0x5B0234_val} != ${None}    Append To List    ${list_rad_param}    ${rad_0x5B0234}
+    #L2HIDu#rdPcmdEnabled#
+    &{rad_0x5B023E}=    Run Keyword If    ${rad_0x5B023E_val} != ${None}    Create Dictionary    field=0x5b023e    value=${rad_0x5B023E_val}
+    Run Keyword If    ${rad_0x5B023E_val} != ${None}    Append To List    ${list_rad_param}    ${rad_0x5B023E}
+    #
+    #L2HICu#rdPcmdEnabled#
+    &{rad_0x5A00A4}=    Run Keyword If    ${rad_0x5A00A4_val} != ${None}    Create Dictionary    field=0x5a00a4    value=${rad_0x5A00A4_val}
+    Run Keyword If    ${rad_0x5A00A4_val} != ${None}    Append To List    ${list_rad_param}    ${rad_0x5A00A4}
+    #L2HICu#rdPdcpPcmdTraceReportEnabled#disabled#
+    &{rad_0x5A00A5}=    Run Keyword If    ${rad_0x5A00A5_val} != ${None}    Create Dictionary    field=0x5a00a5    value=${rad_0x5A00A5_val}
+    Run Keyword If    ${rad_0x5A00A5_val} != ${None}    Append To List    ${list_rad_param}    ${rad_0x5A00A5}
+    #
+    #L2HI#rdDebugPcmdNrt#for debugging#
+    &{rad_0x5A0609}=    Run Keyword If    ${rad_0x5A0609_val} != ${None}    Create Dictionary    field=0x5a0609    value=${rad_0x5A0609_val}
+    Run Keyword If    ${rad_0x5A0609_val} != ${None}    Append To List    ${list_rad_param}    ${rad_0x5A0609}
+    #L2HI#rdDebugPcmdRt#for debugging#
+    &{rad_0x5A0610}=    Run Keyword If    ${rad_0x5A0610_val} != ${None}    Create Dictionary    field=0x5a0610    value=${rad_0x5A0610_val}
+    Run Keyword If    ${rad_0x5A0610_val} != ${None}    Append To List    ${list_rad_param}    ${rad_0x5A0610}
+    ${length_list_rad_param}=         Get Length    ${list_rad_param}
+    Dated Log                         > RAD params list is ${list_rad_param} with length= ${length_list_rad_param}
+    Run Keyword If    ${length_list_rad_param} > 0    SetConfig.Set Fields in swconfig DU    param_list=${list_rad_param}
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Commissioning #
+Perform Full Commissioning for Cell Trace and PCMD Activation
+    [Arguments]             ${test_name}
+    ...                     ${tce_ip_addr}=10.0.1.106
+    ...                     ${tce_port}=49148
+
+    ${current_scf}=                   String.Replace string    ${scf_suite_setup_backup}    _Backup.xml    ${EMPTY}
+    ${updated_scf}=                   Catenate    SEPARATOR=${EMPTY}    ${current_scf}_Cell_Trace_PCMD.xml
+    ${std_output}=                    Run    cp ${scf_suite_setup_backup} ${updated_scf}
+    SCF StartSession                  scf_file=${updated_scf}
+    # definition of the dist_name objects
+    ${dist_name_mrbts}=               Set Variable    MRBTS-${TMRBTS_ID[0]}
+    Dated log                         > dist_name_mrbts is ${dist_name_mrbts}
+    ${dist_name_mnl}=                 Set Variable    ${dist_name_mrbts}/MNL-1
+    Dated log                         > dist_name_mnl is ${dist_name_mnl}
+    ${dist_name_tceadm}=              Set Variable    ${dist_name_mnl}/TCEADM-1
+    Dated log                         > dist_name_tceadm is ${dist_name_tceadm}
+    ${dist_name_tce}=                 Set Variable    ${dist_name_tceadm}/TCE-1
+    Dated log                         > dist_name_tce is ${dist_name_tce}
+    ${dist_name_nrbts}=               Set Variable    ${dist_name_mrbts}/NRBTS-${TNRBTS_ID[0]}
+    Dated log                         > dist_name_nrbts is ${dist_name_nrbts}
+    ${dist_name_nrctrlts}=            Set Variable    ${dist_name_nrbts}/NRCTRLTS-1
+    Dated log                         > dist_name_nrctrlts is ${dist_name_nrctrlts}
+    ${dist_name_nrmtracecu}=          Set Variable    ${dist_name_nrctrlts}/NRMTRACECU-1
+    Dated log                         > dist_name_nrmtracecu is ${dist_name_nrmtracecu}
+    ${dist_name_du}=                  Set Variable    ${dist_name_nrbts}/NRDU-1
+    Dated log                         > dist_name_du is ${dist_name_du}
+    ${dist_name_nrctrltsdu}=          Set Variable    ${dist_name_du}/NRCTRLTSDU-1
+    Dated log                         > dist_name_nrctrltsdu is ${dist_name_nrctrltsdu}
+    ${dist_name_nrmtracedu}=          Set Variable    ${dist_name_nrctrltsdu}/NRMTRACEDU-1
+    Dated log                         > dist_name_nrmtracedu is ${dist_name_nrmtracedu}
+    #
+    # MRBTS.btsName / update / ${test_name}
+    SCF Set element         dist_name=${dist_name_mrbts}    element_name=btsName    element_value=${test_name}    scope=Classical
+    #
+    # ${dist_name_tceadm} / add / default
+    SCF Add object          dist_name=${dist_name_tceadm}    class_name=com.nokia.srbts.mnl:TCEADM    version=${None}    scope=Classical
+    # ${dist_name_tce} / add / default
+    SCF Add object          dist_name=${dist_name_tce}    class_name=com.nokia.srbts.mnl:TCE    version=${None}    scope=Classical
+    # ${dist_name_tce}.certTypeForTlsAuth / add / RSA
+    SCF Add element         dist_name=${dist_name_tce}    element_name=certTypeForTlsAuth    element_value=RSA    scope=Classical
+    # ${dist_name_tce}.tceIdentifier / add / 1
+    SCF Add element         dist_name=${dist_name_tce}    element_name=tceIdentifier    element_value=1    scope=Classical
+    # ${dist_name_tce}.tceIpAddress / add / ${tce_ip_addr}
+    SCF Add element         dist_name=${dist_name_tce}    element_name=tceIpAddress    element_value=${tce_ip_addr}    scope=Classical
+    # ${dist_name_tce}.tcePortNumber / add / ${tce_port}
+    SCF Add element         dist_name=${dist_name_tce}    element_name=tcePortNumber    element_value=${tce_port}    scope=Classical
+    # ${dist_name_tce}.tlsEnabled / add / false
+    SCF Add element         dist_name=${dist_name_tce}    element_name=tlsEnabled    element_value=${False}    scope=Classical
+    #
+    # NRBTS.actCellTraceReport / update / true
+    SCF Set element         dist_name=${dist_name_nrbts}    element_name=actCellTraceReport    element_value=${True}    scope=Classical
+    # NRBTS.actPCMDReport / update / true
+    SCF Set element         dist_name=${dist_name_nrbts}    element_name=actPCMDReport    element_value=${True}    scope=Classical
+    #
+    # ${dist_name_nrctrlts} / add / default
+    SCF Add object          dist_name=${dist_name_nrctrlts}    class_name=com.nokia.srbts.nrbts:NRCTRLTS    version=${None}    scope=Classical
+    # ${dist_name_nrmtracecu} / add / default
+    SCF Add object          dist_name=${dist_name_nrmtracecu}    class_name=com.nokia.srbts.nrbts:NRMTRACECU    version=${None}    scope=Classical
+    # ${dist_name_nrmtracecu}.actCellTraceReportingCU / add / true
+    SCF Add element         dist_name=${dist_name_nrmtracecu}    element_name=actCellTraceReportingCU    element_value=${True}    scope=Classical
+    # ${dist_name_nrmtracecu}.actPCMDReporting / add / true
+    SCF Add element         dist_name=${dist_name_nrmtracecu}    element_name=actPCMDReporting    element_value=${True}    scope=Classical
+    # ${dist_name_nrmtracecu}.cellMaxActiveUEsTraced / add / 4
+    SCF Add element         dist_name=${dist_name_nrmtracecu}    element_name=cellMaxActiveUEsTraced    element_value=4    scope=Classical
+    # ${dist_name_nrmtracecu}.jobType / add / TraceOnly
+    SCF Add element         dist_name=${dist_name_nrmtracecu}    element_name=jobType    element_value=TraceOnly    scope=Classical
+    # ${dist_name_nrmtracecu}.nrTceIdentifier / add / 1
+    SCF Add element         dist_name=${dist_name_nrmtracecu}    element_name=nrTceIdentifier    element_value=1    scope=Classical
+    # ${dist_name_nrmtracecu}.scope / add / allResources
+    SCF Add element         dist_name=${dist_name_nrmtracecu}    element_name=scope    element_value=allResources    scope=Classical
+    # ${dist_name_nrmtracecu}.traceE1Setting / add / all
+    SCF Add element         dist_name=${dist_name_nrmtracecu}    element_name=traceE1Setting    element_value=all    scope=Classical
+    # ${dist_name_nrmtracecu}.traceF1Setting / add / all
+    SCF Add element         dist_name=${dist_name_nrmtracecu}    element_name=traceF1Setting    element_value=all    scope=Classical
+    # ${dist_name_nrmtracecu}.traceNGAPSetting / add / all
+    SCF Add element         dist_name=${dist_name_nrmtracecu}    element_name=traceNGAPSetting    element_value=all    scope=Classical
+    # ${dist_name_nrmtracecu}.traceNRRRCSetting / add / all
+    SCF Add element         dist_name=${dist_name_nrmtracecu}    element_name=traceNRRRCSetting    element_value=all    scope=Classical
+    # ${dist_name_nrmtracecu}.traceX2Setting / add / all
+    SCF Add element         dist_name=${dist_name_nrmtracecu}    element_name=traceX2Setting    element_value=all    scope=Classical
+    # ${dist_name_nrmtracecu}.traceXNSetting / add / all
+    SCF Add element         dist_name=${dist_name_nrmtracecu}    element_name=traceXNSetting    element_value=all    scope=Classical
+    # ${dist_name_nrmtracecu}.nrRanTraceReference / add / default
+    SCF Add list            dist_name=${dist_name_nrmtracecu}    list_name=nrRanTraceReference
+    # ${dist_name_nrmtracecu}.nrRanTraceReference.mcc / add / 311
+    # ${dist_name_nrmtracecu}.nrRanTraceReference.mnc / add / 489
+    # ${dist_name_nrmtracecu}.nrRanTraceReference.mncLength / add / 3
+    # ${dist_name_nrmtracecu}.nrRanTraceReference.traceId / add / 1
+    &{dict_nrRanTraceReference}=      Create Dictionary    mcc=311    mnc=489    mncLength=3    traceId=1
+    SCF Add items to list    dist_name=${dist_name_nrmtracecu}    list_name=nrRanTraceReference    elements=${dict_nrRanTraceReference}
+    #
+    # ${dist_name_nrctrltsdu} / add / default
+    SCF Add object          dist_name=${dist_name_nrctrltsdu}    class_name=com.nokia.srbts.nrbts:NRCTRLTSDU    version=${None}    scope=Classical
+    # ${dist_name_nrmtracedu} / add / default
+    SCF Add object          dist_name=${dist_name_nrmtracedu}    class_name=com.nokia.srbts.nrbts:NRMTRACEDU    version=${None}    scope=Classical
+    # ${dist_name_nrmtracedu}.actPCMDReporting / add / true
+    SCF Add element         dist_name=${dist_name_nrmtracedu}    element_name=actPCMDReporting    element_value=${True}    scope=Classical
+    # ${dist_name_nrmtracedu}.actRIReporting / add / false
+    SCF Add element         dist_name=${dist_name_nrmtracedu}    element_name=actRIReporting    element_value=${False}    scope=Classical
+    # ${dist_name_nrmtracedu}.cellMaxActiveUEsTraced / add / 4
+    SCF Add element         dist_name=${dist_name_nrmtracedu}    element_name=cellMaxActiveUEsTraced    element_value=4    scope=Classical
+    # ${dist_name_nrmtracedu}.jobType / add / TraceOnly
+    SCF Add element         dist_name=${dist_name_nrmtracedu}    element_name=jobType    element_value=TraceOnly    scope=Classical
+    # ${dist_name_nrmtracedu}.nrTceIdentifier / add / 1
+    SCF Add element         dist_name=${dist_name_nrmtracedu}    element_name=nrTceIdentifier    element_value=1    scope=Classical
+    # ${dist_name_nrmtracedu}.riReportInterval / add / s5
+    SCF Add element         dist_name=${dist_name_nrmtracedu}    element_name=riReportInterval    element_value=s5    scope=Classical
+    # ${dist_name_nrmtracedu}.scope / add / allResources
+    SCF Add element         dist_name=${dist_name_nrmtracedu}    element_name=scope    element_value=allResources    scope=Classical
+    # ${dist_name_nrmtracedu}.nrRanTraceReference / add / default
+    SCF Add list            dist_name=${dist_name_nrmtracedu}    list_name=nrRanTraceReference
+    # ${dist_name_nrmtracedu}.nrRanTraceReference.mcc / update / 311
+    # ${dist_name_nrmtracedu}.nrRanTraceReference.mnc / update / 489
+    # ${dist_name_nrmtracedu}.nrRanTraceReference.mncLength / update / 3
+    # ${dist_name_nrmtracedu}.nrRanTraceReference.traceId / update / 1
+    # &{dict_nrRanTraceReference}=      Create Dictionary    #same as for ${dist_name_nrmtracecu}#mcc=311    mnc=489    mncLength=3    traceId=1
+    SCF Add items to list    dist_name=${dist_name_nrmtracedu}    list_name=nrRanTraceReference    elements=${dict_nrRanTraceReference}
+    #
+    SCF StopSession                             scf_file=${updated_scf}
+    OAM Perform Full Commissioning              scf_file=${updated_scf}
+    OAM wait available
+    ${std_output}=                              Run    rm -f ${updated_scf}    # Remove the working file
+    OAM Get SCF File                            file=${updated_scf}    # Save the final oredered file
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# TTI #
+Start TTI Logs Common
+    [Arguments]             ${cell_id_list}
+
+    Dated Log                         > Configuration and get TTI is started
+    # TTI capture configuration
+    ${TTIdir}=                        Get TTI Trace Path
+    Run Keyword If    ${isAic}        ttitrace.Start TTI Traces in Streaming mode    src_ip=10.0.1.2    nrcell_id_list_aic=${cell_id_list}
+    ...          ELSE                 ttitrace.Start TTI Traces in Streaming mode    src_ip=10.0.1.2    cell_distid=${cell_id_list}
+    Set Suite Variable                ${TTIdir}
+
+
+Stop and Get TTI Logs Common
+    [Arguments]             ${trace_name}=TTI
+
+    Dated Log                         > Stop and get TTI Logs is started
+    ${TTIpcap}=                       ttitrace.Stop TTI Traces in Streaming mode    tti_trace_path=${TTIdir}    tti_trace_filename=${trace_name}
+    Dated Log                         > Convert TTI to json and csv is started
+    ${TTIjson}=                       ttitrace.Convert TTI trace from pcap to others    input_file_path=${TTIpcap}
+    ${TTIcsv}=                        decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson}    num_of_events=50000
+    Set Suite Variable                ${TTIjson}
+    [Return]    ${TTIjson}
+
+
+Is Global Cell Id Retained For Streaming
+    [Arguments]             ${global_cell_id}
+    ...                     ${cell_list}
+
+    ${result_global_cell}=            Set Variable    ${False}
+    FOR    ${current_cell}    IN    @{cell_list}
+        #vbo#debug#Dated Log          >> global cell id ${global_cell_id} vs. current cell ${current_cell}
+        #vbo#debug#Run Keyword If    ${result_global_cell} or ${global_cell_id}==${current_cell}
+        #vbo#debug#...    Dated Log   >> True    ELSE    Dated Log    >> False
+        ${result_global_cell}=    Run Keyword If    ${result_global_cell} or ${global_cell_id}==${current_cell}    Set Variable    ${True}
+        ...                                   ELSE    Set Variable    ${False}
+    END
+    #vbo#debug#Dated Log              >> final result returned is ${result_global_cell}
+    [Return]    ${result_global_cell}
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Counter And KPI #
+Check Counter And KPI Constraints Common
+    [Arguments]             ${pm_path}
+    ...                     ${test_name}
+    ...                     ${localKpiFileName}=${None}
+
+    Dated Log                         > Check counter and KPI constraints is started
+    ${localKpiFile}=    Run Keyword If    "${localKpiFileName}" == "${None}"    Set Variable   ${None}
+    ...                             ELSE    Set Variable   ${CURDIR}/../../resources/config/KPI/${localKpiFileName}
+    KPIs.KPI Evaluate                 pmFile=${pm_path}
+    ...                               constraintsFile=${CURDIR}/../../resources/config/PM/${test_name}.csv
+    ...                               failOnError=${True}
+    ...                               localKpiFile=${localKpiFile}
+    Dated Log                         > Check counter and KPI constraints is ended
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Traffic #
+DL+UL Traffic Not Stopped Common
+    [Documentation]
+    [Arguments]             ${param}
+    ...                     ${current_ue_setting}
+    ...                     ${current_trf_id}=1
+
+    Set To Dictionary                           ${current_ue_setting}    trf_id    ${current_trf_id}
+    Traffic UE DL                               ueSetting=${current_ue_setting}
+    ...                                         throughput=${current_ue_setting.throughput}
+    ...                                         captureCallback=None
+    ...                                         capture=None
+    ...                                         captureDuration=0
+    ...                                         duration=${param.duration}
+    ...                                         shouldBeStop=False
+    ...                                         deviation=${param.deviation}
+
+    ${current_trf_id}=                          Evaluate    ${current_trf_id} + 9
+    Set To Dictionary                           ${current_ue_setting}    trf_id    ${current_trf_id}
+    Traffic UE UL                               ueSetting=${current_ue_setting}
+    ...                                         throughput=${current_ue_setting.throughput_ul}
+    ...                                         captureCallback=None
+    ...                                         capture=None
+    ...                                         captureDuration=0
+    ...                                         duration=${param.duration}
+    ...                                         shouldBeStop=False
+    ...                                         deviation=${param.deviation}
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Node #
+Get Node Information
+    [Arguments]             ${hardware_entity}=${TGNB_DU[0]}
+    ...                     ${node_name}=L2RTa
+    ...                     ${card_index}=0
+    ...                     ${capacity_index}=0
+
+    ${current_node}=                  Container.Get Node    airscale=${hardware_entity}    name=${node_name}    cardIndex=${card_index}
+    ...                                                             capacityIndex=${capacity_index}
+    &{current_dictionary}=            Create Dictionary
+    Run Keyword If    "${current_node}" != "${None}"    Run Keywords
+    ...                               Set To Dictionary    ${current_dictionary}    name          ${current_node.name}
+    ...    AND                        Set To Dictionary    ${current_dictionary}    host_alias    ${current_node.host.alias}
+    ...    AND                        Set To Dictionary    ${current_dictionary}    id            ${current_node.id}
+    ...    AND                        Set To Dictionary    ${current_dictionary}    node_id       ${current_node.nodeId}
+    ...    AND                        Set To Dictionary    ${current_dictionary}    state         ${current_node.state}
+    ...    AND                        Set To Dictionary    ${current_dictionary}    card_idx      ${card_index}
+    ...    AND                        Set To Dictionary    ${current_dictionary}    capa_idx      ${capacity_index}
+    ...    AND    Dated Log           \t> Node ${node_name}-${card_index}-${capacity_index}= ${current_node}
+    #vbo#debug#...    AND    Dated Log    >> Current dictionary= ${current_dictionary}
+    ${current_state_str}=    Run Keyword If    "${current_node}" != "${None}"    getNodeStateStr    node=${current_node}    id=${current_node.id}
+    ...                                                             nodeId=${current_node.nodeId}
+    ...                                  ELSE    Set Variable    ${EMPTY}
+    Run Keyword If    "${current_state_str}" != "${EMPTY}"
+    ...    Dated Log                  \t> Node is ${current_state_str}
+    ...         ELSE    Dated Log     \t> Node ${node_name}-${card_index}-${capacity_index} is NOT FOUND
+    Run Keyword If    not ${isAic}    Should Be True    "${current_state_str}" != "${EMPTY}"
+    [Return]    ${current_dictionary}
+
+
+List Available Node Id On Board
+    [Arguments]             ${hostname}
+    ...                     ${username}
+    ...                     ${password}
+    ...                     ${board_id}
+    ...                     ${cpu_id}
+
+    ${cmd}=                           Set Variable    lxc-ls
+    ${result}=                        OperatingSystem.Run    sshpass -p ${password} ssh ${username}@${hostname} bsh ${board_id}:${cpu_id} ${cmd}
+    @{lines}=                         Split To Lines    ${result}
+    #vbo#debug#Dated Log              >> ${lines}
+    @{available_node_id}=             Create List
+    FOR    ${current_lines}    IN    @{lines}
+        ${line_length}=               Get Length    ${current_lines}
+        Run Keyword If    ${line_length} < 10    Append To List    ${available_node_id}    ${current_lines}
+        #vbo#debug#Dated Log          >> ${current_lines}
+    END
+    #vbo#debug#Dated Log              >> List of available node id on board= ${available_node_id}
+    [Return]    ${available_node_id}
+
+
+Check If Node Id Is Available
+    [Arguments]             ${list}
+    ...                     ${node}
+
+    ${result_check}=                  Set Variable    ${False}
+    FOR    ${element}    IN    @{list}
+        #vbo#debug#Dated Log          >> Compare node element= ${element} to node reference= ${node.node_id}
+        ${result_check}=              Run Keyword If    ${result_check} or "${element}" == "${node.node_id}"    Set Variable    ${True}
+        ...                                       ELSE    Set Variable    ${False}
+    END
+    Run Keyword If   ${result_check} == ${True}
+    ...                 Dated Log     \t> Node ${node.name}-${node.node_id} is available
+    ...         ELSE    Dated Log     \t> Node ${node.name}-${node.node_id} is NOT AVAILABLE
+    [Return]    ${result_check}
+
+
+Kill Node Id By Using SIGABRT Command
+    [Arguments]             ${hostname}
+    ...                     ${username}
+    ...                     ${password}
+    ...                     ${board_id}
+    ...                     ${cpu_id}
+    ...                     ${node}
+
+    # Get tid in case of comm= Disp_1
+    ${cmd}=                           Set Variable    lxc-attach -n ${node.node_id} -- ps -Leo tid,comm |grep Disp_1 |awk '{ print $1 }'
+    #vbo#debug#Dated Log              >> Command for identifying tid node= ${cmd}
+    ${result_cmd}=                    OperatingSystem.Run    sshpass -p ${password} ssh ${username}@${hostname} bsh ${board_id}:${cpu_id} ${cmd}
+    Dated Log                         \t> Tid for comm=Disp_1 of node ${node.name}-${node.node_id}= ${result_cmd}
+    Should Be True    "${result_cmd}" != "${EMPTY}"
+    # Kill SIGABRT by using tid
+    ${cmd_kill_sigabrt}=              Set Variable    lxc-attach -n ${node.node_id} -- kill -SIGABRT ${result_cmd} >/dev/null 2>&1
+    Dated Log                         \t> Command for killing node= ${cmd_kill_sigabrt}
+    ${result_cmd_kill}=    OperatingSystem.Run    sshpass -p ${password} ssh ${username}@${hostname} bsh ${board_id}:${cpu_id} ${cmd_kill_sigabrt}
+    #vbo#n/a#Dated Log                > ${result_cmd_kill}
+
+
+Get Number Of Alarm
+    [Arguments]             ${oam_type}=${GNB_DU.oam}
+
+    @{alarms}=                        OAM Get Active Alarms    oam=${oam_type}
+    ${nb_of_alarm}=                   Get Length    ${alarms}
+    [Return]    ${nb_of_alarm}
+
+
+Detection Alarm Id
+    [Arguments]             ${alarm_id}=7101
+    ...                     ${fault_id}=4383
+    ...                     ${oam_type}=${GNB_DU.oam}
+
+    @{alarms}=                        OAM Get Active Alarms    oam=${oam_type}
+    ${flag_alarm_id}=                 Set Variable    ${False}
+    ${i}=                             Set Variable    ${0}
+    FOR    ${alarm}    IN    @{alarms}
+        ${i}=                         Evaluate    ${i}+${1}
+        ${output_alarm}=              Replace String    ${alarm}    ]    [
+        @{words}=                     Split String    ${output_alarm}    [
+        #vbo#debug#Dated Log          >> alarm words after split= ${words}
+        ${flag_alarm_id}=             Run Keyword If    ${words[1]} == ${alarm_id}     Set Variable    ${True}     ELSE    Set Variable    ${False}
+        Exit For Loop If    ${flag_alarm_id} == ${True}
+    END
+    ${iteration_alarm}=    Run Keyword If    ${flag_alarm_id} == ${True}    Set Variable    ${alarm}    ELSE    Set Variable    ${None}
+    ${fault_id_word}=    Run Keyword If    ${flag_alarm_id} == ${True}    Set Variable    ${words[3]}    ELSE    Set Variable    ${None}
+    Run Keyword If    ${flag_alarm_id} == ${True}    Run Keywords
+    ...           Dated Log           \t> Alarm [${alarm_id}] with fault [${fault_id_word}] is detected
+    ...    AND    Dated log           > GNB_DU_OAM_ALARM[${i}]=${iteration_alarm}
+    ...         ELSE    Dated Log     \t> Alarm is NOT detected
+    Run Keyword If    ${flag_alarm_id} == ${True} and ${fault_id} != ${None}    Should Be True    "${fault_id}" == "${fault_id_word}"
+    [Return]    ${iteration_alarm}
+
+
+Is Alarm Present
+    [Arguments]             ${alarm_id}
+    ...                     ${fault_id}
+
+    FOR    ${iteration}    IN RANGE    1    16
+        Dated Log                     ----Detection alarm attempt ${iteration}----
+        ${alarm_information}=         Detection Alarm Id    alarm_id=${alarm_id}    fault_id=${fault_id}
+        #vbo#debug#Dated Log          >> alarm_information= ${alarm_information}
+        Exit For Loop If              "${alarm_information}" != "${None}"
+        Sleep                         5s
+    END
+    # Alarm must be found after 5 attempts
+    Should Be True                    "${alarm_information}" != "${None}"
+
+
+Detection Disturbance On Node
+    [Arguments]             ${hardware_entity}
+    ...                     ${node}
+    ...                     ${state}
+
+    FOR    ${iteration}    IN RANGE    1    30
+        Dated Log                     ----Nodes discovery attempt ${iteration}----
+        NodesDiscovery                airscale=${hardware_entity}
+        ${current_node}=              Container.Get Node    airscale=${hardware_entity}    name=${node.name}    cardIndex=${node.card_idx}
+        ...                                                         capacityIndex=${node.capa_idx}
+        Exit For Loop If    "${current_node.state}" == "${state}"
+    END
+    Dated Log                         \t> Current state of node ${node.name}-${node.node_id}= ${current_node.state}
+    Should Be True    "${current_node.state}" == "${state}"
+    [Return]    ${current_node.state}
+
+
+Generate Disturbances On Nodes
+    [Arguments]             ${hardware_entity}
+    ...                     ${list_nodes}
+    ...                     ${connection}
+    ...                     ${alarm_id}=7101
+    ...                     ${fault_id}=4383
+    ...                     ${board}=1    # bsh 1:0 ob du
+    ...                     ${cpu}=0
+
+    ${available_node_id_on_board}=    List Available Node Id On Board    hostname=${connection.addr}    username=${connection.username}
+    ...                                                             password=${connection.password}    board_id=${board}    cpu_id=${cpu}
+    FOR    ${current_node}    IN    @{list_nodes}
+        Dated Log                     ----Generate disturbance on node ${current_node.name}-${current_node.node_id}----
+        ${result_node_id}=            Check If Node Id Is Available    list=${available_node_id_on_board}    node=${current_node}
+        Dated Log                     ----Kill node using SIGABORT command----
+        Run Keyword If    ${result_node_id} == ${True}    Kill Node Id By Using SIGABRT Command    hostname=${connection.addr}
+        ...                                                             username=${connection.username}
+        ...                                                             password=${connection.password}
+        ...                                                             board_id=1    cpu_id=0    node=${current_node}
+        Traced Sleep                  duration=7s    msg=crash detection before state FAILED
+        # The successive stages of the node after the crash must be 4-FAILED -> 1-STOPPED -> 2-STARTING -> 3-RUNNING
+        ${result_detection}=    Detection Disturbance On Node    hardware_entity=${hardware_entity}    node=${current_node}    state=4    # FAILED
+        Dated Log                     ----OAM get active alarm and check crash detection----
+        Is Alarm Present              alarm_id=${alarm_id}    fault_id=${fault_id}
+        #OBSOLETE#Traced Sleep                  duration=3s    msg=crash detection before state STARTING
+        #${result_detection}=   Detection Disturbance On Node    hardware_entity=${hardware_entity}    node=${current_node}    state=1    # STOPPED
+        #${result_detection}=   Detection Disturbance On Node    hardware_entity=${hardware_entity}    node=${current_node}    state=2    # STARTING
+        #OBSOLETE#
+        ${result_detection}=    Detection Disturbance On Node    hardware_entity=${hardware_entity}    node=${current_node}    state=3    # RUNNING
+    END
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Verifications # CB008375-D #
+Execute Command And Check Content
+    [Arguments]             ${command}
+
+    #vbo#debug#Dated Log              >> ${command}
+    ${result}=                        OperatingSystem.Run    ${command}
+    #vbo#debug#Dated Log              >> ${result}
+    @{result_splitted}=               Split String    ${result}    separator=${SPACE}
+    Remove Values From List           ${result_splitted}    ${EMPTY}
+    #vbo#debug#Dated Log              >> result found is ${result_splitted}
+    ${list_length}=                   Get Length    ${result_splitted}
+    ${log_size}=    Run Keyword If    ${list_length} != 0    Convert To Integer    ${result_splitted[0]}    ELSE    Set Variable    0
+    Should Be True                    ${log_size} > 0
+    #vbo#debug#Dated Log              >> check is successful because log size= ${log_size} is well > 0
+    [Return]    ${result_splitted}
+
+
+Check Generation Of Dump And Snapshot File for L2RT
+    [Arguments]             ${node}
+    ...                     ${node_id}
+    ...                     ${input_file}
+
+    # _startup.zip e.g. grep -iG "BTS1_2730_L2RTa1_ASP-2730_startup.zip" /tmp/SNAPSHOT/list_zip.txt
+    ${cmd}=                           Catenate    grep -iG "BTS.*${node_id}_${node.id}_ASP-${node_id}_startup.zip" ${input_file}
+    ${result}=                        Execute Command And Check Content    command=${cmd}
+    Dated Log                         > check is passed for ${node.id} _startup: ${result}
+    #
+    # _runtime.zip
+    ${cmd}=                           Catenate    grep -iG "BTS.*${node_id}_${node.id}_ASP-${node_id}_runtime.zip" ${input_file}
+    ${result}=                        Execute Command And Check Content    command=${cmd}
+    Dated Log                         > check is passed for ${node.id} _runtime: ${result}
+    #
+    # _L2RtCpu_TimeMarkerSnapshot.txt.xz  => e.g. grep -iG "BTS1_2730_L2RTa1_L2RtCpu_TimeMarkerSnapshot.txt.xz" /tmp/SNAPSHOT/list_zip.txt
+    ${cmd}=                           Catenate    grep -iG "BTS.*${node_id}_${node.id}_L2RtCpu_TimeMarkerSnapshot.txt.xz" ${input_file}
+    ${result}=                        Execute Command And Check Content    command=${cmd}
+    Dated Log                         > check is passed for ${node.id} _L2RtCpu_TimeMarkerSnapshot: ${result}
+    #
+    # _L2TtiTrace_EventsSnapshot.bin.xz => e.g. grep -iG "BTS1_2730_L2RTa1_L2TtiTrace_EventsSnapshot.bin.xz" /tmp/SNAPSHOT/list_zip.txt
+    ${cmd}=                           Catenate    grep -iG "BTS.*${node_id}_${node.id}_L2TtiTrace_EventsSnapshot.bin.xz" ${input_file}
+    ${result}=                        Execute Command And Check Content    command=${cmd}
+    Dated Log                         > check is passed for ${node.id} _L2TtiTrace_EventsSnapshot: ${result}
+    #
+    # _L2TraceLo.dat.xz  => e.g. grep -iG "BTS1_2730_L2RTa1_L2TraceLo.dat.xz" /tmp/SNAPSHOT/list_zip.txt
+    ${cmd}=                           Catenate    grep -iG "BTS.*${node_id}_${node.id}_L2TraceLo.dat.xz" ${input_file}
+    ${result}=                        Execute Command And Check Content    command=${cmd}
+    Dated Log                         > check is passed for ${node.id} _L2TraceLo.dat: ${result}
+
+
+Check Generation Of Dump And Snapshot File for UPUE
+    [Arguments]             ${node}
+    ...                     ${node_id}
+    ...                     ${input_file}
+
+    # _startup.zip e.g. grep -iG "BTS1_2731_UPUEa1_ASP-2731_startup.zip" /tmp/SNAPSHOT/list_zip.txt
+    ${cmd}=                           Catenate    grep -iG "BTS.*${node_id}_${node.id}_ASP-${node_id}_startup.zip" ${input_file}
+    ${result}=                        Execute Command And Check Content    command=${cmd}
+    Dated Log                         > check is passed for ${node.id} _startup: ${result}
+    #
+    # _runtime.zip
+    ${cmd}=                           Catenate    grep -iG "BTS.*${node_id}_${node.id}_ASP-${node_id}_runtime.zip" ${input_file}
+    ${result}=                        Execute Command And Check Content    command=${cmd}
+    Dated Log                         > check is passed for ${node.id} _runtime: ${result}
+    #
+    # _L2TraceHi_DU.dat.xz  => e.g. grep -iG "BTS1_2733_UPUEa0_L2TraceHi_DU.dat.xz" /tmp/SNAPSHOT/list_zip.txt
+    ${cmd}=                           Catenate    grep -iG "BTS.*${node_id}_${node.id}_L2TraceHi_DU.dat.xz" ${input_file}
+    ${result}=                        Execute Command And Check Content    command=${cmd}
+    Dated Log                         > check is passed for ${node.id} _L2TraceHi_DU.dat: ${result}
+    #
+    # _L2TraceHi_CU.dat.xz  => e.g. grep -iG "BTS1_2731_UPUEa1_L2TraceHi_CU.dat.xz" /tmp/SNAPSHOT/list_zip.txt
+    ${cmd}=                           Catenate    grep -iG "BTS.*${node_id}_${node.id}_L2TraceHi_CU.dat.xz" ${input_file}
+    ${result}=                        Execute Command And Check Content    command=${cmd}
+    Dated Log                         > check is passed for ${node.id} _L2TraceHi_CU.dat: ${result}
+# --------------------------------------------------------------------------------------------------------------------------------------------------

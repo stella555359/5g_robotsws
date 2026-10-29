@@ -1,0 +1,199 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Common keyword of CB010513-D feature
+...               Prerequisite :
+...               Scope : keywords for CB010513-D
+...
+...               Test Case Scenario contact  : philippe.daroux@nokia.com
+...               Test Case automation author : philippe.daroux@nokia.com
+...               Test Case automation contact: philippe.daroux@nokia.com
+...               Creation Date               : 28-06-2023
+...               Modified Date               : 03-07-2023
+...               Last Modified by            : philippe.daroux@nokia.com
+...               Version History   Date            Author                      Notes
+...               0.1               FB2313      philippe.daroux@nokia.com      Creation
+...               0.2               FB2314      philippe.daroux@nokia.com
+...               0.3               FB2323      philippe.daroux@nokia.com       LO_AP_LOOO adaptation + Suite Setup with yaml custom config
+...               0.4               FB2419      richard.duthu@nokia.com         Scout data + some fixes for RF50
+
+
+Library           OperatingSystem
+Library           String
+Library           BuiltIn
+
+
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../CB008940/resources/robot/CB008940-I-J-Keywords.robot
+Resource          ../../../CB008940/resources/robot/CB008940-Config.robot
+
+*** Variables ***
+
+${TDD_FR1_chBw_100MHz_NUM_MAX_PRB}                 273
+&{Profile_UE_MIMO_1}                                    ue_id=1
+...                                                pdu=1
+...                                                gw=1
+...                                                dl_tput=1200
+...                                                deviation=35
+&{Profile_UE_MIMO_2}                                    ue_id=2
+...                                                pdu=2
+...                                                gw=2
+...                                                dl_tput=1200
+...                                                deviation=35
+
+
+${NRCELLID_1}                       0x4001
+${NRCELLID_2}                       0x4002
+${NRCELLID_3}                       0x4003
+
+${NRCELLID_1_idx}                   1
+${NRCELLID_2_idx}                   2
+${NRCELLID_3_idx}                   3
+
+${ZAB_Privileged_Value}             1
+${ZAB_No_Privileged_Value}          0
+
+${l1l2_csv_file_name}                 micro__l1l2Trace.csv
+${DL_Pooling_Sherpa_Msg}              Dl PrbPoolingAllocationReport
+${UL_Pooling_Sherpa_Msg}              Ul PrbPoolingAllocationReport
+${DL_Pooling_Csv_Extracted}           Dl_PrbPoolingAllocationReport_45_.csv
+${UL_Pooling_Csv_Extracted}           Ul_PrbPoolingAllocationReport_45_.csv
+
+@{UL_Pooling_Report}      Ul PrbPoolingAllocationReport(45)
+@{DL_Pooling_Report}      Dl PrbPoolingAllocationReport(45)
+
+
+
+&{Num of PRBs for 2 UE pair tx for MU MIMO in DL}      PM_ID=M55308C34013
+
+&{Number of PRBs for 8-layer Tx for MU MIMO in DL}     PM_ID=M55308C34011
+
+
+*** Keywords ***
+
+TC CB010513-D-TC-1
+    [Documentation]
+    ...     Conditions:     8940-I & G activated
+    ...     Actions:        Cell setup & call setup with 3 UEs (UE 1 1200mbps, UE 2 1200mbps)
+    ...     Checks:         PM counters check : value as expected
+    ...     Verdict:        PM counters value check as expected
+    [Arguments]             ${param}
+    ...                     ${vendor_custom}
+
+
+    Init Sequence           ${param}
+    Step                    Set RAD Params Of CB010513-D
+    Step                    Deploy Vendor File Config               vendor_param=${vendor_custom}        is_perform_full_commissioning=${false}
+    Dated Log New Line      ${vendor_custom}
+    Critical Step           CB010513-D-Keywords.Perform Recommissionning  #Perform Recommissionning
+    Critical Step           Restart TL
+    Step                    Multi Cells Setup CB010513 D                argument=${param.nbCell}
+    Step                    SA Call DL Traffic With UE Profile      argument=${Profile_UE_MIMO_1}
+    Step                    sleep    2s
+    Step                    SA Call DL Traffic With UE Profile      argument=${Profile_UE_MIMO_2}
+    Step                    sleep    2s
+    Step                    Activate Sherpa On All Cells
+    Step                    sleep    10s
+    Step                    Stop Sherpa Collection
+    Step                    sleep    360s
+    Step                    Collect Lastest PM Counters File
+    Step                    Check CB010513 D PM Counters
+    Step                    Compare CB010513 D PM Counters
+
+
+Suite Setup CB010513-D
+    [Documentation]
+    ...     Conditions:     customs configurations yamlPathname
+    ...     Actions:        it performs the generic suite setup and backup the configurations files
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        suite setup is passed
+    #Setup.Suite Setup From Scratch    keepAllUeDataInCfgFile=${True}        automaticTeardown=${True}
+    [Arguments]             ${yamlPathname}=${EMPTY}
+
+    Setup.Suite Setup from scratch        yamlPathname=${yamlPathname}
+    ...                                   listBackupFiles=${FD_ALL}
+    ...                                   keepAllUeDataInCfgFile=${True}
+    Backup Files
+    ${scf_suite_setup_backup}         OAM Get SCF File    file=SCF_Suite_Setup_Backup.xml
+    Set Suite Variable      ${scf_suite_setup_backup}
+    Dated Log               SCF backup file = ${scf_suite_setup_backup}
+
+Perform Recommissionning
+    Oam.OAM Perform Full Commissioning  scf_file=${SCF_SETUP_PATH}
+    WA Airscale Wait for Ready    ${GNB_DU}
+
+Set RAD Params Of CB010513-D
+   [Documentation]     Add or Modify the RAD params of 8940 To Activate the feature
+    ...                 will be replaced later by NIDD params
+    ...                 0x580117=1 : #CSI-RS Event Sherpa
+    ...                 0x58012B=1 : Canada Frame Struct
+    ...                 0x58070a=1 : 10513-E rdCellCsiRsPeriodicityBbPoolExtensionTddFr1, for L2PS
+    ...                 0x5901dd=1 : 10513-F rdCprt for L3
+    Dated Log New Line   Add RAD params of 8940-F InterL1SubPool and ZeroAllocationByPass are Disabled ......
+    ${rad_param_1}=      create dictionary       field=0x58075b   value=1
+    ${rad_param_list}=       Create List         ${rad_param_1}
+    Dated Log New Line    RAD params :  ${rad_param_list}
+    SetConfig.Set Fields in swconfig DU       param_list=${rad_param_list}
+    Dated Log New Line   RAD params of 10513-F update completed
+
+
+Multi Cells Setup CB010513 D
+    [Arguments]       ${nbCell}
+    ${msgStr}=    Catenate  Test ${nbCell} Cells Setup
+    Dated Log   ${msgStr}
+    Setup Wtsemu SA
+    sleep    60s
+    WTS Set X2 Link
+    sleep    5s
+
+Check CB010513 D PM Counters
+    Check CB010513 D PM Counter1 Expected Values      ${Num of PRBs for 2 UE pair tx for MU MIMO in DL}
+    Check CB010513 D PM Counter2 Expected Values      ${Number of PRBs for 8-layer Tx for MU MIMO in DL}
+
+
+
+
+Check CB010513 D PM Counter1 Expected values
+    [Documentation]                 To Check CB010513 D PM counter values are as exepected
+    [Arguments]                     ${PM_Counters_Expected}
+    Dated Log                       =======================================================================
+    Dated Log                       PM counter : ${PM_Counters_Expected.PM_ID}
+    Dated Log                       --------------------------------------------------------------------------------
+    ${Value_PM_Counter1_Cell_1}=            Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${PM_Counters_Expected.PM_ID}       ${NRCELLID_1_idx}
+    Dated Log                         Value of PM counter : ${PM_Counters_Expected.PM_ID} : cell : ${NRCELLID_1_idx} : ${Value_PM_Counter1_Cell_1}
+    Set Suite Variable              ${Value_PM_Counter1_Cell_1}
+
+Check CB010513 D PM Counter2 Expected values
+    [Documentation]                 To Check CB010513 F PM counter values are as exepected
+    [Arguments]                     ${PM_Counters_Expected}
+    Dated Log                       =======================================================================
+    Dated Log                       PM counter : ${PM_Counters_Expected.PM_ID}
+    Dated Log                       --------------------------------------------------------------------------------
+    ${Value_PM_Counter2_Cell_1}=            Counters.Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                                    ${LATEST_PM_FILE}       ${PM_Counters_Expected.PM_ID}       ${NRCELLID_1_idx}
+    Dated Log                         Value of PM counter : ${PM_Counters_Expected.PM_ID} : cell : ${NRCELLID_1_idx} : ${Value_PM_Counter2_Cell_1}
+    Set Suite Variable              ${Value_PM_Counter2_Cell_1}
+
+
+Compare CB010513 D PM Counters
+
+    Dated Log      ${Value_PM_Counter1_Cell_1}
+    Dated Log      ${Value_PM_Counter2_Cell_1}
+
+
+    Should Be True      ${Value_PM_Counter1_Cell_1} == ${Value_PM_Counter2_Cell_1}
+
+    Dated Log New Line   Test of CB010513-D completed
+
+End Of TC
+   [Documentation]        At the end of each TC :
+   ...                      - show the Diagnosis of the TC steps
+   ...                      - collect the gnb Snapshot
+   ...                      - if TC failed, collect also AP sosReport
+
+   Dated Log              End Of TC : start
+   Produce Scout Data
+   Oam.OAM Get Snapshot
+   Run Keyword If Test Failed     Setup.Get Sos Report
+   GenericTest.Display Diagnosis
+   Dated Log              End of TC : end

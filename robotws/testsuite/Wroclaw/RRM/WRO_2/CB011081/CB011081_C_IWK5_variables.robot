@@ -1,0 +1,73 @@
+*** Settings ***
+Documentation    :copyright: Nokia
+...              :authors: Damian Rzeczkowski
+...              :contact: damian.rzeczkowski@nokia.com
+
+*** Variables ***
+${rd_WA_skip_freq_validation}=        0x600036=0
+@{SWCONFIG_FLAGS_LIST}=        ${rd_WA_skip_freq_validation}
+${LOGS_COMPRESSION}=  ${True}
+${LOGGING_POLICY}=    NO_TRAFFIC_LOGS_POLICY
+
+${UE1_ID}=    3
+${UE2_ID}=    30
+${UE3_ID}=    31
+${PDU1_ID}=    1
+${PDU2_ID}=    2
+${PDU3_ID}=    3
+
+${PCELL_ID}=        3
+${GW_ID}=           3
+${GNB_ID}=          2
+
+@{COUNTER_IDs_PCELL}=    M55118C00001    M55118C00004    M55118C10001    M55118C10002
+@{COUNTER_NAMEs_PCELL}=    RRC_RECONF_ADD5DLSCELL_ATT_SA    RRC_RECONF_ADD5DLSCELL_SUCC_SA    RRC_RECONF_ADD1ULSCELL_ATT_SA
+...    RRC_RECONF_ADD1ULSCELL_SUCC_SA
+
+${NR_CELL_IDENTITY_1}=    '0b000000000000000000000100000000000001'
+${NR_CELL_IDENTITY_2}=    '0b000000000000000000000100000000000010'
+${NR_CELL_IDENTITY_3}=    '0b000000000000000000000100000000000011'
+${NR_CELL_IDENTITY_4}=    '0b000000000000000000000100000000000100'
+${NR_CELL_IDENTITY_5}=    '0b000000000000000000000100000000000101'
+${NR_CELL_IDENTITY_6}=    '0b000000000000000000000100000000000110'
+${NR_CELL_IDENTITY_7}=    '0b000000000000000000000100000000000111'
+@{6CC_NR_CELL_IDENTITIY}=   ${NR_CELL_IDENTITY_2}    ${NR_CELL_IDENTITY_4}    ${NR_CELL_IDENTITY_5}    ${NR_CELL_IDENTITY_6}
+...    ${NR_CELL_IDENTITY_7}
+
+${SCELL_PHYSCELL_ID_1}=    51
+${SCELL_PHYSCELL_ID_2}=    52
+${SCELL_PHYSCELL_ID_3}=    53
+${SCELL_PHYSCELL_ID_4}=    54
+${SCELL_PHYSCELL_ID_5}=    55
+${SCELL_PHYSCELL_ID_6}=    56
+${SCELL_PHYSCELL_ID_7}=    57
+@{6CC_SCELL_PHYSCELL_ID}=    ${SCELL_PHYSCELL_ID_2}    ${SCELL_PHYSCELL_ID_4}    ${SCELL_PHYSCELL_ID_5}    ${SCELL_PHYSCELL_ID_6}
+...    ${SCELL_PHYSCELL_ID_7}
+
+@{BWP3_COUNTER_ID_FOR_SCELLs}=    M55139C04513
+@{BWP3_COUNTER_NAME_FOR_SCELLs}=    GNB_DU_SCELL_ADM_BWP3_SUCC
+@{BWP2_COUNTER_ID_FOR_SCELLs}=    M55139C04512
+@{BWP2_COUNTER_NAME_FOR_SCELLs}=    GNB_DU_SCELL_ADM_BWP2_SUCC
+@{BWP1_COUNTER_ID_FOR_SCELLs}=    M55139C04511
+@{BWP1_COUNTER_NAME_FOR_SCELLs}=    GNB_DU_SCELL_ADM_BWP1_SUCC
+${LOCAL_MOID_PCELL}=          PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-3
+${LOCAL_MOID_SCELL_1}=          PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-1
+${LOCAL_MOID_SCELL_2}=          PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-2
+${LOCAL_MOID_SCELL_4}=          PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-4
+${LOCAL_MOID_SCELL_5}=          PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-5
+${LOCAL_MOID_SCELL_6}=          PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-6
+${LOCAL_MOID_SCELL_7}=          PLMN-PLMN/MRBTS-1/NRBTS-1/NRCELL-7
+@{SCELLs_DL_MOID}=    ${LOCAL_MOID_SCELL_2}    ${LOCAL_MOID_SCELL_4}    ${LOCAL_MOID_SCELL_5}
+...    ${LOCAL_MOID_SCELL_6}    ${LOCAL_MOID_SCELL_7}
+
+# Below are specified variables in order to check BWP specific values.
+# These variables are of dictionary type with key-value pairs,
+# where the keys are physcellid and values are the expected values
+&{UE1_carrierBandwidth_values}=    52=160    54=106    55=273    56=273    57=273
+&{UE2_carrierBandwidth_values}=    52=79    54=79    55=133    56=133    57=133
+&{UE3_carrierBandwidth_values}=    52=52    54=52    55=51    56=51    57=51
+&{UE1_locationAndBandwidth_values}=    52=32174    54=28875    55=1099    56=1099    57=1099
+&{UE2_locationAndBandwidth_values}=    52=21450    54=21450    55=36300    56=36300    57=36300
+&{UE3_locationAndBandwidth_values}=    52=14025    54=14025    55=13750    56=13750    57=13750
+${new_file}=          ${CURDIR}/config/packet_iphy.lua
+${target_path}=       /home/ute/.local/lib/wireshark/plugins/packet_iphy.lua

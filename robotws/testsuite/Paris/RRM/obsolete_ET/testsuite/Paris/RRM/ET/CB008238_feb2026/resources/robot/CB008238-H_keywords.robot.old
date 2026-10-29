@@ -1,0 +1,87 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB008238 step H
+...
+...               Test Case Scenario author   : jing.tian@nokia.com
+...               Test Case Scenario contact  : jing.tian@nokia.com
+...               Test Case automation author : laurent.puchelle@nokia.com
+...               Test Case automation contact: laurent.puchelle@nokia.com
+...               Creation Date               : 14-Jun-2022
+...               Modified Date               : 14-Jun-2022
+...               Last Modified by            : laurent.puchelle@nokia.com
+...               Modification:
+...                       14-Jun-2022       | Creation
+
+
+Resource                            ./CB008238_keywords.robot
+Resource                            ../../../resources/common/TtiTrace/ttitrace.robot
+
+
+*** Variables ***
+${DL_duration}                   60
+${DL_trace_duration}             5
+
+${TputVolMargin}                 5
+
+
+*** Keywords ***
+CB008238_TC_H_05_Rss_distribution_with_SchedulWeight_1_FDD_NSA
+    ${MaxRetentionDelay}          Evaluate           10
+    CB008238 CellSetup            actDtxOptimzedScheduler=true    MaxRetentionDelay=${MaxRetentionDelay}    CallType=NSA    nbUe=2
+    ...                           actNonGbrServiceDiff=true       schedulWeight=1
+    ...                           actDl256Qam=false
+
+    &{UE1}                        copy dictionary    ${UE_SIMPLE}
+    &{UE2}                        copy dictionary    ${UE_SIMPLE}
+    ${UE2.ue}                     Set Variable       2
+    Dated Log New Line            ${trcColor}=== Attach UE1 ${defColor}
+    CB008238 Attach NSA           ueSetting=${UE1}
+    Dated Log New Line            ${trcColor}=== Attach UE2 ${defColor}
+    CB008238 Attach NSA           ueSetting=${UE2}
+
+    # TTI capture configuration
+    ${TTIdir}                     Get TTI Trace Path                 dir_suffix=H05
+
+    Dated Log New Line            ${trcColor}=== Start packets sending UE1 ${defColor}
+    ${UE1pktPeriod}               Evaluate    12
+    ${pktSize}                    Evaluate    1000
+    ${pktBurst}                   Evaluate    4
+    Send UE DL packets            ueSetting=${UE1}
+    ...                           duration=0
+    ...                           period_ms=${UE1pktPeriod}
+    ...                           size=${pktSize}
+    ...                           burst=${pktBurst}
+    ...                           shouldBeStop=${False}
+    ...                           deviation=${TputVolMargin}
+
+    Dated Log New Line            ${trcColor}=== Start traffic UE2 ${defColor}
+    Traffic UE DL                 ueSetting=${UE2}
+    ...                           throughput=160
+    ...                           duration=0
+    ...                           shouldBeStop=${False}
+    ...                           shouldBeCheck=${False}
+
+    # start TTI capture
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+
+    Traced Sleep                  ${DL_trace_duration}               msg=DL traffic capture
+
+    # stop TTI capture
+    ${TTIpcap}                    Stop TTI Traces in Streaming mode
+    ...                           tti_trace_path=${TTIdir}
+    ...                           tti_trace_filename=TTITrace_H05
+
+    Traced Sleep                  ${DL_duration}                     msg=DL traffic
+
+    Dated Log New Line            ${trcColor}=== Stop packets sending and detach UEs ${defColor}
+    Traffic Stop                  ueSetting=${UE1}                   dir=dl
+    Traffic Stop                  ueSetting=${UE2}                   dir=dl
+    UE Detach Enb                 ueSetting=${UE1}
+    UE Detach Enb                 ueSetting=${UE2}
+
+    ${TTIjson}                    Convert TTItrace from pcap to others
+    ...                           input_file_path=${TTIpcap}
+    ${TTIcsv}                     decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson}    num_of_events=10000
+
+    Dated Log New Line            ${trcColor}=== Check scheduling weight in TTI trace ${defColor}
+    ${uDTXscheduleWeight}         getuDTXscheduleWeight    jsonPathName=${TTIjson}
+    Should Be True                ${uDTXscheduleWeight}>15

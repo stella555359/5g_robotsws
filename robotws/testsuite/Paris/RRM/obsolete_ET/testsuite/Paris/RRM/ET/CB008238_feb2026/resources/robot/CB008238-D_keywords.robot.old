@@ -1,0 +1,136 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  TCs and KWs of CB008238 step D
+...
+...               Test Case Scenario author   : jing.tian@nokia.com
+...               Test Case Scenario contact  : jing.tian@nokia.com
+...               Test Case automation author : jing.tian@nokia.com
+...               Test Case automation contact: jing.tian@nokia.com
+...               Creation Date               : 19-Apr-2022
+...               Modified Date               : 19-Apr-2022
+...               Last Modified by            : jing.tian@nokia.com
+...               Modification:
+...                       19-Apr-2022         | Creation
+
+
+Resource                            ./CB008238_keywords.robot
+Resource                            ../../../resources/common/TtiTrace/ttitrace.robot
+
+
+*** Variables ***
+${DL_duration}                   60
+${DL_trace_duration}             2
+
+${TputVolMargin}                 5
+
+
+*** Keywords ***
+CB008238_D_01_Micro_DTX_interactions_with_number_of_UE_in_CS1_list_2UEs_FDD_SA
+    CB008238 CellSetup            actDtxOptimzedScheduler=true    MaxRetentionDelay=20    CallType=SA
+    ...                           nbUe=2    CS1Threshold=true
+    ...                           actDl256Qam=false
+    &{UE1_SA}                     copy dictionary    ${BASIC_UE_SA}
+    &{UE2_SA}                     copy dictionary    ${BASIC_UE_SA}
+    ${UE2_SA.ue}                  Set Variable       2
+    ${UE2_SA.pdu}                 Set Variable       2
+    ${UE2_SA.trf_id}              Set Variable       2
+
+    Dated Log New Line            ${trcColor}=== Attach UE1 ${defColor}
+    CB008238 Attach SA            ueSetting=${UE1_SA}
+    Dated Log New Line            ${trcColor}=== Attach UE2 ${defColor}
+    CB008238 Attach SA            ueSetting=${UE2_SA}
+
+    # L1/L2 capture configuration
+    ${CaptureBIP_DL}              Capture L1L2 Set Upon Config       airscale=${GNB_DU}
+    Capture Init                  ${CaptureBIP_DL}                   suffix=_D01
+
+    # TTI capture configuration
+    ${TTIdir}                     Get TTI Trace Path                 dir_suffix=D01
+
+    Dated Log New Line            ${trcColor}=== Start traffic on UE1 ${defColor}
+    ${pktPeriodUE1}               Evaluate    12
+    ${pktSizeUE1}                 Evaluate    50
+    ${pktBurstUE1}                Evaluate    1
+    Send UE DL packets            ueSetting=${UE1_SA}
+    ...                           duration=0
+    ...                           period_ms=${pktPeriodUE1}
+    ...                           size=${pktSizeUE1}
+    ...                           burst=${pktBurstUE1}
+    ...                           shouldBeStop=${False}
+    ...                           deviation=${TputVolMargin}
+    ${timeStartTrafficUE1}        Get Current Date
+
+    Dated Log New Line            ${trcColor}=== Start traffic on UE2 ${defColor}
+    ${pktPeriodUE2}               Evaluate    16
+    ${pktSizeUE2}                 Evaluate    100
+    ${pktBurstUE2}                Evaluate    1
+    Send UE DL packets            ueSetting=${UE2_SA}
+    ...                           duration=0
+    ...                           period_ms=${pktPeriodUE2}
+    ...                           size=${pktSizeUE2}
+    ...                           burst=${pktBurstUE2}
+    ...                           shouldBeStop=${False}
+    ...                           deviation=${TputVolMargin}
+    ${timeStartTrafficUE2}        Get Current Date
+
+    # start TTI capture
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+
+    # start L1/L2 capture
+    Callback Capture L1L2         capture=${CaptureBIP_DL}           Action=START
+
+    Traced Sleep                  ${DL_trace_duration}               msg=DL traffic capture
+
+    # stop L1/L2 capture
+    Callback Capture L1L2         capture=${CaptureBIP_DL}           Action=STOP
+
+    # stop TTI capture
+    ${TTIpcap}                    Stop TTI Traces in Streaming mode
+    ...                           tti_trace_path=${TTIdir}
+    ...                           tti_trace_filename=TTITrace_D01
+
+    Traced Sleep                  ${DL_duration}                     msg=DL traffic
+
+    Dated Log New Line            ${trcColor}=== Stop traffic on UE1 ${defColor}
+    ${timeStopTrafficUE1}         Get Current Date
+    Traffic Stop                  ueSetting=${UE1_SA}                dir=dl
+
+    Dated Log New Line            ${trcColor}=== Stop traffic on UE2 ${defColor}
+    ${timeStopTrafficUE2}         Get Current Date
+    Traffic Stop                  ueSetting=${UE2_SA}               dir=dl
+
+    Dated Log New Line            ${trcColor}=== Detach UEs ${defColor}
+    UE Deregister                 id=${UE1_SA.ue}
+    UE Deregister                 id=${UE2_SA.ue}
+
+    ${TTIjson}                    Convert TTItrace from pcap to others
+    ...                           input_file_path=${TTIpcap}
+    ${TTIcsv}                     decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson}    num_of_events=10000
+
+    Dated Log New Line            ${trcColor}=== Check retention in TTI trace ${defColor}
+    ${nbCheck}                    CheckTTItrace_CellNbUeCs1PercentThreshold_2UEs    jsonPathName=${TTIjson}    mode=FDD
+    ...                           cs1ThresholdHigh=${Cs1ThresholdHigh}    cs1ThresholdLow=${Cs1ThresholdLow}
+    ...                           timer=${DtxCellEnablingTimer}
+    Should Be True                ${nbCheck}>0
+
+    CB008238 get PM files
+
+    Dated Log New Line            ${trcColor}=== Check using counters ${defColor}
+    ${UE1timeDiff}                Subtract Date From Date    ${timeStopTrafficUE1}    ${timeStartTrafficUE1}
+    ${UE1trafficDuration}         Convert To Integer    ${UE1timeDiff}
+    ${UE1DLtput}                  Evaluate       ${pktSizeUE1}*${pktBurstUE1}*8*1000/${pktPeriodUE1}
+    ${UE1expectedDataVol}         Evaluate       ${UE1DLtput}*${UE1trafficDuration}/8
+    ${UE1expectedDataVolMargin}   Evaluate       ${UE1expectedDataVol} - ${UE1expectedDataVol}*${TputVolMargin}/100
+
+    ${UE2timeDiff}                Subtract Date From Date    ${timeStopTrafficUE2}    ${timeStartTrafficUE2}
+    ${UE2trafficDuration}         Convert To Integer    ${UE2timeDiff}
+    ${UE2DLtput}                  Evaluate       ${pktSizeUE2}*${pktBurstUE2}*8*1000/${pktPeriodUE2}
+    ${UE2expectedDataVol}         Evaluate       ${UE2DLtput}*${UE2trafficDuration}/8
+    ${UE2expectedDataVolMargin}   Evaluate       ${UE2expectedDataVol} - ${UE2expectedDataVol}*${TputVolMargin}/100
+
+    ${expectedDataVolMargin}      Evaluate       ${UE1expectedDataVolMargin} + ${UE2expectedDataVolMargin}
+
+    ${status_DRB_dataVolume}      CB008238 check DL Data Volume    QCI=QCI6    expectedDataVol=${expectedDataVolMargin}
+    ${status_DL_BLER}             CB008238 check DL BLER    maxBLER=2
+    Should be True                ${status_DRB_dataVolume} and ${status_DL_BLER}
+	
+	

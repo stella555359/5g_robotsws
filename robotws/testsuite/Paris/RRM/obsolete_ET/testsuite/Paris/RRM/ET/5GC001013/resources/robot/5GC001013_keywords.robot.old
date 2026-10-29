@@ -1,0 +1,625 @@
+*** Settings ***
+Documentation
+...               Common keywords for Automation of Feature 5GC001013 sub-features A,B, and R
+...
+...               Test Case Scenario author   : loic.marzin@nokia.com
+...               Test Case Scenario contact  : loic.marzin@nokia.com
+...               Test Case automation author : loic.marzin@nokia.com
+...               Test Case automation contact: loic.marzin@nokia.com
+...               Creation Date               : 01-Apr-2020
+...               Modified Date               : 26-Sep-2022
+...               Modification                : vincent.boulet@Nokia.com - timing problem during the verification of the cell configuration
+...               Modified Date               : 08-Mar-2023
+...               Modification                : loic.marzin@nokia.com - Modify KW Set enDcSyncStatus due to issue with chaining several tests
+...                                                                     Modify Test Teardown to restore original gNB SCF at end of each test
+...               Modified Date               : 17-Mar-2023
+...               Modification                : vincent.boulet@nokia.com - adding route on VDU to capture Sherpa for VRAN
+...               Modified Date               : 13-Oct-2023
+...               Modification                : loic.marzin@nokia.com - Add discrimanation on UeId regarding topology
+...                                                                     if topology = MP or ASOE => UeId=11 or else UeId=101
+...               Modified Date               : 28-Nov-2023
+...               Modification                : loic.marzin@nokia.com - Remove Sherpa logs processing and replace it with TTI logs processing
+...               Modified Date               : 12-Mar-2023
+...               Modification                : loic.marzin@nokia.com - Update filter in TTI logs to Remove DL_10_OSI messages
+...               Modified Date               : 12-Apr-2024
+...               Modification                : vincent.boulet@nokia.com - Parity testing to introduce dRNIC RINLINE2 CLOUD_5GC_dRNIC_1vDU_P_AP_LO_DC
+...               Modified Date               : 22-Jul-2024
+...               Modification                : loic.marzin@nokia.com - Update filter in TTI logs to Remove PTRS_VOID messages
+...               Modified Date               : 19-Aug-2024
+...               Modification                : loic.marzin@nokia.com - Reintroduce use of OAM Set Params in case of Classical
+...               Modified Date               : 19-Sep-2024
+...               Modification                : richard.duthu@nokia.com - Scout data
+
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Connect.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Variables         ../../../../../resources/SWENG/python/ReadConfig.py
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../resources/common/TtiTrace/ttitrace.robot
+
+Library           ../../../resources/python/luashark_tools.py
+Library           luashark_tools.analyzer       WITH NAME       analyzer
+Library           Collections
+Library           BuiltIn
+Library           DateTime
+Library           taf.epcsim                    WITH NAME       wts
+Library           ute_common_store.Store        WITH NAME       ute_store
+Library           ../python/5GC001013_lib.py
+
+*** Variables ***
+@{packetNumbers}
+@{listUniquePacketFoundInCallFlow}
+${Destination_port}             5678
+
+&{gp0}                          mgl=6
+...                             mgrp=40
+&{gp1}                          mgl=6
+...                             mgrp=80
+&{gp2}                          mgl=3
+...                             mgrp=40
+&{gp3}                          mgl=3
+...                             mgrp=80
+&{gp4}                          mgl=6
+...                             mgrp=20
+&{gp5}                          mgl=6
+...                             mgrp=160
+&{gp6}                          mgl=4
+...                             mgrp=20
+&{gp7}                          mgl=4
+...                             mgrp=40
+&{gp8}                          mgl=4
+...                             mgrp=80
+&{gp9}                          mgl=4
+...                             mgrp=160
+&{gp10}                         mgl=3
+...                             mgrp=20
+&{gp11}                         mgl=3
+...                             mgrp=160
+
+&{mgta}                         ms0=0
+...                             ms0dot50=0.5
+
+&{UE_PROFILE}                   ue=1                                  profile=1
+...                             pdu=1               qfi=1               type=${None}
+...                             bearer=2                                testMode=False
+...                             trf_id=1                                burst=${None}
+...                             target_gnb=2                            target_cells=${TARGET_CELLS}
+...                             throughput=10                           testModeValue=csi_report_override
+...                             period_ms=${None}
+
+
+*** Keywords ***
+My Suite Setup From Scratch
+    Setup.Suite Setup From Scratch    keepAllUeDataInCfgFile=${True}
+    Init Variables
+
+Get NSA UEId
+    [Documentation]                 Return the NSAUEId valuez regarding if topology used is mixed TDD + FDD.
+    ...                             The value is 11 wen topology is 'MP' or 'ASOE', 101 for others.
+    ${NSAUEId}                      Set Variable       101
+    ${NSAUEId}                      Set Variable If
+    ...                                      '${GNB_DU.profil}'=='MP'       11
+    ...                                      '${GNB_DU.profil}'=='ASOE'     11
+    ...                                      '${GNB_DU.profil}'=='LO'       101
+    ...                                      ${isAic}                       101
+    Dated Log                       GNB Profile is = ${GNB_DU.profil}, NSA UE ID is = ${NSAUEId}
+    [Return]                        ${NSAUEId}
+
+Init Variables
+    ${CAPTURE_GNB}   Run Keyword If    ${isAic}
+    ...                                        Capture CORE Set Upon Config    airscale=${GNB_CU}
+    ...                          ELSE
+    ...                                        Capture CORE Set Upon Config
+    Set Suite Variable              ${CAPTURE_GNB}
+    ${CAPTURE_CPRT}                 Capture CPRT Set Upon Config
+    Set Suite Variable              ${CAPTURE_CPRT}
+    ${UE_id}                        Get NSA UEId
+    Set Suite Variable              ${UE_id}
+    ${ueProfile}                    Copy Dictionary     ${UE_PROFILE}
+    Set To Dictionary               ${ueProfile}        ue       ${UE_id}
+    Set Suite Variable              ${ueProfile}
+
+Set enDcSyncStatus
+
+    ${dist_name_nrbts}              Set Variable                    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ${dist_name_nrcell1}            Set Variable                    MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    Set Suite Variable              ${dist_name_nrcell1}
+    ${SCF_PATH_1013_DU}             OAM Get SCF File                oam=${GNB_DU.oam}        file=SCF_Setup_1013_DU.xml
+    Set Suite Variable              ${SCF_PATH_1013_DU}
+    SCF StartSession                scf_file=${SCF_PATH_1013_DU}
+
+    SCF Set element                 dist_name=${dist_name_nrcell1}
+    ...                             element_name=enDcSyncStatus
+    ...                             element_value=${param.enDcSyncStatus}
+    ...                             aicListEntity=vdu    scope=both    bestEffort=${True}
+
+    # Necessary deactivations (GMC topology)
+    SCF Set element                 dist_name=${dist_name_nrbts}
+    ...                             element_name=actNsaUeBasedAnrNr
+    ...                             element_value=false
+    ...                             aicListEntity=vdu    scope=both    bestEffort=${True}
+
+    SCF Set element                 dist_name=${dist_name_nrbts}
+    ...                             element_name=actSaUeBasedAnrNr
+    ...                             element_value=false
+    ...                             aicListEntity=vdu    scope=both    bestEffort=${True}
+
+    SCF Set element                 dist_name=${dist_name_nrcell1}
+    ...                             element_name=actCDrx
+    ...                             element_value=false
+    ...                             aicListEntity=vdu    scope=both    bestEffort=${True}
+
+    SCF StopSession                 scf_file=${SCF_PATH_1013_DU}     #vbo# obsolete#second_scf_file=${SCF_PATH_1013_CU}
+    Dated Log                       Modifications completed.\n
+
+    Oam.OAM Perform Full Commissioning          scf_file=${SCF_PATH_1013_DU}
+    Wait Vcu And Vdu Available
+    Run keyword if                  ${isAic}
+    ...                             Wait Vcu And Vdu Available
+    Run Keyword If                  not ${isAic}
+    ...                             WA Airscale Wait For Ready              ${GNB_DU}
+    # Necessary pause for gNB recovery before WTS Setup
+    Traced Sleep  5 minutes
+
+Start CPRT Capture
+    [Arguments]                     ${capture}
+    [Tags]                          CAPTURE
+    ${capture.filter}               Get Filter For SCTP
+#   Keep code for future use regarding  Syscom over TCP
+#    ${Capture.filter}               Run Keyword If    'SBTS22R3' in '${TLConfig.topo.gnbVersion}'
+#    ...                             Get Filter For SCTP
+#    ...         ELSE
+#    ...                             Get Filter For TCP
+    ${capture.prefix}               Set Variable         CPRT_logs_5GC001013_
+    Set Suite Variable              ${capture}
+    Capture Init                    ${capture}           suffix=${param.LogFileSuffix}
+    Capture Start                   ${capture}
+
+Start Core Capture
+    [Arguments]                     ${capture}
+    [Tags]                          CAPTURE
+    ${capture.filter}               Get Filter For SCTP
+    ${capture.interface}            Set Variable         any
+    ${capture.prefix}               Set Variable         Core_logs_5GC001013_
+    Set Suite Variable              ${capture}
+    Capture Init                    ${capture}           suffix=${param.LogFileSuffix}
+    Capture Start                   ${capture}
+
+4G UE Attach
+    [Tags]                          4G_UE_ATTACH
+    UE Attach Enb                   ueSetting=${ueProfile}
+
+4G UE Detach
+    [Tags]                          4G_UE_DETACH
+    UE Detach Enb                   ueSetting=${ueProfile}
+
+5G UE Attach
+    [Tags]                          5G_UE_ATTACH
+    UE Attach Gnb                   ueSetting=${ueProfile}
+
+Stop Capture
+    [Arguments]                     ${capture}
+    [Tags]                          CAPTURE
+    Capture Stop                    ${capture}
+
+Check enDcSyncStatus
+    [Arguments]                     ${capture}
+    [Documentation]                 Check parameter enDcSyncStatus fron msg l2_ps_cell_setupreq in GNB_ASIK_Slave pcap
+    ${pdmlFile}                     analyzer.pcap_to_pdml         ${capture.path}
+    analyzer.check_exists_once      pdmlFile=${pdmlFile}
+    ...                             packetName=itf_l2_ps_cell_cellsetupreq
+    ...                             path=.*enDcSyncStatus$
+    ...                             value=${param.valueToCheck}
+
+WTS GAP Setup
+    [Tags]                          WTS_GAP_SETUP
+    [Documentation]                 WTS command to Setup Gap Measurement
+    wtsemu.ue_enb_param             id=${UE_id}    measurement_gap=${param.gapPattern}:${param.gapOffset}    mgta=${param.mgta}
+    ...                             gap_purpose=${param.gapPurpose}
+    Sleep                           3s
+
+WTS Get GnbX2apId
+    ${inputFilePath}                Set variable
+    ...                             ${tl.core.dir_path}/egate_console.log
+    ${outputFilePath}               Set variable
+    ...                             ${tl.core.dir_path}/egate_console_save.log
+    ${command}                      Set variable
+    ...                             tail -n +3 ${inputFilePath} > ${outputFilePath}
+
+    ${returnCode}                   Run And Return Rc
+    ...                             ${command}
+    Should Be Equal As Integers     ${returnCode}    0
+    ${output}                       SSH Wait For Connect and Cmd
+    ...                             command=grep -m1 "SgNB-UE-X2AP-ID" ${outputFilePath}
+    ...                             host=${HOST_EPCSIM}
+    ${sp_output}=                   Split String          ${output}    :
+    ${st_output}=                   Strip String          ${sp_output}[0]
+    ${st_output}=                   Run Keyword if        '${st_output}' == 'value SgNB-UE-X2AP-ID'
+    ...                             Strip String          ${sp_output}[1]
+    Dated Log New Line              GNB X2AP ID: ${st_output}
+    [Return]                        ${st_output}
+
+WTS Send Hex
+    [Tags]                          WTS_SEND_HEX
+    [Documentation]                 WTS command to send raw Hexa encoded message from MeNB to SgNB
+
+    ${GnbX2ApId}=                   WTS Get GnbX2apId
+    Run Keyword if                  '${GnbX2apId}' == 'None'
+    ...                             wtsemu.send_hex    source=enb:1    target=gnb:2    hex=${param.sendHexa}
+    ...                             ELSE
+    ...                             wtsemu.send_hex    source=enb:1    target=gnb:2    hex=${param.sendHexa2}
+
+WTS No GAP Config
+    [Tags]                          WTS_NO_GAP_CONFIG
+    [Documentation]                 WTS command to Setup Gap Measurement wih No GAP Config
+    wtsemu.ue_enb_param             id=${UE_id}    measurement_gap=no_gap_config     gap_purpose=perUE
+    Sleep                           3s
+
+5G UE Attach No check
+    [Tags]                          5G_UE_ATTACH_NO_Check
+    [Documentation]                 WTS command to perform SgAdditionRequest on X2 interface with no check after
+    wtsemu.enb_ue_dc_start          ue=${UE_id}
+    ...                             target_gnb=2
+    ...                             target_cells=1
+    ...                             bearer=2
+    ...                             type=split_scg
+    Sleep                           3s
+
+5G UE Modification
+    [Tags]                          5G_UE_MODIFICATION
+    [Documentation]                 WTS command to perform SgNBModificationRequest on X2 interface
+    wtsemu.enb_ue_dc_modify         ue=${UE_id}    by=enb    cause=RN_action_desirable_for_radio_reasons
+    Sleep                           3s
+
+WTS GAP Release
+    [Tags]                          WTS_GAP_RELEASE
+    [Documentation]                 WTS command to Release Gap Measurement
+    wtsemu.ue_enb_param             id=${UE_id}    measurement_gap=off
+    Sleep                           3s
+
+WTS GAP Forced Release
+    [Tags]                          WTS_GAP_FORCED_RELEASE
+    [Documentation]                 WTS command to Release Gap Measurement
+    wtsemu.ue_enb_param             id=${UE_id}    measurement_gap=forced_release
+    Sleep                           3s
+
+WTS GAP Off
+    [Tags]                          WTS_GAP_OFF
+    [Documentation]                 WTS command to setGap Measurement Off
+    wtsemu.ue_enb_param             id=${UE_id}    measurement_gap=off
+    Sleep                           3s
+
+Verify Message Presence and Sequence
+    [Documentation]                 Verifies that all the messages given in the callFlow (list of messages)
+    ...                             are present in the pdmlFile and are found in the same order as specified.
+    ...                             Current limit : we consider only the first message found of a certain type.
+    ...                             To be fixed.
+    [Arguments]                     ${pdmlFile}
+    ...                             ${callFlow}
+    @{listUniquePacketFoundInCallFlow}      Get Packets From PDML File   pdmlFile=${pdmlFile}     callFlow=${callFlow}
+    Verify Message Sequence                 listPacketMatch=${listUniquePacketFoundInCallFlow}
+    Show Packet Match List                  ${listUniquePacketFoundInCallFlow}  #Debug Phase
+
+Get Packets From PDML File
+    [Arguments]                     ${pdmlFile}
+    ...                             ${callFlow}
+    @{listUniquePacketFoundInCallFlow}    create list
+    FOR    ${msg}       IN         @{callFlow}
+         @{listPacketMatch}         Get List Packet Match
+         ...                        pdmlFile=${pdmlFile}
+         ...                        packetToSearch=${msg}
+                                    Should not be empty      ${listPacketMatch}         "Packet : '${msg}' has not been found in pdmlFile !"
+                                    Append To List           ${listUniquePacketFoundInCallFlow}    ${listPacketMatch[0]}
+    END
+    [Return]                        @{listUniquePacketFoundInCallFlow}
+
+Check Field Values From Packet
+    [Documentation]                 Verifies that in a given pdmlFile, in a packet that matches 'packetName',
+    ...                             fields that are keys of the dict 'keyValuesToCheck' have the
+    ...                             corresponding expected value (ex: fieldName=expectedValue)
+    [Arguments]                     ${pdmlFile}
+    ...                             ${packetName}
+    ...                             ${keyValuesToCheck}
+    FOR    ${key}       IN         @{keyValuesToCheck.keys()}
+        analyzer.check_field        pdmlFile=${pdmlFile}
+        ...                         packetName=${packetName}
+        ...                         fieldName=${key}
+        ...                         value=${keyValuesToCheck['${key}']}
+
+    END
+Get List Packet Match
+    [Arguments]                     ${pdmlFile}
+    ...                             ${packetToSearch}
+    @{listPacketMatch}              analyzer.get_match_from_paths                 pdmlFile=${pdmlFile}
+    ...                             packetName=${packetToSearch}
+    [Return]                        @{listPacketMatch}
+
+Verify Message Sequence
+    [Arguments]                     ${listPacketMatch}
+    @{packetNumbers}                create list
+    FOR    ${packet}       IN      @{listPacketMatch}
+        ${packetIdx}                Convert To Integer      ${packet.namedPacket.index}
+         Append To List             ${packetNumbers}        ${packetIdx}
+    END
+    ${sortedPacketNumbers}          Copy List               ${packetNumbers}
+    Sort List                       ${sortedPacketNumbers}
+    Lists Should Be Equal           ${packetNumbers}        ${sortedPacketNumbers}      "Messages to find in pcap are not found in given sequence"
+
+Show Packet Match List  #Debug phase
+    [Arguments]                     ${listPacketMatch}
+    FOR    ${packet}       IN      @{listPacketMatch}
+            Show Packet Match       packetMatch=${packet}
+
+    END
+Show Packet Match  #Debug phase
+    [Arguments]                     ${packetMatch}
+    BuiltIn.Log                        DEBUG:Packet:${packetMatch.namedPacket}
+
+Check CU DU GAP Setup Flow
+    [Arguments]                     ${capture}
+    [Documentation]                 Check F1ap and X2ap Call Flow sequence during GAP Setup
+    ...                             Check MeasGapConfig field values in F1ap and X2ap messages
+    ${pdmlFile}                     analyzer.pcap_to_pdml         ${capture.path}
+    Verify Message Presence and Sequence             pdmlFile=${pdmlFile}          callFlow=${param.GapSetupFlow}
+    Check Field Values From Packet                   ${pdmlFile}                   ${param.GapSetupFlow[0]}               ${param.GapSetupCheck}
+    Check Field Values From Packet                   ${pdmlFile}                   ${param.GapSetupFlow[1]}               ${param.GapSetupCheck}
+
+Check CU GAP Setup Flow
+    [Arguments]                     ${capture}
+    [Documentation]                 Check F1ap and X2ap Call Flow sequence during GAP Setup
+    ...                             Check MeasGapConfig field values in X2ap messages
+    ${pdmlFile}                     analyzer.pcap_to_pdml         ${capture.path}
+    Verify Message Presence and Sequence             pdmlFile=${pdmlFile}          callFlow=${param.GapSetupFlow}
+    Check Field Values From Packet                   ${pdmlFile}                   ${param.GapSetupFlow[0]}               ${param.GapSetupCheck}
+
+Check Reject Error Cause
+    [Arguments]                     ${capture}
+    [Documentation]                 Check Cause value and Cause Error value in X2ap Reject message
+    ${pdmlFile}                     analyzer.pcap_to_pdml                          ${capture.path}
+    Check Field Values From Packet                   ${pdmlFile}                   ${param.RejectPacket}                  ${param.RejectErrorCheck}
+
+Start Traffic
+    [Tags]                              START_TRAFFIC
+    [Documentation]                     WTS command to start Traffic on UL (10Mbps) + DL (100Mbps)
+    wtsemu.trf_data_start               ue=${UE_id}    id=2    dir=dl    trf_id=2    mbps=100
+    Sleep                               1s
+    wtsemu.trf_data_start               ue=${UE_id}    id=2    dir=ul    trf_id=1    mbps=10
+
+Stop Traffic
+    [Tags]                              STOP_TRAFFIC
+    [Documentation]                     WTS command to stop both Traffic on UL + DL
+    wtsemu.trf_data_stop                ue=${UE_id}    id=2    dir=dl    trf_id=2
+    Sleep                               1s
+    wtsemu.trf_data_stop                ue=${UE_id}    id=2    dir=ul    trf_id=1
+
+Wait TTI Capture
+    [Tags]                              WAIT_10S_FOR TTI_CAPTURE
+    [Documentation]                     Wait 10s to capture traffic with TTI Logs
+    Sleep                               10s
+
+Stop WTS UDP Tracer
+    Stop UDP Tracer For Sherpa
+
+Check No Traffic During Interrupted Slot
+    ${filteredFilePath}                             Filter and Format TTITrace csv File
+    &{measGapParamsDeducedFromSetupCmdParams}       Create Dictionary        gapOffset=${param.gapOffset}
+    ...                                                                     mgl=${${param.gapPattern}.mgl}
+    ...                                                                     mgrp=${${param.gapPattern}.mgrp}
+    ...                                                                     mgta=${mgta.${param.mgta}}
+
+    &{measGapScheduledParam}    Compute startingSlot and SFN of MeasGapToSchedule           ${measGapParamsDeducedFromSetupCmdParams}
+    @{expectedGapSlots}         Create List Of Expected Gapped Slot         ${measGapParamsDeducedFromSetupCmdParams}
+    ...                         ${measGapScheduledParam}
+    @{airTtiColumnCsv}                              Get all values AirTTI column     file=${filteredFilePath}
+    ...                                             ColumnName=AIR TTI
+    @{treatedAirTtiList}                            Treat AirTti Colomn Csv          ${airTtiColumnCsv}
+    ...                                             ${measGapParamsDeducedFromSetupCmdParams.mgrp}
+    Verify No Traffic During Interrupted Slot       ${treatedAirTtiList}             ${expectedGapSlots}
+
+Filter and Format TTITrace csv File
+    [Documentation]             1/ Filter all lines containing ulPdcchDciData or dlPdcchDciData or ulFdSchedData
+    ...                         then remove  lines containing DL_10 in TTI Capture
+    ...                         (match "Dl_PdcchSendReq UL grant 0-1" or " Dl_PdcchSendReq DL grant 1-1" or "Ul_PuschReceiveReq" in Sherpa)
+    ...                            and redirect the output in a file named "TTI_5GC001013_TestCase#_Filtered.csv"
+    ...                         2/ Only keep MSGID, SFN, and Format columns.
+    ...                         then format the 2 colums SFN Slot in one column SFN.Slot
+    ...                         then add first line header describing colums
+    ...                         and redirect the output in a file named "TTI_5GC001013_TestCase#_Formatted.csv"
+
+    ${TTI_LOG_PATH}                         Set variable
+    ...                                     ${LOG_PATH}/TTITraces
+
+    ${inputFilePath}                        Set variable
+    ...                                     ${TTIcsv}
+    ${outputFilePath}                       Set variable
+    ...                                     ${TTI_LOG_PATH}/${TTIFileName}_Filtered.csv
+    ${command}                              Set variable
+    ...                                     grep -i -E "(ulPdcchDciData|dlPdcchDciData|ulFdSchedData)" <${inputFilePath} \|
+    ${command}                              Set variable
+    ...                                     ${command} grep -i -vwE "(DL_10_OSI|DL_10_SIB1|PTRS_VOID)" >${outputFilePath}
+    ${returnCode}                           Run And Return Rc
+    ...                                     ${command}
+    Should Be Equal As Integers             ${returnCode}    0
+    Dated Log New Line     Filtered CSV File: ${outputFilePath}
+
+
+    ${inputFilePath}                        Set variable
+    ...                                     ${outputFilePath}
+    ${outputFilePath}                       Set variable
+    ...                                     ${TTI_LOG_PATH}/${TTIFileName}_Formatted.csv
+    ${command}                              Set variable
+    ...                                     awk -F';' '{printf("%d %.2d %s\\n", $6, $8, $1)}' <${inputFilePath} \|
+    ${command}                              Set variable
+    ...                                     ${command} awk -F' ' '{print $1 "." $2 ";" $3}' \|
+    ${command}                              Set variable
+    ...                                     ${command} sed -e '1i\AIR TTI;MSGID' >${outputFilePath}
+    ${returnCode}                           Run And Return Rc
+    ...                                     ${command}
+    Should Be Equal As Integers             ${returnCode}    0
+    Dated Log New Line     Formatted CSV File: ${outputFilePath}
+
+    [Return]            ${outputFilePath}
+
+Compute startingSlot and SFN of MeasGapToSchedule
+    [Documentation]             Compute 'starting slot' and 'modulo of SFN that should contain startingSlot of measGap'
+    ...                         µ in 3GPP formulas is considered as equal to 1. SCS = 30KhZ, 1 slot = 500µs, endcSyncStatus = Asynchronous
+    ...                         leading to an additional slot
+    [Arguments]                 ${schedulingParam}
+    ${startingSlotNb}           Evaluate    int(math.floor((${schedulingParam.gapOffset}+10-${schedulingParam.mgta})*2) % (10*2))    modules=math
+    ${sfnModuloResult}          Evaluate
+    ...     int(math.floor((${schedulingParam.mgrp}+${schedulingParam.gapOffset}-${schedulingParam.mgta})/10) % (int(${schedulingParam.mgrp}/10)))
+    ...                         modules=math
+    ${measGapScheduledParam}    Create Dictionary   sfn=${sfnModuloResult}  startSlot=${startingSlotNb}
+    [Return]                    ${measGapScheduledParam}
+
+Create List Of Expected Gapped Slot
+    [Documentation]     Creates a list containing each expected gapped airTti under the form 'FrameNumberAfterModulo.slot'
+    ...                 Consider the case of SCS=30KHz where maxNbOfInterruptedSlot <= 13 and nbSlotInAFrame=20
+    [Arguments]         ${schedulingParam}      ${measGapScheduledParam}
+    ${nbGappedSlots}                    Evaluate       ${schedulingParam.mgl} * 2 + 1
+    ${frameNbOfStartingSlotModulo}      Set Variable   ${measGapScheduledParam.sfn}
+    ${followingFrameNbModulo}           Evaluate       (${frameNbOfStartingSlotModulo} + 1) % (int(${schedulingParam.mgrp}/10))
+    @{expectedGapSlots}                 Create List
+    FOR    ${idx}      IN RANGE        ${0}        ${nbGappedSlots}
+        ${currentAbsoluteSlot}          Evaluate    ${measGapScheduledParam.startSlot} + ${idx}
+        ${slotNbModulo}                 Evaluate    ${currentAbsoluteSlot} % 20
+        ${expectedGapModulo}            Run Keyword If                  ${currentAbsoluteSlot} <= ${19}
+        ...                                 Catenate    SEPARATOR=.    ${frameNbOfStartingSlotModulo}     ${slotNbModulo}
+        ...                             ELSE
+        ...                                 Catenate    SEPARATOR=.    ${followingFrameNbModulo}          ${slotNbModulo}
+        Append To List                  ${expectedGapSlots}       ${expectedGapModulo}
+    END
+    [Return]                            ${expectedGapSlots}
+
+Get all values AirTTI column
+    [Documentation]         Get all the values of a column of a csv file.
+    [Arguments]             ${file}    ${ColumnName}
+    SherpaCsvReader.setup reader    ${file}
+    @{airTtiColumnCsv}              SherpaCsvReader.Get Values For Column       column=${ColumnName}      regex_filter=\d*\.\d*
+    #Log List                        ${airTtiColumnCsv}
+    [Return]                        ${airTtiColumnCsv}
+
+Treat AirTti Colomn Csv
+    [Documentation]         returns a list of the elements 'airttiModulo.slot' contained in csv column without duplicates
+    [Arguments]             ${airTtiColumnCsv}      ${mgrp}
+    ${treatedAirTtiList}    get_cleaned_airtti_csv    airTtiColumnCsv=${airTtiColumnCsv}    mgrp=${mgrp}
+    ${treatedAirTtiList}    Remove Duplicates       ${treatedAirTtiList}
+    #Log List                ${treatedAirTtiList}
+    [Return]                ${treatedAirTtiList}
+
+Verify No Traffic During Interrupted Slot
+    [Arguments]     ${treatedAirTtiList}    ${expectedGapSlots}
+    Should Not Contain Any        ${treatedAirTtiList}    @{expectedGapSlots}    msg=ERROR:An interrupted Slot is found in treated csv !
+
+Verify Traffic Present During Previously Interrupted Slot
+    [Arguments]     ${treatedAirTtiList}    ${expectedGapSlots}
+    Should Contain Any            ${treatedAirTtiList}    @{expectedGapSlots}
+    ...                         msg=ERROR:No previously interrupted Slot has been found in treated csv, has measGap been released ?
+
+Setup WTS
+    WTS Setup    shouldUseLua=${False}
+
+Check GAP Pattern Counter
+    Dated Log   Pause 10 mn to get the next PM period
+    sleep   600s
+    Dated Log   Pause ended
+    Run Keyword If    ${isAic}
+    ...               Check Counter VR
+    ...         ELSE
+    ...               Check Counter CL
+
+Check Counter CL
+    ${expectedValue}               Set Variable         1
+
+    Collect PM Counters Files
+    ${val}=    Retrieve Sum of Values Counter From Pm Files with CellID
+    ...        ${log_path_pm}   &{param.GapPatternCounter}
+    Dated Log           Valeur de ${param.GapPatternCounter.counter} ${val}
+    should be true      ${expectedValue} == ${val}
+
+Check Counter VR
+    ${range_status}    Run Keyword If    '${param.GapPatternCounter.unit}' == 'VCU'
+    ...                                  Verify Object Counter with ID Sum Of Values In A Range on vCu    &{param.GapPatternCounter}
+    ...                            ELSE
+    ...                                  Verify Object Counter with ID Sum Of Values In A Range on vDu    &{param.GapPatternCounter}
+    Should Be True    '${range_status}' == 'True'
+
+Collect PM Counters Files
+    [Documentation]                 KW to get counters and store in specific directory with day date
+
+    ${date}                          DateTime.Get Current Date
+    ${date_in_dir_name}              DateTime.Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                   Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+    BuiltIn.Log              The PM counters file collected from gnb will be stored under : ${log_path_pm}
+    ${pm_latest}                    Counters.Collect PM files from BTS    ${log_path_pm}
+    set Suite Variable              ${LATEST_FILE}       ${pm_latest}
+    set Suite Variable              ${log_path_pm}
+    BuiltIn.Log     Latest pm counters file : ${LATEST_FILE}
+
+Collect EGATE console Logs
+    [Documentation]    This keyword is used to collect egate_console.log from the /opt/wts/latest/ folder
+    ...                This is collected in the Test Log Folder
+    ${LogFilePrefix}             set Variable                            egate_console_5GC001013_
+    ${LogFileName}               set Variable                            ${LogFilePrefix}${param.LogFileSuffix}.log
+
+    CallSetup.Empty Buffer For Egate
+    Traced sleep   10s  msg=wait 10s for flush
+    # Connect to WTS  alias=alias_wts
+    ${alias_wts}                    SSH Wait For Connect                ${HOST_EPCSIM}
+
+    Dated Log      Collecting ${tl.core.dir_path}/egate_console.log...
+    csn.download_file               remote_path=${tl.core.dir_path}/egate_console.log
+    ...                             local_path=${LOG_PATH}/${LogFileName}
+    ...                             connection=${alias_wts}
+    Dated Log                  egate_console.log file stored to ${LOG_PATH}
+
+Start TTI Capture
+    Dated Log                                   ===> configuration and get TTI is started
+    # TTI capture configuration
+    ${TTIdir}=                                  Get TTI Trace Path
+    Start TTI Traces in Streaming mode          src_ip=10.0.1.2
+    Set Suite Variable                          ${TTIdir}
+
+Stop TTI Capture
+
+    ${TTIPrefix}                                Set Variable         TTI_5GC001013_
+    ${TTIFileName}                              set Variable         ${TTIPrefix}${param.LogFileSuffix}
+
+    Dated Log                                   ===> stop and get TTI Logs is started
+    ${TTIpcap}=                                 Stop TTI Traces in Streaming mode    tti_trace_path=${TTIdir}    tti_trace_filename=${TTIFileName}
+    Dated Log                                   ===> convert TTI to json and csv is started
+    ${TTIjson}=                                 Convert TTI trace from pcap to others    input_file_path=${TTIpcap}
+    ${TTIcsv}=                                  decode_tti_traces_json_using_TtitraceReaderEvtDec    jsonPathName=${TTIjson}    num_of_events=10000
+    Set Suite Variable                          ${TTIFileName}
+    Set Suite Variable                          ${TTIcsv}
+
+Teardown 1013
+    Produce Scout Data
+    ${message}=  Evaluate  "\\033[44mCollect and Download egate_console.log\\033[0m"
+    Dated log                       ${message}
+    Collect EGATE console Logs
+
+Test Name Display
+    ${message}=  Evaluate  "\\033[41m================================\\033[0m"
+    Dated log                       ${message}
+    ${message}=  Evaluate  "\\033[41mExecution of test 5GC001013-${param.LogFileSuffix}\\033[0m"
+    Dated log                       ${message}
+    ${message}=  Evaluate  "\\033[41m================================\\033[0m"
+    Dated log                       ${message}
+
+Empty Egate Logs
+    ${outputFilePath}                       Set variable
+    ...                                     ${tl.core.dir_path}/egate_console.log
+    ${command}                              Set variable
+    ...                                     > ${outputFilePath}
+    ${returnCode}                           Run And Return Rc
+    ...                                     ${command}
+    Should Be Equal As Integers             ${returnCode}    0
+    Dated Log      File ${tl.core.dir_path}/egate_console.log is now empty

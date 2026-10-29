@@ -1,0 +1,56 @@
+*** Settings ***
+Force Tags          CLOUD_FR4B_x_A_[11]_[FXCA_FXCA]
+...                 CELL_CONFIG=[3H]
+...                 SCFC_ADJUSTMENTS=CNF_9_adjustments.yml
+
+
+Documentation
+...   Author:   Heikki Autio
+...   Contact:  I_MN_RAN_RD_TV_OTACI_CITCRT1@internal.nsn.com
+
+Library           Collections
+Library           taf.sw.reporting_portal
+Resource          testsuite/Oulu/TrunkEng/Common/Robot/Resources/common_resources.robot
+Resource          testsuite/Oulu/TrunkEng/OMKPI/Robot/Resources/OMKPI_common.robot
+Library           testsuite.Oulu.TrunkEng.OMKPI.Python.Interfaces.OmkpiCommonInterface
+Library           testsuite.Oulu.TrunkEng.OMKPI.Python.Interfaces.OmkpiCommissioningInterface
+Resource          testsuite/Oulu/TrunkEng/OMKPI/Robot/TestKeywords/omkpi_rat_reset.robot
+Variables         testsuite/Oulu/TrunkEng/OMKPI/Robot/Targets/CNF_LTE_9_omkpi_targets.py
+
+Suite Setup       Common Suite Setup
+Suite Teardown    Common Suite Teardown
+
+Test Setup        Run Keywords  Common Test Setup
+...               AND           Start Alarm Listener  ${ALLOWED_ALARMS_FILE}
+Test Teardown     Common Test Teardown
+
+*** Variables ***
+${WAIT_FOR_CELLS_UP}    300
+${REPORT}               ${True}
+${RAT_TO_RESET}         LTE
+${RESET_TYPE}           Soft
+${KPI}                  KPI#7
+@{SYSLOG_LIST}
+@{UNALLOWED_SYSLOGS}    13 (ERPresetTypeApplicationBts)  4 (ERPresetTypeSpuriousReset)
+                   ...  14 (ERPresetTypeSpuriousResetBts)  0 (ERPresetTypePowerOn)
+${ALLOWED_ALARMS_FILE}  /home/ute/MN/UTE/robotws/testsuite/Oulu/TrunkEng/OMKPI/allowed_alarms.txt
+${WAIT_CHECKS}          10    # seconds, 0 if no waiting nor printing before post conditions check
+# Collect logs variable. POssible values are: On failure/Never/Always
+${COLLECT_LOGS}         On failure
+# How many times test will be run, needs to be more than 0
+${TEST_LOOPS}           10
+${REFERENCE_TESTLINE}   CNF_LTE_9
+
+*** Test Cases ***
+Automated_OAMKPI_LTE_RAT_Reset
+    [Documentation]  Reset user given RAT and checks alarms and cell states.
+    [Tags]           "RAT reset" -test loops: ${TEST_LOOPS}
+    Run Keyword And Continue On Failure  Run Keyword In Loop And Return Pass Rate
+        ...    ${RAT_TO_RESET}  ${WAIT_FOR_CELLS_UP}  ${WAIT_CHECKS}  ${SYSLOG_LIST}  ${UNALLOWED_SYSLOGS}  ${RESET_TYPE}  ${KPI}
+        ...    name=Reset RAT
+        ...    test_case=1
+        ...    loops=${TEST_LOOPS}
+        ...    keywords=RAT Reset
+        ...    expected_pass_rate=1
+        ...    collect_test_logs=${COLLECT_LOGS}
+        ...    omkpi_case=${True}

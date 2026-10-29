@@ -1,0 +1,1 @@
+mkdir /home/ute/rota; sudo mount -t cifs //eseefsn50.emea.nsn-net.net/rotta4internal /home/ute/rota -o username="uuuf",password='UTEpapaUTE2139.',rw,nounix,file_mode=0777,dir_mode=0777,uid=ute,gid=ute,domain=NSN-INTRA; xdg-open /home/ute/rota/LTE_2/UUF

@@ -1,0 +1,136 @@
+# -*- coding: utf-8 -*-
+"""
+:copyright: Nokia Networks
+:author: Christophe Samson
+:maintainer: christophe.samson@nokia.com
+:contact:
+"""
+
+import re
+import logging
+from time import sleep
+from robot.libraries.BuiltIn import BuiltIn
+from robot.api import logger
+from ute_fsmaccess import ute_fsmaccess
+from robot.api import ExecutionResult, ResultVisitor
+
+
+builtin_obj = BuiltIn()
+
+
+def unzip_timeout(timeout, msg):
+    if timeout < 0:
+        raise IOError(msg)
+
+
+def is_new_file_ready(old_ram_content, new_ram_content, raw_file):
+    difference = ''
+    file_ready = True
+    if new_ram_content[-1] not in old_ram_content:
+        difference = new_ram_content[-1]
+    if not difference or not raw_file and 'raw' in difference:
+        file_ready = False
+    return file_ready, difference
+
+
+def custom_kw_runner(name, *args):
+    global KW_RUNS
+    KW_RUNS += 1
+    return BuiltIn().run_keyword_and_return_status(name, *args)
+
+
+def run_specific_custom_kw(name="", *args):
+    global KW_RUNS
+    KW_RUNS = 0
+    status = False
+    retries = 30
+    interval = 30
+    # for testing purpose
+    # retries = 10
+    # interval = 1
+    for _ in range(retries):
+        status = custom_kw_runner(name, *args)
+        KW_RUNS += 1
+        if not bool(status):
+            BuiltIn().log(f"{KW_RUNS} run(s) FAILED for '{name}'", level="WARN")
+        time.sleep(interval)
+    if bool(status) and KW_RUNS > 1:
+        BuiltIn().log(f"{KW_RUNS} runs were necessary for '{name}'", level="WARN")
+    return status, KW_RUNS
+
+
+def wait_for_new_pm_filename_and_display_ue_stats_nr(raw_file, remote_host=None, timeout=600):
+    """
+    :param raw_file:  If TRUE then method will wait for RAW file creation
+    :param remote_host:  Useful when working on X2-connected test lines
+    :param timeout:  How many seconds function waits for new PM file,
+     when its exceeded raises timeout error, default 30min
+    :return: Newly created RAW of full PM counter filename
+    """
+
+    file_ready = False
+    unzip_timeout_val = 60
+    global KW_RUNS
+    KW_RUNS = 0
+    name_kw = 'CB009836-Ue-Commands.Get_PDSCH_and_PUSCH_ue_stats_nr_for_MultiUE'
+    status = False
+    wrn_print = 'PM file is unzippable after timeout: {}s'.format(unzip_timeout_val)
+    fsm_ssh = ute_fsmaccess()
+    try:
+        fsm_ssh.setup_enb_fsm_access(remote_host=remote_host)
+        old_ram_content = fsm_ssh.execute_command_on_enb(
+            'ls /ram/PM.BTS* 2>/dev/null | xargs -n1 basename 2>/dev/null;:'
+        ).split()
+        while not file_ready:
+            status = custom_kw_runner(name_kw,
+                                      'CallType=SA')
+            if not bool(status):
+                BuiltIn().log(f"{KW_RUNS} run(s) FAILED for '{name_kw}'", level="WARN")
+            unzip_timeout(timeout, "Timeout, too long time without new PM file on ENB")
+            sleep(20)
+            timeout -= 10
+            new_ram_content = fsm_ssh.execute_command_on_enb(
+                'ls /ram/PM.BTS* 2>/dev/null | xargs -n1 basename 2>/dev/null;:'
+            ).split()
+            if new_ram_content:
+                file_ready, difference = is_new_file_ready(old_ram_content, new_ram_content, raw_file)
+        while True:
+            unzip_timeout(unzip_timeout_val, wrn_print)
+            msg_rc = fsm_ssh.execute_command_on_enb(cmd="gunzip -t /ram/{}".format(difference), return_rc=True)
+            if msg_rc[1] == 0:
+                break
+            logger.info('File is unzippable, try again after 5s : {}'.format(msg_rc[0]))
+            sleep(5)
+            unzip_timeout_val -= 5
+        if bool(status) and KW_RUNS > 1:
+            BuiltIn().log(f"{KW_RUNS} runs were necessary for '{name_kw}'", level="WARN")
+        return difference
+    finally:
+        fsm_ssh.teardown_enb_fsm_access()
+
+
+def get_visit_kw(kw):
+    class MyVisitor(ResultVisitor):
+        def visit_keyword(self, kw):
+            print("Keyword Name: " + str(kw.name))
+            print("Keyword Status: " + str(kw.status))
+    save_log_dir = builtin_obj.get_variable_value("${LOG_PATH}")
+    output_xml = save_log_dir + '/' + 'original.xml'
+    result = ExecutionResult(output_xml)
+    result.visit(MyVisitor(kw))
+
+
+class MyKeywordListener:
+    ROBOT_LISTENER_API_VERSION = 2
+
+    def end_keyword(self, name, attrs):
+        keyword_status = attrs['status']
+        elapsed_time = attrs['elapsedtime']
+        logger.info(f"Keyword '{name}' status: {keyword_status} (Elapsed: {elapsed_time} ms)")
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
+    # wait_for_new_pm_filename(raw_file=False, remote_host=None, timeout=40)
+    pm_file = wait_for_new_pm_filename(raw_file=False, timeout=600)
+    logging.info("latest PM file is = %s" % pm_file)

@@ -1,0 +1,62 @@
+heat_template_version: 2016-04-08
+description: "Template for creating a cinder volume to be shared with NFS"
+
+parameters:
+  index:
+    description: Index to fetch parameters from volumes list
+    type: number
+  volumes:
+    description: Parameters for the volume to be created
+    type: json
+  nfs_host:
+    description: NFS server hostname or IP address
+    type: string
+  name_prefix:
+    description: Prefix to use in resource names to help differentiate them from similar resources of other stacks
+    type: string
+resources:
+  cinder_volume:
+    type: OS::Cinder::Volume
+    properties:
+      name:
+        str_replace:
+          template: $prefix-$vol
+          params:
+            $prefix: {get_param: name_prefix}
+            $vol: {get_param: [volumes, {get_param: index}, name]}
+      size: {get_param: [volumes, {get_param: index}, size]}
+
+outputs:
+  volume_id:
+    description: The resource uuid value of the volume
+    value: {get_resource: cinder_volume}
+  provider_map:
+    description: The storage provider metadata map
+    value:
+      map_merge:
+        repeat:
+          for_each:
+            <%name%>: [{get_param: [volumes, {get_param: index}, name]}]
+          template:
+            storage.provider.nfs4.<%name%>:
+              fstype: "ext4"
+              mount-to: {get_param: [volumes, {get_param: index}, mount]}
+              disk: {get_resource: cinder_volume}
+  user_map:
+    description: The storage user metadata map
+    value:
+      map_merge:
+        repeat:
+          for_each:
+            <%name%>: [{get_param: [volumes, {get_param: index}, name]}]
+          template:
+            storage.user.<%name%>:
+              fstype: "nfs4"
+              options: "rw,nordirplus,nolock,actimeo=1"
+              mount-to: {get_param: [volumes, {get_param: index}, mount]}
+              mount-from:
+                str_replace:
+                  template: "<%host%>:/<%name%>"
+                  params:
+                    <%host%>: {get_param: nfs_host}
+                    <%name%>: {get_param: [volumes, {get_param: index}, name]}

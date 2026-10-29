@@ -1,0 +1,220 @@
+---
+stages:
+  - sanity checks
+  - ldap-sync
+  - mirroring
+
+variables:
+  PYTHON_VERSION: "3.11"
+  CI_BASE_IMAGE_VERSION: "4.37.0"
+
+cache:
+  paths:
+    - .cache/pip
+
+# .template_pipeline: &run_rules - MR pipeline
+# .template_pipeline_exclude_branch_commit: &run_rules_exclude_branch_commit - pipeline after commit to branch
+#                                                                              but before MR is created
+# Sync users from LDAP to Gitlab job has independent rule. is run when triggered 
+# Gerrit mirror job has independent rule, is run after the merge
+
+.template_runner_settings: &runner_settings
+  image: mnp5g-docker-local.esisoj70.emea.nsn-net.net/taf-ci:py${PYTHON_VERSION}
+  tags:
+    - 5G_docker_runner
+  retry:
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - job_execution_timeout
+      - unknown_failure
+      - api_failure
+    max: 2
+
+.template_pipeline: &run_rules
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" || $CI_PIPELINE_SOURCE == "trigger"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "master"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+.template_pipeline_exclude_branch_commit: &run_rules_exclude_branch_commit
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" || $CI_PIPELINE_SOURCE == "trigger"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "master"
+    - if: $CI_COMMIT_BRANCH
+      when: never
+
+.template_common_before_script: &common_before_script
+  before_script:
+    - |
+      if git log --oneline -n 1 | grep -iE '\[(skip sanity)\]'; then
+        echo "Skipped due to tag"
+        exit 0
+      fi
+      python -m pip --disable-pip-version-check install "ci_pipeline_steps>=1.5.0" -q
+      git fetch origin master
+      CHANGED_FILES=$(ci-pipeline3 affected_paths -f d $CI_PROJECT_DIR)  # exclude deleted files (-f d)
+      echo $CHANGED_FILES
+
+.template_sanity: &sanity
+    <<: *runner_settings
+    <<: *common_before_script
+    stage: sanity checks
+
+.template_black: &black
+    script:
+      - python -m pip --disable-pip-version-check install black
+      - CONFIG_FILES=$(python3 sanity-checks/prepare_config_files_pattern.py "$CHANGED_FILES")
+      - echo "${CONFIG_FILES}"
+      - if [ -z "$CONFIG_FILES" ]; then echo "[OK] No TL configs to check"; exit 0; fi
+      - |
+        if ! black --check --include "${CONFIG_FILES}" . ; then
+          black --diff --include "${CONFIG_FILES}" . > black.patch
+          echo ">>> PATCH:"
+          cat black.patch
+          exit 1
+        fi
+    allow_failure: true
+
+.template_ute_config: &ute_config
+  script:
+    - python -m pip install ute_testline_configuration
+    - python -m pip install taf.config.testline
+    - python -m pip install taf.compatibility.configuration
+    - python -m pip install -U requests
+    - python sanity-checks/validate_ute_config.py "$CHANGED_FILES"
+
+.template_validation_checks: &validation_checks
+  script:
+    - python -m pip install taf.config.testline
+    - python -m pip install taf.compatibility.configuration
+    - python -m pip install ute_testline_configuration
+    - python -m pip install -U requests
+    - ci-pipeline3 validate_common_config $CI_PROJECT_DIR
+
+.template_validate_committed_files: &validate_committed_files
+  script:
+    - python -m pip install binaryornot==0.4.4
+    - python sanity-checks/validate_committed_files.py "$CHANGED_FILES"
+
+Black:
+  <<: *sanity
+  <<: *black
+  <<: *run_rules
+
+UTE config validation:
+  <<: *sanity
+  <<: *ute_config
+  <<: *run_rules
+
+Config validation:
+  <<: *sanity
+  <<: *run_rules
+  <<: *validation_checks
+
+Common parts directory:
+  <<: *runner_settings
+  <<: *run_rules
+  stage: sanity checks
+  script:
+    - '[[ -d common ]] || { echo "Directory common not found"; exit 1; }'
+    - '[[ $(du -sm common | cut -f1) -le 5 ]] || { echo "Size of common/ directory is > 5MB"; exit 1; }'
+    - find common -type f ! -name "*.py" -or -name '.*' | grep . && { echo "Non-Python files found in common/ directory"; exit 1; } || echo "All files are *.py"
+
+Committed files validation:
+  <<: *sanity
+  <<: *validate_committed_files
+  <<: *run_rules
+
+Filesize check:
+    <<: *runner_settings
+    <<: *run_rules_exclude_branch_commit
+    stage: sanity checks
+    cache: {}
+    before_script:
+      - python -m pip --disable-pip-version-check install ci_pipeline_steps -q
+    script:
+      - git fetch origin master
+      - ci-pipeline3 verify_filesize $CI_PROJECT_DIR $CI_PROJECT_ID $CI_MERGE_REQUEST_IID $TAF_GITLAB_TOKEN 5500000
+
+Hazardous SCF features:
+  <<: *sanity
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" || $CI_PIPELINE_SOURCE == "trigger"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "master"
+      changes:
+        - "**/*.xml"
+    - if: $CI_COMMIT_BRANCH
+      when: never
+  before_script:
+    - python -m pip --disable-pip-version-check install ci_pipeline_steps -q
+    - |
+      CHANGED_XML_FILES=$(ci-pipeline3 affected_paths -f d $CI_PROJECT_DIR | grep \.xml$) || exit 0
+      echo "$CHANGED_XML_FILES"
+  script:
+    - python -m pip --disable-pip-version-check install "taf.config.scf>=5.4.0" -q
+    - python -m taf.config.scf.hazard ${CHANGED_XML_FILES}
+
+TL modification limit:
+  <<: *sanity
+  script:
+    - python sanity-checks/test_line_modification_limit.py "$CHANGED_FILES"
+  # there's no elegant way in Gitlab CE to force MR approvals in case a step fails,
+  # so for now we decided to go with a soft policy and just WARN users about allowed limit of modification within a single MR
+  allow_failure: true
+  <<: *run_rules_exclude_branch_commit
+
+BTS ID uniqueness:
+  <<: *runner_settings
+  <<: *run_rules_exclude_branch_commit
+  stage: sanity checks
+  script:
+    - python sanity-checks/bts_id_uniqueness.py
+  allow_failure: true
+  
+Sync users from LDAP to Gitlab:
+  <<: *runner_settings
+  image: mnp5g-docker-local.esisoj70.emea.nsn-net.net/ci_base_image:$CI_BASE_IMAGE_VERSION
+  stage: ldap-sync
+  cache: {}
+  before_script:
+    - python3 -m pip install python-gitlab python-ldap
+  script:
+    - python3 sanity-checks/sync_users_ldap_gitlab.py $TAF_LDAP_LOGIN $TAF_LDAP_PASSWORD $TAF_GITLAB_TOKEN --ldap_group $LDAP_GROUP_NAME --gitlab_access_level $GITLAB_ACCESS_LEVEL --gitlab_project_id $GITLAB_PROJECT_ID
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_TYPE == "ldap-sync"
+
+Gerrit mirror:
+  <<: *runner_settings
+  image: mnp5g-docker-local.esisoj70.emea.nsn-net.net/taf-ci:utility-1
+  stage: mirroring
+  cache: {}
+  variables:
+    gerrit_master_remote_url: ssh://ca_5Gauto@gerrit.ext.net.nokia.com:29418/MN/UTE/testline_configuration
+  resource_group: mirroring_job_gerrit
+  before_script:
+        - echo "$id_ed25519_deploy_key_testline_configuration" > /id_ed25519_deploy_key
+        - chmod 600 /id_ed25519_deploy_key
+        - export GIT_SSH_COMMAND="ssh -i /id_ed25519_deploy_key -o StrictHostKeyChecking=no"
+  script:
+    - git config --global user.email "ca_5Gauto@nokia.com.not.available"
+    - git config --global user.name "ca_5Gauto"
+    - git remote add gerrit $gerrit_master_remote_url || git remote set-url gerrit $gerrit_master_remote_url
+    - exit_status=0; git push gerrit HEAD:master || exit_status=$?
+    - if [ "$exit_status" -ne 0 ]; then echo "NO WORRIES, your changes WILL BE mirrored once the next such job is run."; exit 1; fi
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "schedule" || $CI_PIPELINE_SOURCE == "trigger"
+      when: never
+...

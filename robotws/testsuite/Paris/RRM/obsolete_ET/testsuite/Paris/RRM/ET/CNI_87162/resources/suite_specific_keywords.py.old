@@ -1,0 +1,401 @@
+"""
+:copyright: Nokia Networks
+:author: Mateusz Plinta, Justyna Balcerzak
+:maintainer: Mateusz Plinta, Justyna Balcerzak
+:contact: mateusz.plinta@nokia.com, justyna.balcerzak@nokia.com
+"""
+
+from robot.errors import ExecutionFailed
+from ta5g_testline_management import ta5g_testline_management
+import time
+import re
+import shutil
+
+import os
+import sys
+from types import ModuleType
+
+from variables import *
+import json
+from testsuite.Paris.RRM.ET.resources_KRK.python.common_gnb import *
+from testsuite.Paris.RRM.ET.resources_KRK.python.swconfig import GnbSwconfigManager
+from testsuite.Paris.RRM.ET.resources_KRK.python.iphy_management import IphyManagement
+from testsuite.Paris.RRM.ET.resources_KRK.python.file_management import create_dir_at_output_dir
+import testsuite.Paris.RRM.ET.resources_KRK.python.pm_counters as pm_counters
+from testsuite.Paris.RRM.ET.resources_KRK.python.common_airphone import (
+    collect_airphone_snapshot, log_airphone_build, modify_iphy_parameters, delete_additional_radio_heads_in_iphy_file
+)
+from testsuite.Paris.RRM.ET.resources_KRK.python.common_wts import (
+    start_wts_and_wait_for_ready_state,
+    copy_egate_console_log_to_specified_dir,
+    copy_wts_files_to_epcsim_dir_path,
+    stop_wts_and_collect_its_logs,
+    collect_sos_report_log,
+    stop_wts_and_clear,
+    attach_ue_and_perform_sgnb_addition,
+    wait_for_information_block_reception,
+    run_egate_cmd_and_wait_for_data
+)
+from delta import deltas
+
+
+def set_variables_based_on_deployment_and_release():
+    capacity_unit = get_capability_unit_name()
+    release = get_gnb_build_release(convert_to_trunk=True)
+    release_no_conv = get_gnb_build_release(convert_to_trunk=False)
+    pm_interval = pm_counters.get_measurement_period_from_scf()
+    pm_interval = int(pm_interval.replace('min', ''))
+    ru_card_name = establish_topology_by_radio_head_card_name()
+    BuiltIn().set_suite_variable("${PM_PERIOD}", pm_interval)
+    BuiltIn().set_suite_variable("${UNIT_NAME}", capacity_unit)
+    BuiltIn().set_suite_variable("${RELEASE}", release)
+    BuiltIn().set_suite_variable("${RELEASE_NO_CONV}", release_no_conv)
+    BuiltIn().set_suite_variable("${RU_CARD_NAME}", ru_card_name)
+
+
+def establish_topology_by_radio_head_card_name():
+    iphy_instance = IphyManagement()
+    iphy_instance.load_iphy_contents_from_airphone()
+    card_names = iphy_instance.get_all_radio_heads_card_names()
+    return "AZQJ" if "AZQJ" in card_names else "AEQE"
+
+
+def get_test_prefix():
+    tc_name = ta5g_interface_tools().get_robot_test_name()
+    match = re.search(r'(?P<feature>CNI_87162)_(?P<tc>\w{3})_(?P<usc>USC\d|Robustness\d)', tc_name)
+    prefix = match.group() if match else tc_name
+    BuiltIn().set_test_variable("${TEST_PREFIX}", prefix)
+    return prefix
+
+
+def ensure_gnb_files_flags_are_in_order():
+    ensure_syslog_flags_existence_in_swconfig()
+    ensure_cplane_flags_existence_in_swconfig()
+    ensure_cp_runtime_ini_has_LoggingSeverity_set_on_trace()
+    GnbSwconfigManager().log_swconfig_contents()
+
+
+def add_nsa_specific_addresses():
+    add_ip_addr_on_vm("10.0.1.131/24", "eth3")
+    add_ip_addr_on_vm("10.0.1.132/24", "eth3")
+    add_ip_addr_on_vm("10.0.1.133/24", "eth3")
+    add_ip_addr_on_vm("10.0.1.134/24", "eth3")
+    add_ip_addr_on_vm("10.0.1.135/24", "eth3")
+    add_ip_addr_on_vm("10.0.1.136/24", "eth3")
+    add_ip_addr_on_vm("10.0.1.137/24", "eth3")
+
+
+def add_additional_specific_addresses():
+    add_ip_addr_on_vm("10.0.2.1/24", "eth4")
+    add_ip_addr_on_vm("10.0.2.2/24", "eth4")
+    add_ip_addr_on_vm("10.0.2.3/24", "eth4")
+    add_ip_addr_on_vm("10.0.2.4/24", "eth4")
+    add_ip_addr_on_vm("10.0.2.5/24", "eth4")
+    add_ip_addr_on_vm("10.0.3.151/24", "eth3")
+    add_ip_addr_on_vm("10.0.3.153/24", "eth3")
+    add_ip_addr_on_vm("10.0.1.112/24", "eth3")
+    add_ip_addr_on_vm("10.0.1.121/24", "eth3")
+    add_ip_addr_on_vm("192.168.6.252/24", "eth2")
+
+
+def adjust_parameters_using_delta(delta):
+    perform_recomissioning_with_delta(path_to_delta=json.dumps(delta))
+
+
+def adjust_parameters_using_delta_method(method, *args, **kwargs):
+    prefix = get_test_prefix()
+    if prefix in ['CNI_87162_004_USC1', 'CNI_87162_015_USC4', 'CNI_87162_011_USC2', 'CNI_87162_016_Robustness1']:
+        collect_scf_file(prefix="before", subdir=prefix, name=prefix)
+        combine_scf_with_delta(target_scf_path=f'{prefix}.xml', delta=deltas.DELTA_CELL_2_ON_LOKI_B)
+    get_delta_function = getattr(deltas, method)
+    delta = get_delta_function(**kwargs)
+    perform_recomissioning_with_delta(path_to_delta=json.dumps(delta), rnw_retries=15)
+
+
+def copy_default_wts_config_from_current_deployment():
+    wts_config_filename = "wts_{}.cfg".format(get_test_prefix())
+    wts_config_path = os.path.join(EPCSIM_DIR_PATH, wts_config_filename)
+    OperatingSystem().copy_file(source=DEFAULT_WTS_CONFIG_PATH, destination=wts_config_path)
+    BuiltIn().set_test_variable("${WTS_CONFIG_PATH}", wts_config_path)
+    return wts_config_path
+
+
+def decide_on_wts_config_file_source(wts_config_path):
+    if wts_config_path:
+        OperatingSystem().copy_file(source=wts_config_path, destination=EPCSIM_DIR_PATH)
+    else:
+        wts_config_path = copy_default_wts_config_from_current_deployment()
+    return wts_config_path
+
+
+def copy_wts_cfg_file_to_output_dir(wts_config_path=None, subdir="wts/"):
+    output_dir = BuiltIn().get_variable_value("${OUTPUT_DIR}")
+    if not wts_config_path:
+        wts_config_path = BuiltIn().get_variable_value("${WTS_CONFIG_PATH}")
+    if not subdir.endswith('/'):
+        subdir += '/'
+    OperatingSystem().copy_file(source=wts_config_path, destination=os.path.join(output_dir, subdir))
+
+
+def setup_radiohead_and_wts_and_wait_for_mibsib_wrapper(
+        wts_config_path,
+        sib1_reception_dict,
+        skip_reset=False,
+        max_retries=4,
+        edaemon_port=22222,
+        egate_timeout=720
+):
+    ru_tries = mib_sib_tries = 0
+    ru_tries_max = mib_sib_tries_max = max_retries
+    while ru_tries < ru_tries_max and mib_sib_tries < mib_sib_tries_max:
+        if ru_tries != 0 or mib_sib_tries != 0:
+            logger_console_info("I will restart environment preparation")
+        try:
+            reset_units_and_wait_for_radio_head_online(skip_reset=skip_reset)
+            start_wts_and_wait_for_ready_state(
+                wts_config_filename=wts_config_path,
+                sib_reception_dict=sib1_reception_dict,
+                edaemon_port=edaemon_port,
+                timeout=egate_timeout
+            )
+        except RadioHeadTimeoutException:
+            logger_warning("RadioHeadTimeoutException occurred")
+            ru_tries += 1
+        except (ValueError, ExecutionFailed) as e:
+            logger_warning("MibSibAcquisitionFailed exception occurred")
+            ta5g_egate_instance = BuiltIn().get_library_instance('ta5g_egate')
+            ta5g_egate_instance._ute_wtssim_instance.teardown_all_aliases_for_wts()
+            mib_sib_tries += 1
+        else:
+            break
+
+        if skip_reset is True:
+            if ru_tries > 0:
+                raise RadioHeadTimeoutException("RadioHeadTimeoutException occurred")
+            if mib_sib_tries > 0:
+                raise MibSibAcquisitionFailed("MIB-SIB Acquisition failed")
+
+        if ru_tries >= ru_tries_max:
+            raise RadioHeadTimeoutException("RadioHeadTimeoutException occurred over {} times".format(ru_tries_max))
+        elif mib_sib_tries >= mib_sib_tries_max:
+            raise MibSibAcquisitionFailed("MIB-SIB Acquisition failed over {} retries".format(mib_sib_tries))
+
+
+def start_collecting_logs(prefix=""):
+    log_dirpath = ta5g_interface_tools().get_robot_output_dir()
+    if not prefix:
+        prefix = get_test_prefix()
+
+    collect_scf_file(prefix="before", subdir=prefix, name=prefix)
+    ta5g_syslog = BuiltIn().get_library_instance('ta5g_syslog')
+    ta5g_tshark = BuiltIn().get_library_instance('ta5g_tshark')
+    ta5g_syslog.start_syslog_for_enb(logs_dirpath=log_dirpath + '/' + prefix,
+                                     log_filename_prefix="syslog_gnb_{}_".format(prefix))
+    ta5g_tshark.start_tcpdump_on_remote_interface(log_filename_prefix="tcpdump_GNB_" + prefix,
+                                                  log_dirpath=log_dirpath + "/" + prefix)
+    time.sleep(2)
+
+
+def teardown_collecting_logs():
+    log_dirpath = ta5g_interface_tools().get_robot_output_dir()
+    ta5g_tshark = BuiltIn().get_library_instance('ta5g_tshark')
+    ta5g_syslog = BuiltIn().get_library_instance('ta5g_syslog')
+    ute_tshark = BuiltIn().get_library_instance('ute_tshark')
+    ta5g_egate = BuiltIn().get_library_instance("ta5g_egate")
+    ta5g_tshark.stop_tcpdump_on_remote_interface()
+    ute_tshark.teardown_all_aliases_for_tshark()
+    ta5g_syslog.collect_syslog_results()
+    ta5g_syslog.teardown_all_aliases_for_syslog()
+    ta5g_egate._ute_wtssim_instance.teardown_all_aliases_for_wts()
+    test_prefix = get_test_prefix()
+    copy_egate_console_log_to_specified_dir(subdirectory=test_prefix, prefix=test_prefix)
+    collect_scf_file(prefix="after", subdir=test_prefix, name=test_prefix)
+
+
+def cleanup_logs_dir_at_teardown():
+    dest_dir = create_dir_at_output_dir(dir_name=get_test_prefix() + "/ta_messaging_processing")
+    log_output_dir = ta5g_interface_tools().get_robot_output_dir()
+    files = [file for prefix in ['csv*', 'messaging*', 'PARSED*'] for file in
+             glob.glob(os.path.join(log_output_dir, prefix))]
+    for file in files:
+        shutil.move(file, dest_dir)
+
+
+def wait_for_throughput_stable(sec=10):
+    time.sleep(sec)
+
+
+def change_gscn_in_iphy(gscn_value, cell_id):
+    parameters_to_modify = {
+        'CPRI-Config/CPRI-RP1-RE_List/RE[{}]/hardware/vcellList/vcell/GSCN'.format(cell_id): gscn_value
+    }
+    if gscn_value:
+        modify_iphy_parameters(
+            params_dict=parameters_to_modify,
+            logs_dir='/tmp',
+            iphy_prefix='new'
+        )
+        logger_console_info('IPHY file modified successfully')
+
+
+def change_physical_id_in_iphy(new_phys_id, cell_id):
+    parameters_to_modify = {
+        'CPRI-Config/CPRI-RP1-RE_List/RE[{}]/hardware/optlink_List/optlink/physicalId'.format(cell_id): new_phys_id
+    }
+    modify_iphy_parameters(
+        params_dict=parameters_to_modify,
+        logs_dir='/tmp',
+        iphy_prefix='new'
+    )
+    logger_console_info('IPHY file modified successfully')
+
+
+def prepare_iphy_for_DSS():
+    parameters_to_modify = {
+        'CPRI-Config/CPRI-RP1-RE_List/RE[{}]/hardware/vcellList/vcell[1]/cell'.format(1): "1.1",
+        'CPRI-Config/CPRI-RP1-RE_List/RE[{}]/hardware/vcellList/vcell[1]/cell'.format(2): "1.2",
+        'CPRI-Config/CPRI-RP1-RE_List/RE[{}]/hardware/vcellList/vcell[1]/cell'.format(3): "1.3",
+        'CPRI-Config/CPRI-RP1-RE_List/RE[{}]/hardware/vcellList/vcell[1]/cell'.format(4): "1.4",
+    }
+    modify_iphy_parameters(
+        params_dict=parameters_to_modify,
+        logs_dir='/tmp',
+        iphy_prefix='new'
+    )
+    logger_console_info('iphy.xml file modified for DSS successfully')
+
+
+def cleanup_iphy_after_dss():
+    parameters_to_modify = {
+        'CPRI-Config/CPRI-RP1-RE_List/RE[{}]/hardware/vcellList/vcell[1]/cell'.format(1): "2.1",
+        'CPRI-Config/CPRI-RP1-RE_List/RE[{}]/hardware/vcellList/vcell[1]/cell'.format(2): "2.2",
+        'CPRI-Config/CPRI-RP1-RE_List/RE[{}]/hardware/vcellList/vcell[1]/cell'.format(3): "2.3",
+        'CPRI-Config/CPRI-RP1-RE_List/RE[{}]/hardware/vcellList/vcell[1]/cell'.format(4): "2.4",
+    }
+
+    modify_iphy_parameters(
+        params_dict=parameters_to_modify,
+        logs_dir='/tmp',
+        iphy_prefix='new'
+    )
+    logger_console_info('iphy.xml file cleaned-up after DSS successfully')
+
+
+def set_actOptimizedFlowControl(value="nonOptimized"):
+    update_parameter_value(parameter="actOptimizedFlowControl", value=value, dist_name="MRBTS-1/NRBTS-1/NRCELL-1")
+    update_parameter_value(parameter="actOptimizedFlowControl", value=value, dist_name="MRBTS-1/NRBTS-1/NRCELL-2")
+    prefix = get_test_prefix()
+    if prefix not in ['CNI_87162_016_Robustness1']:
+        update_parameter_value(parameter="actOptimizedFlowControl", value=value, dist_name="MRBTS-1/NRBTS-1/NRCELL-3")
+        update_parameter_value(parameter="actOptimizedFlowControl", value=value, dist_name="MRBTS-1/NRBTS-1/NRCELL-4")
+
+
+def set_primaryPathMaxQueueingDelay(value="2"):
+    update_parameter_value(parameter="primaryPathMaxQueueingDelay", value=value, dist_name="MRBTS-1/NRBTS-1/NRCELL-1")
+
+
+def wait_for_ue_to_be_active(sec=2):
+    time.sleep(int(sec))
+
+
+def set_sCellActivationMethod(value="bufferBased"):
+    update_parameter_value(parameter="sCellActivationMethod", value=value, dist_name="MRBTS-1/NRBTS-1")
+
+
+def set_actCsiMeasEthFlowControl(value):
+    update_parameter_value(parameter="actCsiMeasEthFlowControl", value=value, dist_name="MRBTS-1/NRBTS-1/NRCELL-1")
+
+
+def set_bufferThesholdSCellDePrioritize(value="200"):
+    update_parameter_value(parameter="bufferThesholdSCellDePrioritize", value=value,
+                           dist_name="MRBTS-1/NRBTS-1/NRCELL-1")
+
+
+def prepare_swconfig_for_mu_mimo():
+    GnbSwconfigManager().ensure_flags_existence_in_swconfig(flags=["0x590004=4", "0x5900a8=1"])
+    GnbSwconfigManager().log_swconfig_contents()
+
+
+def clean_swconfig_after_mu_mimo():
+    GnbSwconfigManager().delete_flags_from_swconfig(flags=["0x590004=4", "0x5900a8=1"])
+    GnbSwconfigManager().log_swconfig_contents()
+
+
+def combine_scf_with_delta(target_scf_path, delta):
+    """
+    Perform full SCF commissioning due to parameters that cannot be modified by delta.
+    Modify in SCF parameters defined in delta. Only 'delete' and 'update' operations are supported.
+
+    :param target_scf_path: (str) Path to new SCF file
+    :param delta: (list) json-like list with dict objects (for example see DELTA_CELL_2_ON_LOKI_B in deltas.py)
+    """
+
+    test_prefix = get_test_prefix()
+    output_dir = BuiltIn().get_variable_value('${OUTPUT_DIR}')
+    scf_path = os.path.join(output_dir, test_prefix, f'before_{test_prefix}_scf.xml')
+    scf_instance = scf()
+    scf_instance.load_scf(scf_path)
+
+    for obj in range(len(delta)):
+        dist_name = delta[obj]['distName']
+        operation = delta[obj]['operation']
+        scf_instance.is_object_in_scf(dist_name)
+        if operation == 'delete':
+            logger_info(f'Deleting object {dist_name}')
+            scf_instance.remove_mo_with_descendant_mos(dist_name)
+        elif operation == 'update':
+            logger_info(f'Modifying object {dist_name}')
+            parameters = delta[obj]['parameters']
+            for parameter in parameters:
+                param_name = parameter['parameterName']
+                logger_info(f'Updating value of {dist_name}/{param_name}')
+                try:
+                    scf_instance.modify_scf_element(
+                        value=parameter['value'],
+                        dist_name=dist_name,
+                        p_name=param_name
+                    )
+                except KeyError:
+                    scf_instance.modify_scf_element(
+                        value=parameter['value'][0],
+                        index=1,
+                        dist_name=dist_name,
+                        list_name=param_name
+                    )
+    scf_instance.save_scf(target_scf_path)
+    perform_gnb_commissioning(target_scf_path)
+    wait_for_requested_bts_state(bts_state='commissioned')
+
+
+def create_copy_of_iphy_file():
+    run_on_ap('cp /rom/simmode/iphy.xml /rom/simmode/iphy_copy.xml')
+
+
+def switch_to_old_iphy():
+    run_on_ap('ln -sf /rom/simmode/iphy_copy.xml /rom/simmode/iphy.xml')
+
+
+def switch_to_old_scf():
+    test_prefix = get_test_prefix()
+    scf_path = os.path.join(BuiltIn().get_variable_value('${OUTPUT_DIR}'), test_prefix, f'basic_{test_prefix}_scf.xml')
+    perform_gnb_commissioning(scf_path)
+    wait_for_requested_bts_state(bts_state='configured')
+
+
+def create_scf_copy():
+    prefix = get_test_prefix()
+    collect_scf_file(prefix='basic', subdir=prefix, name=prefix)
+
+
+def get_testline_name():
+    # Returns the name of the Testline. Ex: 2_16_UTE5GCLASSICAL4246
+    for module in sys.modules.copy().values():
+        if type(module) is ModuleType:
+            if "tl" in dir(module):
+                return os.path.basename(os.path.dirname(module.__file__))
+    raise Exception('No Testline Module Loaded!')
+
+
+def check_if_cm_execution():
+    # returns False if the test was launched by the CloudManager, otherwise returns True.
+    return False if os.environ.get("CM_EXECUTION_ID") is None else True

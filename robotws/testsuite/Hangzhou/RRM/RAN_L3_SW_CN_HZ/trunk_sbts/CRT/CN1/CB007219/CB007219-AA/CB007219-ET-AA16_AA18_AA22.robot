@@ -1,0 +1,1137 @@
+*** Settings ***
+Suite Setup    Common Suite Setup And Setup Airphone Env
+Suite Teardown    Common Suite Teardown And Restore BTS Configuration Parameters
+Test Setup    Common Test Setup And Start To Capture Logs
+Test Teardown    Common Test Teardown And Stop Capture Logs
+Force Tags    QCD_MN_RAN    QCP_RAN_VRF    SBTS00    RAN_5G    RAN_5G_TDD    CRT    CLOUD_5G_I_[LO][LO]_AP_[LOO]_SANSA_FS_ECPRI_CMWV_TDD 
+...    owner-jia.pan    release-SBTS24R3    team-CN1ET
+Resource    ../../../../../resources/DevHZ5_resource.robot
+
+*** Variables ***
+${NOKIA_XNAP_PLUGIN_FLAG}    ${True}
+${NOKIA_F1AP_PLUGIN_FLAG}    ${True}
+
+@{PARAMS_IN_SCF}
+...    @{PARAMS_FOR_GNB1}
+...    @{PARAMS_ADJ_REL_FOR_GNB1}
+...    @{PARAMS_FOR_OTHERS}
+
+@{PARAMS_IN_SCF_GNB2}
+...    @{PARAMS_FOR_GNB2}
+...    @{PARAMS_ADJ_REL_FOR_GNB2}
+...    @{PARAMS_FOR_OTHERS}
+
+@{PARAMS_FOR_GNB1}
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-11/CHANNELGROUP-1/CHANNEL-5:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/ANTL-3
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-11/CHANNELGROUP-1/CHANNEL-6:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/ANTL-3
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-11/CHANNELGROUP-1/CHANNEL-6:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-11/CHANNELGROUP-1/CHANNEL-7:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/ANTL-4
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-11/CHANNELGROUP-1/CHANNEL-7:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-11/CHANNELGROUP-1/CHANNEL-8:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/ANTL-4
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-12/CHANNELGROUP-1/CHANNEL-5:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/ANTL-3
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-12/CHANNELGROUP-1/CHANNEL-6:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/ANTL-3
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-12/CHANNELGROUP-1/CHANNEL-6:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-12/CHANNELGROUP-1/CHANNEL-7:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/ANTL-4
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-12/CHANNELGROUP-1/CHANNEL-7:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-12/CHANNELGROUP-1/CHANNEL-8:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/ANTL-4
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-13/CHANNELGROUP-1/CHANNEL-5:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-3/ANTL-3
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-13/CHANNELGROUP-1/CHANNEL-6:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-3/ANTL-3
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-13/CHANNELGROUP-1/CHANNEL-6:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-13/CHANNELGROUP-1/CHANNEL-7:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-3/ANTL-4
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-13/CHANNELGROUP-1/CHANNEL-7:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-13/CHANNELGROUP-1/CHANNEL-8:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-3/ANTL-4
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-14/CHANNELGROUP-1/CHANNEL-5:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-4/ANTL-3
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-14/CHANNELGROUP-1/CHANNEL-6:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-4/ANTL-3
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-14/CHANNELGROUP-1/CHANNEL-6:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-14/CHANNELGROUP-1/CHANNEL-7:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-4/ANTL-4
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-14/CHANNELGROUP-1/CHANNEL-7:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-14/CHANNELGROUP-1/CHANNEL-8:antlDN=MRBTS-1/EQM-1/APEQM-1/RMOD-4/ANTL-4
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-11/CHANNELGROUP-1/CHANNEL-5:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-11/CHANNELGROUP-1/CHANNEL-6:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-11/CHANNELGROUP-1/CHANNEL-7:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-11/CHANNELGROUP-1/CHANNEL-8:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-12/CHANNELGROUP-1/CHANNEL-5:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-12/CHANNELGROUP-1/CHANNEL-6:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-12/CHANNELGROUP-1/CHANNEL-7:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-12/CHANNELGROUP-1/CHANNEL-8:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-13/CHANNELGROUP-1/CHANNEL-5:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-13/CHANNELGROUP-1/CHANNEL-6:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-13/CHANNELGROUP-1/CHANNEL-7:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-13/CHANNELGROUP-1/CHANNEL-8:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-14/CHANNELGROUP-1/CHANNEL-5:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-14/CHANNELGROUP-1/CHANNEL-6:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-14/CHANNELGROUP-1/CHANNEL-7:resourceDN
+...    delete:MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-14/CHANNELGROUP-1/CHANNEL-8:resourceDN
+
+...    NRCELL-11:nrConnectModeProfileDN=MRBTS-1/NRBTS-1/NRCONNECTMODE_PROFILE-3
+...    NRCELL-11:nrMultibandInfoProfileDN=MRBTS-1/NRBTS-1/NRMULTIBANDINFO_PROFILE-1
+
+...    NRCELL-12:nrConnectModeProfileDN=MRBTS-1/NRBTS-1/NRCONNECTMODE_PROFILE-3
+...    NRCELL-12:nrMultibandInfoProfileDN=MRBTS-1/NRBTS-1/NRMULTIBANDINFO_PROFILE-1
+
+...    NRBTS/NRCONNECTMODE_PROFILE-1:multiFreqBandIndicatorNR=77
+...    NRBTS/NRCONNECTMODE_PROFILE-2:multiFreqBandIndicatorNR=78
+...    NRBTS/NRCONNECTMODE_PROFILE-3:multiFreqBandIndicatorNR=25
+
+
+...    NRBTS/NRMULTIBANDINFO_PROFILE-1:nrMultibandInfoList:nrBandPriority=1|freqBandIndicatorNR=2
+...    NRBTS/NRMULTIBANDINFO_PROFILE-1:nrMultibandInfoList:nrNsPmaxProfileDN=MRBTS-1/NRBTS-1/NRNSPMAX_PROFILE-1|freqBandIndicatorNR=2
+...    NRBTS/NRMULTIBANDINFO_PROFILE-1:nrMultibandInfoList:nrBandPriority=2|freqBandIndicatorNR=25
+...    NRBTS/NRMULTIBANDINFO_PROFILE-1:nrMultibandInfoList:nrNsPmaxProfileDN=MRBTS-1/NRBTS-1/NRNSPMAX_PROFILE-1|freqBandIndicatorNR=25
+
+@{PARAMS_FOR_GNB2}
+...    MRBTS-1/NRBTS/BWP_PROFILE-2/PDCCH-1/PDCCH_CONFIG_DEDICATED-1:coresetDedicated:size=96
+...    NRCELL:chBw=40MHz
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-5:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-5:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-3/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-6:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-6:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-3/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-7:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-3/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-1/CHANNELGROUP-1/CHANNEL-8:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-3/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-5:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-5:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-4/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-6:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-6:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-4/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-7:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-4/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-2/CHANNELGROUP-1/CHANNEL-8:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-4/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-3/CHANNELGROUP-1/CHANNEL-5:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-3/CHANNELGROUP-1/CHANNEL-5:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-3/CHANNELGROUP-1/CHANNEL-6:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-3/CHANNELGROUP-1/CHANNEL-6:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-3/CHANNELGROUP-1/CHANNEL-7:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-3/CHANNELGROUP-1/CHANNEL-8:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-1/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-4/CHANNELGROUP-1/CHANNEL-5:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-4/CHANNELGROUP-1/CHANNEL-5:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-4/CHANNELGROUP-1/CHANNEL-6:direction=RX
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-4/CHANNELGROUP-1/CHANNEL-6:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-4/CHANNELGROUP-1/CHANNEL-7:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/PHYANT-1
+...    MRBTS-1/MNL-1/MNLENT-1/CELLMAPPING-1/LCELNR-4/CHANNELGROUP-1/CHANNEL-8:resourceDN=MRBTS-1/EQM-1/APEQM-1/RMOD-2/PHYANT-1
+
+@{PARAMS_FOR_OTHERS}
+...    NRBTS:actInterFreqHoSA=true
+...    NRBTS:actMfbiNrCaSupportFr1=true
+...    NRBTS:weightForIgnbCaSelection=50
+...    NRBTS:tNgRelocCancelN=2000
+...    NRBTS:tNgRelocExecDeltN=3000
+...    NRBTS:tNgRelocOverallN=2000
+...    NRBTS:tNgRelocPrepN=2000
+...    NRBTS:actIntraNrNgHo=sourceAndTarget
+...    NRBTS:suppCnPartialAdNgHo=true
+...    NRBTS:actConflictConfiguration=true
+
+
+...    NRBTS:cipherPrefL:nea0=8
+...    NRBTS:cipherPrefL:nea1_128=0
+...    NRBTS:cipherPrefL:nea2_128=0
+...    NRBTS:cipherPrefL:nea3_128=0
+...    NRBTS:actMfbiNrCaMeasConfResolv=false
+...    NRBTS:actMultiFrequencyBandIndicatorNRSupport=true
+...    NRCELL:actEnhMultipleDedicatedBWPs=true
+...    NRBTS:actMultipleDedicatedBWPs=true
+...    NRBTS/NRNSPMAX_PROFILE-1:nrNsPmaxList:additionalSpectrumEmission=1
+...    NRBTS/NRNSPMAX_PROFILE-1:nrNsPmaxList:nrNsPmaxPriority=1
+...    NRCELL:allowUnsuppBcOrBcs=complete BCS check
+...    NRCELL:dlMimoMode=4x4 or 4x2 Closed Loop Spatial Multiplexing
+...    NRCELL:nrCellType=4DL4UL
+...    NRCELL:absThreshSsbRsrpConsolidation=1
+...    NRCELL:sMeasConfigSsbRsrp=1
+...    NRBTS:actIntraFreqHoSA=true
+...    NRPMRNL-1:miNrRelReportCu=15min
+...    NRCELL:a1MeashoEnabledSA=rsrp
+...    NRCELL:a1MeashoSsbRsrpSA:a1HysteresishoSsbRsrpSA=0
+...    NRCELL:a1MeashoSsbRsrpSA:a1ThresholdhoSsbRsrpSA=39
+...    NRCELL:a1MeashoSsbRsrpSA:a1TimeToTriggerhoSsbRsrpSA=ms128
+...    NRCELL:a2MeashoEnabledSA=rsrp
+...    NRCELL:a2MeashoSsbRsrpSA:a2HysteresishoSsbRsrpSA=1
+...    NRCELL:a2MeashoSsbRsrpSA:a2ThresholdhoSsbRsrpSA=34
+...    NRCELL:a2MeashoSsbRsrpSA:a2TimeToTriggerhoSsbRsrpSA=ms160
+...    NRBTS:actCarrierAggregation=true
+...    NRBTS:caConfigurationSupport=2CCDL_2CCUL
+...    NRDU-1:actInterNumerologyCa=true
+...    NRDU-1:flexibleCAMode=ConfigurationIndependent
+...    NRBTS:actMeasBasedSCellAdditionSa=A1-based
+...    NRCELL:maxNumScellsDlFr1=4
+...    NRDU-1:actConnectedModeMobilityCA=true
+...    NRDU-1:actInterGnbCa=DLOnly
+...    NRDU-1:xgUplane:ipV4AddressDN1=MRBTS-1/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1
+...    NRCELL:actK1Opt=intraAndInter-gNB
+...    NRBTS:actIncXn=true
+...    NRBTS:sCellActivationMethod=blind
+...    NRCELL:sCellDeactivationTimerGNB=infinity
+...    NRDU-1:carrierAggregationSupportList=${CAlist}
+${CAlist}    ca_Fdd_Fr1Tdd_Sa,ca_Fr1Tdd_Sa,ca_Fr1Tdd_Fdd_Sa,ca_Fr1Tdd_Any_Sa,ca_Fdd_Any_Sa,ca_Fdd_Fdd
+
+@{PARAMS_ADJ_REL_FOR_GNB1}
+...    NRCELL-13:measGapSelectionSA=favourUeThroughput
+...    NRBTS/NRCELL-14:gscnOrSsPbchArfcn=5381
+...    NRCELL-14/NRCELL_FDD-1:nrarfcnUl=350000
+...    NRCELL-14/NRCELL_FDD-1:nrarfcnDl=430000
+...    NRBTS/NRADJGNB-2:administrativeState=Unlocked
+...    NRBTS/NRADJGNB-2:gNbIdLength=22
+...    NRBTS/NRADJGNB-2:gNodeBId=2
+...    NRBTS/NRADJGNB-2:weightForIgnbCaSelection=50
+...    NRBTS/NRADJGNB-2:xnLinkRef=1
+...    NRBTS/NRADJGNB-2:gnbPlmn:mcc=311
+...    NRBTS/NRADJGNB-2:gnbPlmn:mnc=489
+...    NRBTS/NRADJGNB-2:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-1:cellDepType=SA+NSA
+...    NRBTS/NRADJNRCELL-1:fiveGsTac=200
+...    NRBTS/NRADJNRCELL-1:gNbId=2
+...    NRBTS/NRADJNRCELL-1:gNbIdLength=22
+...    NRBTS/NRADJNRCELL-1:lcrId=1
+...    NRBTS/NRADJNRCELL-1:nrarfcn=633356
+...    NRBTS/NRADJNRCELL-1:physCellId=50
+...    NRBTS/NRADJNRCELL-1:gnbPlmn:mcc=311
+...    NRBTS/NRADJNRCELL-1:gnbPlmn:mnc=489
+...    NRBTS/NRADJNRCELL-1:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-1:freqBandIndicatorNR=77
+...    NRBTS/NRADJNRCELL-1:ssbFrequency=633312
+...    NRBTS/NRADJNRCELL-1:nrConnectModeProfileDN=MRBTS-1/NRBTS-1/NRCONNECTMODE_PROFILE-2
+
+...    NRBTS/NRADJNRCELL-2:cellDepType=SA+NSA
+...    NRBTS/NRADJNRCELL-2:fiveGsTac=200
+...    NRBTS/NRADJNRCELL-2:gNbId=2
+...    NRBTS/NRADJNRCELL-2:gNbIdLength=22
+...    NRBTS/NRADJNRCELL-2:lcrId=2
+...    NRBTS/NRADJNRCELL-2:nrarfcn=647444
+...    NRBTS/NRADJNRCELL-2:physCellId=51
+...    NRBTS/NRADJNRCELL-2:gnbPlmn:mcc=311
+...    NRBTS/NRADJNRCELL-2:gnbPlmn:mnc=489
+...    NRBTS/NRADJNRCELL-2:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-2:freqBandIndicatorNR=77
+...    NRBTS/NRADJNRCELL-2:ssbFrequency=647424
+...    NRBTS/NRADJNRCELL-2:nrConnectModeProfileDN=MRBTS-1/NRBTS-1/NRCONNECTMODE_PROFILE-2
+
+...    NRBTS/NRADJNRCELL-3:cellDepType=SA+NSA
+...    NRBTS/NRADJNRCELL-3:fiveGsTac=200
+...    NRBTS/NRADJNRCELL-3:gNbId=2
+...    NRBTS/NRADJNRCELL-3:gNbIdLength=22
+...    NRBTS/NRADJNRCELL-3:lcrId=3
+...    NRBTS/NRADJNRCELL-3:nrarfcn=643416
+...    NRBTS/NRADJNRCELL-3:physCellId=52
+...    NRBTS/NRADJNRCELL-3:gnbPlmn:mcc=311
+...    NRBTS/NRADJNRCELL-3:gnbPlmn:mnc=489
+...    NRBTS/NRADJNRCELL-3:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-3:freqBandIndicatorNR=78
+...    NRBTS/NRADJNRCELL-3:ssbFrequency=643392
+...    NRBTS/NRADJNRCELL-3:nrConnectModeProfileDN=MRBTS-1/NRBTS-1/NRCONNECTMODE_PROFILE-1
+
+...    NRBTS/NRADJNRCELL-4:cellDepType=SA+NSA
+...    NRBTS/NRADJNRCELL-4:fiveGsTac=200
+...    NRBTS/NRADJNRCELL-4:gNbId=2
+...    NRBTS/NRADJNRCELL-4:gNbIdLength=22
+...    NRBTS/NRADJNRCELL-4:lcrId=4
+...    NRBTS/NRADJNRCELL-4:nrarfcn=639360
+...    NRBTS/NRADJNRCELL-4:physCellId=53
+...    NRBTS/NRADJNRCELL-4:gnbPlmn:mcc=311
+...    NRBTS/NRADJNRCELL-4:gnbPlmn:mnc=489
+...    NRBTS/NRADJNRCELL-4:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-4:freqBandIndicatorNR=78
+...    NRBTS/NRADJNRCELL-4:ssbFrequency=639360
+
+...    NRCELL-13/NRHOIF-1:cellDepType=SA+NSA
+...    NRCELL-13/NRHOIF-1:freqBandIndicatorNR=77
+...    NRCELL-13/NRHOIF-1:ifhoSsbScs=30 KHz
+...    NRCELL-13/NRHOIF-1:ifhoSsbSmtcDuration=sf2
+...    NRCELL-13/NRHOIF-1:ifhoSsbSmtcPeriodicity=sf10
+...    NRCELL-13/NRHOIF-1:numberOfTransmittedSsBlocks=1 beam
+...    NRCELL-13/NRHOIF-1:ssBurstSetPeriod=20
+...    NRCELL-13/NRHOIF-1:ssbFrequency=633312
+
+...    NRCELL-13/NRHOIF-2:cellDepType=SA+NSA
+...    NRCELL-13/NRHOIF-2:freqBandIndicatorNR=77
+...    NRCELL-13/NRHOIF-2:ifhoSsbScs=30 KHz
+...    NRCELL-13/NRHOIF-2:ifhoSsbSmtcDuration=sf2
+...    NRCELL-13/NRHOIF-2:ifhoSsbSmtcPeriodicity=sf10
+...    NRCELL-13/NRHOIF-2:numberOfTransmittedSsBlocks=1 beam
+...    NRCELL-13/NRHOIF-2:ssBurstSetPeriod=20
+...    NRCELL-13/NRHOIF-2:ssbFrequency=647424
+...    NRCELL-13/NRHOIF-2:a3MeasEnabled=rsrp
+...    NRCELL-13/NRHOIF-2:a3MeasSsbRsrp:a3HysteresisSsbRsrp=2
+...    NRCELL-13/NRHOIF-2:a3MeasSsbRsrp:a3OffsetSsbRsrp=20
+...    NRCELL-13/NRHOIF-2:a3MeasSsbRsrp:a3TimeToTriggerSsbRsrp=ms40
+...    NRCELL-13/NRHOIF-2:a1BasedPCellSwitchEnabled=true
+...    NRCELL-13/NRHOIF-2:deriveSsbIndexFromCell=false
+
+...    NRCELL-13/NRHOIF-3:cellDepType=SA+NSA
+...    NRCELL-13/NRHOIF-3:freqBandIndicatorNR=78
+...    NRCELL-13/NRHOIF-3:ifhoSsbScs=30 KHz
+...    NRCELL-13/NRHOIF-3:ifhoSsbSmtcDuration=sf2
+...    NRCELL-13/NRHOIF-3:ifhoSsbSmtcPeriodicity=sf10
+...    NRCELL-13/NRHOIF-3:numberOfTransmittedSsBlocks=1 beam
+...    NRCELL-13/NRHOIF-3:ssBurstSetPeriod=20
+...    NRCELL-13/NRHOIF-3:ssbFrequency=643392
+...    NRCELL-13/NRHOIF-3:a3MeasEnabled=rsrp
+...    NRCELL-13/NRHOIF-3:a3MeasSsbRsrp:a3HysteresisSsbRsrp=2
+...    NRCELL-13/NRHOIF-3:a3MeasSsbRsrp:a3OffsetSsbRsrp=20
+...    NRCELL-13/NRHOIF-3:a3MeasSsbRsrp:a3TimeToTriggerSsbRsrp=ms40
+...    NRCELL-13/NRHOIF-3:nrConnectModeProfileDN=MRBTS-1/NRBTS-1/NRCONNECTMODE_PROFILE-1
+
+...    NRCELL-13/NRREL-1:cellIndividualSsbRsrpOffset=1dB
+...    NRCELL-13/NRREL-1:cellIndividualSsbRsrqOffset=1dB
+...    NRCELL-13/NRREL-1:gNbId=2
+...    NRCELL-13/NRREL-1:gNbIdLength=22
+...    NRCELL-13/NRREL-1:handoverAllowedSA=allowed
+...    NRCELL-13/NRREL-1:lcrId=1
+...    NRCELL-13/NRREL-1:removeNotAllowed=false
+...    NRCELL-13/NRREL-1:gnbPlmn:mcc=311
+...    NRCELL-13/NRREL-1:gnbPlmn:mnc=489
+...    NRCELL-13/NRREL-1:gnbPlmn:mncLength=3
+...    NRCELL-13/NRREL-1:sCellAdditionMethod=covBasedA1
+...    NRCELL-13/NRREL-1:sCellOperationalMode=dlOnly
+
+...    NRCELL-13/NRREL-2:cellIndividualSsbRsrpOffset=1dB
+...    NRCELL-13/NRREL-2:cellIndividualSsbRsrqOffset=1dB
+...    NRCELL-13/NRREL-2:gNbId=2
+...    NRCELL-13/NRREL-2:gNbIdLength=22
+...    NRCELL-13/NRREL-2:handoverAllowedSA=allowed
+...    NRCELL-13/NRREL-2:lcrId=2
+...    NRCELL-13/NRREL-2:removeNotAllowed=false
+...    NRCELL-13/NRREL-2:gnbPlmn:mcc=311
+...    NRCELL-13/NRREL-2:gnbPlmn:mnc=489
+...    NRCELL-13/NRREL-2:gnbPlmn:mncLength=3
+...    NRCELL-13/NRREL-2:sCellAdditionMethod=covBasedA1
+...    NRCELL-13/NRREL-2:sCellOperationalMode=dlOnly
+
+...    NRCELL-13/NRREL-3:cellIndividualSsbRsrpOffset=1dB
+...    NRCELL-13/NRREL-3:cellIndividualSsbRsrqOffset=1dB
+...    NRCELL-13/NRREL-3:gNbId=2
+...    NRCELL-13/NRREL-3:gNbIdLength=22
+...    NRCELL-13/NRREL-3:handoverAllowedSA=allowed
+...    NRCELL-13/NRREL-3:lcrId=3
+...    NRCELL-13/NRREL-3:removeNotAllowed=false
+...    NRCELL-13/NRREL-3:gnbPlmn:mcc=311
+...    NRCELL-13/NRREL-3:gnbPlmn:mnc=489
+...    NRCELL-13/NRREL-3:gnbPlmn:mncLength=3
+...    NRCELL-13/NRREL-3:sCellAdditionMethod=covBasedA1
+...    NRCELL-13/NRREL-3:sCellOperationalMode=dlOnly
+
+#AA16 UE1
+...    NRCELL-11/NRREL-1:cellIndividualSsbRsrpOffset=0dB
+...    NRCELL-11/NRREL-1:cellIndividualSsbRsrqOffset=0dB
+...    NRCELL-11/NRREL-1:gNbId=2
+...    NRCELL-11/NRREL-1:gNbIdLength=22
+...    NRCELL-11/NRREL-1:handoverAllowedSA=allowed
+...    NRCELL-11/NRREL-1:lcrId=1
+...    NRCELL-11/NRREL-1:removeNotAllowed=false
+...    NRCELL-11/NRREL-1:gnbPlmn:mcc=311
+...    NRCELL-11/NRREL-1:gnbPlmn:mnc=489
+...    NRCELL-11/NRREL-1:gnbPlmn:mncLength=3
+...    NRCELL-11/NRREL-1:sCellAdditionMethod=covBasedA1
+...    NRCELL-11/NRREL-1:sCellOperationalMode=dlOnly
+
+...    NRCELL-11/NRREL-2:cellIndividualSsbRsrpOffset=0dB
+...    NRCELL-11/NRREL-2:cellIndividualSsbRsrqOffset=0dB
+...    NRCELL-11/NRREL-2:gNbId=2
+...    NRCELL-11/NRREL-2:gNbIdLength=22
+...    NRCELL-11/NRREL-2:handoverAllowedSA=allowed
+...    NRCELL-11/NRREL-2:lcrId=2
+...    NRCELL-11/NRREL-2:removeNotAllowed=false
+...    NRCELL-11/NRREL-2:gnbPlmn:mcc=311
+...    NRCELL-11/NRREL-2:gnbPlmn:mnc=489
+...    NRCELL-11/NRREL-2:gnbPlmn:mncLength=3
+...    NRCELL-11/NRREL-2:sCellAdditionMethod=covBasedA1
+...    NRCELL-11/NRREL-2:sCellOperationalMode=dlOnly
+
+...    NRCELL-11/NRREL-13:cellIndividualSsbRsrpOffset=0dB
+...    NRCELL-11/NRREL-13:cellIndividualSsbRsrqOffset=0dB
+...    NRCELL-11/NRREL-13:gNbId=1
+...    NRCELL-11/NRREL-13:gNbIdLength=22
+...    NRCELL-11/NRREL-13:handoverAllowedSA=allowed
+...    NRCELL-11/NRREL-13:lcrId=13
+...    NRCELL-11/NRREL-13:removeNotAllowed=false
+...    NRCELL-11/NRREL-13:gnbPlmn:mcc=311
+...    NRCELL-11/NRREL-13:gnbPlmn:mnc=489
+...    NRCELL-11/NRREL-13:gnbPlmn:mncLength=3
+...    NRCELL-11/NRREL-13:sCellAdditionMethod=covBasedA1
+...    NRCELL-11/NRREL-13:sCellOperationalMode=dlOnly
+
+...    NRCELL-11/NRREL-12:cellIndividualSsbRsrpOffset=0dB
+...    NRCELL-11/NRREL-12:cellIndividualSsbRsrqOffset=0dB
+...    NRCELL-11/NRREL-12:gNbId=1
+...    NRCELL-11/NRREL-12:gNbIdLength=22
+...    NRCELL-11/NRREL-12:handoverAllowedSA=allowed
+...    NRCELL-11/NRREL-12:lcrId=12
+...    NRCELL-11/NRREL-12:removeNotAllowed=false
+...    NRCELL-11/NRREL-12:gnbPlmn:mcc=311
+...    NRCELL-11/NRREL-12:gnbPlmn:mnc=489
+...    NRCELL-11/NRREL-12:gnbPlmn:mncLength=3
+...    NRCELL-11/NRREL-12:sCellAdditionMethod=covBasedA1
+...    NRCELL-11/NRREL-12:sCellOperationalMode=dlOnly
+
+...    NRCELL-11/NRREL-14:cellIndividualSsbRsrpOffset=0dB
+...    NRCELL-11/NRREL-14:cellIndividualSsbRsrqOffset=0dB
+...    NRCELL-11/NRREL-14:gNbId=1
+...    NRCELL-11/NRREL-14:gNbIdLength=22
+...    NRCELL-11/NRREL-14:handoverAllowedSA=allowed
+...    NRCELL-11/NRREL-14:lcrId=14
+...    NRCELL-11/NRREL-14:removeNotAllowed=false
+...    NRCELL-11/NRREL-14:gnbPlmn:mcc=311
+...    NRCELL-11/NRREL-14:gnbPlmn:mnc=489
+...    NRCELL-11/NRREL-14:gnbPlmn:mncLength=3
+...    NRCELL-11/NRREL-14:sCellAdditionMethod=covBasedA1
+...    NRCELL-11/NRREL-14:sCellOperationalMode=dlOnly
+
+#AA16 UE2
+...    NRCELL-12/NRREL-3:cellIndividualSsbRsrpOffset=0dB
+...    NRCELL-12/NRREL-3:cellIndividualSsbRsrqOffset=0dB
+...    NRCELL-12/NRREL-3:gNbId=2
+...    NRCELL-12/NRREL-3:gNbIdLength=22
+...    NRCELL-12/NRREL-3:handoverAllowedSA=allowed
+...    NRCELL-12/NRREL-3:lcrId=3
+...    NRCELL-12/NRREL-3:removeNotAllowed=false
+...    NRCELL-12/NRREL-3:gnbPlmn:mcc=311
+...    NRCELL-12/NRREL-3:gnbPlmn:mnc=489
+...    NRCELL-12/NRREL-3:gnbPlmn:mncLength=3
+...    NRCELL-12/NRREL-3:sCellAdditionMethod=covBasedA1
+...    NRCELL-12/NRREL-3:sCellOperationalMode=dlOnly
+
+...    NRCELL-12/NRREL-4:cellIndividualSsbRsrpOffset=0dB
+...    NRCELL-12/NRREL-4:cellIndividualSsbRsrqOffset=0dB
+...    NRCELL-12/NRREL-4:gNbId=2
+...    NRCELL-12/NRREL-4:gNbIdLength=22
+...    NRCELL-12/NRREL-4:handoverAllowedSA=allowed
+...    NRCELL-12/NRREL-4:lcrId=4
+...    NRCELL-12/NRREL-4:removeNotAllowed=false
+...    NRCELL-12/NRREL-4:gnbPlmn:mcc=311
+...    NRCELL-12/NRREL-4:gnbPlmn:mnc=489
+...    NRCELL-12/NRREL-4:gnbPlmn:mncLength=3
+...    NRCELL-12/NRREL-4:sCellAdditionMethod=covBasedA1
+...    NRCELL-12/NRREL-4:sCellOperationalMode=dlOnly
+
+...    NRCELL-12/NRREL-13:cellIndividualSsbRsrpOffset=0dB
+...    NRCELL-12/NRREL-13:cellIndividualSsbRsrqOffset=0dB
+...    NRCELL-12/NRREL-13:gNbId=1
+...    NRCELL-12/NRREL-13:gNbIdLength=22
+...    NRCELL-12/NRREL-13:handoverAllowedSA=allowed
+...    NRCELL-12/NRREL-13:lcrId=13
+...    NRCELL-12/NRREL-13:removeNotAllowed=false
+...    NRCELL-12/NRREL-13:gnbPlmn:mcc=311
+...    NRCELL-12/NRREL-13:gnbPlmn:mnc=489
+...    NRCELL-12/NRREL-13:gnbPlmn:mncLength=3
+...    NRCELL-12/NRREL-13:sCellAdditionMethod=covBasedA1
+...    NRCELL-12/NRREL-13:sCellOperationalMode=dlOnly
+
+...    NRCELL-12/NRREL-11:cellIndividualSsbRsrpOffset=0dB
+...    NRCELL-12/NRREL-11:cellIndividualSsbRsrqOffset=0dB
+...    NRCELL-12/NRREL-11:gNbId=1
+...    NRCELL-12/NRREL-11:gNbIdLength=22
+...    NRCELL-12/NRREL-11:handoverAllowedSA=allowed
+...    NRCELL-12/NRREL-11:lcrId=11
+...    NRCELL-12/NRREL-11:removeNotAllowed=false
+...    NRCELL-12/NRREL-11:gnbPlmn:mcc=311
+...    NRCELL-12/NRREL-11:gnbPlmn:mnc=489
+...    NRCELL-12/NRREL-11:gnbPlmn:mncLength=3
+...    NRCELL-12/NRREL-11:sCellAdditionMethod=covBasedA1
+...    NRCELL-12/NRREL-11:sCellOperationalMode=dlOnly
+
+...    NRCELL:a1MeasSCellAddEnabled=rsrp
+...    NRCELL:a1MeasSCellAddSsbRsrp:a1HysteresisSCellAddSsbRsrp=0|a1TimeToTriggerSCellAddSsbRsrp=320ms
+...    NRCELL:a1MeasSCellAddSsbRsrp:a1ThresholdSCellAddSsbRsrpFDD=70|a1TimeToTriggerSCellAddSsbRsrp=320ms
+...    NRCELL:a1MeasSCellAddSsbRsrp:a1ThresholdSCellAddSsbRsrpTDD=90|a1TimeToTriggerSCellAddSsbRsrp=320ms
+
+...    NRCELL:a2MeasSCellRelEnabled=rsrp
+...    NRCELL:a2MeasSCellRelSsbRsrp:a2HysteresisSCellRelSsbRsrp=0|a2TimeToTriggerSCellRelSsbRsrp=480ms
+...    NRCELL:a2MeasSCellRelSsbRsrp:a2ThresholdSCellRelSsbRsrp=40|a2TimeToTriggerSCellRelSsbRsrp=480ms
+
+@{PARAMS_ADJ_REL_FOR_GNB2}
+...    NRBTS/NRCELL-1:nrarfcn=633356
+...    NRBTS/NRCELL-1:gscnOrSsPbchArfcn=7846
+...    NRBTS/NRCELL-1:freqBandIndicatorNR=77
+
+...    NRBTS/NRCELL-2:nrarfcn=647444
+...    NRBTS/NRCELL-2:gscnOrSsPbchArfcn=7993
+...    NRBTS/NRCELL-2:freqBandIndicatorNR=77
+
+...    NRBTS/NRCELL-3:nrarfcn=643416
+...    NRBTS/NRCELL-3:gscnOrSsPbchArfcn=7951
+...    NRBTS/NRCELL-3:freqBandIndicatorNR=78
+
+...    NRBTS/NRCELL-4:nrarfcn=639360
+...    NRBTS/NRCELL-4:gscnOrSsPbchArfcn=7909
+...    NRBTS/NRCELL-4:freqBandIndicatorNR=78
+
+...    NRCELL-1:nrConnectModeProfileDN=MRBTS-1/NRBTS-2/NRCONNECTMODE_PROFILE-2
+...    NRCELL-1:nrMultibandInfoProfileDN=MRBTS-1/NRBTS-2/NRMULTIBANDINFO_PROFILE-2
+
+...    NRCELL-2:nrConnectModeProfileDN=MRBTS-1/NRBTS-2/NRCONNECTMODE_PROFILE-2
+...    NRCELL-2:nrMultibandInfoProfileDN=MRBTS-1/NRBTS-2/NRMULTIBANDINFO_PROFILE-2
+
+...    NRCELL-3:nrConnectModeProfileDN=MRBTS-1/NRBTS-2/NRCONNECTMODE_PROFILE-1
+...    NRCELL-3:nrMultibandInfoProfileDN=MRBTS-1/NRBTS-2/NRMULTIBANDINFO_PROFILE-2
+
+...    NRCELL-4:nrConnectModeProfileDN=MRBTS-1/NRBTS-2/NRCONNECTMODE_PROFILE-1
+...    NRCELL-4:nrMultibandInfoProfileDN=MRBTS-1/NRBTS-2/NRMULTIBANDINFO_PROFILE-2
+
+...    NRBTS/NRCONNECTMODE_PROFILE-1:multiFreqBandIndicatorNR=77
+...    NRBTS/NRCONNECTMODE_PROFILE-2:multiFreqBandIndicatorNR=78
+...    NRBTS/NRCONNECTMODE_PROFILE-3:multiFreqBandIndicatorNR=25
+
+...    NRBTS/NRMULTIBANDINFO_PROFILE-2:nrMultibandInfoList:nrBandPriority=1|freqBandIndicatorNR=77
+...    NRBTS/NRMULTIBANDINFO_PROFILE-2:nrMultibandInfoList:nrNsPmaxProfileDN=MRBTS-1/NRBTS-2/NRNSPMAX_PROFILE-1|freqBandIndicatorNR=77
+...    NRBTS/NRMULTIBANDINFO_PROFILE-2:nrMultibandInfoList:nrBandPriority=2|freqBandIndicatorNR=78
+...    NRBTS/NRMULTIBANDINFO_PROFILE-2:nrMultibandInfoList:nrNsPmaxProfileDN=MRBTS-1/NRBTS-2/NRNSPMAX_PROFILE-1|freqBandIndicatorNR=78
+
+...    NRBTS/NRADJGNB-1:administrativeState=Unlocked
+...    NRBTS/NRADJGNB-1:gNbIdLength=22
+...    NRBTS/NRADJGNB-1:gNodeBId=1
+...    NRBTS/NRADJGNB-1:weightForIgnbCaSelection=50
+...    NRBTS/NRADJGNB-1:xnLinkRef=1
+...    NRBTS/NRADJGNB-1:gnbPlmn:mcc=311
+...    NRBTS/NRADJGNB-1:gnbPlmn:mnc=489
+...    NRBTS/NRADJGNB-1:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-11:cellDepType=SA+NSA
+...    NRBTS/NRADJNRCELL-11:fiveGsTac=200
+...    NRBTS/NRADJNRCELL-11:gNbId=1
+...    NRBTS/NRADJNRCELL-11:gNbIdLength=22
+...    NRBTS/NRADJNRCELL-11:lcrId=11
+...    NRBTS/NRADJNRCELL-11:nrarfcn=388830
+...    NRBTS/NRADJNRCELL-11:physCellId=60
+...    NRBTS/NRADJNRCELL-11:gnbPlmn:mcc=311
+...    NRBTS/NRADJNRCELL-11:gnbPlmn:mnc=489
+...    NRBTS/NRADJNRCELL-11:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-11:freqBandIndicatorNR=2
+...    NRBTS/NRADJNRCELL-11:nrConnectModeProfileDN=MRBTS-1/NRBTS-2/NRCONNECTMODE_PROFILE-3
+
+...    NRBTS/NRADJNRCELL-12:cellDepType=SA+NSA
+...    NRBTS/NRADJNRCELL-12:fiveGsTac=200
+...    NRBTS/NRADJNRCELL-12:gNbId=1
+...    NRBTS/NRADJNRCELL-12:gNbIdLength=22
+...    NRBTS/NRADJNRCELL-12:lcrId=12
+...    NRBTS/NRADJNRCELL-12:nrarfcn=394370
+...    NRBTS/NRADJNRCELL-12:physCellId=61
+...    NRBTS/NRADJNRCELL-12:gnbPlmn:mcc=311
+...    NRBTS/NRADJNRCELL-12:gnbPlmn:mnc=489
+...    NRBTS/NRADJNRCELL-12:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-12:freqBandIndicatorNR=2
+...    NRBTS/NRADJNRCELL-12:nrConnectModeProfileDN=MRBTS-1/NRBTS-2/NRCONNECTMODE_PROFILE-3
+
+...    NRBTS/NRADJNRCELL-13:cellDepType=SA+NSA
+...    NRBTS/NRADJNRCELL-13:fiveGsTac=200
+...    NRBTS/NRADJNRCELL-13:gNbId=1
+...    NRBTS/NRADJNRCELL-13:gNbIdLength=22
+...    NRBTS/NRADJNRCELL-13:lcrId=13
+...    NRBTS/NRADJNRCELL-13:nrarfcn=424090
+...    NRBTS/NRADJNRCELL-13:physCellId=62
+...    NRBTS/NRADJNRCELL-13:gnbPlmn:mcc=311
+...    NRBTS/NRADJNRCELL-13:gnbPlmn:mnc=489
+...    NRBTS/NRADJNRCELL-13:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-13:freqBandIndicatorNR=66
+
+...    NRBTS/NRADJNRCELL-14:cellDepType=SA+NSA
+...    NRBTS/NRADJNRCELL-14:fiveGsTac=200
+...    NRBTS/NRADJNRCELL-14:gNbId=1
+...    NRBTS/NRADJNRCELL-14:gNbIdLength=22
+...    NRBTS/NRADJNRCELL-14:lcrId=14
+...    NRBTS/NRADJNRCELL-14:nrarfcn=424020
+...    NRBTS/NRADJNRCELL-14:physCellId=63
+...    NRBTS/NRADJNRCELL-14:gnbPlmn:mcc=311
+...    NRBTS/NRADJNRCELL-14:gnbPlmn:mnc=489
+...    NRBTS/NRADJNRCELL-14:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-14:freqBandIndicatorNR=66
+
+...    NRCELL:a2MeasSCellRelEnabled=rsrp
+...    NRCELL:a2MeasSCellRelSsbRsrp:a2HysteresisSCellRelSsbRsrp=0|a2TimeToTriggerSCellRelSsbRsrp=480ms
+...    NRCELL:a2MeasSCellRelSsbRsrp:a2ThresholdSCellRelSsbRsrp=40|a2TimeToTriggerSCellRelSsbRsrp=480ms
+
+#n2A-n66A,n25(2A)-n66A,n2A-n77(2A),n2A-n78(2A),n25A-n77A,n25A-n78A
+${N66_3N77_and_N66_N77_N77_and_N66_3N78}    SEPARATOR=
+...    E9A09000575F5A13160003C320016093170019C3D09009B20C39F30C7942C0E09804062380DDC6C28C0D608C21A08107482406D6C98AB1A1
+...    CF88E3D033EC09F1891C790E7D473E618F28581C0E1E0B801FF800E007FE00098000702A0D883AC1184341020F10480CAD931562439F604F
+...    88E3C62471E439F51CF9863CA1607038784FFF800003FFE00000260001C0AA3626EB04610D04083A41202CB64C550D0E7C471E819F604F8C
+...    73E618F28581C0E1E05C00FFC007003FF0004C000381506C18D608C21A08107CA090195B262AC4873E238F604F8C48E3C873EA39F30C7942
+...    C0E070F09FFF000007FFC000004C0003815C6C25D608C21A08107482406D6C98AB1A1CF88E3D033EC09F1891C790E7D473E618F28581C0E1
+...    E0B801FF800E007FE00098000702A8D899AC1184341020E90480B2D931543439F11C7A067D813E31CF9863CA16070387817003FF001C00FF
+...    C00130000E0541B007582308682041F28240656C98AB121CF88E3D813E31238F21CFA8E7CC31E50B0381C3C27FFC00001FFF00000130000E
+...    005BC3C01000E208000000B0102F17060003830001C41000004160205E1E0C000713000001858081707830001C4D00000A160205E1E20800
+...    711800003058081787898001C4C00000E160205E2E0080071300038980000202C040BC5C01000E2680071340000485808178F882001C4C00
+...    0E2600071300000505808178B882001C4C000E2600000B0B0102F1F10400389A001C4D000E2680000D0B01020120234028809B010602607A
+...    04782E14489B1CF871224489B1CF870A244D8E7C3851226C73E1C28913639F0E14489B1CF871224489B1CF871224489B1CF871A244891363
+...    9F0E2448913639F0E344891226C73E18008858C6318C6318C63F413003C00281C1401C0C02500700060240040603E0400200000001000002
+...    00800002004000018020000100100000A008000060040000380200002008606D64CD646D646560CD60CD606D654D654D01C1000009652504
+...    000065949410000296525040000E594941000049652504000165949410000696525040001E5949407503AAA4D9549AAA91D5506CAA0D5540
+...    F2A956509004800D028004020201C038080700E101008010040100210080700E0201C038080700E10100E01C04010020808010020200C018
+...    40403807010040082020100200801002101008010040200410080700E02008010080200420100E01C0401002010040086020040080802004
+...    0200801008020042010020040401002010040082020040080802004301002004040100201004008040100218080100202020010080800402
+...    020010804020040100801004018031808070020201C008080900602024018D50F8000810182030385058606880889098A0C0C8D8E0E8F909
+...    293139414951697A0A0C1680
+
+${N2_N66_and_N25_N25_N66_and_N2_N78_N78_and_N25_N78}    SEPARATOR=
+...    E9A09000575F5A13160003C320016093170019C3D09009B20C39F30C7942C0E09804062380DDC6C28C0D608C21A08107482406D6C98AB1A1
+...    CF88E3D033EC09F1891C790E7D473E618F28581C0E1E0B801FF800E007FE00098000702A0D883AC1184341020F10480CAD931562439F604F
+...    88E3C62471E439F51CF9863CA1607038784FFF800003FFE00000260001C0AA3626EB04610D04083A41202CB64C550D0E7C471E819F604F8C
+...    73E618F28581C0E1E05C00FFC007003FF0004C000381506C18D608C21A08107CA090195B262AC4873E238F604F8C48E3C873EA39F30C7942
+...    C0E070F09FFF000007FFC000004C0003815C6C25D608C21A08107482406D6C98AB1A1CF88E3D033EC09F1891C790E7D473E618F28581C0E1
+...    E0B801FF800E007FE00098000702A8D899AC1184341020E90480B2D931543439F11C7A067D813E31CF9863CA16070387817003FF001C00FF
+...    C00130000E0541B007582308682041F28240656C98AB121CF88E3D813E31238F21CFA8E7CC31E50B0381C3C27FFC00001FFF00000130000E
+...    005BC3C01000E230000000B0102F17004003802001C41000004160205E1E0C00070A000001858081707830001C4D00000A160205E1E20800
+...    711800003058081787898001C4C00000E160205E2E0C00070600038820000202C040BC5C01000E2680071340000485808178F882001C4C00
+...    0E2600071300000505808178B882001C4C000E2600000B0B0102F1F10400389A001C4D000E2680000D0B01020120234028809B010602607A
+...    04782E14489B1CF871224489B1CF870A244D8E7C3851226C73E1C28913639F0E14489B1CF871224489B1CF871224489B1CF871A244891363
+...    9F0E2448913639F0E344891226C73E18008858C6318C6318C63F413003C00281C1401C0C02500700060240040603E0400200000001000002
+...    00800002004000018020000100100000A008000060040000380200002008606D64CD646D646560CD60CD606D654D654D01C1000009652504
+...    000065949410000296525040000E594941000049652504000165949410000696525040001E5949407503AAA4D9549AAA91D5506CAA0D5540
+...    F2A956509004800D028004020201C038080700E101008010040100210080700E0201C038080600C10100E01C04010020808010020200C018
+...    40403807010040082020100200801002101008010040200410080700E0201C038080600C20100E01C0401002010040086020040080802004
+...    0200801008020042010020040401002010040082020040080802004301002004040100201004008040100218080100202020010080800402
+...    020010804020040100801004018031808070020201C008080900602024018D50F8000810182030385058606880889098A0C0C8D8E0E8F909
+...    293139414951697A0A0C1680
+
+@{UE_register_and_A1_configured}
+...    QoS Routing Table
+...    eventA1
+
+@{online_modify_disable_7219}
+...    NRBTS:actMfbiNrCaSupportFr1=false
+
+@{online_modify_enable_7219}
+...    NRBTS:actMfbiNrCaSupportFr1=true
+
+@{online_modify_NRADJ_gnb1_AA22}
+...    delete:NRBTS/NRADJNRCELL-3:nrConnectModeProfileDN
+
+@{online_recover_NRADJ_gnb1_AA22}
+...    NRBTS/NRADJNRCELL-3:nrConnectModeProfileDN=MRBTS-1/NRBTS-1/NRCONNECTMODE_PROFILE-1
+
+@{online_modify_REL_to_coverbase_for_cell11}
+...    NRCELL-11/NRREL-1:sCellAdditionMethod=covBasedA1
+...    NRCELL-11/NRREL-2:sCellAdditionMethod=covBasedA1
+...    NRCELL-11/NRREL-12:sCellAdditionMethod=covBasedA1
+...    NRCELL-11/NRREL-13:sCellAdditionMethod=covBasedA1
+...    NRCELL-11/NRREL-14:sCellAdditionMethod=covBasedA1
+
+@{online_modify_REL_to_blind_for_cell11}
+...    NRCELL-11/NRREL-1:sCellAdditionMethod=blind
+...    NRCELL-11/NRREL-2:sCellAdditionMethod=blind
+...    NRCELL-11/NRREL-12:sCellAdditionMethod=blind
+...    NRCELL-11/NRREL-13:sCellAdditionMethod=blind
+...    NRCELL-11/NRREL-14:sCellAdditionMethod=blind
+
+@{online_modify_NRREL_gnb1_AA22}
+...    NRBTS:actMfbiNrCaSupportFr1=true
+...    NRCELL-13/NRREL-1:sCellAdditionMethod=blind
+...    NRCELL-13/NRREL-2:sCellAdditionMethod=blind
+...    NRCELL-13/NRREL-3:sCellAdditionMethod=blind
+
+@{online_modify_NRREL_to_covbase_gnb1_AA22}
+...    NRCELL-13/NRREL-1:sCellAdditionMethod=covBasedA1
+...    NRCELL-13/NRREL-2:sCellAdditionMethod=covBasedA1
+...    NRCELL-13/NRREL-3:sCellAdditionMethod=covBasedA1
+
+@{online_delete_alternative_band_gnb2_AA22}
+...    delete:NRCELL-3:nrConnectModeProfileDN
+
+@{Lock_CELL3_And_Add_alternative_band_77_cell3}
+...    NRCELL-3:administrativeState=Locked
+...    NRCELL-3:nrConnectModeProfileDN=MRBTS-1/NRBTS-2/NRCONNECTMODE_PROFILE-1
+
+@{Unlock_CELL3}
+...    NRCELL-3:administrativeState=Unlocked
+
+@{CA_check_CELL1_CELL2}
+...    pcid:50
+...    scellIdx:1
+...    pcid:51
+...    scellIdx:2
+...    freqBandIndicatorNR 77
+
+@{CA_check_CELL1_CELL2_CELL3}
+...    pcid:50
+...    scellIdx:1
+...    pcid:51
+...    scellIdx:2
+...    pcid:52
+...    scellIdx:3
+...    freqBandIndicatorNR 77
+
+@{UEattach_for_AA16_UE1}
+...    QoS Routing Table
+...    PhysCellId: 50
+...    PhysCellId: 51
+...    SCellIndex 1
+...    SCellIndex 2
+
+@{UEattach_for_AA16_UE2}
+...    pcid:61, scellIdx:0
+...    pcid:52, scellIdx:1
+...    pcid:53, scellIdx:2
+
+@{UEattach_for_AA18_UE1}
+...    PhysCellId: 61
+...    PhysCellId: 62
+...    SCellIndex 1
+...    SCellIndex 2
+
+@{PM_Counters_Check_AA16_gnb1}
+...    NRCELL-11:${GNB_SA_ADMISSION_MFBI_REQ}=0
+...    NRCELL-11:${GNB_SA_ADMISSION_MFBI_SUCC}=0
+...    NRCELL-11:${GNB_SA_DU_ADMISSION_MFBI_REQ}=0
+...    NRCELL-11:${GNB_SA_DU_ADMISSION_MFBI_SUCC}=0
+...    NRCELL-12:${GNB_SA_ADMISSION_MFBI_REQ}=0
+...    NRCELL-12:${GNB_SA_ADMISSION_MFBI_SUCC}=0
+...    NRCELL-12:${GNB_SA_DU_ADMISSION_MFBI_REQ}=0
+...    NRCELL-12:${GNB_SA_DU_ADMISSION_MFBI_SUCC}=0
+
+@{PM_Counters_Check_AA16_gnb2}
+...    NRCELL-3:${SCELL_CONF_ALT_BAND_SA}=0
+...    NRCELL-3:${UE_SCELL_2_CONF_SCELL_DL_SA}=0
+...    NRCELL-4:${SCELL_CONF_ALT_BAND_SA}=0
+...    NRCELL-4:${UE_SCELL_2_CONF_SCELL_DL_SA}=0
+...    NRCELL-1:${SCELL_CONF_ALT_BAND_SA}=0
+...    NRCELL-1:${UE_SCELL_2_CONF_SCELL_DL_SA}=0
+...    NRCELL-2:${SCELL_CONF_ALT_BAND_SA}=0
+...    NRCELL-2:${UE_SCELL_2_CONF_SCELL_DL_SA}=0
+
+@{PM_Counters_Check_AA18_gnb1}
+...    NRCELL-11:${GNB_SA_ADMISSION_MFBI_REQ}=0
+...    NRCELL-11:${GNB_SA_ADMISSION_MFBI_SUCC}=0
+...    NRCELL-11:${GNB_SA_DU_ADMISSION_MFBI_REQ}=0
+...    NRCELL-11:${GNB_SA_DU_ADMISSION_MFBI_SUCC}=0
+...    NRCELL-13:${SCELL_CONF_ALT_BAND_SA}=0
+...    NRCELL-13:${UE_SCELL_2_CONF_SCELL_DL_SA}>0
+...    NRCELL-12:${SCELL_CONF_ALT_BAND_SA}=0
+...    NRCELL-12:${UE_SCELL_2_CONF_SCELL_DL_SA}>0
+
+${SCELL_CONF_ALT_BAND_SA}    M55118C01005
+#This counter provides the number of current cell configurations as an SA SCell in an alternative band
+${GNB_SA_ADMISSION_MFBI_REQ}    M55138C00501
+#This counter provides the number of radio admission requests for the SA user, where admission is requested on the alternative band.
+${GNB_SA_ADMISSION_MFBI_SUCC}    M55138C00502
+#This counter provides the number of admitted radio admission requests for the SA user, where admission is done on the alternative band.
+${GNB_SA_DU_ADMISSION_MFBI_REQ}    M55139C02001
+#This counter provides the number of radio admission requests with MFBI for the SA user.
+${GNB_SA_DU_ADMISSION_MFBI_SUCC}    M55139C02002
+#This counter provides the number of radio-admitted UEs for the SA user using the alternative band.
+${UE_SCELL_2_CONF_SCELL_DL_SA}    M55118C07002
+#This counter indicates the sum of samples for the total number of CA UEs in the current cell configured as an SCell with 2 configured SCells
+#in DL in SA mode. The counter is pegged in the secondary cell.
+#Note: This counter isn't pegged in ext-SCell in the case of intergNB CA.
+
+*** Test Cases ***
+CB007219-ET-AA16_Verify_successful_inter-gNB_DL_CA_setup_in_alternative_bands_with_less_number_of_alternative_bands_at_equal_max_aggregated_channel
+    [Documentation]
+    ...    This user scenario describes the successful inter-gNB CA SCell addition when some of the aggregated cells can operate with an
+    ...    alternative band.
+    ...    [Configuration]:
+    ...    CB008140: NRDU:actInterGnbCa=DLOnly,NRCELL:actK1Opt=intraAndInter-gNB,NRBTS/NRDU/DlToUlContributionRatio is set to "101"
+    ...    CB007219: NRBTS/actMfbiNrCaSupportFr1 is set to "true" in gnb-2 and gnb-1.
+    ...    5GC001416: NRBTS/actMultiFrequencyBandIndicatorNRSupport=true for both gNB-1 and gNB-2.
+    ...    Cell2_1 operates in the frequency range of 3450MHz<= F4 <=3550MHz
+    ...    Cell2_2 operates in the frequency range of 3650MHz<= F5 <=3980MHz
+    ...    Cell1_11    Cell1_12    Cell1_13    Cell1_14    Cell2_1    Cell2_2    Cell2_3    Cell2_4
+    ...    Technology type    FDD    FDD    FDD    FDD    TDD    TDD    TDD    TDD
+    ...    Frequency    F0    F1    F2    F3    F4    F5    F6    F7
+    ...    Common channel bandwidth    20    20    20    20    40    40    40    40
+    ...    DL MIMO Layers    4L    4L    4L    4L    4L    4L    4L    4L
+    ...    Native band    N2    N2    N66    N66    N77    N77    78    N78
+    ...    Alternative band    N25    N25    NA    NA    N78    N78    N77    N77
+    ...    UE1 capability: CA relation: cell1_11+cell1_12+cell1_13+cell2_1+cell2_2
+    ...    UE2 capability: the same as UE1. CA relation: cell1_12+cell1_11+cell1_13+cell2_3+cell2_4, A1 scell addition
+    ...    BC#1: n2A-n66A    N2    N66
+    ...    FSEI#1:DL MIMO layers    4L    4L
+    ...    DL ChBw (MHz)    20    20
+    ...    BC#2:n25(2A)-n66A    N25    N25    N66
+    ...    FSEI#1:DL MIMO layers    4L    4L    4L
+    ...    DL ChBw (MHz)    20    20    20
+    ...    BC#3:n2A-n77(2A)    N2    N77    N77
+    ...    FSEI#1:DL MIMO layers    4L    4L    4L
+    ...    DL ChBw (MHz)    20    40    40
+    ...    BC#4:n2A-n78(2A)    N2    N78    N78
+    ...    FSEI#1:DL MIMO layers    4L    4L    4L
+    ...    DL ChBw (MHz)    20    40    40
+    ...    BC#5:n25A-n77A    N25    N77
+    ...    FSEI#1:DL MIMO layers    4L    4L
+    ...    DL ChBw (MHz)    20    40
+    ...    BC#6:n25A-n78A    N25    N78
+    ...    FSEI#1:DL MIMO layers    4L    4L
+    ...    DL ChBw (MHz)    20    40
+    ...    2.Test Case Steps:
+    ...         a. attach UE1 to cell1_11. Start DL/UL traffic.
+    ...         b. attach UE2 to cell1_12 and trigger A1. Start DL/UL traffic.
+    ...         c. check counters
+    ...    3.Expectation:
+    ...         a. cell2_1 and cell2_2 are added scell scells.Cell1_11 in band n2, Cell2_1 and Cell2_2 in band n77. BC#3 FSEI#1 is selcted.because
+    ...      0 alternative bands can be prioritized for selection.
+    ...         b. cell2_3 and cell2_4 are added scell scells.Cell1_12 in band n2, Cell2_3 and Cell2_4 in band n78. BC#4 FSEI#1 is selcted.because
+    ...      0 alternative bands can be prioritized for selection.
+    ...         c. check counters
+    [Tags]    QC_320581    christine.chen    AA16    CA_LABEL-FTT(20MHZ_FDD_n2+40MHZ_TDD_n77+40MHZ_TDD_n77)
+    ...    CA_LABEL-FTT(20MHZ_FDD_n2+40MHZ_TDD_n78+40MHZ_TDD_n78)
+    OnlineParamChange_gNB1    ${online_modify_REL_to_blind_for_cell11}
+    Clear Counter Files for 2GNB for AA16
+    Update UE capa    ${N66_3N77_and_N66_N77_N77_and_N66_3N78}    ue_id=1
+    UE attach cell11 and scelladd for AA16
+    UE attach cell12 and trigger A1 scelladd for AA16
+    Check WireShark Log    ${CURDIR}${/}A2A_AA16${/}a2a.ini    wait_string=UEContextRelease::20
+    Check Counters    ${PM_Counters_Check_AA16_gnb1}
+    Check Counters GNB2    ${PM_Counters_Check_AA16_gnb2}
+    [Teardown]    AA16_Teardown
+
+CB007219-ET-AA18_Verify_selection_of_intra-gNB_SCells_instead_of_the_ext-SCells_offering_higher_aggregated_chBW_as_MFBI_CA_is_not_enabled_in_one_gNB
+    [Documentation]
+    ...    This user scenario describes the setup of CA with intra-gNB SCells even if the candidate ext-SCells are more performant, because one of
+    ...    the involved gNBs does not support FR1 CA with MFBI.
+    ...    [Configuration]:
+    ...    CB008140: NRDU:actInterGnbCa=DLOnly,NRCELL:actK1Opt=intraAndInter-gNB,NRBTS/NRDU/DlToUlContributionRatio is set to "101"
+    ...    CB007219: NRBTS/actMfbiNrCaSupportFr1 is set to "true" only in prime gNB.
+    ...    5GC001416: NRBTS/actMultiFrequencyBandIndicatorNRSupport=true.
+    ...    Cell2_1 operates in the frequency range of 3450MHz<= F4 <=3550MHz
+    ...    Cell2_2 operates in the frequency range of 3650MHz<= F5 <=3980MHz
+    ...    UE1 capability: CA relation: cell1_11+cell1_12+cell1_13+cell2_1+cell2_2,A1 scell addition.
+    ...    BC#1: n2(2A)-n66A    n2    n2    n66
+    ...    FSEI#1:DL MIMO layers    4L    4L    4L
+    ...    DL ChBw (MHz)    20    20    20
+    ...    BC#2: n25(2A)-n66A    n25    n25    n66
+    ...    FSEI#1:DL MIMO layers    4L    4L    4L
+    ...    DL ChBw (MHz)    20    20    20
+    ...    BC#3: n2A-n78(2A)    n2    n78    n78
+    ...    FSEI#1:DL MIMO layers    4L    4L    4L
+    ...    DL ChBw (MHz)    20    40    40
+    ...    BC#4: n25A-n78A    n25    N78
+    ...    FSEI#1:DL MIMO layers    4L    4L
+    ...    DL ChBw (MHz)    20    40
+    ...    2.Test Case Steps:
+    ...         a. attach UE1 to cell1_11 and trigger A1 for scell addition.Start DL/UL traffic.
+    ...         b. online modify NRBTS/actMfbiNrCaSupportFr1 for gnb1 from true to false, for gNB2 from false to true.
+    ...         c. attach UE1 to cell1-11 again and trigger A1 for scell addition.
+    ...         d. check counters
+    ...    3.Expectation:
+    ...         a. cell1_12 and cell1_13 are added scell scells. Cell1_11 in band n2,cell1_12 in n2,cell1_13 in n66. BC#1 FSEI#1 is selcted.because
+    ...      actMfbiNrCaSupportFr1 is false on gNB2, so can not choose alternative bands as scell on gnb2.
+    ...         b. online modification successfully and UE1 is released.
+    ...         c. cell1_12 and cell1_13 are added scell scells. Cell1_11 in band n2,cell1_12 in n2,cell1_13 in n66. BC#1 FSEI#1 is selcted.
+    ...      pri-gnb is disabled for 7219, then ext-gnb cannot use alternative band whatever 7219 is enable or not in ext-gnb.
+    ...         d. check counters
+    [Tags]    QC_46754    christine.chen    AA18    CA_LABEL-TT(20MHZ_TDD_n78+20MHZ_TDD_n78)    CA_LABEL-TT(20MHZ_TDD_n77+20MHZ_TDD_n77)
+    Clear Counter Files for 2GNB
+    OnlineParamChange_gNB2    ${online_modify_disable_7219}
+    UE register and trigger A1 scelladd for AA18
+    OnlineParamChange_gNB1    ${online_modify_disable_7219}
+    OnlineParamChange_gNB2    ${online_modify_enable_7219}
+    UE register and trigger A1 scelladd for AA18
+    Check WireShark Log    ${CURDIR}${/}A2A_AA18${/}a2a.ini    wait_string=UEContextRelease::20
+    Check Counters    ${PM_Counters_Check_AA18_gnb1}
+    [Teardown]    AA18_Teardown
+
+CB007219-ET-AA22_Verify_inter-gnb_CA_online_modify_FAF_and_alternative_bands
+    [Documentation]
+    ...    This user scenario describes the gNB behavior when the feature activation flag of CB007219 is modified online. The modified values
+    ...    will not make an impact on the UEs already connected to the gNB.
+    ...    [Configuration]:
+    ...    CB008140: NRDU:actInterGnbCa=DLOnly,NRCELL:actK1Opt=intraAndInter-gNB,NRBTS/NRDU/DlToUlContributionRatio is set to "101"
+    ...    CB007219: NRBTS/actMfbiNrCaSupportFr1 is set to "false" in both gnb.
+    ...    5GC001416: NRBTS/actMultiFrequencyBandIndicatorNRSupport=true
+    ...    NRBTS/actInterFreqHoSA=true
+    ...    under pcell 1_13, A2 for inter-freq HO is enabled.
+    ...    NRHOIF-1: points to NRCELL-2_1 ssbFrequency, no A3/A5 configured, freqBandIndicatorNR:n77, no nrConnectModeProfileDN.
+    ...    NRREL: cellIndividualSsbRsrpOffset = 1 dbm
+    ...    NRHOIF-2: points to NRCELL-2_2 ssbFrequency, A3/A5 configured, freqBandIndicatorNR:n77, no nrConnectModeProfileDN,
+    ...    deriveSsbIndexFromCell is configured. NRREL: cellIndividualSsbRsrpOffset = 1 dbm
+    ...    NRHOIF-3: points to NRCELL-2_3 ssbFrequency, A3/A5 configured, freqBandIndicatorNR:n78, nrConnectModeProfileDN:n77,
+    ...    deriveSsbIndexFromCell is not configured. NRREL: NRREL: cellIndividualSsbRsrpOffset = 1 dbm
+    ...    NRADJNRCELL-1: points to NRCELL-2_1, freqBandIndicatorNR:n77, nrConnectModeProfileDN:n78
+    ...    NRADJNRCELL-2: points to NRCELL-2_2, freqBandIndicatorNR:n77, nrConnectModeProfileDN:n78
+    ...    NRADJNRCELL-3: points to NRCELL-2_3, freqBandIndicatorNR:n78, nrConnectModeProfileDN:n77
+    ...    CA relation: cell1_13+cell2_1+cell2_2+cell2_3,A1 scell addition
+    ...    all UEs capability:
+    ...    BC#1: N66A_N77(3A)
+    ...    BC#2: N66A_N77(2A)
+    ...    BC#3: N66A_N78(3A)
+    ...    2.Test Case Steps:
+    ...      a. Step1-2 UE1 registed with 7219 disabled
+    ...          1). attach UE1 to cell1_13, and trigger A1 for scell additon.
+    ...          2). online modify NRBTS/actMfbiNrCaSupportFr1 for both prime and ext gnb from false to true.
+    ...      b. Step3-5 UE2 registed
+    ...          3). attach UE2 to cell1_13, and trigger A1 for scell additon.
+    ...          4). online delete NRADJNRCELL-3: nrConnectModeProfileDN:n77. release all scells for UE2. then trigger A1 again.
+    ...          5). online add NRADJNRCELL-3: nrConnectModeProfileDN:n77. release all scells for UE2. then trigger A1 again.
+    ...      c. Step6-7 UE1 scell release and readd
+    ...          6). trigger A2 for UE1 to release all scells.
+    ...          7). trigger A1 for UE1 to add scell again.
+    ...      d. Step8-9 UE3 registed
+    ...          8). online delete alternative band for cell2_3. attach UE3 to cell1_13, and trigger A1 for scell additon.
+    ...          9). release all scells for UE2. and trigger scell addition again.
+    ...      e. Step10 UE4 registed
+    ...          10). lock cell2_3. online add alternative band n77 for cell2_3. unlock cell2_3. then attach UE4 to cell1_13, and trigger A1 for
+    ...    scell additon.
+    ...      f. Step11-13 UE5 registed
+    ...          11). release all scells for UE3. and trigger scell addition again.
+    ...          12). online modify NRBTS/actMfbiNrCaSupportFr1 for ext gnb from true to false.
+    ...          13). attach UE5 to cell1_13 and and trigger A1 for scell additon
+    ...      g. Step14 UE4 scell release and re-add
+    ...          14). release all scells for UE4. and trigger scell addition again.
+    ...      h. Step15-16 UE6 registed
+    ...          15). online modify NRBTS/actMfbiNrCaSupportFr1 for ext gnb from false to true. online modify NRBTS/actMfbiNrCaSupportFr1 for
+    ...     prime gnb from true to false.
+    ...          16). attach UE6 to cell1_13 and and trigger A1 for scell additon.
+    ...      i. Step17 UE1 register with blind scelladd
+    ...          17). release UE1 and online change scell addition method from A1 to blind. attach UE1 to cell1_13.
+
+    ...    3.Expectation:
+    ...        1). cell2_1 and cell2_2 are added as scell. BC#2 is selected.
+    ...        2). online modification successfully.
+    ...        3). cell2_1, cell2_2 and cell2_3 are added as scell. BC#1 is selected.
+    ...        4). cell2_1 and cell2_2 are added as scell. BC#2 is selected
+    ...        5). cell2_1, cell2_2 and cell2_3 are added as scell. BC#1 is selected.
+    ...        6). all scells are released.
+    ...        7). cell2_1,cell2_2 and cell2_3 are added as scell. BC#1 is selected.
+    ...        8). online modification successfully. cell2_1 and cell2_2 are added as scell. BC#2 is selected
+    ...        9). cell2_1 and cell2_2 are added as scell. BC#2 is selected.
+    ...        10). cell2_1, cell2_2 and cell2_3 are added as scell. BC#1 is selected.
+    ...        11). cell2_1, cell2_2 and cell2_3 are added as scell. BC#1 is selected
+    ...        12). online modification successfully.
+    ...        13). cell2_1 and cell2_2 are added as scell. BC#2 is selected.
+    ...        14). cell2_1 and cell2_2 are added as scell. BC#2 is selected
+    ...        15). online modification successfully
+    ...        16). cell2_1 and cell2_2 are added as scell. BC#2 is selected
+    ...        17). cell2_1, cell2_2 and cell2_3 are added as scell. BC#1 is selected. check measurement objects for cell2_1/2_2/2_3 as step3.
+    [Tags]    QC_46753    christine.chen    AA22    CA_LABEL-FTT(20MHZ_FDD_n66+40MHZ_TDD_n77+40MHZ_TDD_n77)
+    ...    CA_LABEL-FTTT(20MHZ_FDD_n66+40MHZ_TDD_n77+40MHZ_TDD_n77+40MHZ_TDD_n77)
+    Clear Counter Files for 2GNB
+    Step1-2 UE1 registed with 7219 disabled
+    Step3-5 UE2 registed
+    Step6-7 UE1 scell release and readd
+    Step8-9 UE3 registed
+    Step10 UE4 registed
+    Step11-13 UE5 registed
+    Step14 UE4 scell release and re-add
+    Step15-16 UE6 registed
+    Step17 UE1 register with blind scelladd
+    Check WireShark Log    ${CURDIR}${/}A2A_AA22${/}a2a.ini    wait_string=UEContextRelease::60
+    [Teardown]    AA22_Teardown
+
+*** Keywords ***
+Common Suite Setup And Setup Airphone Env
+    Common Suite Setup
+    Setup 2Airphone Env     tl_type=fddtdd_sansa_cmwv/8cells_gnb1_4F_gnb2_4T    ue_count=15
+
+OnlineParamChange_gNB1
+    [Arguments]    ${Online_Param}
+    Delta Commission Parameters    ${Online_Param}
+    Cells Should Be OnAir
+
+OnlineParamChange_gNB2
+    [Arguments]    ${Online_Param}
+    Delta Commission Parameters gnb2    ${Online_Param}
+    Cells Should Be Onair GNB2
+
+OnlineParamChange Without OnAir Check
+    [Arguments]    ${Online_Param}
+    Delta Commission Parameters gnb2    ${Online_Param}
+
+Ue register and pdu setup and A1 is configure
+    [Arguments]    ${SA_Capa_perUE_Full}=null    ${ue_id}=1    ${cell_id}=2    ${enb}=2
+    Update UE capa    ${SA_Capa_perUE_Full}    ${ue_id}
+    Execute Egate Command    ue_change_location id=${ue_id} enb=${enb} cell=${cell_id}
+    Execute Egate Command    ue_register id=${ue_id}    pass_regexp=UE now in NG RM Registere
+    Execute Egate Command    set_pdu_param ue=${ue_id} pdu=1 trf_type=internal
+    ${ret}    Execute Egate Command    ue_pdu_session_setup ue=${ue_id} pdu=1 nwslice=1 gw=1    pass_regexp=${UE_register_and_A1_configured}
+
+Ue register and pdu session setup
+    [Arguments]    ${UEattach}=${UEattach_for_AA40_UE1}    ${ue_id}=1    ${cell_id}=1    ${enb}=2
+    Execute Egate Command    ue_change_location id=${ue_id} enb=${enb} cell=${cell_id}
+    Execute Egate Command    ue_register id=${ue_id}    pass_regexp=UE now in NG RM Registere
+    Execute Egate Command    set_pdu_param ue=${ue_id} pdu=1 trf_type=internal
+    ${ret}    Execute Egate Command    ue_pdu_session_setup ue=${ue_id} pdu=1 nwslice=1 gw=${ue_id}    pass_regexp=${UEattach}
+
+UE attach cell11 and scelladd for AA16
+    Ue register and pdu session setup    UEattach=${UEattach_for_AA16_UE1}    ue_id=1    cell_id=11
+    Send Throughput    ue_id=1    times=4
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=1    cell_num=3    min_dl_tput=360
+    Release Ues    ue_type=all
+
+UE attach cell12 and trigger A1 scelladd for AA16
+    Ue register and pdu setup and A1 is configure    SA_Capa_perUE_Full=${N66_3N77_and_N66_N77_N77_and_N66_3N78}    ue_id=1    cell_id=12
+    Trigger MR scelladd    ${UEattach_for_AA16_UE2}    ue_id=1    carrierfreq=394370
+    Send Throughput    ue_id=1    times=4
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=1    cell_num=3    min_dl_tput=360
+    Release Ues    ue_type=all
+
+UE register and trigger A1 scelladd for AA18
+    Ue register and pdu setup and A1 is configure    SA_Capa_perUE_Full=${N2_N66_and_N25_N25_N66_and_N2_N78_N78_and_N25_N78}    ue_id=1    cell_id=11
+    Trigger MR scelladd    ${UEattach_for_AA18_UE1}    ue_id=1    carrierfreq=388830
+    Send Throughput    ue_id=1    times=4
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=1    cell_num=3    min_dl_tput=360
+    Release Ues    ue_type=all
+
+AA18_Teardown
+    OnlineParamChange_gNB1    ${online_modify_enable_7219}
+    OnlineParamChange_gNB2    ${online_modify_enable_7219}
+    Common Test Teardown And Stop Capture Logs
+
+AA22_Teardown
+    OnlineParamChange_gNB1    ${online_modify_NRREL_to_covbase_gnb1_AA22}
+    Common Test Teardown And Stop Capture Logs
+
+AA16_Teardown
+    OnlineParamChange_gNB1    ${online_modify_REL_to_coverbase_for_cell11}
+    Common Test Teardown And Stop Capture Logs
+
+Trigger MR scelladd
+    [Arguments]    ${scell_added_log}    ${ue_id}=81    ${carrierfreq}=650016
+    ${meas_id}=    get_nr_meas_id_for_specific_type_and_frequency    ue_id=${ue_id}    carrierfreq=${carrierfreq}    event_type=A1
+    Execute Egate Command    ue_measurement_send_nr id=${ue_id} meas_id=${meas_id} event=A1 srsrp_nr=100 srsrq_nr=52
+    ...    pass_regexp=${scell_added_log}
+
+Trigger A2 ScellRelease
+    [Arguments]    ${carrierfreq}=508110    ${ue_id}=81    ${scell_id}=3
+    ${meas_id}    get nr meas id for specific type and frequency    ${ue_id}    event_type=A2    carrierfreq=${carrierfreq}
+    Execute Egate Command    ue_measurement_send_nr id=${ue_id} meas_id=${meas_id} event=A2 scell=${scell_id} scell_rsrp=7 scell_rsrq=7
+    ...    pass_regexp=rrcReconfigurationComplete
+
+Scell3 release
+    [Arguments]    ${ue_id}=2    ${min_dl_tput}=650
+    Trigger A2 ScellRelease    carrierfreq=643392    ue_id=${ue_id}    scell_id=3
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=${ue_id}    cell_num=3    min_dl_tput=250
+
+Scell2 release
+    [Arguments]    ${ue_id}=2    ${min_dl_tput}=650
+    Trigger A2 ScellRelease    carrierfreq=647424    ue_id=${ue_id}    scell_id=2
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=${ue_id}    cell_num=2    min_dl_tput=150
+
+Scell1 release
+    [Arguments]    ${ue_id}=2    ${min_dl_tput}=650
+    Trigger A2 ScellRelease    carrierfreq=633312    ue_id=${ue_id}    scell_id=1
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=${ue_id}    cell_num=1    min_dl_tput=60
+
+Clear Counter Files for 2GNB for AA16
+    Clear Counter Files    ${False}
+    Clear Counter Files GNB2    ${False}
+
+Clear Counter Files for 2GNB
+    Clear Counter Files
+    Clear Counter Files GNB2
+
+Release_all_scells_and_trigger_A1_for_UE2
+    Scell3 release
+    Scell2 release
+    Scell1 release
+    sleep    5s    #wait scell release
+    Trigger MR scelladd    ${CA_check_CELL1_CELL2}    ue_id=2    carrierfreq=424090
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=2    cell_num=3    min_dl_tput=250
+
+Release_all_scells_and_trigger_A1_again_for_UE2
+    Scell2 release
+    Scell1 release
+    Trigger MR scelladd    ${CA_check_CELL1_CELL2_CELL3}    ue_id=2    carrierfreq=424090
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=2    cell_num=4    min_dl_tput=360
+
+Update UE capa
+    [Arguments]    ${SA_Capa_perUE_Full}=${N66_N77_and_N66_N78}    ${ue_id}=1
+    ${cmd}    catenate    ue_param id=${ue_id} ue_nr_capabilities=${SA_Capa_perUE_Full}
+    Execute Egate Command    ${cmd}
+
+Check Traffic
+    [Arguments]     ${ue_id}=1    ${cell_num}=1    ${min_dl_tput}=360    ${min_ul_tput}=8
+    ${ul_throuput}    Ap Get Throuput On Specific Scell    ue_id=${ue_id}    scell_id=0    type=pusch    rate_type=ave
+    Execute Egate Command    ue_stats_nr id=${ue_id} scell=0-7 type=pdsch    Throughput	
+    ${total_dl_tput}    Set Variable    0
+    FOR    ${index}    IN RANGE    0    ${cell_num}
+         ${str_index}    Convert To String    ${index}
+         ${scell_tput}    Ap Get Throuput On Specific Scell    ${ue_id}    ${str_index}    pdsch
+#         Should Be True    ${scell_tput}/1000 > 10
+         ${total_dl_tput}    Evaluate    ${scell_tput}+${total_dl_tput}
+    END
+    Should Be True    ${total_dl_tput}/1000 > ${min_dl_tput}
+    Should Be True    ${ul_throuput}/1000 > ${min_ul_tput}
+
+Send Throughput
+    [Arguments]    ${ue_id}=1    ${times}=3
+    Execute Egate Command    trf_data_start ue=${ue_id} pdu=1 qfi=1 dir=ul mbps=10 trf_id=1    UE ${ue_id}: UDP UL
+    FOR    ${I}    IN RANGE    1    ${times}
+        Execute Egate Command    trf_data_start ue=${ue_id} pdu=1 qfi=1 dir=dl mbps=150 trf_id=${I}    UE ${ue_id}: UDP DL
+    END
+
+Step1-2 UE1 registed with 7219 disabled
+    #step 1
+    OnlineParamChange_gNB1    ${online_modify_disable_7219}
+    OnlineParamChange_gNB2    ${online_modify_disable_7219}
+    Ue register and pdu setup and A1 is configure    SA_Capa_perUE_Full=${N66_3N77_and_N66_N77_N77_and_N66_3N78}    ue_id=1    cell_id=13
+    Trigger MR scelladd    ${CA_check_CELL1_CELL2}    ue_id=1    carrierfreq=424090
+    Send Throughput    ue_id=1    times=4
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=1    cell_num=3    min_dl_tput=360
+    #Step 2
+    OnlineParamChange_gNB1    ${online_modify_enable_7219}
+    OnlineParamChange_gNB2    ${online_modify_enable_7219}
+
+Step3-5 UE2 registed
+    #step 3
+    Ue register and pdu setup and A1 is configure    SA_Capa_perUE_Full=${N66_3N77_and_N66_N77_N77_and_N66_3N78}    ue_id=2    cell_id=13
+    Trigger MR scelladd    ${CA_check_CELL1_CELL2_CELL3}    ue_id=2    carrierfreq=424090
+    Send Throughput    ue_id=2    times=4
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=2    cell_num=4    min_dl_tput=360
+    #Step 4
+    OnlineParamChange_gNB1    ${online_modify_NRADJ_gnb1_AA22}
+    Release_all_scells_and_trigger_A1_for_UE2
+    #Step 5
+    OnlineParamChange_gNB1    ${online_recover_NRADJ_gnb1_AA22}
+    Release_all_scells_and_trigger_A1_again_for_UE2
+
+Step6-7 UE1 scell release and readd
+    #step6
+    Scell2 release    ue_id=1
+    Scell1 release    ue_id=1
+    #Step7
+    Trigger MR scelladd    ${CA_check_CELL1_CELL2_CELL3}    ue_id=1    carrierfreq=424090
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=1    cell_num=4    min_dl_tput=360
+
+Step8-9 UE3 registed
+    #step8
+    OnlineParamChange_gNB2    ${online_delete_alternative_band_gnb2_AA22}
+    Ue register and pdu setup and A1 is configure    SA_Capa_perUE_Full=${N66_3N77_and_N66_N77_N77_and_N66_3N78}    ue_id=3    cell_id=13
+    Trigger MR scelladd    ${CA_check_CELL1_CELL2}    ue_id=3    carrierfreq=424090
+    Send Throughput    ue_id=3    times=4
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=3    cell_num=3    min_dl_tput=360
+    #Step9
+    Release_all_scells_and_trigger_A1_for_UE2
+
+Step10 UE4 registed
+    #Step10
+    OnlineParamChange Without OnAir Check    ${Lock_CELL3_And_Add_alternative_band_77_cell3}
+    OnlineParamChange_gNB2    ${Unlock_CELL3}
+    Ue register and pdu setup and A1 is configure    SA_Capa_perUE_Full=${N66_3N77_and_N66_N77_N77_and_N66_3N78}    ue_id=4    cell_id=13
+    Trigger MR scelladd    ${CA_check_CELL1_CELL2_CELL3}    ue_id=4    carrierfreq=424090
+    Send Throughput    ue_id=4    times=4
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=4    cell_num=4    min_dl_tput=360
+
+Step11-13 UE5 registed
+    #step 11
+    Scell2 release    ue_id=3
+    Scell1 release    ue_id=3
+    Trigger MR scelladd    ${CA_check_CELL1_CELL2_CELL3}    ue_id=3    carrierfreq=424090
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=3    cell_num=4    min_dl_tput=360
+    #Step 12
+    OnlineParamChange_gNB2    @{online_modify_disable_7219}
+    #Step 13
+    Ue register and pdu setup and A1 is configure    SA_Capa_perUE_Full=${N66_3N77_and_N66_N77_N77_and_N66_3N78}    ue_id=5    cell_id=13
+    Trigger MR scelladd    ${CA_check_CELL1_CELL2}    ue_id=5    carrierfreq=424090
+    Send Throughput    ue_id=5    times=4
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=5    cell_num=3    min_dl_tput=200
+
+Step14 UE4 scell release and re-add
+    #step 14
+    Scell3 release    ue_id=4
+    Scell2 release    ue_id=4
+    Scell1 release    ue_id=4
+    Trigger MR scelladd    ${CA_check_CELL1_CELL2}    ue_id=4    carrierfreq=424090
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=4    cell_num=3    min_dl_tput=200
+
+Step15-16 UE6 registed
+    #step 15
+    OnlineParamChange_gNB2    @{online_modify_enable_7219}
+    OnlineParamChange_gNB1    @{online_modify_disable_7219}
+    #step 16
+    Ue register and pdu setup and A1 is configure    SA_Capa_perUE_Full=${N66_3N77_and_N66_N77_N77_and_N66_3N78}    ue_id=6    cell_id=13
+    Trigger MR scelladd    ${CA_check_CELL1_CELL2}    ue_id=6    carrierfreq=424090
+    Send Throughput    ue_id=6    times=4
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=6    cell_num=3    min_dl_tput=200
+    Release Ues    ue_type=all
+
+Step17 UE1 register with blind scelladd
+    #step 17
+    OnlineParamChange_gNB1    ${online_modify_NRREL_gnb1_AA22}
+    Ue register and pdu session setup    UEattach=${CA_check_CELL1_CELL2_CELL3}    ue_id=1    cell_id=13
+    Send Throughput    ue_id=1    times=4
+    Wait Until Keyword Succeeds    30s    5s    Check Traffic    ue_id=1    cell_num=4    min_dl_tput=360
+    Release Ues    ue_type=all
+

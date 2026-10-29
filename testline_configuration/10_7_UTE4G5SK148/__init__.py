@@ -1,0 +1,112 @@
+__maintainer__ = "I_CUS_CLOUD"
+__email__ = "I_CUS_CLOUD@internal.nsn.com"
+__owner__ = "I_CUS_CLOUD"
+
+import os
+
+from taf.config.testline import CUS, Connection
+from taf.config.testline.airscale import Airscale, CapacityUnit, CommonUnit
+from taf.config.testline.connection_details import SshServiceDetails
+from taf.config.testline.enb import RealEnb
+from taf.config.testline.pdu import FPFH
+from taf.config.testline.testline import TestLine
+from taf.config.testline.testpc import TestPc
+
+# PDU1
+_pdu1 = FPFH(addr="10.255.26.25", port_numbers=[5, 6])
+_pdu2 = FPFH(addr="10.255.26.26", port_numbers=[1, 2])
+_CFG_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# ENB1
+_enb_common_unit1 = CommonUnit(
+    lmp_connection=SshServiceDetails(
+        addr="192.168.255.129", username="toor4nsn", password="oZPS0POrRieRtu"
+    ),
+    capacity_units=[CapacityUnit(addr="192.168.253.20", hardware_type="ASOE")],
+    pdu_port=_pdu2.pdu_ports[1],
+    hardware_type="ASOE",
+)
+
+_enb_airscale1 = Airscale(common_units=[_enb_common_unit1])
+_enb1 = RealEnb("", system_module=_enb_airscale1, instance_id=1070500148)
+
+# CUS1
+_cus_common_unit1 = CommonUnit(
+    lmp_connection=SshServiceDetails(
+        addr="192.168.200.1", username="toor4nsn", password="oZPS0POrRieRtu"
+    ),
+    capacity_units=[
+        CapacityUnit(addr="192.168.253.84", hardware_type="ABIA"),
+    ],
+    pdu_port=_pdu1.pdu_ports[5],
+    hardware_type="ASIA",
+)
+_cus_airscale1 = Airscale(common_units=[_cus_common_unit1])
+_cus1 = CUS(l1=_cus_airscale1)
+
+# CUS2
+_cus2_common_unit1 = CommonUnit(
+    lmp_connection=SshServiceDetails(
+        addr="192.168.200.2", username="toor4nsn", password="oZPS0POrRieRtu"
+    ),
+    capacity_units=[
+        CapacityUnit(addr="192.168.253.84", hardware_type="ABIA"),
+    ],
+    pdu_port=_pdu1.pdu_ports[6],
+    hardware_type="ASIA",
+)
+_cus2_airscale1 = Airscale(common_units=[_cus2_common_unit1])
+_cus2 = CUS(l1=_cus2_airscale1)
+
+# CUS3
+_cus3_common_unit1 = CommonUnit(
+    lmp_connection=SshServiceDetails(
+        addr="192.168.200.3", username="toor4nsn", password="oZPS0POrRieRtu"
+    ),
+    capacity_units=[
+        CapacityUnit(addr="192.168.253.84", hardware_type="ABIA"),
+    ],
+    pdu_port=_pdu2.pdu_ports[2],
+    hardware_type="ASIA",
+)
+_cus3_airscale1 = Airscale(common_units=[_cus3_common_unit1])
+_cus3 = CUS(l1=_cus3_airscale1)
+
+# TestPC1
+_test_pc1 = TestPc(
+    default_ssh_connection_details=SshServiceDetails(
+        addr="10-7-UTE4G5SK148.p05.ska-lab.nsn-rdnet.net",
+        username="ute",
+        password="ute",
+    ),
+    connections=[
+        Connection(
+            interface="eth1",
+            interface_type="lmp",
+            device=_enb1.system_module.common_units[0],
+        ),
+        Connection(
+            interface="eth2",
+            interface_type="lmp",
+            device=_cus1,
+        ),
+        Connection(
+            interface="eth5",
+            interface_type="lmp",
+            device=_cus2,
+        ),
+        Connection(
+            interface="eth7",
+            interface_type="lmp",
+            device=_cus3,
+        ),
+    ],
+)
+tl = TestLine(
+    test_pc=_test_pc1,
+    enbs=[_enb1],
+    tl_cloud_topology="CLOUD_R4E12_3CUS",
+    ues=[_cus1, _cus2, _cus3],
+    pdus=[_pdu1, _pdu2],
+)
+__all__ = ["tl"]

@@ -1,0 +1,499 @@
+*** Settings ***
+# https://confluence.ext.net.nokia.com/pages/viewpage.action?spaceKey=5GFTPARIS&title=ET+Coding+Rules
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Documentation     [SUITE PURPOSE]   Configuration related keywords for feature CB009915-A
+...               Prerequisite : commissioning is managed automatically and basic_setup.cfg must be properly configured
+...               Scope : keywords for sub-feature
+#
+...               Test Case Scenario author   : vincent.boulet@nokia.com
+...               Creation Date               : 2023-08-11
+...               Modified Date               : 2024-05-30
+#
+...               Version    Date      Author                                Notes
+...               0.1        FB2316    vincent.boulet@nokia.com              Creation robot
+...               0.2        FB2317    vincent.boulet@nokia.com              Addition of traces for call setup
+...               1.0        FB2317    vincent.boulet@nokia.com              Addition of KPI's constraints from CB009915-A_KPI_Definitions.csv
+...                                                                          Perform Full Commissioning for Cell Blanking based on config
+...               1.1        FB2318    vincent.boulet@nokia.com              Introduction of TC for SA
+...                                                                          Configuration for blanking PRBs can be different per cells
+...                                                                          Perform Full Commissioning w/ nb_cell=${param.total_nb_cell}
+...               1.2        FB2319    vincent.boulet@nokia.com              Move Setup.Get Snapshot w/ condition into Suite Teardown
+...               1.3        FB2320    vincent.boulet@nokia.com              Replacement of 2 global variables by parameters
+...               1.4        FB2320    vincent.boulet@nokia.com              Reference assigned to localKpiFileName is changed
+...               1.5        FB2321    vincent.boulet@nokia.com              Clean-up of not used variables
+...               1.6        FB2321    vincent.boulet@nokia.com              No more use of Sherpa
+...                                                                          Clean-up of testing for private usage
+...                                                                          Preparation for L1L2 messages analysis
+...               1.7        FB2322    vincent.boulet@nokia.com              Correction about coresetFreqDomain
+...               1.8        FB2322    vincent.boulet@nokia.com              Declaration of coresetFreqDomain_9915_A_6_C1
+...               1.9        FB2323    vincent.boulet@nokia.com              Verification of data from L1L2
+...               1.10       FB2325    nawal.achari_berrada@nokia.com        add actPdschAtSsbSlots for full commisionning
+...               1.11       FB2326    nawal.achari_berrada@nokia.com        remove actPdschAtSsbSlots for full commisionning
+...               2.0        FB2404    vincent.boulet@nokia.com              Parity testing to introduce dRNIC RINLINE2
+...               2.1        FB2404    vincent.boulet@nokia.com              Activation of L1L2 capture and checks
+...               2.2        FB2405    vincent.boulet@nokia.com              Introducing KPI constraints dedicated to Vdu
+...               2.3        FB2406    vincent.boulet@nokia.com              Introducing KPI constraints dedicated to Vcu
+...               2.4        FB2407    vincent.boulet@nokia.com              Set ue_id based on FIRST_NSA_UE_ID for CB009915_A_6_NSA
+...                                                                          Deletion of unnecessary spaces to respect sanity RF5.0
+...               2.5        FB2407    vincent.boulet@nokia.com              Correction on Check Counter And KPI Constraints for Classical
+...               2.6        FB2411    vincent.boulet@nokia.com              Update the NSA UE capabilities for Cloud RAN AP_LO_DC
+...               2.7        FB2413    martial.hummel@nokia.com              ASOH Parity: Update l1l2 checks and create new ASOH PM constraint file
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+
+#vbo#not used#
+
+# Libraries
+
+# Resources
+Resource                                        ./CB009915-Common-Keywords.robot
+
+*** Variables ***
+&{dlData_csiRsSendReq_check_9915_A}             subcellid=0    sfn=0    slot=0    rnti=0    startPrb=0    numOfPrb=0    trsInfo=0
+
+# coresetDomainFreq definition for nrcell 1:
+# 18446726481523507200 => FFFF F000 0000 0000 => 1111 1111 1111 1111 1111 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000
+# 20 bits are set to 1 (20* 6 PRBs) then 120 PRBs are used for coreset and, 120 is the size defined for the coresetDedicated of this cell
+${coresetFreqDomain_9915_A_6_C1}                18446726481523507200
+
+${coresetFreqDomain_9915_A_6_C1_ASOH}           18446744069414584320
+
+&{dlData_pdcchSendReq_coresetFreqDomain_check_9915_A_6_C1}    subcellid=0    sfn=0    slot=0    rnti=0    startCce=0    coresetFreqDomain=0
+
+&{dlData_pdschSendReq_check_9915_A}             subcellid=0    sfn=0    slot=0    rnti=0    startPrb=0    numOfPrb=0    rbgSize=0    rbgSizeFirst=0
+...                                             mcs=0    numOfLayers=0
+
+&{ulData_prachReceiveReq_check_9915_A}          subcellid=0    sfn=0    slot=0    rnti=0    prachPrbOffset=0
+
+#vbo#not used#&{ulData_pucchReceiveReq_check_9915_A}        subcellid=0    sfn=0    slot=0    rnti=0    pucchFormat=0    numOfLayers=0    startPrb=0
+#vbo#not used#...                                             numOfPrb=0
+
+&{ulData_puschReceiveReq_check_9915_A}          subcellid=0    sfn=0    slot=0    rnti=0    startPrb=0    numOfPrb=0    mcs=0    numOfLayers=0
+...                                             pairedUe=0
+
+#vbo#not used#&{ulData_srsReceiveReq_check_9915_A}            subcellid=0    sfn=0    slot=0    rnti=0    startPrb=0
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+*** Keywords ***
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+Perform Full Commissioning for Cells Blanking
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${param} ${nb_cell} ${test_name} ${config}
+    ...     Actions:        it performs the full commissioning to support the configuration 80MHz with or without high blanking on different cells
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        the parameters for the objects are configured
+    [Arguments]             ${param}
+    ...                     ${nb_cell}
+    ...                     ${test_name}
+    ...                     ${config}
+
+    ${current_scf}=                             String.Replace string    ${scf_suite_setup_backup}    _Backup.xml    ${EMPTY}
+    ${updated_scf}=                             catenate    SEPARATOR=${EMPTY}    ${current_scf}_activated_original.xml
+    ${std_output}=                              Run    cp ${scf_suite_setup_backup} ${updated_scf}
+    ${current_scf_vcu}=    Run Keyword If    ${isAic}    String.Replace string    ${scf_vcu_suite_setup_backup}    _Backup.xml    ${EMPTY}
+    ${updated_scf_vcu}=    Run Keyword If    ${isAic}    catenate    SEPARATOR=${EMPTY}    ${current_scf_vcu}_activated_original.xml
+    Run Keyword If    ${isAic}    Run Keywords    Run    cp ${scf_vcu_suite_setup_backup} ${updated_scf_vcu}
+    ...    AND    SCF StartSession    scf_file=${updated_scf}    second_scf_file=${updated_scf_vcu}
+    ...         ELSE                            SCF StartSession    scf_file=${updated_scf}
+
+    #definition of the objects dist_name
+    ${dist_name_mrbts}=    Run Keyword If    ${isAic}    Set Variable    MRBTS-${TNRBTS_ID_DU[0]}
+    ...                                ELSE     Set Variable    MRBTS-${TNRBTS_ID[0]}
+    Dated log                                   dist_name_mrbts is ${dist_name_mrbts}
+
+    ### MRBTS
+    #btsName / update / + ${test_name}
+    SCF Set element    dist_name=${dist_name_mrbts}    element_name=btsName    element_value=${test_name}
+    ...                                                             scope=Both    bestEffort=${True}    aicListEntity=vduvcu
+
+    ${nb_blanked_cell}=                         Get Length    ${config.nbBlankedPRBsHighEdge}
+    Dated Log New Line                          ===> debug nb_blanked_cell = ${nb_blanked_cell}
+    ### NRCELL
+    FOR    ${cell_id}    IN RANGE    0    ${nb_cell}
+        ${dist_name_nrcell}=    Run Keyword If    ${isAic}    Set Variable    ${TNRCELL_DN_LIST_DU[0]}[${cell_id}]
+        ...                                 ELSE    Set Variable    ${TNRCELL_DN_LIST[0]}[${cell_id}]
+        Dated log                               dist_nrcell_name is ${dist_name_nrcell}
+
+        #actPRBBlanking / update / true
+        Run Keyword If    ${param.act_blanking} == ${True} and ${nb_blanked_cell} > ${cell_id}    SCF Set element    dist_name=${dist_name_nrcell}
+        ...                                                         element_name=actPRBBlanking
+        ...                                                         element_value=${True}
+        ...                                                         scope=Both    bestEffort=${True}    aicListEntity=vduvcu
+        #chBw / update / ${config.chBw} as for example 80MHz
+        SCF Set element    dist_name=${dist_name_nrcell}    element_name=chBw    element_value=${config.chBW}
+        ...                                                         scope=Both    bestEffort=${True}    aicListEntity=vduvcu
+        #nbrOfBlankedPRBsHighEdgeDL / update / ${config.nbBlankedPRBsHighEdge}[${cell_id}] as 15 for example
+        Run Keyword If    ${param.act_blanking} == ${True} and ${nb_blanked_cell} > ${cell_id}    SCF Set element    dist_name=${dist_name_nrcell}
+        ...                                                         element_name=nbrOfBlankedPRBsHighEdgeDL
+        ...                                                         element_value=${config.nbBlankedPRBsHighEdge}[${cell_id}]
+        ...                                                         scope=Both    bestEffort=${True}    aicListEntity=vduvcu
+        #nbrOfBlankedPRBsHighEdgeUL / update / ${config.nbBlankedPRBsHighEdge}[${cell_id}] as 15 for example
+        Run Keyword If    ${param.act_blanking} == ${True} and ${nb_blanked_cell} > ${cell_id}    SCF Set element    dist_name=${dist_name_nrcell}
+        ...                                                         element_name=nbrOfBlankedPRBsHighEdgeUL
+        ...                                                         element_value=${config.nbBlankedPRBsHighEdge}[${cell_id}]
+        ...                                                         scope=Both    bestEffort=${True}    aicListEntity=vduvcu
+        #nbrOfBlankedPRBsLowEdgeDL / update / ${config.nbBlankedPRBsLowEdge}[${cell_id}] as 0 for example
+        Run Keyword If    ${param.act_blanking} == ${True} and ${nb_blanked_cell} > ${cell_id}    SCF Set element    dist_name=${dist_name_nrcell}
+        ...                                                         element_name=nbrOfBlankedPRBsLowEdgeDL
+        ...                                                         element_value=${config.nbBlankedPRBsLowEdge}[${cell_id}]
+        ...                                                         scope=Both    bestEffort=${True}    aicListEntity=vduvcu
+        #nbrOfBlankedPRBsHighEdgeUL / update / ${config.nbBlankedPRBsLowEdge}[${cell_id}] as 0 for example
+        Run Keyword If    ${param.act_blanking} == ${True} and ${nb_blanked_cell} > ${cell_id}    SCF Set element    dist_name=${dist_name_nrcell}
+        ...                                                         element_name=nbrOfBlankedPRBsLowEdgeUL
+        ...                                                         element_value=${config.nbBlankedPRBsLowEdge}[${cell_id}]
+        ...                                                         scope=Both    bestEffort=${True}    aicListEntity=vduvcu
+        #reqMinNumPuschPrb / update / ${reqMinNumPuschPrb} depends on chBW and/or number of blanked PRBs
+        ${reqMinNumPuschPrb_computed}=          Evaluate
+        ...    ${config.reqMinNumPuschPrb_maxi} - (${config.nbBlankedPRBsHighEdge}[${cell_id}] + ${config.nbBlankedPRBsLowEdge}[${cell_id}])
+        ${reqMinNumPuschPrb}=                   Run Keyword If    ${config.reqMinNumPuschPrb_default} <= ${reqMinNumPuschPrb_computed}
+        ...                                                         Set Variable    ${config.reqMinNumPuschPrb_default}
+        ...                                                 ELSE    Set Variable    ${reqMinNumPuschPrb_computed}
+        Run Keyword If    ${param.act_blanking} == ${True} and ${nb_blanked_cell} > ${cell_id}    SCF Set element    dist_name=${dist_name_nrcell}
+        ...                                                         element_name=reqMinNumPuschPrb
+        ...                                                         element_value=${reqMinNumPuschPrb}
+        ...                                                         scope=Both    bestEffort=${True}    aicListEntity=vdu
+        ...         ELSE                        SCF Set element    dist_name=${dist_name_nrcell}
+        ...                                                         element_name=reqMinNumPuschPrb
+        ...                                                         element_value=${config.reqMinNumPuschPrb_default}
+        ...                                                         scope=Both    bestEffort=${True}    aicListEntity=vdu
+        #trsMutingInBlankedPRBsEnabled / update / true
+        Run Keyword If    ${param.act_blanking} == ${True} and ${nb_blanked_cell} > ${cell_id}    SCF Set element    dist_name=${dist_name_nrcell}
+        ...                                                         element_name=trsMutingInBlankedPRBsEnabled
+        ...                                                         element_value=${True}
+        ...                                                         scope=Both    bestEffort=${True}    aicListEntity=vdu
+        #type0CoresetConfigurationIndex / update / ${config.type0CoresetConfigIndex} as 12 for example
+        SCF Set element    dist_name=${dist_name_nrcell}    element_name=type0CoresetConfigurationIndex
+        ...                                                         element_value=${config.type0CoresetConfigIndex}
+        ...                                                         scope=Both    bestEffort=${True}    aicListEntity=vdu
+    END
+
+    Run Keyword If    ${isAic}    Run Keywords    SCF StopSession    scf_file=${updated_scf}    second_scf_file=${updated_scf_vcu}
+    ...    AND                                  OAM Perform Full Commissioning    scf_file=${updated_scf_vcu}    oam=${GNB_CU.oam}
+    ...    AND                                  OAM Perform Full Commissioning    scf_file=${updated_scf}    oam=${GNB_DU.oam}
+    ...    AND                                  Wait Airphone Available
+    ...    AND                                  OAM Get Cu SCF File    file=SCF_CU0_CB009915_A_6.xml
+    ...    AND                                  Run    rm -f ${updated_scf_vcu}
+    ...         ELSE    Run Keywords    SCF StopSession    scf_file=${updated_scf}
+    ...    AND                                  OAM Perform Full Commissioning    scf_file=${updated_scf}
+    ...    AND                                  OAM wait available
+    OAM Get SCF File    file=SCF_DU0_CB009915_A_6.xml
+    ${std_output}=                              Run    rm -f ${updated_scf}
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+CB009915_A_6_NSA
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${config_blanking} ${dict_ues} ${is_capture} ${param} ${test_name}
+    ...     Actions:        it performs the call setup for multi-ues with traffic on different cells
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        calls for multi ues with traffic and PRB blanking are passed
+    [Arguments]             ${config_blanking}
+    ...                     ${dict_ues}
+    ...                     ${is_capture}
+    ...                     ${param}
+    ...                     ${test_name}
+
+    Init Sequence                               ${param}
+    Dated Log New Line                          ===> test name is ${test_name}
+    Run Keyword If    ${SUITE_DEBUG_MODE}       Set Debug Mode
+    Step                                        Set RAD Parameters for CB009915
+    Run Keyword if    ${isAic}    Critical Step    Update Basic WTS Configuration File
+    Run Keyword If    ${param.act_blanking} == ${True}    Dated Log New Line    ===> blanking variable is enabled
+    ...         ELSE                            Dated Log New Line    ===> BLANKING VARIABLE is disabled
+
+    Run Keyword If    ${param.act_commissioning} == ${True}
+    ...                                         Critical Step    Perform Full Commissioning for Cells Blanking    param=${param}
+    ...                                                             nb_cell=${param.total_nb_cell}
+    ...                                                             test_name=${test_name}
+    ...                                                             config=${config_blanking}
+    ...         ELSE                            Restart TL
+
+    # Configure new ue's dynamically
+    ${initial_nb_ue}=                           get length    ${dict_ues}
+    Run Keyword If    ${initial_nb_ue} < ${param.total_nb_ue}    Configure New Ues    ${dict_ues}
+    ...                                                             ${initial_nb_ue}
+    ...                                                             ${param.total_nb_ue}
+    ...                                                             ${dict_settings_ue_default}
+    # Configure the current setting for all the ue's
+    ${param.total_nb_ue}=                       get length    ${dict_ues}
+    Dated Log New Line                          ===> configure the setting for all the ${param.total_nb_ue} ue's
+    @{list_ue}=                                 Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.total_nb_ue}
+        ${current_ue_setting}=                  Copy Dictionary          ${UE_SIMPLE}
+        ${current_ue_id}=                       Evaluate                 ${FIRST_NSA_UE_ID} + ${current_id}
+
+        Set To Dictionary                       ${current_ue_setting}    ue    ${current_ue_id}
+        Set To Dictionary                       ${current_ue_setting}    trf_id    1
+        Set To Dictionary                       ${current_ue_setting}    bearer    ${dict_ues[${current_id}].nsa_bearer}
+        Set To Dictionary                       ${current_ue_setting}    target_gnb    ${param.target_gnb}
+
+        # Dispatching the ue on the requested original cell for the call establishment
+        Set To Dictionary                       ${current_ue_setting}    target_cells    ${dict_ues[${current_id}].original_cell}
+        # Set the correct requested throughput per ue
+        Set To Dictionary                       ${current_ue_setting}    throughput    ${dict_ues[${current_id}].throughput}
+        Set To Dictionary                       ${current_ue_setting}    throughput_gbr    ${dict_ues[${current_id}].throughput_gbr}
+        Set To Dictionary                       ${current_ue_setting}    throughput_ul    ${dict_ues[${current_id}].throughput_ul}
+        Append To List                          ${list_ue}    ${current_ue_setting}
+    END
+    Dated Log New Line                          ===> ue's list is ${list_ue}
+    Check Multi Ues Setting In List             list_multi_ue=${list_ue}
+    Traced Sleep                                duration=15s    msg=Wtsemu system start-up to give radio modules time to start up
+
+    # Start SYSLOG capture during call setup
+    ${syslog}=    Run Keyword If    ${AUTO_SAVE_DEBUG_DATA} and not ${isAic}    SYSLOG Start    host=${GNB_DU.sys[0].M}
+    ...                                                             name=${test_name}_call_setup
+
+    # Setup wtsemu NSA for all the ue's
+    Critical Step                               CallSetup.WTS Setup    nbUe=${param.total_nb_ue}
+    ...                                                             nbSaUe=${param.total_nb_ue}
+    ...                                                             shouldUseLua=${False}
+    ###...                                                          nb_cell=${param.total_nb_cell}
+    ...                                                             list_of_UE_tobe_created=${list_ue}
+
+    # Capture TTI traces during call setup
+    Run Keyword If    ${AUTO_SAVE_DEBUG_DATA}    Start TTI Logs
+
+    # SgNB Addition to ENB for all the ue's
+    FOR    ${current_elem}    IN    @{list_ue}
+        Critical Step                           CallSetup.SgNB Addition to ENB    ueSetting=${current_elem}
+        ...                                     depends=CallSetup.WTS Setup
+    END
+
+    Run Keyword If    ${AUTO_SAVE_DEBUG_DATA}    Step    Stop and Get TTI Logs    trace_name=${test_name}_call_setup
+    Run Keyword If    ${AUTO_SAVE_DEBUG_DATA} and not ${isAic}    Step      SYSLOG Stop    syslog=${syslog}
+
+    Sleep Until PM Availability    # Wait end of PM period containing cell setup
+
+    # Start SYSLOG capture during traffic establishment
+    ${syslog}=    Run Keyword If    ${AUTO_SAVE_DEBUG_DATA} and not ${CALL_SETUP_ONLY} and not ${isAic}    SYSLOG Start    host=${GNB_DU.sys[0].M}
+    ...                                                             name=${test_name}_traffic
+
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    not ${CALL_SETUP_ONLY} and ${current_elem.throughput} > ${NO_THROUGHPUT}
+        ...    Step                             ${param.dir} Traffic Not Stopped    param=${param}    current_ue_setting=${current_elem}
+        ...                                     depends=CallSetup.SgNB Addition to ENB
+    END
+
+    # WA by moving Captures Init and Start to avoid exceeded traffic - Capture L1L2 during traffic for verification
+    Run Keyword If    not ${CALL_SETUP_ONLY}    Run Keywords    Captures Init
+    ...    AND                                  Captures Start    action_core=${is_capture.is_capture_core}
+    ...                                                             action_cprt=${is_capture.is_capture_cprt}
+    ...                                                             action_l1l2=${is_capture.is_capture_l1l2}
+    ...    AND                                  Traced Sleep    duration=8s    msg=call with traffic for L1L2 trace
+    ...    AND    Step                          Captures Stop    action_core=${is_capture.is_capture_core}
+    ...                                                             action_cprt=${is_capture.is_capture_cprt}
+    ...                                                             action_l1l2=${is_capture.is_capture_l1l2}
+    ${list_l1l2_messages_filters}=              CB009915 Create Filter Message List
+    Run Keyword If    not ${CALL_SETUP_ONLY} and ${is_capture.is_capture_l1l2}    Run Keywords
+    ...                                         Step    CB009915 Analyze pcap and pdml    pcap_file=${capture_l1l2.path}
+    ...                                                             list_message_filter=${list_l1l2_messages_filters}
+    # dlData pdschSendReq
+    ...    AND    Step                          Check dlData pdschSendReq
+    ...                                         pdml_file=${list_l1l2_messages_filters[${pos_filter_dldata_pdschsendreq}].pdml_file_result}
+    ...                                                             field_values=${dlData_pdschSendReq_check_9915_A}
+    ...                                                             subcellid=0
+    ...                                                             packet_end=512    #-1
+    ...                                                             nb_prb_blanking_low=0
+    ...                                                             nb_prb_blanking_high=15
+    ...                                                             total_prb=217
+    ...                                                             rbgsize=16
+    ## no check on ulData pucchReceiveReq because too much ulData puschReceiveReq on ul slots
+    ## ulData puschReceiveReq
+    ...    AND    Step                          Check ulData puschReceiveReq
+    ...                                         pdml_file=${list_l1l2_messages_filters[${pos_filter_uldata_puschreceivereq}].pdml_file_result}
+    ...                                                             field_values=${ulData_puschReceiveReq_check_9915_A}
+    ...                                                             subcellid=0
+    ...                                                             packet_end=512    #-1
+    ...                                                             nb_prb_blanking_low=0
+    ...                                                             nb_prb_blanking_high=15
+    ...                                                             total_prb=217
+    ...                                                             prb_reserved=20
+    ...                                                             is_nb_prb_max_triggered=${True}
+    # dlData pdcchSendReq
+    Run Keyword If    not ${isASOH}     Step           Check dlData pdcchSendReq coresetFreqDomain
+    ...                                             pdml_file=${list_l1l2_messages_filters[${pos_filter_dldata_pdcchsendreq}].pdml_file_result}
+    ...                                                             field_values=${dlData_pdcchSendReq_coresetFreqDomain_check_9915_A_6_C1}
+    ...                                                             subcellid=0
+    ...                                                             packet_end=512    #-1
+    ...                                                             coresetFreqDomain=${coresetFreqDomain_9915_A_6_C1}
+    ...                                                             coresetFreqDomain_0xFFFF=2243003720663040
+    ## dlData pdcchSendReq
+    Run Keyword If    ${isASOH}     Step               Check dlData pdcchSendReq coresetFreqDomain
+    ...                                             pdml_file=${list_l1l2_messages_filters[${pos_filter_dldata_pdcchsendreq}].pdml_file_result}
+    ...                                                             field_values=${dlData_pdcchSendReq_coresetFreqDomain_check_9915_A_6_C1}
+    ...                                                             subcellid=0
+    ...                                                             packet_end=512    #-1
+    ...                                                             coresetFreqDomain=${coresetFreqDomain_9915_A_6_C1_ASOH}
+    ...                                                             coresetFreqDomain_0xFFFF=2243003720663040
+    ## no checks on ulData srsReceiveReq
+
+    # Capture TTI traces during traffic for verification
+    Run Keyword If    ${AUTO_SAVE_DEBUG_DATA} and not ${CALL_SETUP_ONLY}    Run Keywords    Start TTI Logs
+    ...    AND                                  Traced Sleep    duration=8s    msg=call with traffic for TTI trace
+    ...    AND    Step                          Stop and Get TTI Logs    trace_name=${test_name}_traffic
+
+    # Waiting time added for observation and allow generation of multiple count periods
+    FOR    ${iteration_pm}    IN RANGE    0    ${param.pm_waiting_period}
+        Sleep Until PM Availability
+        ${pm_path}=    Run Keyword If    ${isAic}    Counters.Collect PM files from BTS    ${LOG_PATH}/PM    optional_files=${True}
+        ...                                                         posProcess=${True}    node='vdu'
+        ...                        ELSE              Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+        Run Keyword If    not ${CALL_SETUP_ONLY} and ${isAic}    Step    Check Counter And KPI Constraints    ${pm_path}
+        ...                                                         ${test_name}_VDU
+        ...                                                         localKpiFileName=CB009915_KPI_Definitions.csv
+        ...         ELSE IF    not ${CALL_SETUP_ONLY} and not ${isASOH} and not ${isAic}    Step    Check Counter And KPI Constraints
+        ...                                                         ${pm_path}
+        ...                                                         ${test_name}
+        ...                                                         localKpiFileName=CB009915_KPI_Definitions.csv
+        ...         ELSE IF    not ${CALL_SETUP_ONLY} and ${isASOH}    Step    Check Counter And KPI Constraints    ${pm_path}
+        ...                                                         ${test_name}_ASOH
+        ...                                                         localKpiFileName=CB009915_KPI_Definitions.csv
+        ${pm_path}=    Run Keyword If    ${isAic}    Counters.Collect PM files from BTS    ${LOG_PATH}/PM    optional_files=${True}
+        ...                                                         posProcess=${True}    node='vcu'
+        Run Keyword If    not ${CALL_SETUP_ONLY} and ${isAic}    Step    Check Counter And KPI Constraints    ${pm_path}
+        ...                                                         ${test_name}_VCU
+    END
+
+    Run Keyword If    ${AUTO_SAVE_DEBUG_DATA} and not ${CALL_SETUP_ONLY} and not ${isAic}    Step    SYSLOG Stop    syslog=${syslog}
+
+    [Teardown]      Display diagnosis
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+CB009915_A_10_SA
+    [Documentation]
+    ...     Conditions:     it is based on the arguments ${config_blanking} ${dict_ues} ${is_capture} ${param} ${test_name}
+    ...     Actions:        it performs the call setup for multi-ues with traffic on different cells
+    ...     Checks:         it checks nothing more than already done on lib.
+    ...     Verdict:        calls for multi ues with traffic and PRB blanking are passed
+    [Arguments]             ${config_blanking}
+    ...                     ${dict_ues}
+    ...                     ${is_capture}
+    ...                     ${param}
+    ...                     ${test_name}
+
+    Init Sequence                               ${param}
+    Dated Log New Line                          ===> test name is ${test_name}
+    Run Keyword If    ${SUITE_DEBUG_MODE}       Set Debug Mode
+    Step                                        Set RAD Parameters for CB009915
+    Run Keyword If    ${param.act_blanking} == ${True}    Dated Log New Line    ===> blanking variable is enabled
+    ...         ELSE                            Dated Log New Line    ===> BLANKING VARIABLE is disabled
+
+    Run Keyword If    ${param.act_commissioning} == ${False}    Dated Log New Line
+    ...    ===> full commissioning should be made before testing as prerequisite
+    Run Keyword If    ${param.act_commissioning} == ${True}    Critical Step    Perform Full Commissioning for Cells Blanking    param=${param}
+    ...                                                             nb_cell=${param.total_nb_cell}
+    ...                                                             test_name=${test_name}
+    ...                                                             config=${config_blanking}
+    ...         ELSE                                 Restart TL
+
+    # Configure new ue's dynamically
+    ${initial_nb_ue}=                           get length    ${dict_ues}
+    Run Keyword If    ${initial_nb_ue} < ${param.total_nb_ue}    Configure New Ues    ${dict_ues}
+    ...                                                             ${initial_nb_ue}
+    ...                                                             ${param.total_nb_ue}
+    ...                                                             ${dict_settings_ue_default}
+    # Configure the current setting for all the ue's
+    ${param.total_nb_ue}=                       get length    ${dict_ues}
+    Dated Log New Line                          ===> configure the setting for all the ${param.total_nb_ue} ue's
+    @{list_ue}=                                 Create List
+    FOR    ${current_id}    IN RANGE    0    ${param.total_nb_ue}
+        ${current_ue}=                          Evaluate                ${current_id} + 1
+        ${current_ue_setting}=                  Copy Dictionary         ${BASIC_UE_SA}
+        ${current_ue_id}=                       Evaluate                ${current_ue} + 0    #id for a sa ue starts at 1 into basic_setup.cfg#
+        Set To Dictionary                       ${current_ue_setting}    ue    ${current_ue_id}
+        Set To Dictionary                       ${current_ue_setting}    trf_id    1
+        Set To Dictionary                       ${current_ue_setting}    pdu    1
+        Set To Dictionary                       ${current_ue_setting}    target_gnb    ${param.target_gnb}
+
+        # Dispatching the ue on the requested original cell for the call establishment
+        Set To Dictionary                       ${current_ue_setting}    target_cells    ${dict_ues[${current_id}].original_cell}
+        # Set the correct requested throughput per ue
+        Set To Dictionary                       ${current_ue_setting}    throughput    ${dict_ues[${current_id}].throughput}
+        Set To Dictionary                       ${current_ue_setting}    throughput_gbr    ${dict_ues[${current_id}].throughput_gbr}
+        Set To Dictionary                       ${current_ue_setting}    throughput_ul    ${dict_ues[${current_id}].throughput_ul}
+        Append To List                          ${list_ue}    ${current_ue_setting}
+    END
+    Dated Log New Line                          ===> ue's list is ${list_ue}
+    Check Multi Ues Setting In List             list_multi_ue=${list_ue}
+    Traced Sleep                                duration=15s    msg=Wtsemu system start-up to give radio modules time to start up
+
+    # Start SYSLOG capture during call setup
+    ${syslog}=                                  SYSLOG Start    host=${GNB_DU.sys[0].M}    name=${test_name}_call_setup
+
+    # Capture TTI traces during call setup
+    Start TTI Logs
+
+    # Setup wtsemu SA for all the ue's
+    Step                                        CallSetup.Setup Wtsemu SA    nbUe=${param.total_nb_ue}
+    ...                                                             nbSaUe=${param.total_nb_ue}
+    ...                                                             shouldUseLua=${False}
+    ###...                                                          nb_cell=${param.total_nb_cell}
+    ...                                                             list_of_UE_tobe_created=${list_ue}
+    # WA to avoid degradation on cells
+    Traced Sleep                                duration=15s    msg=setting the X2 link as WA to avoid degradation on cells
+    Step                                        CallSetup.WTS Set X2 Link
+
+    # Register and launch PDU for all the ue's
+    FOR    ${current_elem}    IN    @{list_ue}
+        Step                                    CallSetup.UE Register    ue=${current_elem.ue}
+        ...                                     depends=CallSetup.Setup Wtsemu SA
+        Step                                    CallSetup.Launch PDU Session    ue=${current_elem.ue}
+        ...                                                         pdu=${current_elem.pdu}
+        ...                                                         gw=${current_elem.ue}
+        ...                                     depends=CallSetup.UE Register
+    END
+
+    Step                                        Stop and Get TTI Logs    trace_name=${test_name}_call_setup
+    Step                                        SYSLOG Stop    syslog=${syslog}
+
+    Sleep Until PM Availability    # Wait end of PM period containing cell setup
+
+    # Start SYSLOG capture during traffic establishment
+    ${syslog}=    Run Keyword If    not ${CALL_SETUP_ONLY}    SYSLOG Start    host=${GNB_DU.sys[0].M}    name=${test_name}_traffic
+
+    # Start the non GBR traffic for all the ue's when requested
+    FOR    ${current_elem}    IN    @{list_ue}
+        Run Keyword If    ${current_elem.throughput} > ${NO_THROUGHPUT} and not ${CALL_SETUP_ONLY}
+        ...    Step                             ${param.dir} Traffic Not Stopped    param=${param}    current_ue_setting=${current_elem}
+        ...                                     depends=CallSetup.Launch PDU Session
+    END
+
+    # WA by moving Captures Init and Start to avoid exceeded traffic - Capture L1L2 during traffic for verification
+    Run Keyword If    not ${CALL_SETUP_ONLY}    Run Keywords    Captures Init
+    ...    AND                                  Captures Start    action_core=${is_capture.is_capture_core}
+    ...                                                             action_cprt=${is_capture.is_capture_cprt}
+    ...                                                             action_l1l2=${is_capture.is_capture_l1l2}
+    ...    AND                                  Traced Sleep    duration=8s    msg=call with traffic for L1L2 trace
+    ...    AND    Step                          Captures Stop    action_core=${is_capture.is_capture_core}
+    ...                                                             action_cprt=${is_capture.is_capture_cprt}
+    ...                                                             action_l1l2=${is_capture.is_capture_l1l2}
+    ${list_l1l2_messages_filters}=              CB009915 Create Filter Message List
+    Run Keyword If    not ${CALL_SETUP_ONLY} and ${is_capture.is_capture_l1l2}    Step    CB009915 Analyze pcap and pdml
+    ...                                                             pcap_file=${capture_l1l2.path}
+    ...                                                             list_message_filter=${list_l1l2_messages_filters}
+
+    # Capture TTI traces during traffic for verification
+    Run Keyword If    not ${CALL_SETUP_ONLY}    Run Keywords    Start TTI Logs
+    ...    AND                                  Traced Sleep    duration=8s    msg=call with traffic for TTI trace
+    ...    AND    Step                          Stop and Get TTI Logs    trace_name=${test_name}_traffic
+
+    # Waiting time added for observation and allow generation of multiple count periods
+    FOR    ${iteration_pm}    IN RANGE    0    ${param.pm_waiting_period}
+        Sleep Until PM Availability
+        ${pm_path}=                             Counters.Collect PM files from BTS    ${LOG_PATH}/PM
+        Run Keyword If    not ${CALL_SETUP_ONLY}    Step    Check Counter And KPI Constraints    ${pm_path}
+        ...                                                         ${test_name}
+        ...                                                         localKpiFileName=CB009915_KPI_Definitions.csv
+    END
+
+    Run Keyword If    not ${CALL_SETUP_ONLY}    Step    SYSLOG Stop    syslog=${syslog}
+
+    # Deregister all the ue's
+    Step                                        Traced Sleep    duration=3s    msg=deregistering    depends=CallSetup.UE Register
+    FOR    ${current_elem}    IN    @{list_ue}
+        Step                                    CallSetup.UE Deregister    id=${current_elem.ue}
+        ...                                                         ue_deregister_type=switch_off
+        ...                                                         by=ue
+        ...                                     depends=CallSetup.UE Register
+    END
+
+    [Teardown]      Display diagnosis
+# --------------------------------------------------------------------------------------------------------------------------------------------------

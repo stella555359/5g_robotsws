@@ -1,0 +1,313 @@
+*** Settings ***
+Documentation     [PURPOSE] Set of keywords used for 5GC000679-AA feature TDD tests cases
+...               Modified Date               : 12-November-2021
+...               Last Modified by            : vincent.boulet@nokia.com
+...               Last Modification           : remove SWconfig, limit traffic deviation and add check on counters FDM
+
+Resource          5GC000679_Keywords.robot
+
+*** Variables ***
+
+&{T_AA}           feature679=${True}    totalUE=4    loop=1    bandwidth=100    technology=TDD    throughput=20
+...               captureDuration=10    stopTraffic=${False}    dirTraffic=dl    trafficDuration=10    deviation=90
+
+&{Test_AA}        seq=${T_AA}    checkPucch=${True}    scfFile=${scf100MHz}    filtermsg=@{ListOfMsgTrf}
+...               captureName=AA    dtxLimit=10    crcLimit=10    setUecapabilities=${False}
+...               allowShortPucchConfig=${False}
+
+*** Keywords ***
+
+Run Test 679 AA
+    [Arguments]                 ${testParam}
+    Get Pucch Mode Select
+    Test Setup 679 AA           ${testParam}
+    Restart
+    WTS Preparation AA          ${testParam}
+    Run Keyword If              ${enable_sherpa}==${True}        Activate Sherpa
+    Test 679 Loop AA            ${testParam}
+    Run Keyword If              ${enable_sherpa}==${True}        Deactivate Sherpa and Stop Collect
+
+Test 679 Loop AA
+    [Arguments]                  ${testParam}
+    Dated log                    Start Test:Name=${TEST_NAME}
+    FOR    ${index}    IN RANGE     1        ${testParam.seq.loop}+1
+        Attach UE Multi          ${testParam}
+        ${trafficPcap}           Start Traffic Multi UE with Filter    ${testParam}
+        Run keyword if           ${testParam.seq.stopTraffic}==${False}
+        ...                      Stop Traffic Multi UE                 ${testParam}
+        sleep                    3s
+        Detach UE Multi          ${testParam.seq.totalUE}
+        Set Test Variable        ${TRAFFIC_PCAP.pcapTrf${index}}         ${trafficPcap}
+        Dated Log                TRAFFIC_PCAP.pcapTrf=${TRAFFIC_PCAP.pcapTrf${index}}
+        Check Feature AA Counter     ${testParam}
+        Check Traffic Quality    pcapInput=${TRAFFIC_PCAP.pcapTrf${index}}    index=${index}
+        ...                      dtxLimit=${testParam.dtxLimit}
+        ...                      crcLimit=${testParam.crcLimit}
+        ...                      direction=${testParam.seq.dirTraffic}
+        Check Feature AA         ${TRAFFIC_PDML.pdmlTrf${index}}
+    END
+
+Check Feature AA
+    [Arguments]             ${pdmlFile}
+    Dated Log               Check PRB allocation in ${pdmlFile}
+    Check Prb Allocation with rat0bitmap    pdmlFile=${pdmlFile}
+
+Check Feature AA Counter
+    [Arguments]             ${testParam}
+    Traced Sleep            ${testParam.scfFile.reportingIntervalPm}
+    ${date}                 Get Current Date
+    ${date_in_dir_name}     Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}          Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+    ${pm_latest}            Collect PM files from BTS    ${log_path_pm}
+    ${myexpected_val}=      Set Variable         ${MORE_OR_EQUAL_THAN_2}
+    ${mycomparison}=        Set Variable         '>'
+    ${foundOrNot}           Check Counter FDM
+    ...                     ${log_path_pm}    ${myexpected_val}    ${mycomparison}    &{PM_COUNTER_ID.maxNumbSchPdschPerSlot}
+    Log Counter FDM         counter=&{PM_COUNTER_ID.maxNumbSchPdschPerSlot}
+    ...                     expectedValue=MORE_OR_EQUAL_THAN_2    result=${foundOrNot}
+    ${foundOrNot}           Check Counter FDM
+    ...                     ${log_path_pm}    ${myexpected_val}    ${mycomparison}    &{PM_COUNTER_ID.maxNumbSchPuschPerSlot}
+    Log Counter FDM         counter=&{PM_COUNTER_ID.maxNumbSchPuschPerSlot}
+    ...                     expectedValue=MORE_OR_EQUAL_THAN_2    result=${foundOrNot}
+    ${myexpected_val}=      Set Variable         ${MORE_THAN_0}
+    ${mycomparison}=        Set Variable         '>'
+    ${foundOrNot}           Check Counter FDM
+    ...                     ${log_path_pm}    ${myexpected_val}    ${mycomparison}    &{PM_COUNTER_ID.accNumbSchPdschPerSlot}
+    Log Counter FDM         counter=&{PM_COUNTER_ID.accNumbSchPdschPerSlot}
+    ...                     expectedValue=MORE_THAN_0    result=${foundOrNot}
+    ${foundOrNot}           Check Counter FDM
+    ...                     ${log_path_pm}    ${myexpected_val}    ${mycomparison}    &{PM_COUNTER_ID.accNumbSchPuschPerSlot}
+    Log Counter FDM         counter=&{PM_COUNTER_ID.accNumbSchPuschPerSlot}
+    ...                     expectedValue=MORE_THAN_0    result=${foundOrNot}
+
+Test Setup 679 AA
+    [Arguments]             ${testParam}
+    Set SCF AA              ${testParam}
+
+WTS Preparation AA
+    [Arguments]                     ${testParam}
+    WTS Setup                       nbUe=${testParam.seq.totalUE}
+
+Set SCF AA Short Pucch Configuration
+    Dated Log new line         pucchModeSelect is ${pucchModeSelect} then change configuration to short Pucch
+    SCF Set element            dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${NRBTS_ID}
+    ...                        element_name=pucchModeSelect
+    ...                        element_value=shortPucch
+    # BWP_PROFILE dedicated PDCCH
+    ${dist_name}               Get Distance Name Profile
+    ...                        endClassParent=BWP_PROFILE
+    ...                        endClassChild=PDCCH
+    ...                        bwpTypeValue=dedicated
+    SCF Set element            dist_name=${dist_name}
+    ...                        element_name=alSelection
+    ...                        element_value=static
+    SCF Set element            dist_name=${dist_name}
+    ...                        element_name=dciDedicatedAggregationLevel
+    ...                        element_value=AL4
+    SCF Set element            dist_name=${dist_name}
+    ...                        element_name=dciPagingAggregationLevel
+    ...                        element_value=AL4
+    SCF Set element            dist_name=${dist_name}
+    ...                        element_name=dciRaCompletionAggregationLevel
+    ...                        element_value=AL4
+    SCF Set element            dist_name=${dist_name}
+    ...                        element_name=dciRaMsg2AggregationLevel
+    ...                        element_value=AL4
+    SCF Set element            dist_name=${dist_name}
+    ...                        element_name=dciSiAggregationLevel
+    ...                        element_value=AL4
+    SCF Set element            dist_name=${dist_name}
+    ...                        element_name=downgradeAL16toAL8
+    ...                        element_value=notAllowed
+    # BWP_PROFILE dedicated PDCCH_CONFIG_COMMON
+    ${dist_name}               Get Distance Name Profile
+    ...                        endClassParent=BWP_PROFILE
+    ...                        endClassChild=PDCCH_CONFIG_COMMON
+    ...                        bwpTypeValue=dedicated
+    # searchSpaceCommon
+    ${list_name}               Set Variable              searchSpaceCommon
+	SCF Remove list            dist_name=${dist_name}    list_name=${list_name}
+	SCF Add list               dist_name=${dist_name}    list_name=${list_name}
+	&{searchSpaceCommon_e}     Create Dictionary         coresetId=0
+	...                                                  dciFormat=formats0-0-And-1-0
+	...                                                  duration=3
+	...                                                  monitoringSymbolWithinSlot=symbol_0
+    ...                                                  numOfPdcchCandidatesInAL16=n1
+    ...                                                  numOfPdcchCandidatesInAL2=n0
+    ...                                                  numOfPdcchCandidatesInAL4=n4
+    ...                                                  numOfPdcchCandidatesInAL8=n2
+    ...                                                  periodicity=sl5
+    ...                                                  searchSpaceId=4
+    ...                                                  searchSpaceType=Type0A
+    ...                                                  slotOffset=0
+    SCF Add items to list      dist_name=${dist_name}    list_name=${list_name}   elements=${searchSpaceCommon_e}
+	&{searchSpaceCommon_e}     Create Dictionary         coresetId=0
+	...                                                  dciFormat=formats0-0-And-1-0
+	...                                                  duration=1
+	...                                                  monitoringSymbolWithinSlot=symbol_0_1
+    ...                                                  numOfPdcchCandidatesInAL16=n0
+    ...                                                  numOfPdcchCandidatesInAL2=n4
+    ...                                                  numOfPdcchCandidatesInAL4=n2
+    ...                                                  numOfPdcchCandidatesInAL8=n0
+    ...                                                  periodicity=sl1
+    ...                                                  searchSpaceId=5
+    ...                                                  searchSpaceType=Type1
+    ...                                                  slotOffset=0
+    SCF Add items to list      dist_name=${dist_name}    list_name=${list_name}   elements=${searchSpaceCommon_e}
+	&{searchSpaceCommon_e}     Create Dictionary         coresetId=0
+	...                                                  dciFormat=formats0-0-And-1-0
+	...                                                  duration=3
+	...                                                  monitoringSymbolWithinSlot=symbol_0
+    ...                                                  numOfPdcchCandidatesInAL16=n1
+    ...                                                  numOfPdcchCandidatesInAL2=n0
+    ...                                                  numOfPdcchCandidatesInAL4=n4
+    ...                                                  numOfPdcchCandidatesInAL8=n2
+    ...                                                  periodicity=sl5
+    ...                                                  searchSpaceId=6
+    ...                                                  searchSpaceType=Type2
+    ...                                                  slotOffset=0
+    SCF Add items to list      dist_name=${dist_name}    list_name=${list_name}   elements=${searchSpaceCommon_e}
+	# BWP_PROFILE dedicated PDCCH_CONFIG_DEDICATED
+    ${dist_name}               Get Distance Name Profile
+    ...                        endClassParent=BWP_PROFILE
+    ...                        endClassChild=PDCCH_CONFIG_DEDICATED
+    ...                        bwpTypeValue=dedicated
+	# coresetDedicated
+    ${list_name}               Set Variable              coresetDedicated
+	SCF Remove list            dist_name=${dist_name}    list_name=${list_name}
+	SCF Add list               dist_name=${dist_name}    list_name=${list_name}
+	&{searchSpaceCommon_e}     Create Dictionary         cceToRegMapping=nonInterleaved
+	...                                                  coresetId=1
+	...                                                  cRbStart=0
+	...                                                  duration=1
+    ...                                                  interleaverSize=none
+    ...                                                  regBundleSize=n6
+    ...                                                  size=192
+    SCF Add items to list      dist_name=${dist_name}    list_name=${list_name}   elements=${searchSpaceCommon_e}
+    # searchSpaceDedicated
+    ${list_name}               Set Variable              searchSpaceDedicated
+	SCF Remove list            dist_name=${dist_name}    list_name=${list_name}
+	SCF Add list               dist_name=${dist_name}    list_name=${list_name}
+	&{searchSpaceCommon_e}     Create Dictionary         coresetId=0
+	...                                                  dciFormat=formats0-0-And-1-0
+	...                                                  duration=1
+	...                                                  monitoringSymbolWithinSlot=symbol_0_1
+    ...                                                  numOfPdcchCandidatesInAL1=n0
+    ...                                                  numOfPdcchCandidatesInAL16=n0
+    ...                                                  numOfPdcchCandidatesInAL2=n0
+    ...                                                  numOfPdcchCandidatesInAL4=n2
+    ...                                                  numOfPdcchCandidatesInAL8=n0
+    ...                                                  periodicity=sl1
+    ...                                                  searchSpaceId=7
+    ...                                                  searchSpaceType=Type3
+    ...                                                  slotOffset=0
+    SCF Add items to list      dist_name=${dist_name}    list_name=${list_name}   elements=${searchSpaceCommon_e}
+	&{searchSpaceCommon_e}     Create Dictionary         coresetId=1
+	...                                                  dciFormat=formats0-1-And-1-1
+	...                                                  duration=1
+	...                                                  monitoringSymbolWithinSlot=symbol_0_1
+    ...                                                  numOfPdcchCandidatesInAL1=n0
+    ...                                                  numOfPdcchCandidatesInAL16=n0
+    ...                                                  numOfPdcchCandidatesInAL2=n0
+    ...                                                  numOfPdcchCandidatesInAL4=n5
+    ...                                                  numOfPdcchCandidatesInAL8=n0
+    ...                                                  periodicity=sl1
+    ...                                                  searchSpaceId=8
+    ...                                                  searchSpaceType=UE-Specific
+    ...                                                  slotOffset=0
+    SCF Add items to list      dist_name=${dist_name}    list_name=${list_name}   elements=${searchSpaceCommon_e}
+    # BWP_PROFILE initial PDCCH
+    ${dist_name}               Get Distance Name Profile
+    ...                        endClassParent=BWP_PROFILE
+    ...                        endClassChild=PDCCH
+    ...                        bwpTypeValue=initial
+    SCF Set element            dist_name=${dist_name}
+    ...                        element_name=alSelection
+    ...                        element_value=static
+    SCF Set element            dist_name=${dist_name}
+    ...                        element_name=dciDedicatedAggregationLevel
+    ...                        element_value=AL4
+    SCF Set element            dist_name=${dist_name}
+    ...                        element_name=dciPagingAggregationLevel
+    ...                        element_value=AL4
+    SCF Set element            dist_name=${dist_name}
+    ...                        element_name=dciRaCompletionAggregationLevel
+    ...                        element_value=AL4
+    SCF Set element            dist_name=${dist_name}
+    ...                        element_name=dciRaMsg2AggregationLevel
+    ...                        element_value=AL4
+    SCF Set element            dist_name=${dist_name}
+    ...                        element_name=dciSiAggregationLevel
+    ...                        element_value=AL4
+    SCF Set element            dist_name=${dist_name}
+    ...                        element_name=downgradeAL16toAL8
+    ...                        element_value=notAllowed
+    # BWP_PROFILE initial PDCCH_CONFIG_COMMON
+    ${dist_name}               Get Distance Name Profile
+    ...                        endClassParent=BWP_PROFILE
+    ...                        endClassChild=PDCCH_CONFIG_COMMON
+    ...                        bwpTypeValue=initial
+    # searchSpaceCommon
+    ${list_name}               Set Variable              searchSpaceCommon
+	SCF Remove list            dist_name=${dist_name}    list_name=${list_name}
+	SCF Add list               dist_name=${dist_name}    list_name=${list_name}
+	&{searchSpaceCommon_e}     Create Dictionary         coresetId=0
+	...                                                  dciFormat=formats0-0-And-1-0
+	...                                                  duration=3
+	...                                                  monitoringSymbolWithinSlot=symbol_0
+    ...                                                  numOfPdcchCandidatesInAL16=n1
+    ...                                                  numOfPdcchCandidatesInAL2=n0
+    ...                                                  numOfPdcchCandidatesInAL4=n4
+    ...                                                  numOfPdcchCandidatesInAL8=n2
+    ...                                                  periodicity=sl5
+    ...                                                  searchSpaceId=1
+    ...                                                  searchSpaceType=Type0A
+    ...                                                  slotOffset=0
+    SCF Add items to list      dist_name=${dist_name}    list_name=${list_name}   elements=${searchSpaceCommon_e}
+	&{searchSpaceCommon_e}     Create Dictionary         coresetId=0
+	...                                                  dciFormat=formats0-0-And-1-0
+	...                                                  duration=1
+	...                                                  monitoringSymbolWithinSlot=symbol_0_1
+    ...                                                  numOfPdcchCandidatesInAL16=n0
+    ...                                                  numOfPdcchCandidatesInAL2=n4
+    ...                                                  numOfPdcchCandidatesInAL4=n4
+    ...                                                  numOfPdcchCandidatesInAL8=n0
+    ...                                                  periodicity=sl1
+    ...                                                  searchSpaceId=2
+    ...                                                  searchSpaceType=Type1
+    ...                                                  slotOffset=0
+    SCF Add items to list      dist_name=${dist_name}    list_name=${list_name}   elements=${searchSpaceCommon_e}
+	&{searchSpaceCommon_e}     Create Dictionary         coresetId=0
+	...                                                  dciFormat=formats0-0-And-1-0
+	...                                                  duration=3
+	...                                                  monitoringSymbolWithinSlot=symbol_0
+    ...                                                  numOfPdcchCandidatesInAL16=n1
+    ...                                                  numOfPdcchCandidatesInAL2=n0
+    ...                                                  numOfPdcchCandidatesInAL4=n4
+    ...                                                  numOfPdcchCandidatesInAL8=n2
+    ...                                                  periodicity=sl5
+    ...                                                  searchSpaceId=3
+    ...                                                  searchSpaceType=Type2
+    ...                                                  slotOffset=0
+    SCF Add items to list      dist_name=${dist_name}    list_name=${list_name}   elements=${searchSpaceCommon_e}
+
+Set SCF AA
+    [Arguments]          ${testParam}
+    Copy File            ${SCF_SETUP_PATH}     ${SCF_SETUP_PATH}.ori_AB
+    SCF StartSession     scf_file=${SCF_SETUP_PATH}
+    SCF Set element      dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-${NRBTS_ID}
+    ...                  element_name=chBw
+    ...                  element_value=${testParam.scfFile.chBw}
+    SCF Set element      dist_name=MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}
+    ...                  element_name=actFdmScheduling
+    ...                  element_value=${testParam.scfFile.actFdmScheduling}
+    SCF Set element      dist_name=MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/PMCADM-1
+    ...                  element_name=reportingIntervalPm
+    ...                  element_value=${testParam.scfFile.reportingIntervalPm}
+    Run Keyword If       ${testParam.allowShortPucchConfig} == ${True} and '${pucchModeSelect}[0]' == 'longPucch'
+	...                  Set SCF AA Short Pucch Configuration
+    SCF StopSession      scf_file=${SCF_SETUP_PATH}
+    Dated Log    ----> Modifications completed.\n
+
+    Oam.OAM Perform Full Commissioning          scf_file=${SCF_SETUP_PATH}
+    WA Airscale Wait For Ready                  ${GNB_DU}

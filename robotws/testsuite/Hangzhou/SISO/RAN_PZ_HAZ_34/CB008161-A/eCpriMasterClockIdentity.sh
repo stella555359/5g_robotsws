@@ -1,0 +1,19 @@
+#!/usr/bin/expect
+set timeout 60
+#spawn ssh cli@10.57.152.130
+spawn ssh cli@10.71.207.73
+sleep 5
+expect "Username:"
+send "admin\r"
+sleep 5
+expect "*Password:"
+send "Admin@1830\r"
+sleep 5
+expect "Last Login:*"
+send "Y\r"
+sleep 5
+send "show sync 1 ptp clock1 parentDS\r"
+sleep 5
+send "logout\r"
+sleep 10
+interact

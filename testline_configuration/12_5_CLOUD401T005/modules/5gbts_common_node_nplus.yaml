@@ -1,0 +1,230 @@
+heat_template_version: 2016-10-14
+description: 'v77: Template to instantiate application type of VM'
+parameters:
+  common_metadata:
+    type: json
+    description: common metadata parameters
+  common_userdata:
+    type: json
+    description: common cloud-init userdata parameters
+  config_drive:
+    type: boolean
+    description: use config drive instead of metadata server
+  dpdk_type:
+    type: string
+    description: type information for dpdk boot configuration
+    default: none
+  instance_params:
+    type: json
+    description: instance specific parameters
+  cinder_volumes:
+    type: json
+    description: parameters for cinder volumes
+    default:
+      count: 0
+      vol_list: []
+  lvm_local_volumes:
+    type: json
+    description: Local volumes to be attached
+    default:
+      count: 0
+      volumes: []
+  name:
+    type: string
+    description: Name to be used as the host name for the instance
+  networks:
+    type: json
+    description: network parameters
+  roles:
+    type: comma_delimited_list
+    description: Deployment roles associated
+    default:
+    - application
+  storage_meta:
+    type: json
+    description: Storage user parameters for shared volumes
+  upgrade-node:
+    type: boolean
+    description: indicate whether it is upgrade node
+    default: false
+  index:
+    type: number
+    description: index to fetch own parameters
+    default: 0
+  dual_stack:
+    type: string
+    description: configure single network or dual network
+    default: disabled
+    constraints:
+      - allowed_values: [disabled, enabled]
+  vnfindex:
+    description: count of vm
+    type: string
+  timezone:
+    type: string
+    constraints:
+      - custom_constraint: timezone
+
+conditions:
+  attache_cinder_volume:
+    not:
+      equals:
+      - get_param:
+        - cinder_volumes
+        - count
+      - 0
+  assemble_local_volumes:
+    not:
+      equals:
+      - get_param:
+        - lvm_local_volumes
+        - count
+      - 0
+
+resources:
+  ports:
+    type: RCP::Network::Pool
+    properties:
+      count:
+        get_param: [networks, count]
+      networks:
+        get_param: [networks, net_list_0]
+      fixed_ips_index:
+        get_param: index
+      fixed_v6_ips_index:
+        get_param: index
+      dual_stack: {get_param: dual_stack}
+  shared_vol:
+    type: RCP::Volume::Cinder
+    condition: attache_cinder_volume
+    properties:
+      vol_name:
+        get_param: [cinder_volumes, vol_list, 0, name]
+      vol_size:
+        get_param: [cinder_volumes, vol_list, 0, size]
+  lvm_local_vol:
+    type: RCP::VolumeGroup::LVMLocal
+    condition: assemble_local_volumes
+    properties:
+      lvm_volumes:
+        get_param: [lvm_local_volumes]
+  shared_vol_attach:
+    type: OS::Cinder::VolumeAttachment
+    condition: attache_cinder_volume
+    properties:
+      volume_id:
+        get_attr: [shared_vol, cinder_volume_id]
+      instance_uuid: {get_resource: server}
+
+  cloud_config:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        hostname:
+          str_replace:
+            template: $vm-$padding$index
+            params:
+              $vm: {get_param: name}
+              $padding:
+                if:
+                  - or:
+                      - equals: [get_param: vnfindex, '0']
+                      - equals: [get_param: vnfindex, '1']
+                      - equals: [get_param: vnfindex, '2']
+                      - equals: [get_param: vnfindex, '3']
+                      - equals: [get_param: vnfindex, '4']
+                      - equals: [get_param: vnfindex, '5']
+                      - equals: [get_param: vnfindex, '6']
+                      - equals: [get_param: vnfindex, '7']
+                      - equals: [get_param: vnfindex, '8']
+                      - equals: [get_param: vnfindex, '9']
+                  - "00"
+                  - "0"
+              $index: {get_param: vnfindex}
+        timezone: {get_param: timezone}
+  cloud_init:
+    type: OS::Heat::MultipartMime
+    properties:
+      parts:
+      - config: {get_param: [common_userdata, add_user]}
+        subtype: cloud-config
+      - config: {get_param: [common_userdata, run_cmd]}
+        subtype: cloud-config
+      - config: {get_resource: cloud_config}
+        subtype: cloud-config
+  server:
+    type: OS::Nova::Server
+    properties:
+#      name: {get_param: name}   # RCP2107
+      name:
+        str_replace:
+          template: $vm-$padding$vnfindex
+          params:
+            $vm: {get_param: name}
+            $padding:
+              if:
+                - or:
+                    - equals: [get_param: vnfindex, '0']
+                    - equals: [get_param: vnfindex, '1']
+                    - equals: [get_param: vnfindex, '2']
+                    - equals: [get_param: vnfindex, '3']
+                    - equals: [get_param: vnfindex, '4']
+                    - equals: [get_param: vnfindex, '5']
+                    - equals: [get_param: vnfindex, '6']
+                    - equals: [get_param: vnfindex, '7']
+                    - equals: [get_param: vnfindex, '8']
+                    - equals: [get_param: vnfindex, '9']
+                - "00"
+                - "0"
+            $vnfindex: {get_param: vnfindex}
+      image:
+        get_param:
+        - instance_params
+        - server
+        - imageId
+      flavor:
+        get_param:
+        - instance_params
+        - server
+        - flavorId
+      availability_zone:
+        get_param:
+        - instance_params
+        - server
+        - azId
+        - get_param:
+          - vnfindex
+      scheduler_hints:
+        group:
+          get_param:
+          - instance_params
+          - server
+          - server_group_id
+      networks:
+        get_attr: [ports, ports]
+      user_data_format: RAW
+      user_data: {get_resource: cloud_init}
+      metadata:
+        map_merge:
+        - {get_param: common_metadata}
+        - roles: {get_param: roles}
+          dpdk-conf-type: {get_param: dpdk_type}
+        - get_attr: [ports, ip-info]
+        - get_attr: [ports, ext-ip-config]
+        - get_attr: [ports, ext-ip-config-v6]
+        - {get_param: storage_meta}
+        - if:
+          - attache_cinder_volume
+          - get_attr: [shared_vol, cinder_volume_map]
+          - {}
+        - if:
+          - assemble_local_volumes
+          - get_attr: [lvm_local_vol, provider_map]
+          - {}
+        - upgrade-node: {get_param: upgrade-node}
+      config_drive: {get_param: config_drive}
+outputs:
+  internal_ip:
+    description: Internal IP address allocated to the instance
+    value:
+      get_attr: [ports, internal_ip]

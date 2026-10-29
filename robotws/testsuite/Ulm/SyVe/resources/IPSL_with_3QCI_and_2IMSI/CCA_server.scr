@@ -1,0 +1,200 @@
+/**MB*************************************************************************/
+/*                                                                           */
+/*TEST-CASE    : 5GC000885-A related test cases                              */
+/*                                                                           */
+/*PURPOSE      : Bearer Addition: Default QCI(Modificable) + QCI8 and QCI7   */
+/*               With two IMSI. (2 UEs)                                      */
+/*               Bearer Addition: UE1: QCI9 + QCI7 + QCI8                    */
+/*                                UE2: QCI9 + QCI7 + QCI8                    */
+/*                                                                           */
+/*DEPARTMENT   : MN 5G&SC Pz 5G I&V 5 ULM 2 SG                               */
+/*AUTHOR       : Michele                                                     */
+/*                                                                           */
+/*****************************************************************************/
+/*<<<DESCRIPTION>>>*/
+/*<<<SCRIPT>>>*/
+
+/* Generated with DIA01 */
+IpslVersion 2.0;
+Script CCA_server;
+Activated By Message(CCR);
+
+#include "_include.h"
+
+Var
+  msg           : String;
+  msg1          : String;
+  RequestType   : Integer;
+  RequestNumber : Integer;
+  SUT_REALM     : String;
+  SUT_HOST      : String;
+  IMSI          : String;
+  Fail          : Integer;
+  Bearer        : String;
+
+BeginScript
+  RequestType   := GetPar(CCRequestType);
+  RequestNumber := GetPar(CCRequestNumber);
+  SUT_REALM     := GetPar(OriginRealm);
+  SUT_HOST      := GetPar(OriginHost);
+  IMSI          := GetPar(SubscriptionIdData);
+  If RequestType = 2  Then
+     Fail       := GetPar(RuleFailureCode(Last));
+     Bearer     := GetPar(ChargingRuleName);
+  EndIf;
+  PRINT("Begin CCR script.");
+// default AVPs
+  // |---- CCA (common--->|
+  msg := Modify(Pool("CCA", MSG_Universal))
+          OriginHost := ORIGIN_HOST;
+          OriginRealm := ORIGIN_REALM;
+          Insert c_P_ResultCode;
+          ResultCode := 2001;
+          AuthApplicationId := 16777238;
+          CCRequestType := RequestType;
+          CCRequestNumber := RequestNumber;
+          Insert c_P_OriginStateId;
+          OriginStateId := 26;
+  EndModify;
+
+//  CCR Initial request
+  If  RequestType = 1  Then
+      PRINT ("Incoming Request From: " & IMSI);
+      // |---- CCA  Initial --->|
+        If MATCH_STRING(IMSI,IMSI1) or MATCH_STRING(IMSI,IMSI2) Then
+           PRINT ("MATCH Attach Request from: " & IMSI );
+           // Modification of msg Header; Here QCI modification of Default Bearer
+           // |---- CCA  Initial --->|
+           msg1 := Modify(msg, MSG_Universal, CCA)
+              Insert c_P_DefaultEPSBearerQoS;
+              Insert DefaultEPSBearerQoS.c_P_QoSClassIdentifier;
+              // Now the QoSClassIdentifier is to the Default QCI.
+              QoSClassIdentifier := 9;
+              Insert DefaultEPSBearerQoS.c_P_AllocationRetentionPriority;
+              Insert AllocationRetentionPriority.c_P_PreemptionCapability;
+              // 0 = PRE-EMPTION_CAPABILITY_ENABLED
+              PreemptionCapability := 0;
+              Insert AllocationRetentionPriority.c_P_PreemptionVulnerability;
+              // 0 = PRE-EMPTION_VULNERAB_ENABLED
+              PreemptionVulnerability := 0;
+              PriorityLevel := 9;
+            EndModify;
+           Put(msg1);
+           Send;
+           PRINT ("DefaultBearerSetup for: " & IMSI);
+           PRINT ("Wait 500 ms before Add.");
+           // Wait 500 ms to stable dedicated bearer activation.
+           StartTimer(delay, 500);
+           WaitFor Timer(delay);
+           PRINT ("Request to add QCI_8_7 to: " & IMSI);
+           GotoSubScript QCI_8_7;
+        Else
+            PRINT ("### Not Match IMSI.   ###");
+            PRINT ("### Only Default QCI for this: " & IMSI);
+            PRINT ("### Or use APN ulmnsa.");
+            msg := Modify(msg, MSG_Universal, CCA)
+              Insert c_P_QoSInformation;
+              Insert QoSInformation.c_P_QoSClassIdentifier;
+              QoSClassIdentifier := 9;
+              Insert QoSInformation.c_P_AllocationRetentionPriority;
+              Insert AllocationRetentionPriority.c_P_PreemptionCapability;
+              // 0 = PRE-EMPTION_CAPABILITY_ENABLED
+              PreemptionCapability := 0;
+              Insert AllocationRetentionPriority.c_P_PreemptionVulnerability;
+              // 0 = PRE-EMPTION_VULNERAB_ENABLED
+              PreemptionVulnerability := 0;
+              PriorityLevel := 9;
+            EndModify;
+            Put(msg);
+            Send;
+        EndIf;
+  EndIf;
+
+//  CCR Update request
+  If RequestType = 2 Then
+    If ( Fail = 10  ) Then
+        If ( Bearer = "\x47" ) Then
+          PRINT (IMSI & " QCI7 DRB release(RAF)");
+          Put(msg);
+          Send;
+        ElsIf ( Bearer = "\x48" ) Then
+          PRINT (IMSI & " QCI8 DRB release(RAF)");
+          Put(msg);
+          Send;
+        ElsIf ( Bearer = "\x49" ) Then
+          PRINT (IMSI & " QCI9 DRB release(RAF)");
+          Put(msg);
+          Send;
+        EndIf;
+    EndIf;
+  EndIf;
+//  CCA Termination request
+  If RequestType = 3 Then
+    PRINT (IMSI & " Detached.");
+    Put(msg);
+    Send;
+  EndIf;
+EndScript;
+// New procedure begins**********************************************************
+BeginSubScript QCI_8_7
+    msg := Modify(Pool("RAR", MSG_Universal))
+        OriginHost := ORIGIN_HOST;
+        OriginRealm := ORIGIN_REALM;
+        DestinationHost := SUT_HOST;
+        DestinationRealm := SUT_REALM;
+        AuthApplicationId := 16777238;
+        ReAuthRequestType := 0;
+        Insert c_P_ChargingRuleInstall;
+        Insert ChargingRuleInstall.c_P_ChargingRuleDefinition;
+        ChargingRuleName := "\x48";
+        Insert ChargingRuleDefinition.c_P_FlowInformation;
+        FlowDescription := "permit in 17 from assigned 1-65535 to any 50008";
+        Insert ChargingRuleDefinition.c_P_FlowInformation;
+        FlowDescription(2) := "permit out 17 from any 1-65535 to assigned 50008";
+        Insert ChargingRuleDefinition.c_P_Precedence;
+        Precedence := 0;
+        Insert ChargingRuleDefinition.c_P_QoSInformation;
+        Insert QoSInformation.c_P_AllocationRetentionPriority;
+        Insert AllocationRetentionPriority.c_P_PreemptionCapability;
+        // 0 = PRE-EMPTION_CAPABILITY_ENABLED
+        PreemptionCapability := 0;
+        Insert AllocationRetentionPriority.c_P_PreemptionVulnerability;
+        // 0 = PRE-EMPTION_VULNERAB_ENABLED
+        PreemptionVulnerability := 0;
+        PriorityLevel := 8;
+        Insert QoSInformation.c_P_QoSClassIdentifier;
+        QoSClassIdentifier := 8;
+        Insert ChargingRuleDefinition.c_P_RatingGroup;
+        RatingGroup := 81;
+        Insert ChargingRuleDefinition.c_P_ReportingLevel;
+        ReportingLevel := 1;
+        Insert ChargingRuleInstall.c_P_ChargingRuleDefinition;
+        ChargingRuleName (2) := "\x47";
+        Insert ChargingRuleDefinition(2).c_P_FlowInformation;
+        FlowDescription(3) := "permit in 17 from assigned 1-65535 to any 50007";
+        Insert ChargingRuleDefinition(2).c_P_FlowInformation;
+        FlowDescription(4) := "permit out 17 from any 1-65535 to assigned 50007";
+        Insert ChargingRuleDefinition(2).c_P_Precedence;
+        Precedence(2) := 0;
+        Insert ChargingRuleDefinition(2).c_P_QoSInformation;
+        Insert QoSInformation(2).c_P_AllocationRetentionPriority;
+        Insert AllocationRetentionPriority(2).c_P_PreemptionCapability;
+        // 0 = PRE-EMPTION_CAPABILITY_ENABLED
+        PreemptionCapability(2) := 0;
+        Insert AllocationRetentionPriority(2).c_P_PreemptionVulnerability;
+        // 0 = PRE-EMPTION_VULNERAB_ENABLED
+        PreemptionVulnerability(2) := 0;
+        PriorityLevel(2) := 7;
+        Insert QoSInformation(2).c_P_QoSClassIdentifier;
+        QoSClassIdentifier(2) := 7;
+        Insert ChargingRuleDefinition(2).c_P_RatingGroup;
+        RatingGroup(2) := 70;
+        Insert ChargingRuleDefinition(2).c_P_ReportingLevel;
+        ReportingLevel(2) := 1;
+    EndModify;
+  Put(msg);
+  Send;
+  WaitFor Message(RAA);
+  StartTimer(delay, 1000);      // start timer to simulate
+  WaitFor Timer(delay);          // a waiting time of 1 sec
+EndScript;

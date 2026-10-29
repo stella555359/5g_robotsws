@@ -1,0 +1,393 @@
+heat_template_version: 2016-10-14
+description: 'v77: Template to instantiate application type of VM'
+parameters:
+  common_metadata:
+    type: json
+    description: common metadata parameters
+  common_userdata:
+    type: json
+    description: common cloud-init userdata parameters
+  config_drive:
+    type: boolean
+    description: use config drive instead of metadata server
+  dpdk_type:
+    type: string
+    description: type information for dpdk boot configuration
+    default: none
+  instance_params:
+    type: json
+    description: instance specific parameters
+  cinder_volumes:
+    type: json
+    description: parameters for cinder volumes
+    default:
+      server_0:
+        count: 0
+        vol_list: []
+      server_1:
+        count: 0
+        vol_list: []
+  lvm_local_volumes:
+    type: json
+    description: Local volumes to be attached
+    default:
+      server_0:
+        count: 0
+        vol_list: []
+      server_1:
+        count: 0
+        vol_list: []
+  lvm_gfs_hosts:
+    type: comma_delimited_list
+    description: LVM GFS server hostname or IP address
+    default: []
+  lvm_gfs_volumes:
+    type: json
+    description: Volumes to ba attached an shared via glusterFS
+    default:
+      server_0:
+        count: 0
+        vol_list: []
+      server_1:
+        count: 0
+        vol_list: []
+  name:
+    type: string
+    description: Name to be used as the host name for the instance
+  networks:
+    type: json
+    description: network parameters
+  roles:
+    type: comma_delimited_list
+    description: Deployment roles associated
+    default:
+    - application
+  storage_meta:
+    type: json
+    description: Storage user parameters for shared volumes
+  upgrade-node:
+    type: boolean
+    description: indicate whether it is upgrade node
+    default: false
+  best_effort:
+    type: boolean
+    description: The best effort value of sever group
+    default: true
+  service_ip_meta:
+    type: json
+    description: internal-service-ip-pool metadata parameters
+    default: {}
+  dual_stack:
+    type: string
+    description: configure single network or dual network
+    default: disabled
+    constraints:
+      - allowed_values: [disabled, enabled]
+  timezone:
+    type: string
+    constraints:
+      - custom_constraint: timezone
+
+conditions:
+  attache_cinder_volume_0:
+    not:
+      equals:
+      - get_param:
+        - cinder_volumes
+        - server_0
+        - count
+      - 0
+  attache_cinder_volume_1:
+    not:
+      equals:
+      - get_param:
+        - cinder_volumes
+        - server_1
+        - count
+      - 0
+  assemble_local_volumes_0:
+    not:
+      equals:
+      - get_param:
+        - lvm_local_volumes
+        - server_0
+        - count
+      - 0
+  assemble_local_volumes_1:
+    not:
+      equals:
+      - get_param:
+        - lvm_local_volumes
+        - server_1
+        - count
+      - 0
+  assemble_gfs_volumes_0:
+    not:
+      equals:
+      - get_param:
+        - lvm_gfs_volumes
+        - server_0
+        - count
+      - 0
+  assemble_gfs_volumes_1:
+    not:
+      equals:
+      - get_param:
+        - lvm_gfs_volumes
+        - server_1
+        - count
+      - 0
+
+resources:
+  ports_0:
+    type: RCP::Network::Pool
+    properties:
+      count:
+        get_param: [networks, count]
+      networks:
+        get_param: [networks, net_list_0]
+      dual_stack: {get_param: dual_stack}
+  ports_1:
+    type: RCP::Network::Pool
+    properties:
+      count:
+        get_param: [networks, count]
+      networks:
+        get_param: [networks, net_list_1]
+      dual_stack: {get_param: dual_stack}
+  ports_logical:
+    type: RCP::Network::Pool
+    properties:
+      count:
+        get_param: [networks, count_logical]
+      networks:
+        get_param: [networks, net_list_logical]
+      dual_stack: {get_param: dual_stack}
+      port_type: "logical"
+  shared_vol_0:
+    type: RCP::Volume::Cinder
+    condition: attache_cinder_volume_0
+    properties:
+      vol_name:
+        get_param: [cinder_volumes, server_0, vol_list, 0, name]
+      vol_size:
+        get_param: [cinder_volumes, server_0, vol_list, 0, size]
+  lvm_local_vol_0:
+    type: RCP::VolumeGroup::LVMLocal
+    condition: assemble_local_volumes_0
+    properties:
+      lvm_volumes:
+        get_param: [lvm_local_volumes, server_0]
+  shared_vol_attach_0:
+    type: OS::Cinder::VolumeAttachment
+    condition: attache_cinder_volume_0
+    properties:
+      volume_id:
+        get_attr: [shared_vol_0, cinder_volume_id]
+      instance_uuid: {get_resource: server_0}
+  shared_vol_1:
+    type: RCP::Volume::Cinder
+    condition: attache_cinder_volume_1
+    properties:
+      vol_name:
+        get_param: [cinder_volumes, server_1, vol_list, 0, name]
+      vol_size:
+        get_param: [cinder_volumes, server_1, vol_list, 0, size]
+  lvm_local_vol_1:
+    type: RCP::VolumeGroup::LVMLocal
+    condition: assemble_local_volumes_1
+    properties:
+      lvm_volumes:
+        get_param: [lvm_local_volumes, server_1]
+  shared_vol_attach_1:
+    type: OS::Cinder::VolumeAttachment
+    condition: attache_cinder_volume_1
+    properties:
+      volume_id:
+        get_attr: [shared_vol_1, cinder_volume_id]
+      instance_uuid: {get_resource: server_1}
+  lvm_gfs_vol_0:
+    type: RCP::VolumeGroup::LVMGFS
+    condition: assemble_gfs_volumes_0
+    properties:
+      lvm_gfs_hosts:
+        get_param: [lvm_gfs_hosts]
+      lvm_volumes:
+        get_param: [lvm_gfs_volumes, server_0]
+  lvm_gfs_vol_1:
+    type: RCP::VolumeGroup::LVMGFS
+    condition: assemble_gfs_volumes_1
+    properties:
+      lvm_gfs_hosts:
+        get_param: [lvm_gfs_hosts]
+      lvm_volumes:
+        get_param: [lvm_gfs_volumes, server_1]
+  cloud_config_0:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        hostname:
+          str_replace:
+            template: <name>-000
+            params:
+              <name>: {get_param: name}
+        timezone: {get_param: timezone}
+  cloud_init_0:
+    type: OS::Heat::MultipartMime
+    properties:
+      parts:
+      - config: {get_param: [common_userdata, add_user]}
+        subtype: cloud-config
+      - config: {get_param: [common_userdata, run_cmd]}
+        subtype: cloud-config
+      - config: {get_resource: cloud_config_0}
+        subtype: cloud-config
+  cloud_config_1:
+    type: OS::Heat::CloudConfig
+    properties:
+      cloud_config:
+        hostname:
+          str_replace:
+            template: <name>-001
+            params:
+              <name>: {get_param: name}
+        timezone: {get_param: timezone}
+  cloud_init_1:
+    type: OS::Heat::MultipartMime
+    properties:
+      parts:
+      - config: {get_param: [common_userdata, add_user]}
+        subtype: cloud-config
+      - config: {get_param: [common_userdata, run_cmd]}
+        subtype: cloud-config
+      - config: {get_resource: cloud_config_1}
+        subtype: cloud-config
+
+  server_0:
+    type: OS::Nova::Server
+    properties:
+      name:
+        str_replace:
+          template: <name>-000
+          params:
+            <name>: {get_param: name}
+      image:
+        get_param:
+        - instance_params
+        - server_0
+        - imageId
+      flavor:
+        get_param:
+        - instance_params
+        - server_0
+        - flavorId
+      availability_zone:
+        get_param:
+        - instance_params
+        - server_0
+        - azId
+      scheduler_hints:
+        group: {get_param: [instance_params, server_0, server_group_id]}
+      networks:
+        get_attr: [ports_0, ports]
+      user_data_format: RAW
+      user_data: {get_resource: cloud_init_0}
+      metadata:
+        map_merge:
+        - {get_param: common_metadata}
+        - roles: {get_param: roles}
+          dpdk-conf-type: {get_param: dpdk_type}
+        - get_attr: [ports_0, ip-info]
+        - get_attr: [ports_0, ext-ip-config]
+        - get_attr: [ports_0, ext-ip-config-v6]
+        - get_attr: [ports_logical, ext-ip-config]
+        - get_attr: [ports_logical, ext-ip-config-v6]
+        - {get_param: storage_meta}
+        - internal-service-ip-pool.internal: {get_param: [service_ip_meta, internal-service-ip-pool, internal]}
+        - internal-service-ip-pool.internal_srv: {get_param: [service_ip_meta, internal-service-ip-pool, internal_srv]}
+        - internal-service-ip-pool.internal_e1: {get_param: [service_ip_meta, internal-service-ip-pool, internal_e1]}
+        - if:
+          - attache_cinder_volume_0
+          - get_attr: [shared_vol_0, cinder_volume_map]
+          - {}
+        - if:
+          - assemble_local_volumes_0
+          - get_attr: [lvm_local_vol_0, provider_map]
+          - {}
+        - if:
+          - assemble_gfs_volumes_0
+          - map_merge:
+            - get_attr: [lvm_gfs_vol_0, provider_map]
+            - get_attr: [lvm_gfs_vol_0, peer_map]
+            - get_attr: [lvm_gfs_vol_0, user_map]
+            - storage.install: true
+            - storage.master: 0
+          - {}
+        - upgrade-node: {get_param: upgrade-node}
+        - ha-mode: 2n
+        - ccs-ha-mode: 2n
+        - md_network: internal_srv
+      config_drive: {get_param: config_drive}
+
+  server_1:
+    type: OS::Nova::Server
+    properties:
+      name:
+        str_replace:
+          template: <name>-001
+          params:
+            <name>: {get_param: name}
+      image:
+        get_param:
+        - instance_params
+        - server_1
+        - imageId
+      flavor:
+        get_param:
+        - instance_params
+        - server_1
+        - flavorId
+      availability_zone:
+        get_param:
+        - instance_params
+        - server_1
+        - azId
+      scheduler_hints:
+        group: {get_param: [instance_params, server_1, server_group_id]}
+      networks:
+        get_attr: [ports_1, ports]
+      user_data_format: RAW
+      user_data: {get_resource: cloud_init_1}
+      metadata:
+        map_merge:
+        - {get_param: common_metadata}
+        - roles: {get_param: roles}
+          dpdk-conf-type: {get_param: dpdk_type}
+        - get_attr: [ports_1, ip-info]
+        - get_attr: [ports_1, ext-ip-config]
+        - get_attr: [ports_1, ext-ip-config-v6]
+        - get_attr: [ports_logical, ext-ip-config]
+        - get_attr: [ports_logical, ext-ip-config-v6]
+        - {get_param: storage_meta}
+        - internal-service-ip-pool.internal: {get_param: [service_ip_meta, internal-service-ip-pool, internal]}
+        - internal-service-ip-pool.internal_srv: {get_param: [service_ip_meta, internal-service-ip-pool, internal_srv]}
+        - internal-service-ip-pool.internal_e1: {get_param: [service_ip_meta, internal-service-ip-pool, internal_e1]}
+        - if:
+          - attache_cinder_volume_1
+          - get_attr: [shared_vol_1, cinder_volume_map]
+          - {}
+        - if:
+          - assemble_local_volumes_1
+          - get_attr: [lvm_local_vol_1, provider_map]
+          - {}
+        - upgrade-node: {get_param: upgrade-node}
+        - ha-mode: 2n
+        - ccs-ha-mode: 2n
+        - md_network: internal_srv
+      config_drive: {get_param: config_drive}
+
+outputs:
+  internal_ip:
+    description: Internal IP address allocated to the instance
+    value:
+      get_attr: [ports_0, internal_ip]

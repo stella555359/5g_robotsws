@@ -1,0 +1,768 @@
+*** Settings ***
+Documentation     [SUITE PURPOSE]  Common keyword of CB011031 feature
+...               Shift SSB to overlap with LTE PBCH
+...               Prerequisite : gNB configured with adapted SCF based from 23R1 KDDI SCF + default 24R1 parameters
+...               Scope : 11031-A
+...
+...               Test Case Scenario author   : marie-laurence.le_borgne@nokia.com
+
+...               Creation Date               : 01-11-2023
+...               Version History    Date           Author                                   Notes
+...               0.1               02-11-2023      marie-laurence.le_borgne@nokia.com     Creation
+
+# Libraries
+Library           OperatingSystem
+Library           String
+Library           BuiltIn
+Library           ute_wtssim                    WITH NAME    wts
+Library           taf.wts.runner                WITH NAME    wtsemu
+Library           taf.sbts.oam.coam.admin       WITH NAME    coam
+Library           ../../../../../resources/SWENG/python/PandasCsv.py
+Library           ../../../resources/python/luashark_tools.py
+Library           ../../../../../resources/SWENG/python/CoamParameter.py    WITH NAME    coam_parameter
+
+Library           ../python/checkSSBShift.py
+Library           ../python/checkSSBShift_IWK_2534.py
+Library           ../python/checkSSBShift_IWK_2538.py
+Library           ../python/checkSSBShift_master.py
+Library           ../python/checkSSBShift_IWK_2534_master.py
+Library           ../python/checkSSBShift_IWK_2538_master.py
+
+# Resources
+Resource          taf/rfrl/common_resources/robot/preconditions.robot
+Resource          ../../../../../resources/SWENG/robot/GenericTest.robot
+Resource          ../../../../../resources/SWENG/robot/Oam.robot
+Resource          ../../../../../resources/SWENG/robot/SetConfig.robot
+Resource          ../../../../../resources/SWENG/robot/CfgFilesTools.robot
+Resource          ../../../../../resources/SWENG/robot/Scf.robot
+Resource          ../../../../../resources/SWENG/robot/Restart.robot
+Resource          ../../../../../resources/SWENG/robot/Setup.robot
+Resource          ../../../../../resources/SWENG/robot/CallSetup.robot
+Resource          ../../../../../resources/SWENG/robot/Traffic.robot
+Resource          ../../../../../resources/SWENG/robot/Capture.robot
+Resource          ../../../../../resources/SWENG/robot/CaptureFilter.robot
+Resource          ../../../../../resources/SWENG/robot/Counters.robot
+Resource          ../../../../../resources/SWENG/robot/Sherpa.robot
+Resource          ../../../../../resources/SWENG/robot/Tools.robot
+Resource          ../../../../../resources/SWENG/robot/Syslogs.robot
+Resource          ../../../resources/common/TtiTrace/ttitrace.robot
+Resource          ../../../../../resources/SWENG/robot/WtsCfgConfig.robot
+Resource          ../../../../../resources/SWENG/robot/WtsXmlConfig.robot
+
+Variables         ../../../../../resources/SWENG/python/Colors.py
+
+
+
+*** Variables ***
+
+@{TrafficFilter}=         dldata_ssblocksendreq      dldata_pdschpayloadtbsendreq       dldata_csirssendreq
+@{TrafficFilterMaster}=         dldata_ssblocksendreql1sw      dldata_pdschpayloadtbsendreql1sw       dldata_csirssendreql1sw
+
+*** Keywords ***
+
+########################  Configuration KWs  ########################
+Suite Setup for CB011031
+    [Documentation]     Setup TL with initial KDDI SCF
+
+    Run Keyword     dated log       =====>580117 Update Configuration files >> SCF
+    sleep    300s
+    Run Keyword     Suite Setup From Scratch        ${FD_ALL}      keepAllUeDataInCfgFile=${True}
+    ...                 scfcPathname=${CURDIR}/../../config/custom/scf_11031_KDDI_based.xml
+    sleep    300s
+
+Update arfcn and gscn in Basic_Setup and iphy
+    [Documentation]     Initialisation of arfcn and gscn in basic_setup.cfg / new_iphy.xml
+    [Arguments]                 ${arfcn_iphy}
+
+    WtsCfgConfig.startSession
+
+    FOR    ${cell}    IN    @{arfcn_iphy}
+        ${oldValue}          getParam
+        ...                  prefix=set_cell
+        ...                  param=nr_arfcn
+        ...                  occurrence=${cell.cellnum}
+        replaceValue         prefix=set_cell
+        ...                  param=nr_arfcn
+        ...                  oldValue=${oldValue}
+        ...                  newValue=${cell.nr_arfcn}:${cell.nr_arfcn}
+        ...                  occurrence=${cell.cellnum}
+        ${oldValue}          getParam
+        ...                  prefix=set_cell
+        ...                  param=gscn
+        ...                  occurrence=${cell.cellnum}
+        replaceValue         prefix=set_cell
+        ...                  param=gscn
+        ...                  oldValue=${oldValue}
+        ...                  newValue=${cell.gscn}
+        ...                  occurrence=${cell.cellnum}
+    END
+
+    WtsCfgConfig.stopSession         rename=modified
+
+    #WtsXmlConfig.startSession       file=iphy
+    run    scp toor4nsn@192.168.200.1:/ffs/run/simmode/iphy.xml /tmp/iphy11031.xml
+    run    sed -i -e "s/GSCN>7880/GSCN>7867/g" /tmp/iphy11031.xml
+    run    scp /tmp/iphy11031.xml toor4nsn@192.168.200.1:/ffs/run/simmode/iphy.xml
+    #WtsXmlConfig.stopSession        file=iphy
+
+
+
+Set RAD Params for 11031
+    [Documentation]     Add or Modify the RAD params of 11031 To Activate Sherpa traces
+
+    Dated Log New Line   Add RAD param to get  11031 Sherpa traces ......
+    ${rad_param_1}=          create dictionary       field=0x580117    value=7              # L2-PS rd Sherpa
+    ${rad_param_2}=          create dictionary       field=0x4B000F    value=1              # RF_SW_Version_Check_disabled
+
+    ${rad_param_list}=       Create List         ${rad_param_1}
+    ...                                          ${rad_param_2}
+
+    SetConfig.Set Fields in swconfig DU          param_list=${rad_param_list}
+    Dated Log New Line                           RAD params of 11031 update completed
+
+
+Set 11031 Context TDD
+    [Tags]                            SETUP
+    Copy File                         ${SCF_SETUP_PATH}     ${SCF_SETUP_PATH}.ori
+    ${scf_file_name}                  Fetch from right      ${SCF_SETUP_PATH}      /
+    ${file_name_without_extention}    String.Replace string    ${scf_file_name}    .xml    ${EMPTY}
+    ${scf_name_for_update}            catenate    SEPARATOR=${EMPTY}    ${file_name_without_extention}
+    ...                               11031_TDD.xml
+    ${scf_file_update_path}           set variable    ${LOG_PATH}/${scf_name_for_update}
+    SCF StartSession                  scf_file=${SCF_SETUP_PATH}     second_scf_file=${SCF_SETUP_PATH}
+    Set Parameters on SCF_COAM_TDD
+    SCF StopSession                   scf_file=${scf_file_update_path}     second_scf_file=${scf_file_update_path}
+
+    OAM Perform Full Commissioning    scf_file=${scf_file_update_path}
+    Airscale Wait for Ready           ${GNB_DU}
+
+
+Set Parameters on SCF_COAM_TDD
+   [Documentation]                  Set expected SCF parameters on CELL 1 only
+
+# Activate / deactivate SSB Shift at cell level - CB011031 activation
+    ${dn}             set variable     MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    SCF Set element                    dist_name=${dn}     element_name=ssbPositionsInBurst
+    ...                                element_value=${params.ssbPositionsInBurst}
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+# Activate / deactivate SSB Shift at NRSYSINFO level case Inter Frequency Idle Mode Reselection
+    ${dn}             set variable     MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRSYSINFO_PROFILE-1/NRIRFIM-2
+    SCF Set element                    dist_name=${dn}     element_name=ssbPositionsInBurst
+    ...                                element_value=${params.ssbPositionsInBurst_NRIRFIM}
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+# Activate / deactivate SSB Shift at NRSYSINFO level case Intra Frequency Idle Mode Reselection
+    ${dn}             set variable     MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRSYSINFO_PROFILE-1/NRIAFIM-1
+    SCF Set element                    dist_name=${dn}     element_name=ssbPositionsInBurst
+    ...                                element_value=${params.ssbPositionsInBurst_NRIAFIM}
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+# 5GC002534 Activation / Deactivation PDSCH at SSB slots at cell level
+    ${dn}             set variable     MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    SCF Set element                    dist_name=${dn}     element_name=actPdschAtSsbSlots
+    ...                                element_value=${params.actPdschAtSsbSlots}
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+# 5GC002538 Activation / Deactivation of CSI-RS Rate Matching for PDSCH in SSB and TRS slots at cell level
+    ${dn}             set variable     MRBTS-${MRBTS_ID}/NRBTS-${NRBTS_ID}/NRCELL-1
+    SCF Set element                    dist_name=${dn}     element_name=actPdschRmCsirsForTracking
+    ...                                element_value=${params.actPdschRmCsirsForTracking}
+    ...                                aicListEntity=vduvcu
+    ...                                scope=Both
+
+    ${console_msg}                     Evaluate     "Database Modifications completed for NRCELL-1"
+    Dated Log                          ${console_msg}
+
+
+Build UEs list SA Multi UEs
+
+    [Arguments]             ${dict_ues}
+    ${totalNbOfUe}          get length          ${dict_ues}
+    Step                    Dated Log           Configure the setting for the ${totalNbOfUe} ue's
+    Set Global Variable     ${totalNbOfUe}
+
+    @{listOfUes}            Create List
+    FOR    ${current_id}    IN RANGE    0    ${totalNbOfUe}
+        ${current_ueSetting}=         Copy Dictionary               ${BASIC_UE_SA}
+        Set To Dictionary             ${current_ueSetting}          ue                  ${dict_ues[${current_id}].ueid}
+        Set To Dictionary             ${current_ueSetting}          pdu                 1
+        Set To Dictionary             ${current_ueSetting}          trf_id              ${dict_ues[${current_id}].trf_id}
+        Set To Dictionary             ${current_ueSetting}          target_gnb          2
+        Set To Dictionary             ${current_ueSetting}          target_cells        ${dict_ues[${current_id}].cell_id}
+        Set To Dictionary             ${current_ueSetting}          shouldBeStop        ${dict_ues[${current_id}].shouldBeStop}
+        Set To Dictionary             ${current_ueSetting}          DL_deviation        ${dict_ues[${current_id}].DL_deviation}
+        Set To Dictionary             ${current_ueSetting}          UL_deviation        ${dict_ues[${current_id}].UL_deviation}
+        Set To Dictionary             ${current_ueSetting}          DL_throughput       ${dict_ues[${current_id}].DL_throughput}
+        Set To Dictionary             ${current_ueSetting}          UL_throughput       ${dict_ues[${current_id}].UL_throughput}
+        Set To Dictionary             ${current_ueSetting}          protocol            ${dict_ues[${current_id}].protocol}
+
+        Append To List                ${listOfUes}                  ${current_ueSetting}
+    END
+    Dated Log New Line                UE_List=${listOfUes}
+
+    [Return]                          ${listOfUes}
+
+########################  Cellsetup - Call setup KWs  ########################
+Cell Setup for CB011031
+    [Arguments]       ${nbCell}
+    ${msgStr}=    Catenate  Test ${nbCell} Cells Setup
+    Dated Log   ${msgStr}
+
+    Dated Log new line              ${trcColor}--- WTS setup for specified UEs on specified Cell ${defColor}
+    CB011031 Start Capture After GNB Ready
+    CallSetup.WTS Setup             shouldUseLua=False
+    ...                             nbCell=${nbCell}
+    ...                             shouldSaveBasicCfg=True
+    CB011031 Capture Stop               cellSetup
+    sleep    5s
+    CallSetup.UE Cell Setup Check       nbCell=${nbCell}
+    sleep    60s
+
+
+
+CB011031 Attach SA
+    [Arguments]                     ${ueSetting}    ${CPRTcapture}=${False}
+    Dated Log new line              ${trcColor}--- SA call UE - launch CPRT traces ${ueSetting.ue} ${defColor}
+    Run Keyword If                  ${CPRTcapture} == ${True}
+    ...                             CB011031 Start Capture Attach                UE=${ueSetting.ue}
+    Sleep       180s
+
+    Dated Log new line              ${trcColor}--- SA call UE - Register ${ueSetting.ue} ${defColor}
+    UE Register                     ue=${ueSetting.ue}
+    Sleep       60s
+
+    Dated Log new line              ${trcColor}--- SA call UE - PDU session ${ueSetting.ue} ${defColor}
+    Launch PDU Session              ue=${ueSetting.ue}    pdu=${ueSetting.pdu}    gw=${ueSetting.pdu}
+    Sleep       60s
+
+    Dated Log new line              ${trcColor}--- SA call UE - Stop CPRT Capture ${ueSetting.ue} ${defColor}
+    Run Keyword If                  ${CPRTcapture} == ${True}
+    ...                             CB011031 Capture Stop                        Attach
+
+
+########################  Traffic KWs  ########################
+Start DL Traffic Not Stopped
+   [Arguments]                      ${ueSetting}            ${ueTrafficSetting}
+
+    Traffic UE DL                   ueSetting=${ueSetting}
+    ...                             throughput=${ueTrafficSetting.DL_throughput}
+    ...                             captureCallback=None
+    ...                             capture=None
+    ...                             captureDuration=0
+    ...                             shouldBeStop=False
+    ...                             deviation=${ueTrafficSetting.DL_deviation}
+    ...                             protocol=${ueTrafficSetting.protocol}
+
+
+Start UL Traffic Not Stopped
+   [Arguments]                      ${ueSetting}            ${ueTrafficSetting}
+
+    Traffic UE UL                   ueSetting=${ueSetting}
+    ...                             throughput=${ueTrafficSetting.UL_throughput}
+    ...                             captureCallback=None
+    ...                             capture=None
+    ...                             captureDuration=0
+    ...                             shouldBeStop=False
+    ...                             deviation=${ueTrafficSetting.UL_deviation}
+    ...                             protocol=${ueTrafficSetting.protocol}
+
+
+####################  Setup/Teardown KWs  ####################
+CB011031 Test Setup
+    [Documentation]             Perform needed actions at the begining of a test case
+    Init Trace color
+
+
+CB011031 Test Teardown
+    [Documentation]             Perform needed actions at the end of a test case
+    Restore Files               listFileDesc=${FD_ALL}
+
+    # "Test Teardown" KW from Setup.robot
+    Test Teardown
+
+
+Init Trace color
+    ${trcColor}                 Evaluate    "${CYAN}"
+    ${defColor}                 Evaluate    "${NORMAL}"
+    ${OkColor}                  Evaluate    "${GREEN}"
+    Set Suite Variable          ${trcColor}
+    Set Suite Variable          ${defColor}
+    Set Suite Variable          ${OkColor}
+
+
+########################  Traces KWs  ########################
+CB011031 Start Capture After GNB Ready
+    ${CaptureCPRT_setup}            Capture CPRT Set upon config
+    ${TestNameWOspace}              getFormattedTestName
+
+    ${CaptureCPRT_setup.filter}     Get Filter For SCTP
+    # Filter to use when CNI-78299 will be implemented again:
+    #${CaptureCPRT_setup.filter}     Get Filter For TCP
+    Capture Init                    ${CaptureCPRT_setup}             withTN=True             suffix=_setup
+
+    ${CaptureCore_setup}            Capture CORE Set Upon Config
+    Capture Init                    ${CaptureCore_setup}             withTN=True             suffix=_setup
+
+    Capture Start                   ${CaptureCPRT_setup}
+    Capture Start                   ${CaptureCore_setup}
+    Set Suite Variable              ${CaptureCPRT_setup}
+    Set Suite Variable              ${CaptureCore_setup}
+
+
+CB011031 Start Capture Attach
+    [Arguments]                     ${UEid}=1
+    ${TestNameWOspace}              getFormattedTestName
+
+    ${CaptureCPRT_attach}           Capture CPRT Set upon config     airscale=${GNB_DU}
+#    ${CaptureCPRT_attach.filter}    Get Filter For TCP
+    Capture Init                    ${CaptureCPRT_attach}            withTN=True             suffix=_attach_${UEid}
+
+    ${CaptureCore_attach}           Capture CORE Set Upon Config     airscale=${GNB_DU}
+    Capture Init                    ${CaptureCore_attach}            withTN=True             suffix=_attach_${UEid}
+
+    Capture Start                   ${CaptureCPRT_attach}
+    Capture Start                   ${CaptureCore_attach}
+    Set Suite Variable              ${CaptureCPRT_attach}
+    Set Suite Variable              ${CaptureCore_attach}
+
+
+CB011031 Capture Stop
+    [Arguments]                     ${step}
+    Run Keyword If                  "${step}" == "cellSetup"         Run Keywords
+    ...                             Capture Stop                     ${CaptureCore_setup}
+    ...                             AND
+    ...                             Capture Stop                     ${CaptureCPRT_setup}
+    Run Keyword If                  "${step}" == "Attach"            Run Keywords
+    ...                             Capture Stop                     ${CaptureCore_attach}
+    ...                             AND
+    ...                             Capture Stop                     ${CaptureCPRT_attach}
+
+
+Get TTI Logs
+
+    # TTI capture configuration
+    ${TTIdir}                             Get TTI Trace Path    dir_suffix=TTI
+
+    # Start TTI capture
+    Dated Log New Line                    Start TTI traces capture
+    Start TTI Traces in Streaming mode    src_ip=10.0.1.2
+    Traced Sleep                5         msg=DL TTI traffic capture 5 seconds
+
+    # Stop TTI capture
+    Dated Log New Line                    Stop TTI traces capture
+    ${TTIpcap}                            Stop TTI Traces in Streaming mode
+    ...                                   tti_trace_path=${TTIdir}
+    ...                                   tti_trace_filename=TTI_TC11031
+
+    Dated Log New Line                    Convert TTItrace to json and csv
+    ${TTIjson}                            Convert TTItrace from pcap to others
+    ...                                   input_file_path=${TTIpcap}
+    ${TTIcsv}                             ttitrace_tools.decode_tti_traces_json_using_TtitraceReaderEvtDec
+    ...                                   jsonPathName=${TTIjson}     num_of_events=10000
+
+
+Get Sherpa Logs
+
+    Activate Sherpa
+    Traced Sleep                               duration=5s
+    Deactivate Sherpa and Stop Collect
+    Upload and decode sherpa pcap files        Sherpa_logs_local_path=${trace_dir}
+
+
+Get L1L2 Logs
+
+    Dated Log                         ======> Get L1L2 Bip Traces
+
+    ${CaptureBIP}                     Capture L1L2 Set Upon Config     airscale=${GNB_DU}
+
+    ${bipMsgList}                     Set Variable               ${TrafficFilter}
+    ${Capture_BIP.filter}             Run Keyword                Get Filter For Particular Msgs    ${bipMsgList}
+
+    Capture Init                      ${CaptureBIP}
+    Capture start                     ${CaptureBIP}
+    Traced sleep                      ${params.timeCapture}
+    Capture stop                      ${CaptureBIP}
+
+    #Dated Log New Line                === path capture : ${CaptureBIP.path} ===
+
+    #Set Global Variable               ${CaptureBIP.path}
+    Set Global Variable               ${CaptureBIP}
+
+Get L1L2 Logs master
+
+    Dated Log                         ======> Get L1L2 Bip Traces
+
+    ${CaptureBIP}                     Capture L1L2 Set Upon Config     airscale=${GNB_DU}
+
+    ${bipMsgList}                     Set Variable               ${TrafficFilterMaster}
+    ${Capture_BIP.filter}             Run Keyword                Get Filter For Particular Msgs    ${bipMsgList}
+
+    Capture Init                      ${CaptureBIP}
+    Capture start                     ${CaptureBIP}
+    Traced sleep                      ${params.timeCapture}
+    Capture stop                      ${CaptureBIP}
+
+    #Dated Log New Line                === path capture : ${CaptureBIP.path} ===
+
+    #Set Global Variable               ${CaptureBIP.path}
+    Set Global Variable               ${CaptureBIP}
+
+Get Snaphot Sos Report
+
+    Dated log                       Get Snapshot
+  # Get Sos Report
+    Get Snapshot
+
+
+#########################  PM KWs  #########################
+CB011031 get PM files
+    CB011031 Get Reporting Interval PM
+    Traced Sleep                    ${reportingIntervalPm}[0]    msg=waiting PM counter generation
+    ${date}                         Get Current Date
+    ${date_in_dir_name}             Convert Date         ${date}     result_format=%d%m%Y_%H%M
+    ${log_path_pm}                  Set Variable         ${LOG_PATH}/PM_${date_in_dir_name}
+    Dated Log                       The PM counters file collected from gnb will be stored under : ${log_path_pm}
+    ${pm_latest}                    Counters.Collect PM files from BTS      ${log_path_pm}
+    ${file_str} =                   Convert To String    ${pm_latest}
+    ${file_str} =                   Strip String    ${file_str}
+    IF    '${file_str}'[-7:] == '.xml.gz'
+                Unzip Gz File        ${file_str}
+                ${pm_latest} =       Set Variable    ${file_str[:-3]}
+    END
+    set Suite Variable              ${LATEST_PM_FILE}       ${pm_latest}
+    set Suite Variable              ${log_path_pm}
+    Dated Log                       Latest pm counters file : ${LATEST_PM_FILE}
+
+Unzip Gz File
+    [Arguments]    ${gz_file_path}
+    Run Process    gunzip    ${gz_file_path}
+
+CB011031 Get Reporting Interval PM
+    ${CURRENT_SCF}                  OAM Get SCF File
+    ...                             oam=${GNB_DU.oam}            file=SCF_DU_Current.xml
+    SCF StartSession                scf_file=${CURRENT_SCF}
+    ${dist_name}                    Set Variable                 MRBTS-${MRBTS_ID}/MNL-1/MNLENT-1/PMCADM-1
+    ${reportingIntervalPm}          SCF Get Single Value         ${dist_name}           reportingIntervalPm
+    SCF StopSession                 scf_file=${CURRENT_SCF}
+    Dated Log new line              ${trcColor}- ReportingIntervalPm is: ${reportingIntervalPm} ${defColor}
+    Set Suite Variable              ${reportingIntervalPm}
+
+
+#########################  Checks KWs  #########################
+Check Multi Ues Setting In List
+    [Documentation]
+    ...     Conditions:     it is based on the argument ${listOfUes}
+    ...     Actions:        it logs all the ue's settings
+    ...     Checks:         it needs no checks
+    ...     Verdict:        the ue's list is defined
+    [Arguments]             ${listOfUes}=None
+
+    ${nb_ue}                                    get length    ${listOfUes}
+    Dated Log New Line                          ===> number of ue's is ${nb_ue}
+    FOR    ${current_elem}    IN      @{listOfUes}
+        Dated Log                     ===> serving cell=${current_elem.target_cells} for ue=${current_elem.ue}
+    END
+
+Check SSBlock in L1L2 Logs master
+
+    Dated Log New Line      ===> CaptureBip.name: ${CaptureBip.name}
+    Dated Log New Line      ===> LOG_PATH: ${LOG_PATH}
+    ${file}=                catenate    ${LOG_PATH}/${CaptureBIP.name}.pcap
+    Dated Log New Line      ===> PCAP L1L2 PATH: ${file}
+    Dated Log New Line      Extract dldata_ssblocksendreql1sw info from L1L2 PCAP file : ${file}
+
+
+# filter L1L2 trace with exact wireshark columns needed for analyses
+    set test variable                 ${pcapprocessed}           L1L2_SSBlock.csv
+    set test variable                 ${pcapprocessed_path}      ${LOG_PATH}/${pcapprocessed}
+
+
+    ${cmd_mcshark}                    Catenate    tshark -r
+    ...                               ${file} -T fields -Y "dldata_ssblocksendreql1sw" -e _ws.col.info
+    ...                               -e 3gpp.sfn
+    ...                               -e 3gpp.slot
+    ...                               -e 3gpp.subcellid
+    ...                               -e DlData_SsBlockSendReqL1sw_t.activeSsBlocks
+    ...                               -e DlData_SsBlockSendReqL1sw_t.threeLsbSsbIndex
+    ...                               -E header=y -E separator=';' > ${pcapprocessed_path}
+    Run                               ${cmd_mcshark}
+
+    Run      command=sed -i -e 's/ //g' ${pcapprocessed_path}
+
+# Check in Python if CB011031 is triggered
+    ${results}              CheckFileSsBlockmaster      csvPathName=${pcapprocessed_path}
+
+# Report issue if on subcell0, with CB011031 activated, ssb is not sent on slot1
+    ${status_ssb_subcell0}=         run keyword and return status    Should be True         ${results}[ssblockshiftissue] == 0
+    Run Keyword if     ${status_ssb_subcell0} == 0
+    ...            Dated Log New Line     ${trcColor}--- All the SSB have been shift on subcellId0  ${defColor}
+    ...        ELSE
+    ...            Dated Log New Line     ${trcColor}--- nb of SSB shift issues on subcellId0  = ${results}[ssblockshiftissue] ${defColor}
+
+# Report issue if on subcell1, with CB011031 deactivated, ssb is not sent on slot0
+   ${status_ssb_subcell1}=         run keyword and return status    Should be True         ${results}[ssblocknoshiftissue] == 0
+    Run Keyword if     ${status_ssb_subcell1} == 0
+    ...            Dated Log New Line     ${trcColor}--- All the SSB have no shift on subcellId1  ${defColor}
+    ...        ELSE
+    ...            Dated Log New Line     ${trcColor}--- nb of SSB issues on subcellId1  = ${results}[ssblocknoshiftissue] ${defColor}
+
+
+    Should be True          ${status_ssb_subcell0} == True          msg=SSB shift Failure
+    Should be True          ${status_ssb_subcell1} == True          msg=SSB no shift Failure
+
+Check SSBlock in L1L2 Logs
+
+    Dated log             Extract dldata_ssblocksendreq info from PCAP file here : ${CaptureBIP.path}
+
+# filter L1L2 trace with exact wireshark columns needed for analyses
+    set test variable                 ${pcapprocessed}           L1L2_SSBlock.csv
+    set test variable                 ${pcapprocessed_path}      ${LOG_PATH}/${pcapprocessed}
+
+    ${cmd_mcshark}                    Catenate    tshark -r
+    ...                               ${CaptureBIP.path} -T fields -Y "dldata_ssblocksendreq" -e _ws.col.info
+    ...                               -e 3gpp.sfn
+    ...                               -e 3gpp.slot
+    ...                               -e 3gpp.subcellid
+    ...                               -e DlData_SsBlockSendReq_t.activeSsBlocks
+    ...                               -e DlData_SsBlockSendReq_t.threeLsbSsbIndex
+    ...                               -E header=y -E separator=';' > ${pcapprocessed_path}
+    Run                               ${cmd_mcshark}
+
+    Run      command=sed -i -e 's/ //g' ${pcapprocessed_path}
+
+# Check in Python if CB011031 is triggered
+    ${results}              CheckFileSsBlock      csvPathName=${pcapprocessed_path}
+
+# Report issue if on subcell0, with CB011031 activated, ssb is not sent on slot1
+    ${status_ssb_subcell0}=         run keyword and return status    Should be True         ${results}[ssblockshiftissue] == 0
+    Run Keyword if     ${status_ssb_subcell0} == 0
+    ...            Dated Log New Line     ${trcColor}--- All the SSB have been shift on subcellId0  ${defColor}
+    ...        ELSE
+    ...            Dated Log New Line     ${trcColor}--- nb of SSB shift issues on subcellId0  = ${results}[ssblockshiftissue] ${defColor}
+
+# Report issue if on subcell1, with CB011031 deactivated, ssb is not sent on slot0
+   ${status_ssb_subcell1}=         run keyword and return status    Should be True         ${results}[ssblocknoshiftissue] == 0
+    Run Keyword if     ${status_ssb_subcell1} == 0
+    ...            Dated Log New Line     ${trcColor}--- All the SSB have no shift on subcellId1  ${defColor}
+    ...        ELSE
+    ...            Dated Log New Line     ${trcColor}--- nb of SSB issues on subcellId1  = ${results}[ssblocknoshiftissue] ${defColor}
+
+
+    Should be True          ${status_ssb_subcell0} == True          msg=SSB shift Failure
+    Should be True          ${status_ssb_subcell1} == True          msg=SSB no shift Failure
+
+
+Check SSBlock and 5GC002534 IWK in L1L2 Logs master
+
+    Dated Log New Line      ===> CaptureBip.name: ${CaptureBip.name}
+    Dated Log New Line      ===> LOG_PATH: ${LOG_PATH}
+    ${file}=                catenate    ${LOG_PATH}/${CaptureBIP.name}.pcap
+    Dated Log New Line      ===> PCAP L1L2 PATH: ${file}
+    Dated Log New Line      Extract dldata_ssblocksendreql1sw and dldata_pdschpayloadtbsendreql1sw info from L1L2 PCAP file : ${file}
+
+# filter L1L2 trace with exact wireshark columns needed for analyses
+    set test variable                 ${pcapprocessed}           L1L2_IWK_2534.csv
+    set test variable                 ${pcapprocessed_path}      ${LOG_PATH}/${pcapprocessed}
+
+    ${cmd_mcshark}                 Catenate    tshark -r
+    ...                            ${file} -T fields -Y "dldata_ssblocksendreql1sw || dldata_pdschpayloadtbsendreql1sw" -e _ws.col.info
+    ...                            -e 3gpp.sfn
+    ...                            -e 3gpp.slot
+    ...                            -e 3gpp.subcellid
+    ...                            -E header=y -E separator=';' > ${pcapprocessed_path}
+    Run                            ${cmd_mcshark}
+
+    Run      command=sed -i -e 's/ //g' ${pcapprocessed_path}
+
+# Check in Python IWK between CB011031 and 5GC002534
+    ${results}              CheckFileIWK2534master      csvPathName=${pcapprocessed_path}
+
+# Report issue if there is not SFN on subcell0 slot1 with coexistence of PDSCH and SSB
+    ${status_IWK_subcell0}=         run keyword and return status    Should be True         ${results}[iwk2534occur] >= 1
+    Run Keyword if          ${status_IWK_subcell0} >= 1
+    ...            Dated Log New Line     ${trcColor}--- There are Pdsch on the same SFN as SSB of subcellId0 ${defColor}
+    ...        ELSE
+    ...            Dated Log New Line     ${trcColor}--- There are pdsch issues on subcellId0  = ${results}[iwk2534occur] ${defColor}
+
+
+    Should be True          ${status_IWK_subcell0} == True          msg=PDSCH is mixed with SSB when SSB Shift
+
+Check SSBlock and 5GC002534 IWK in L1L2 Logs
+
+    Dated log             Extract dldata_ssblocksendreq and dldata_pdschpayloadtbsendreq info from PCAP file here : ${CaptureBIP.path}
+
+# filter L1L2 trace with exact wireshark columns needed for analyses
+    set test variable                 ${pcapprocessed}           L1L2_IWK_2534.csv
+    set test variable                 ${pcapprocessed_path}      ${LOG_PATH}/${pcapprocessed}
+
+    ${cmd_mcshark}                 Catenate    tshark -r
+    ...                            ${CaptureBIP.path} -T fields -Y "dldata_ssblocksendreq || dldata_pdschpayloadtbsendreq" -e _ws.col.info
+    ...                            -e 3gpp.sfn
+    ...                            -e 3gpp.slot
+    ...                            -e 3gpp.subcellid
+    ...                            -E header=y -E separator=';' > ${pcapprocessed_path}
+    Run                            ${cmd_mcshark}
+
+    Run      command=sed -i -e 's/ //g' ${pcapprocessed_path}
+
+# Check in Python IWK between CB011031 and 5GC002534
+    ${results}              CheckFileIWK2534      csvPathName=${pcapprocessed_path}
+
+# Report issue if there is not SFN on subcell0 slot1 with coexistence of PDSCH and SSB
+    ${status_IWK_subcell0}=         run keyword and return status    Should be True         ${results}[iwk2534occur] >= 1
+    Run Keyword if          ${status_IWK_subcell0} >= 1
+    ...            Dated Log New Line     ${trcColor}--- There are Pdsch on the same SFN as SSB of subcellId0 ${defColor}
+    ...        ELSE
+    ...            Dated Log New Line     ${trcColor}--- There are pdsch issues on subcellId0  = ${results}[iwk2534occur] ${defColor}
+
+
+    Should be True          ${status_IWK_subcell0} == True          msg=PDSCH is mixed with SSB when SSB Shift
+
+
+Check SSBlock and 5GC002538 IWK in L1L2 Logs master
+
+    Dated Log New Line      ===> CaptureBip.name: ${CaptureBip.name}
+    Dated Log New Line      ===> LOG_PATH: ${LOG_PATH}
+    ${file}=                catenate    ${LOG_PATH}/${CaptureBIP.name}.pcap
+    Dated Log New Line      ===> PCAP L1L2 PATH: ${file}
+    Dated Log New Line      Extract dldata_ssblocksendreql1sw and dldata_pdschpayloadtbsendreql1sw
+    ...                   and dldata_csirssendreql1sw info from L1L2 PCAP file : ${file}
+
+
+# filter L1L2 trace with exact wireshark columns needed for analyses
+    set test variable                 ${pcapprocessed}           L1L2_IWK_2534_2538.csv
+    set test variable                 ${pcapprocessed_path}      ${LOG_PATH}/${pcapprocessed}
+
+    ${cmd_mcshark}      Catenate    tshark -r
+    ...                 ${file}
+    ...                 -T fields -Y "dldata_ssblocksendreql1sw || dldata_pdschpayloadtbsendreql1sw || dldata_csirssendreql1sw" -e _ws.col.info
+    ...                 -e 3gpp.sfn
+    ...                 -e 3gpp.slot
+    ...                 -e 3gpp.subcellid
+    ...                 -e DlData_CsiRsResourceL1sw_t.startSymbol
+    ...                 -E header=y -E separator=';' > ${pcapprocessed_path}
+    Run                 ${cmd_mcshark}
+
+    Run      command=sed -i -e 's/ //g' ${pcapprocessed_path}
+
+# Check in Python IWK between CB011031 and 5GC002534 and 5GC002538
+    ${results}              CheckFileIWK2538master      csvPathName=${pcapprocessed_path}
+
+# Report issue if there is not SFN on subcell0 slot1 with coexistence of PDSCH and SSB
+    ${status_IWK_subcell0slot1}=         run keyword and return status    Should be True         ${results}[iwk2538occurslot1] >= 1
+    Run Keyword if          ${status_IWK_subcell0slot1} >= 1
+    ...            Dated Log New Line     ${trcColor}--- There are CsiRs on the same SFN,slot as SSB and PDSCH of subcellId0 ${defColor}
+    ...        ELSE
+    ...            Dated Log New Line     ${trcColor}--- There are CsiRs issues on subcellId0  = ${results}[iwk2538occurslot1] ${defColor}
+
+    ${status_IWK_subcell0slot2}=         run keyword and return status    Should be True         ${results}[iwk2538occurslot2] >= 1
+    Run Keyword if          ${status_IWK_subcell0slot2} >= 1
+    ...            Dated Log New Line     ${trcColor}--- There are CsiRs slot2 symb6,10 on same SFN as SSB/PDSCH of subcellId0 ${defColor}
+    ...        ELSE
+    ...            Dated Log New Line     ${trcColor}--- There are CsiRs issues on subcellId0  = ${results}[iwk2538occurslot2] ${defColor}
+
+    ${status_2538slot1_subcell0}=         run keyword and return status    Should be True         ${results}[iwk2538issueslot1occur] == 0
+    Run Keyword if          ${status_2538slot1_subcell0} == 0
+    ...            Dated Log New Line     ${trcColor}--- CsiRs is on symbol 6 or 10 of slot 1 subcellId0 ${defColor}
+    ...        ELSE
+    ...            Dated Log New Line     ${trcColor}--- CsiRs not exp Symb / Slt1 SbCl0 = ${results}[iwk2538issueslot1occur] ${defColor}
+
+    ${status_2538slot2_subcell0}=         run keyword and return status    Should be True         ${results}[iwk2538issueslot2occur] == 0
+    Run Keyword if          ${status_2538slot2_subcell0} == 0
+    ...            Dated Log New Line     ${trcColor}--- CsiRs is on symbol 6 or 10 of slot 2 subcellId0 ${defColor}
+    ...        ELSE
+    ...            Dated Log New Line     ${trcColor}--- CsiRs not exp Symb / Slt 2 SbCl0 = ${results}[iwk2538issueslot2occur] ${defColor}
+
+
+    Should be True          ${status_IWK_subcell0slot1} == True          msg=CsiRs is mixed with SSB and PDSCH on slot1, same SFN
+    Should be True          ${status_IWK_subcell0slot2} == True          msg=CsiRs slot2 is on the same SFN that PDSCH,SSB, CSIRS slot1
+    Should be True          ${status_2538slot1_subcell0} == True          msg=CsiRs is on symbol 6 or 10 of slot 1 when SSB shift
+    Should be True          ${status_2538slot2_subcell0} == True          msg=CsiRs is on symbol 6 or 10 of slot 2 when SSB shift
+
+Check SSBlock and 5GC002538 IWK in L1L2 Logs
+
+    Dated log             Extract dldata_ssblocksendreq and dldata_pdschpayloadtbsendreq
+    ...                   and dldata_csirssendreq info from PCAP file here : ${CaptureBIP.path}
+
+# filter L1L2 trace with exact wireshark columns needed for analyses
+    set test variable                 ${pcapprocessed}           L1L2_IWK_2534_2538.csv
+    set test variable                 ${pcapprocessed_path}      ${LOG_PATH}/${pcapprocessed}
+
+    ${cmd_mcshark}      Catenate    tshark -r
+    ...                 ${CaptureBIP.path}
+    ...                 -T fields -Y "dldata_ssblocksendreq || dldata_pdschpayloadtbsendreq || dldata_csirssendreq" -e _ws.col.info
+    ...                 -e 3gpp.sfn
+    ...                 -e 3gpp.slot
+    ...                 -e 3gpp.subcellid
+    ...                 -e DlData_CsiRsResource_t.startSymbol
+    ...                 -E header=y -E separator=';' > ${pcapprocessed_path}
+    Run                 ${cmd_mcshark}
+
+    Run      command=sed -i -e 's/ //g' ${pcapprocessed_path}
+
+# Check in Python IWK between CB011031 and 5GC002534 and 5GC002538
+    ${results}              CheckFileIWK2538      csvPathName=${pcapprocessed_path}
+
+# Report issue if there is not SFN on subcell0 slot1 with coexistence of PDSCH and SSB
+    ${status_IWK_subcell0slot1}=         run keyword and return status    Should be True         ${results}[iwk2538occurslot1] >= 1
+    Run Keyword if          ${status_IWK_subcell0slot1} >= 1
+    ...            Dated Log New Line     ${trcColor}--- There are CsiRs on the same SFN,slot as SSB and PDSCH of subcellId0 ${defColor}
+    ...        ELSE
+    ...            Dated Log New Line     ${trcColor}--- There are CsiRs issues on subcellId0  = ${results}[iwk2538occurslot1] ${defColor}
+
+    ${status_IWK_subcell0slot2}=         run keyword and return status    Should be True         ${results}[iwk2538occurslot2] >= 1
+    Run Keyword if          ${status_IWK_subcell0slot2} >= 1
+    ...            Dated Log New Line     ${trcColor}--- There are CsiRs slot2 symb6,10 on same SFN as SSB/PDSCH of subcellId0 ${defColor}
+    ...        ELSE
+    ...            Dated Log New Line     ${trcColor}--- There are CsiRs issues on subcellId0  = ${results}[iwk2538occurslot2] ${defColor}
+
+    ${status_2538slot1_subcell0}=         run keyword and return status    Should be True         ${results}[iwk2538issueslot1occur] == 0
+    Run Keyword if          ${status_2538slot1_subcell0} == 0
+    ...            Dated Log New Line     ${trcColor}--- CsiRs is on symbol 6 or 10 of slot 1 subcellId0 ${defColor}
+    ...        ELSE
+    ...            Dated Log New Line     ${trcColor}--- CsiRs not exp Symb / Slt1 SbCl0 = ${results}[iwk2538issueslot1occur] ${defColor}
+
+    ${status_2538slot2_subcell0}=         run keyword and return status    Should be True         ${results}[iwk2538issueslot2occur] == 0
+    Run Keyword if          ${status_2538slot2_subcell0} == 0
+    ...            Dated Log New Line     ${trcColor}--- CsiRs is on symbol 6 or 10 of slot 2 subcellId0 ${defColor}
+    ...        ELSE
+    ...            Dated Log New Line     ${trcColor}--- CsiRs not exp Symb / Slt 2 SbCl0 = ${results}[iwk2538issueslot2occur] ${defColor}
+
+
+    Should be True          ${status_IWK_subcell0slot1} == True          msg=CsiRs is mixed with SSB and PDSCH on slot1, same SFN
+    Should be True          ${status_IWK_subcell0slot2} == True          msg=CsiRs slot2 is on the same SFN that PDSCH,SSB, CSIRS slot1
+    Should be True          ${status_2538slot1_subcell0} == True          msg=CsiRs is on symbol 6 or 10 of slot 1 when SSB shift
+    Should be True          ${status_2538slot2_subcell0} == True          msg=CsiRs is on symbol 6 or 10 of slot 2 when SSB shift
+
+
+Check CB011031 PM Data volume Counters
+    [Documentation]   Compare data volume between Cell1 and Cell2
+
+    Dated Log new line          ${trcColor}=== Compare DL data volume counters between CellId1 and CellId2 ${defColor}
+
+    ${DlMacSDUVolDTCH_Cell1}=    Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                          ${LATEST_PM_FILE}         M55309C01001         1
+    ${DlMacSDUVolDTCH_Cell2}=    Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                          ${LATEST_PM_FILE}         M55309C01001         2
+
+    Dated Log new line          ${trcColor}=== Check if DLMacSDU volume counter of Cell1 ${DlMacSDUVolDTCH_Cell1}
+    ...                          is equal or above DLMacSDU volume counter of Cell2 ${DlMacSDUVolDTCH_Cell2}   ${defColor}
+
+    Should Be True      ${DlMacSDUVolDTCH_Cell1} >= ${DlMacSDUVolDTCH_Cell2}
+
+    Dated Log new line          ${trcColor}=== Compare UL data volume counters between CellId1 and CellId2 ${defColor}
+
+    ${UlMacSDUVolDTCH_Cell1}=    Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                          ${LATEST_PM_FILE}         M55309C02001         1
+    ${UlMacSDUVolDTCH_Cell2}=    Retrieve Latest Single Counter Value From Pm File with CellID
+    ...                          ${LATEST_PM_FILE}         M55309C02001         2
+
+    Dated Log new line          ${trcColor}=== Check if ULMacSDU volume counter of Cell1 ${UlMacSDUVolDTCH_Cell1}
+    ...                          is equal or above ULMacSDU volume counter of Cell2 ${UlMacSDUVolDTCH_Cell2}   ${defColor}
+
+    Should Be True      (${UlMacSDUVolDTCH_Cell1}+(0.002*${UlMacSDUVolDTCH_Cell1})) >= ${UlMacSDUVolDTCH_Cell2}

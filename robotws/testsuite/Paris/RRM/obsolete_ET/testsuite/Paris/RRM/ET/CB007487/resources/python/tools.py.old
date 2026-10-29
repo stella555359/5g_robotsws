@@ -1,0 +1,94 @@
+# -*- coding: utf-8 -*
+
+"""
+:copyright: Nokia Networks
+:author: Christophe SAMSON
+:contact: christophe.samson@nokia.com
+:maintainer:
+:contact:
+"""
+
+import time
+from decimal import *
+import re
+import os
+import subprocess
+import csv
+import math
+
+from taf.config.scf import scf
+
+# ====================================================================================================[120 characters]
+#   Global Variables
+# ====================================================================================================[120 characters]
+
+
+def reform_coam_sw_version(version):
+    """reform SW Version from COAM GNB to QC required form:
+    from 5G19_FSMK_0000_018351_001507 to 5G_0.18351.1507
+    from 5G19B_FDD_GNB_0008_001840_000327 to 5G19B_0.1840.327
+    from SBTS21B_ENB_0000_210310_000024 to SBTS21B_ENB_0000_210310_000024
+    from SBTS21B_ENB_9999_210310_000024 to SBTS00_ENB_9999_210310_000024
+    from vDUCNF22R2_0.300.3624 to vDUCNF22R2_0_300_3624"""
+    version = version.replace(".", "_")
+    subversions = version.split('_')
+    if version.startswith('5G'):
+        version = strip_version(subversions[-3:])
+        if version[0] == '0':
+            result = '_'.join(['5G', version])
+        else:
+            result = '_'.join([subversions[0], version])
+    elif version.startswith('SBTS'):
+        if subversions[2].startswith('9'):
+            subversions[0] = 'SBTS00'
+        result = '_'.join(subversions)
+    elif version.startswith('vDU'):
+        if subversions[2].startswith('9'):
+            subversions[0] = 'SBTS00'
+        result = '_'.join(subversions)
+    return result
+
+
+def strip_version(version):
+    """remove 0 from sw version"""
+    for i in range(len(version)):
+        if version[i].lstrip('0') == '':
+            version[i] = '0'
+        else:
+            version[i] = version[i].lstrip('0')
+    return '.'.join(version)
+
+
+def get_feature_paramters_from_scf(scf_path, feature_params, distname, listname=None):
+    feature_params_dict = {}
+    scfObj = scf()
+    scfObj.load_scf(file_path=scf_path)
+    for param in feature_params:
+        if listname:
+            param_value = scfObj.get_value_from_scf(dist_name=distname, list_name=listname, p_name=param)
+        else:
+            param_value = scfObj.get_value_from_scf(dist_name=distname, p_name=param)
+        param_value = param_value if param_value not in ['True', 'False'] else param_value.lower()
+        param_value = 'infinity' if param_value == 'inf' else param_value
+        feature_params_dict[param] = param_value
+    return feature_params_dict
+
+
+def get_higher_value_from_dict(dict):
+    higher_value = max(dict, key=dict.get)
+    print("Highest value from dictionary:", higher_value)
+    return higher_value
+
+
+def filter_non_printable_and_remove_head(string):
+    result = []
+    ws_last = False
+    for c in string:
+        if ws_last:
+            result.append(c)
+        if c == ']':
+            result = []
+            ws_last = True
+    string_f = ''.join(result).replace(' ', '_')
+    string_f = re.sub("[^A-Z_a-z0-9]", "", string_f.strip())
+    return string_f

@@ -1,0 +1,500 @@
+*** Settings ***
+Force Tags    PY36
+
+Documentation     [SUITE PURPOSE]  tests for DSS feature 2574-A NSA Call
+...               Test Case Scenario author   : christophe.samson@nokia.com
+...               Test Case Scenario contact  : christophe.samson@nokia.com
+...               Test Case automation author :
+...               Test Case automation contact:
+...               Creation Date               : November 5 2021
+...               Modified Date               : November 5 2021
+...               Last Modified by            : christophe.samson@nokia.com
+#-------------------------------------------------------------------------------------------------------[150 characters]
+
+Library           taf.sbts.oam.coam.admin            WITH NAME               coam
+Library           ute_wtssim                        WITH NAME               wts
+Library           ../resources/python/luashark_tools.py
+Library           ../../../resources/SWENG/python/StringTool.py
+Library           resources/python/Constants.py                WITH NAME               MyConstants
+Library           ../resources/DSS/python/dss_tools.py         WITH NAME               nps_dss_tools
+Library           resources/python/tools.py                    WITH NAME               nps_2574_tools
+Library           ../resources/common/TtiTrace/python/ttitrace.py   WITH NAME          nps_ttitraces_tools
+
+# SWENG resources
+Resource          ../../../resources/SWENG/robot/GenericTest.robot
+
+# TTI Traces resource
+Resource          ../resources/common/TtiTrace/ttitrace.robot
+
+# DSS common
+Resource          ../resources/DSS/robot/common_Dss_Keywords.robot
+Resource          ../resources/DSS/robot/common_Dss_command.robot
+Resource          ../resources/DSS/robot/common_Dss_SA_NSA.robot
+
+# 2574 specific
+Resource            resources/robot/5GC002574_Kw_TestSetup.robot
+Resource            resources/robot/5GC002574_keywords.robot
+
+Variables           resources/python/Constants.py
+
+Suite Setup         Run keywords
+...                                MyConstants.hello           AND
+...                                Test Suite Setup for 2574   AND
+...                                Get gNB cell 5g On air      AND
+...                                Prepare TL for TTITraces
+Suite Teardown      Test suite teardown for 2574
+
+
+*** Variables ***
+
+${PATTERN_DL_70_SA_OK}       0001100010-0111101110-0011100010-0111101110-0011100010-0111101110-0011100010-0111101110
+${PATTERN_DL_100_SA_OK}      1011110011-1111111111-1011110011-1111111111-1011110011-1111111111-1011110011-1111111111
+
+*** Test Cases ***
+
+TestLine_preparation
+   [Tags]    FULL_RUN    Cellsetup     10MHZ
+   5GC002574_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_2574_A1}
+
+
+TestLine_2574_Test_setup_10Mhz
+   [Tags]    FULL_RUN    Cellsetup   FULL_CALL  10MHZ
+   [Setup]   Run Keywords    set Suite Variable    ${testCaseDir}    None      AND
+   ...                       common_Dss_Keywords.Get testcase log directory
+   5GC002574_Kw_TestSetup.Test Setup 2574    ${TestDSS10Mhz_2574_A1}
+
+
+# TC covered under New Feature
+# [1]5GC002574-A3_TC11_NSA_CallSetup_SANSA_10MHz_DL_ratio_max_70_Check_Counters
+[1]5GC002574-A3_TC_11_10MHz_5gCall_with_Traffic_NSA_Mode_DL_ratio_max_70_Check_Counters
+   [Tags]    FULL_RUN     10MHZ    2574   2574_A3
+   [Documentation]     Cellsetup Dss phase 3, BW= 10MHz, DL RATIO = 70%, NSA 5g Call , DL Tput
+   ...                 Check counter PRBs used for PDSCH (M55308C10001)
+   ...                 Check counter PRBs available for PDSCH (M55308C10003)
+   [Setup]   Run Keywords    set Suite Variable    ${testCaseDir}    None                                 AND
+   ...       set Suite Variable    ${dl_expect_tput_value}           50                                   AND
+   ...       set Suite Variable    ${ul_expect_tput_value}           30                                   AND
+   #         deviation need to take into account crm ul settings
+   ...       set Suite Variable    ${deviation}                      10                                   AND
+   ...       common_Dss_Keywords.Get testcase log directory                                               AND
+   ...       Set global variable    ${CELLSETUP_SHOULD_BE_CHECK}   0                                      AND
+   ...       depends   TestLine_2574_Test_setup_10Mhz
+
+   ${tc_name}        Set variable    TestLine_preparation
+   ${tc_status}      getTcStatusByName    name=${tc_name}
+   Run keyword if    '${tc_status}'!='PASS'
+   ...               5GC002574_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_2574_A3_Counters}
+   ${tc_name}        Set variable    TestLine_2574_Test_setup_10Mhz
+   ${tc_status}      getTcStatusByName    name=${tc_name}
+   Run keyword if    '${tc_status}'!='PASS'
+   ...           5GC002574_Kw_TestSetup.Test Setup 2574    ${TestDSS10Mhz_2574_A3_Counters}
+
+   ${msg}   Catenate   "5GC002574-A3_TC_10_5gCall_with_Traffic_NSA_Mode: sw release used [${convert_version}], Cellsetup Dss phase 3, BW= 10MHz,
+   ...                DL RATIO = 70%, , NSA 5g Call , DL Tput\n
+   ...                CellSetup with CatM activated,\nDL Coordination Req/Rsp and DL Coordination Update Ind test scenario case,\n
+   ...                 Check counter PRBs used for PDSCH (M55308C10001)\n
+   ...                 Check counter PRBs available for PDSCH (M55308C10003)"
+   common_Dss_Keywords.Log Test description   ${msg}
+
+   # Specific Setting for this test...
+   # desactivate superfast_allocation in scf and Param context (used during CellSetup)
+   Set 2574 Specifc Scf Param actLteNrDssFastAlloc with "false" value and update into "${TestDSS10Mhz_2574_A3_Counters}"
+
+   # modification DL Ratio into the test param Ctx
+   Update DSS DL pattern with     ${TestDSS10Mhz_2574_A3_Counters}     ${PATTERN_DL_70_SA_OK}
+   Dated log       DL pattern into TestParam is ${TestDSS10Mhz_2574_A3_Counters.seq.dl_allocated_normal_subframes}
+
+   # update CatM data with CatMinfo_10MHz_CatMData_CatMPaging_CatMSib1Br in Context
+   Update CatMinfo with ${CatMinfo_10MHz_CatMData_CatMPaging_CatMSib1Br_DLRATIO_70} into "${TestDSS10Mhz_2574_A3_Counters}"
+
+   # w/o superfast_allocation for the moment
+   # Update DSS qos load meas timer with     ${TestDSS10Mhz_2574_A3}    ${dl_qos_load_meas_timer}=10    ${ul_qos_load_meas_timer}=30
+   # Update DSS dl qos load meas timer "${10}" ms and ul qos load meas timer "${30}" ms into "${TestDSS10Mhz_2574_A1}"
+   # Dated log       DL qos_load_meas_timer into TestParam is ${TestDSS10Mhz_2574_A1.seq.dl_qos_load_meas_timer} ms
+   # Dated log       UL qos_load_meas_timer into TestParam is ${TestDSS10Mhz_2574_A1.seq.ul_qos_load_meas_timer} ms
+
+   common_Dss_Keywords.Start Tcpdump on TestPc       interface=eth3    option=-s0 sctp or icmp
+   TC 2574 NSA CellSetup                             ${TestDSS10Mhz_2574_A3_Counters}    egate_5GC002574_A3_TC11
+   # add here the DL Pattern list to add to CRMSim and active it ....
+   # => nothing
+
+   TC 2574 5g NSA Call                                  ${TestDSS10Mhz_2574_A3_Counters}    egate_5GC002574_A3_TC11
+   common_Dss_Keywords.Stop Tcpdump on TestPc           interface=eth3    target_dir=${testCaseDir}
+   TC 2574 DL Tput NSA Mode wo Stopping dl Tput         ${TestDSS10Mhz_2574_A3_Counters}
+   ...                                                  ul_rate=${ul_expect_tput_value}
+   ...                                                  dl_rate=${dl_expect_tput_value}
+   ...                                                  alias=egate_5GC002574_A3_TC11
+
+   ${L1L2_Pcap_File}=   5GC002574_keywords.Get L1L2 traces    time=12s   prefix=L1L2Bip.wDLTput
+   ${sum_prb}   ${sum_prb_5min}  ${dl_ratio}=    Sum NbrOfPrb pdschsendreq from L1L2 Pcap    ${TestDSS10Mhz_2574_A3_Counters}
+   ...                                                                                       ${testCaseDir}/${L1L2_Pcap_File.name}.pcap
+   # computed dl ratio not in line with Qos Dl Load Ind !!! Why ?
+   ${dl_ratio}=   set variable    95
+
+    # Sleep 15 mn in case of GP overlap - Traffic is still ongoing
+    Traced Sleep   15 minutes     msg=counters GP overlap
+
+    # Collect PM
+    Run Keyword If        '${check_counters}' == '1'    run keywords   Dated log     =========> Collect PM Counters File    AND
+    ...                                                                common_Dss_Keywords.Collect PM Counters File
+    Run Keyword If        '${check_counters}' == '1'    run keywords   Dated log     =========> Check 2574 Counters         AND
+    ...                                                                5GC002574_Keywords.Check 2574 Counters      sum_prb_over_5min=${sum_prb_5min}
+
+    Check Tput over all period
+
+    ${output}=    nps_2574_tools.Verify QC Test Case    verify_5GC002574_activation
+    should contain	                ${output}	                            passed
+
+    [Teardown]     Run Keywords       common_Dss_Keywords.Collect PM Counters file coam   target_dir=${testCaseDir}     AND
+    ...                               Teardown 2574     alias=egate_5GC002574_A3_TC11                                   AND
+    ...                               set Suite Variable  ${testCaseDir}  None
+
+
+# TC covered under New Feature
+# for 2574-A5
+[1]5GC002574_A_TC_03_5gCall_with_Traffic_SA_Mode
+   [Tags]    FULL_RUN     10MHZ    2574   2574_A3
+   [Documentation]     Cellsetup Dss phase 3, BW= 10MHz, DL RATIO = 100%, Fast DL Allocation, NSA 5g Call , DL/UL Tput
+   [Setup]   Run Keywords    set Suite Variable    ${testCaseDir}    None                                 AND
+   ...       set Suite Variable    ${dl_expect_tput_value}           90                                   AND
+   ...       set Suite Variable    ${ul_expect_tput_value}           30                                   AND
+   #         as each 20ms Prb used  is flickering from 35 to 20, the check need to be done using following ul TP value
+   ...       set Suite Variable    ${dl_expect_tput_value_for_TC03}  62                                   AND
+   #         deviation need to take into account crm ul settings
+   ...       set Suite Variable    ${deviation}                       10                                  AND
+   ...       common_Dss_Keywords.Get testcase log directory                                               AND
+   ...       common_Dss_Keywords.Start Tcpdump on TestPc    interface=eth3    option=-s0 sctp or icmp     AND
+   ...       Set global variable    ${CELLSETUP_SHOULD_BE_CHECK}   0                                      AND
+   ...       depends   TestLine_7838_Test_setup
+
+
+   ${tc_name}    Set variable    TestLine_preparation
+   ${tc_status}    getTcStatusByName    name=${tc_name}
+   Run keyword if    '${tc_status}'!='PASS'
+   ...                          5GC002574_Kw_TestSetup.Test Line Preparation    ${TestDSS10Mhz_2574_A3}
+   ${tc_name}    Set variable    TestLine_2574_Test_setup
+   ${tc_status}    getTcStatusByName    name=${tc_name}
+   Run keyword if    '${tc_status}'!='PASS'
+   ...           5GC002574_Kw_TestSetup.Test Setup 2574    ${TestDSS10Mhz_2574_A3}
+
+   # modification DL Ratio into the test param Ctx
+   Update DSS DL pattern with     ${TestDSS10Mhz_2574_A3}     ${PATTERN_DL_100_SA_OK}
+   Dated log       DL pattern into TestParam is ${TestDSS10Mhz_2574_A3.seq.dl_allocated_normal_subframes}
+   # Update DSS qos load meas timer with     ${TestDSS10Mhz_2574_A3}    ${dl_qos_load_meas_timer}=10    ${ul_qos_load_meas_timer}=30
+   Update DSS dl qos load meas timer "${10}" ms and ul qos load meas timer "${30}" ms into "${TestDSS10Mhz_2574_A3}"
+   Dated log       DL qos_load_meas_timer into TestParam is ${TestDSS10Mhz_2574_A3.seq.dl_qos_load_meas_timer} ms
+   Dated log       UL qos_load_meas_timer into TestParam is ${TestDSS10Mhz_2574_A3.seq.ul_qos_load_meas_timer} ms
+
+   5GC002574_Kw_TestSetup.Update DSS superfast_allocation with "on" into "${TestDSS10Mhz_2574_A3}"
+   Dated log       superfast_allocation into TestParam is ${TestDSS10Mhz_2574_A3.Context.superfast_allocation}
+
+   # Specific Setting for this test
+   # actRateMatchedCsiIm is mandatoy to setup 5GC002574-A
+   Set 2574 Specifc Scf Param actRateMatchedCsiIm with "false" value
+
+   5GC002574_keywords.TC DSS Phase3 CellSetup         ${TestDSS10Mhz_2574_A3}    egate_TC3
+   # add here the DL Pattern list to add to CRMSim and active it ....
+   DSS_5g_Periodic_DL_Fast_Allocation           ${TestDSS10Mhz_2574_A3}    egate_TC3
+
+   TC 2574 5g SA Call                           ${TestDSS10Mhz_2574_A3}    egate_TC3
+   common_Dss_SA_NSA.DSS_5g_SA_UL_DL_Traffic      ${TestDSS10Mhz_2574_A3}
+   ...                                             ul_rate=${ul_expect_tput_value}
+   ...                                             dl_rate=${dl_expect_tput_value}
+   ...                                             alias=egate_TC3
+
+   Traced Sleep    5s      msg=Waiting for UL/DL Tput
+
+   Start capture Backhaul XP for DSS
+   Traced Sleep    1s      msg=Waiting for Xp pcap traces
+   Dated log             Point AF_PATH and ENB_BUILD to local luashark XP package
+   Point AF_PATH to local luashark XP package
+   Point ENB_BUILD to local luashark XP package
+   ${XpPdmlFile}    Stop capture Backhaul XP for DSS
+
+   Dated log             Point AF_PATH and ENB_BUILD to local luashark XP package
+   Point AF_PATH to local luashark XP package
+   Point ENB_BUILD to local luashark XP package
+   Dated log     =========> Check UL and DL Qos Load Indication MeasuredNgbrNnbrLoad ...
+   ${status}     ${avg_ul_MeasuredNgbrNnbrLoad}=  Run Keyword and Ignore Error  common_Dss_Keywords.Check UL Qos Load Indication MeasuredNgbrNnbrLoad
+   ...                                                                                              ${XpPdmlFile}
+   ...                                                                                              value=64
+   ...                                                                                              with_verdict=False
+   Run Keyword and Ignore Error      common_Dss_Keywords.Check DL Qos Load Indication MeasuredNgbrNnbrLoad       ${XpPdmlFile}
+
+   Dated log     =========> get dl and ul throughput for ue (0x${TestDSS10Mhz_2574_A3.Context.UeId1})
+
+
+   ${ul_throughput_for_ue1}=  nps_dss_tools.get_bearer_stats_SA   ue=${TestDSS10Mhz_2574_A3.Context.UeId1}
+   ...                                                             pdu=1   qfi=1    direction=ul  alias=egate_TC3
+   dated log     ul throughput for ue1 is ${ul_throughput_for_ue1} Mbps
+
+   ${dl_throughput_for_ue1}=  nps_dss_tools.get_bearer_stats_SA   ue=${TestDSS10Mhz_2574_A3.Context.UeId1}
+   ...                                                             pdu=1   qfi=1    direction=dl  alias=egate_TC3
+   dated log     dl throughput for ue1 is ${dl_throughput_for_ue1} Mbps
+
+   Dated log     =========> Test if Expected dl throughput is reached [expected=${dl_expect_tput_value_for_TC03}Mbps]
+   ${dl_target_tput}=         Evaluate    float(${dl_expect_tput_value_for_TC03})
+   ${DL_tput_ok}              Verify xL tput     dir=DL    tput_value=${dl_throughput_for_ue1}
+   ...                                           expect_tput_value=${dl_target_tput}    tput_deviation=${deviation}
+   # following tested is moved from the KW to be sure if failed it is really reported
+   should be true    '${DL_tput_ok}'=='True'    Tput is not as expected!
+
+   [Teardown]     Run Keywords       common_Dss_Keywords.Stop Tcpdump on TestPc    interface=eth3    target_dir=${testCaseDir}     AND
+   ...                               Teardown 2574     alias=egate_TC3           AND
+   ...                               set Suite Variable  ${testCaseDir}  None
+
+
+TestLine_2574_Test_setup_20MHz
+   [Tags]    FULL_RUN    Cellsetup   FULL_CALL  20MHZ
+   [Setup]   Run Keywords    set Suite Variable    ${testCaseDir}    None      AND
+   ...                       common_Dss_Keywords.Get testcase log directory
+   5GC002574_Kw_TestSetup.Test Setup 2574    ${TestDSS20Mhz_2574_A}
+
+# Test
+#    common_Dss_Keywords.Get testcase log directory
+#    ${sum_prb}   ${sum_prb_5min}=      Sum NbrOfPrb Info from L1L2 Pcap    ${TestDSS10Mhz_2574_A1}
+#    ...                         /home/ute/csamson/trace/DL_UL_Tput.5GC002574-A3_TC_11_5gCall_with_Traffic_NSA_Mode_Check_Counters.pcap
+
+*** Keywords ***
+
+TC 2574 5g SA Call
+   [Documentation]                Test purpose is to test 5g DSS SA Call
+   [Arguments]                    ${param}    ${alias}=default
+   Init Sequence                  ${param}
+   Step           Start capture Bip and Xp for 2574
+   Step           common_Dss_SA_NSA.DSS_5g_Call_SA           argument=${alias}
+   Step           Stop capture Bip and Xp for 2574       depends=Start capture Bip and Xp for 2574
+   [Teardown]                      GenericTest.Display diagnosis
+
+TC 2574 NSA CellSetup
+   [Documentation]                Generic test for 2574: test purpose is to setup X2, Xp and DSS CellSetup Phase3
+   [Arguments]                    ${param}     ${alias}=default
+   Init Sequence                  ${param}
+   common_Dss_Keywords.Restart     OwnTLReset=${False}     GNBCallback=common_Dss_Keywords.Set Reset Loop Counter
+   Step                           Start capture Backhaul XP for DSS       depends=common_Dss_Keywords.Restart
+   Step                           5GC002574_keywords.Start WTS For NSA              argument=${alias}
+   Step                           Xp link Setup                 argument=${alias}        depends=5GC002574_keywords.Start WTS For NSA
+   Step                           X2Ap link Setup               argument=${alias}        depends=5GC002574_keywords.Start WTS For NSA
+   Step                           common_Dss_CellSetup.DSS_CRM_Cell_Setup_Phase3    argument=${alias}     depends=Xp link Setup
+   ${pdmlFile}                    Stop capture Backhaul XP for DSS
+   Run Keyword if       '${CELLSETUP_SHOULD_BE_CHECK}' == '1'
+   ...                    Step        Check DSS CellSetup Phase3      argument=${pdmlFile}   depends=common_Dss_CellSetup.DSS_CRM_Cell_Setup_Phase3
+   Critical Step                  common_Dss_CellSetup.Verify AP Classical Cell Setup
+   [Teardown]               GenericTest.Display diagnosis
+
+TC 2574 5g NSA Call
+   [Documentation]                Test purpose is to test 5g DSS NSA Call
+   [Arguments]                    ${param}     ${alias}=default
+   BuiltIn.log                    alias is ${alias}
+   Init Sequence                  ${param}
+   Critical Step                  common_Dss_SA_NSA.Test SgNB Addition PRACH
+   [Teardown]               GenericTest.Display diagnosis
+
+TC 2574 DL Tput NSA Mode
+    [Documentation]                Generic test for 2574: test purpose is to test DL Tput NSA mode
+    [Arguments]                    ${param}      ${ul_rate}=15      ${dl_rate}=80      ${alias}=default
+    BuiltIn.log                    ul_rate=${ul_rate} and dl_rate=${dl_rate}
+    Init Sequence                  ${param}
+    # Dated log             Point AF_PATH to local luashark XP package
+    # Point AF_PATH to local luashark XP package
+    # Point ENB_BUILD to local luashark XP package
+    Dated log     SSH on ${GNB_DU.sys[0].M.sshId}
+    ${aliasGNB_M}         SSH Wait For Connect                    ${GNB_DU.sys[0].M}
+    ${tput_log_file_path_gnb}      Run Keyword If     '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'    Start tput log capture    gnb_index=0
+    ...                                                                                                          asik_alias=${aliasGNB_M}
+    Dated log     =========> NSA Start DL Traffic on ue_id=${UE_SIMPLE_CellDSS.ue} with ${dl_rate}M
+    Step       NSA Start Generating "${dl_rate}"mbps DL Traffic for Ue "${param.Context.UeId1}" on NSA using alias "${alias}"
+    Traced Sleep   5s     msg=DL Traffic to test Tput
+    Run Keyword If       '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'      Dated log         Calculate DL and UL throughput on gnb L2Lo case ...
+    # Run Keyword And Ignore Error    Check UL DL Throughput
+    Run Keyword If       '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'   Check Throughput from aasyslog   asik_alias=${aliasGNB_M}
+    ...                                                                                   tput_log_file_path_gnb_combined=${tput_log_file_path_gnb}
+
+    ${L1L2_Pcap_File}=   5GC002574_keywords.Get L1L2 traces    time=12s   prefix=L1L2Bip.wDLTput
+    ${sum_prb}   ${sum_prb_5min}   ${dl_ratio}=    Sum NbrOfPrb pdschsendreq from L1L2 Pcap wo Step    ${param}
+    ...                                                                                                ${testCaseDir}/${L1L2_Pcap_File.name}.pcap
+    # computed dl ratio not in line with Qos Dl Load Ind !!! Why ?
+    ${dl_ratio}=   set variable    95
+
+    Step                Start capture Backhaul XP for DSS     argument=XP.BH.wDLTput
+    Traced Sleep   3s     msg=DL Traffic to test DL Qos load Indication
+    ${pdmlFile}         Stop capture Backhaul XP for DSS
+    Dated log     =========> Check DL Qos Load Indication MeasuredNgbrNnbrLoad ...
+    # Step              common_Dss_Keywords.Check DL Qos Load Indication MeasuredNgbrNnbrLoad   depends=common_Dss_Keywords.Stop capture for DSS
+    # ...                            argument=${pdmlFile}
+    common_Dss_Keywords.Check DL Qos Load Indication MeasuredNgbrNnbrLoad   ${pdmlFile}    value=${dl_ratio}
+    Step              Start capture Bip and Xp for 2574          argument=BIPL1L2.BH.wDLTput
+    Traced Sleep   2s     msg=take BIPL1L2 and BH pcap traces with DL Tput
+    Step              Stop capture Bip and Xp for 2574              depends=5GC001586_Keywords.Start capture Bip and Xp for 1586
+    Dated log     =========> get throughput for ue (0x${UE_SIMPLE_CellDSS.ue})
+    ${ul_throughput_for_ue1}=    nps_dss_tools.get_bearer_stats   ue=0x${UE_SIMPLE_CellDSS.ue}   bearer=${UE_SIMPLE_CellDSS.bearer}
+    ...                                                         direction=ul  alias=${alias}
+    dated log     ul throughput for ue is ${ul_throughput_for_ue1} Mbps
+    ${dl_throughput_for_ue1}=    nps_dss_tools.get_bearer_stats   ue=0x${UE_SIMPLE_CellDSS.ue}   bearer=${UE_SIMPLE_CellDSS.bearer}
+    ...                                                         direction=dl  alias=${alias}
+    dated log     dl throughput for ue is ${dl_throughput_for_ue1} Mbps
+    Step          common_Dss_SA_NSA.Display Ue NSA Statistics       argument=${alias}
+    Run Keyword And Ignore Error    5GC002574_keywords.Get TTI traces
+    common_Dss_SA_NSA.Stop Generating Traffic         ue=${UE_SIMPLE_CellDSS.ue}
+    ...                                           bearer=${UE_SIMPLE_CellDSS.bearer}
+    ...                                           alias=${alias}
+    [Teardown]           GenericTest.Display diagnosis
+
+TC 2574 DL Tput NSA Mode wo Stopping dl Tput
+    [Documentation]                Generic test for 2574: test purpose is to test DL Tput NSA mode
+    [Arguments]                    ${param}      ${ul_rate}=15      ${dl_rate}=80      ${alias}=default
+    BuiltIn.log                    ul_rate=${ul_rate} and dl_rate=${dl_rate}
+    Init Sequence                  ${param}
+    # Dated log             Point AF_PATH to local luashark XP package
+    # Point AF_PATH to local luashark XP package
+    # Point ENB_BUILD to local luashark XP package
+    Dated log     SSH on ${GNB_DU.sys[0].M.sshId}
+    ${aliasGNB_M}         SSH Wait For Connect                    ${GNB_DU.sys[0].M}
+    ${tput_log_file_path_gnb}      Run Keyword If     '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'    Start tput log capture    gnb_index=0
+    ...                                                                                                          asik_alias=${aliasGNB_M}
+    Dated log     =========> NSA Start DL Traffic on ue_id=${UE_SIMPLE_CellDSS.ue} with ${dl_rate}M
+    Step       NSA Start Generating "${dl_rate}"mbps DL Traffic for Ue "${param.Context.UeId1}" on NSA using alias "${alias}"
+    Traced Sleep   5s     msg=DL Traffic to test Tput
+    Run Keyword If       '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'      Dated log         Calculate DL and UL throughput on gnb L2Lo case ...
+    # Run Keyword And Ignore Error    Check UL DL Throughput
+    Run Keyword If       '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'   Check Throughput from aasyslog   asik_alias=${aliasGNB_M}
+    ...                                                                                   tput_log_file_path_gnb_combined=${tput_log_file_path_gnb}
+    # Point AF_PATH to local luashark XP package
+    # Point ENB_BUILD to local luashark XP package
+    Step                Start capture Backhaul XP for DSS     argument=XP.BH.wDLTput
+    Traced Sleep   3s     msg=DL Traffic to test DL Qos load Indication
+    ${pdmlFile}         Stop capture Backhaul XP for DSS
+    Dated log     =========> Check DL Qos Load Indication MeasuredNgbrNnbrLoad ...
+    Step              common_Dss_Keywords.Check DL Qos Load Indication MeasuredNgbrNnbrLoad   depends=common_Dss_Keywords.Stop capture for DSS
+    ...                            argument=${pdmlFile}
+    Step              Start capture Bip and Xp for 2574          argument=BIPL1L2.BH.wDLTput
+    Traced Sleep   2s     msg=take BIPL1L2 and BH pcap traces with DL Tput
+    Step              Stop capture Bip and Xp for 2574              depends=5GC001586_Keywords.Start capture Bip and Xp for 1586
+    Dated log     =========> get throughput for ue (0x${UE_SIMPLE_CellDSS.ue})
+    ${ul_throughput_for_ue1}=    nps_dss_tools.get_bearer_stats   ue=0x${UE_SIMPLE_CellDSS.ue}   bearer=${UE_SIMPLE_CellDSS.bearer}
+    ...                                                         direction=ul  alias=${alias}
+    dated log     ul throughput for ue is ${ul_throughput_for_ue1} Mbps
+    ${dl_throughput_for_ue1}=    nps_dss_tools.get_bearer_stats   ue=0x${UE_SIMPLE_CellDSS.ue}   bearer=${UE_SIMPLE_CellDSS.bearer}
+    ...                                                         direction=dl  alias=${alias}
+    dated log     dl throughput for ue is ${dl_throughput_for_ue1} Mbps
+    Step          common_Dss_SA_NSA.Display Ue NSA Statistics       argument=${alias}
+    # Run Keyword And Ignore Error    5GC002574_keywords.Get TTI traces
+    [Teardown]           GenericTest.Display diagnosis
+
+TC 2574 DL UL Tput NSA Mode
+    [Documentation]                Generic test for 2574: test purpose is to test DL/UL Tput NSA mode
+    [Arguments]                    ${param}      ${ul_rate}=15      ${dl_rate}=80      ${alias}=default
+    BuiltIn.log                    ul_rate=${ul_rate} and dl_rate=${dl_rate}
+    Init Sequence                  ${param}
+    Dated log             Point AF_PATH to local luashark XP package
+    Point AF_PATH to local luashark XP package
+    Point ENB_BUILD to local luashark XP package
+    Dated log     SSH on ${GNB_DU.sys[0].M.sshId}
+    ${aliasGNB_M}         SSH Wait For Connect                    ${GNB_DU.sys[0].M}
+    ${tput_log_file_path_gnb}      Run Keyword If     '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'    Start tput log capture    gnb_index=0
+    ...                                                                                                          asik_alias=${aliasGNB_M}
+    Dated log     =========> NSA Start UL/DL Traffic on ue_id=${UE_SIMPLE_CellDSS.ue} with ${ul_rate}M/${dl_rate}M
+    Start Generating "${ul_rate}"mbps UL and "${dl_rate}"mbps DL Traffic for Ue "${param.Context.UeId1}" on NSA using alias "${alias}"
+    Traced Sleep   5s     msg=DL/UL Traffic to test Tput
+    Run Keyword If       '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'      Dated log         Calculate DL and UL throughput on gnb L2Lo case ...
+    # Run Keyword And Ignore Error    Check UL DL Throughput
+    Run Keyword If       '${UL_DL_TPUT_CHECK_BASED_AASYSLOG}' == '1'   Check Throughput from aasyslog   asik_alias=${aliasGNB_M}
+    ...                                                                                   tput_log_file_path_gnb_combined=${tput_log_file_path_gnb}
+    Point AF_PATH to local luashark XP package
+    Point ENB_BUILD to local luashark XP package
+    Step                Start capture Backhaul XP for DSS
+    Traced Sleep   3s     msg=DL/UL Traffic to test DL/UL Qos load Indication
+    ${pdmlFile}         Stop capture Backhaul XP for DSS
+    Dated log     =========> Check UL and DL Qos Load Indication MeasuredNgbrNnbrLoad ...
+    ${status}    ${avg_ul_MeasuredNgbrNnbrLoad}=  Run Keyword and Ignore Error  common_Dss_Keywords.Check UL Qos Load Indication MeasuredNgbrNnbrLoad
+   ...                                                                                              ${pdmlFile}
+   ...                                                                                              value=64
+   ...                                                                                              with_verdict=False
+    Step              common_Dss_Keywords.Check DL Qos Load Indication MeasuredNgbrNnbrLoad   depends=common_Dss_Keywords.Stop capture for DSS
+    ...                            argument=${pdmlFile}
+    Step              Start capture Bip and Xp for 2574          argument=BIP_L1L2_BH_w_DLULTput_${alias}
+    Traced Sleep   2s     msg=take BIP L1L2 and BH pcap traces with DL/UL Tput
+    Step              Stop capture Bip and Xp for 2574              depends=5GC001586_Keywords.Start capture Bip and Xp for 1586
+    Dated log     =========> get ul/dl throughput for ue (0x${UE_SIMPLE_CellDSS.ue})
+    ${ul_throughput_for_ue1}=    nps_dss_tools.get_bearer_stats   ue=0x${UE_SIMPLE_CellDSS.ue}   bearer=${UE_SIMPLE_CellDSS.bearer}
+    ...                                                         direction=ul  alias=${alias}
+    dated log     ul throughput for ue is ${ul_throughput_for_ue1} Mbps
+    ${dl_throughput_for_ue1}=    nps_dss_tools.get_bearer_stats   ue=0x${UE_SIMPLE_CellDSS.ue}   bearer=${UE_SIMPLE_CellDSS.bearer}
+    ...                                                         direction=dl  alias=${alias}
+    dated log     dl throughput for ue is ${dl_throughput_for_ue1} Mbps
+    Step          common_Dss_SA_NSA.Display Ue NSA Statistics       argument=${alias}
+    common_Dss_SA_NSA.Stop Generating Traffic         ue=${UE_SIMPLE_CellDSS.ue}
+    ...                                           bearer=${UE_SIMPLE_CellDSS.bearer}
+    ...                                           alias=${alias}
+    [Teardown]           GenericTest.Display diagnosis
+
+DSS_5g_Periodic_DL_Fast_Allocation
+   [Documentation]     DL Pattern list to add to CRMSim and active it
+   [Arguments]         ${param}     ${alias}=default
+   Init Sequence       ${param}
+   Step      common_Dss_CellSetup.Periodic DL Fast Allocation      argument=${alias}
+   [Teardown]                      GenericTest.Display diagnosis
+
+DSS_5g_Periodic_UL_Fast_Allocation
+   [Documentation]     UL Pattern list to add to CRMSim and active it
+   [Arguments]         ${param}     ${alias}=default
+   Init Sequence       ${param}
+   Step      common_Dss_CellSetup.Periodic UL Fast Allocation      argument=${alias}
+   [Teardown]                      GenericTest.Display diagnosis
+
+
+Check Tput over all period
+    [Documentation]    Computes and checks the Tput UL and DL between start_per_time and end_per_time
+    ...                Tputs should be equal to maximum Tputs all along the test, with 5% margin
+    [Arguments]    ${nb_cell}=1    ${dl_tput}=550    ${ul_tput}=100
+
+    BuiltIn.log                    nb_cell=${nb_cell}
+    BuiltIn.log                    ul_rate=${ul_tput} and dl_rate=${dl_tput}
+
+    #M55319C00001: MEAS_PERIOD_NR_PDCP_REPORT1
+    #M55319C0200x : DL_VOL_TX_NSA_QOS_GRP_0x: DL PDCP SDU volume transmitted for NSA Bearer - QoS Group 0x: nbre de bytes
+    #M55319C02009 : Tput PDCP DL en bytes sur QoS 9
+    #M55319C0600x: UL PDCP SDU volume received for NSA Bearer - QoS Group 0x: nbre de bytes
+    #M55319C06009: Tput PDCP UL en bytes sur QoS 9
+
+    #M55304C00001: Duration of the measurement period for the NR MAC PDU throughput
+    # les compteurs suivants sont en bytes
+    #M55304C01001 a 28: Initial transmission volume on PDSCH with 64QAM MCS table using MCS x, i.e Cell PDSCH without retrans Tput
+    #M55304C02001 a 28: Initial and retransmission volume on PDSCH with 64QAM MCS table using MCS x, i.e Cell PDSCH with retrans Tput
+    #M55304C03001 a 28: Initial transmissions volume on PUSCH with CP-OFDM and 64QAM MCS table using MCS x, i.e Cell PUSCH without retrans Tput
+    #M55304C04001 a 28: Initial and retransmission volume on PUSCH with CP-OFDM and 64QAM MCS table using MCS x, i.e Cell PUSCH with retrans Tput
+    #M55304C05001 a 28: Initial transmission volume on PDSCH with 256QAM MCS table using MCS x, i.e Cell PDSCH without retrans Tput
+    #M55304C06001 a 28: Initial and retransmission volume on PDSCH with 256QAM MCS table using MCS x, i.e Cell PDSCH with retrans Tput
+
+    ${NRCELL_ID}                       set variable       1
+    # ${counter_values_M55319C02009}  Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}    M55319C02009   ${NRCELL_ID}
+    # ${counter_values_M55319C00001}  Retrieve Latest Single Counter Value From Pm File with CellID    ${LATEST_FILE}    M55319C00001   ${NRCELL_ID}
+    ${counter_values_M55319C02009}     Retrieve Latest Single Counter Value From Pm File    ${LATEST_FILE}    M55319C02009
+    ${counter_values_M55319C00001}     Retrieve Latest Single Counter Value From Pm File    ${LATEST_FILE}    M55319C00001
+    BuiltIn.Log     ***DL PDCP SDU volume transmitted for NSA Bearer - QoS Group 09 (M55319C02009) = ${counter_values_M55319C02009}   console=yes
+    BuiltIn.Log     ***Duration of the measurement period for the PDCP Report 1 (M55319C00001) = ${counter_values_M55319C00001}       console=yes
+
+    ${Tput_PDCP_DL}                    set variable        ${counter_values_M55319C02009}
+    ${MEAS_PERIOD_NR_PDCP_REPORT1}     set variable        ${counter_values_M55319C00001}
+
+    ${tputDL}=              evaluate        8 * ${Tput_PDCP_DL} / (1000 * ${MEAS_PERIOD_NR_PDCP_REPORT1})
+    Dated log          TPUT PDCP DL = ${tputDL} Mbps
+
+    ${counter_values_M55319C06009}     Retrieve Latest Single Counter Value From Pm File     ${LATEST_FILE}   M55319C06009
+    BuiltIn.Log     ***UL PDCP SDU volume received for NSA Bearer - QoS Group 09 (M55319C02009) = ${counter_values_M55319C06009}   console=yes
+    ${Tput_PDCP_UL}                    set variable        ${counter_values_M55319C06009}
+
+    ${tputUL}=              evaluate        8 * ${Tput_PDCP_UL} / (1000 * ${MEAS_PERIOD_NR_PDCP_REPORT1})
+    Dated log          TPUT PDCP uL = ${tputUL} Mbps
+
+    # ${dl_min_tput}           evaluate    ${dl_tput} * 0.9
+    # ${ul_min_tput}           evaluate    ${ul_tput} * 0.9
+
+    # Should be true    ${tputDL} >= ${dl_min_tput}
+    # Should be true    ${tputUL} >= ${ul_min_tput}
+
+
+
+
+
+

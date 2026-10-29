@@ -1,0 +1,308 @@
+*** Settings ***
+Suite Setup    Common Suite Setup And Setup Airphone Env
+Suite Teardown    Common Suite Teardown And Restore BTS Configuration Parameters
+Test Setup    Common Test Setup And Start To Capture Logs
+Test Teardown    Common Test Teardown And Stop Capture Logs
+Force Tags    QCD_MN_RAN    QCP_RAN_ET    SBTS00    RAN_5G    CLOUD_5G_I_[LO][LO]_AP_[LOO]    team-L3CN1_SG14
+...    owner-alex.2.wang    release-SBTS23R4    CRT
+Resource    ../../../../resources/DevHZ5_resource.robot
+
+*** Variables ***
+${NOKIA_XNAP_PLUGIN_FLAG}    ${True}
+${NOKIA_F1AP_PLUGIN_FLAG}    ${True}
+
+@{PARAMS_IN_SCF}
+...    @{PARAMS_FOR_CA}
+...    @{PARAMS_FOR_GNB1}
+...    @{PARAMS_ADJ_REL_FOR_GNB1}
+...    @{PARAMS_FOR_OTHERS}
+
+@{PARAMS_IN_SCF_GNB2}
+...    @{PARAMS_FOR_CA}
+...    @{PARAMS_FOR_GNB2}
+...    @{PARAMS_ADJ_REL_FOR_GNB2}
+...    @{PARAMS_FOR_OTHERS}
+
+@{PARAMS_FOR_CA}
+...    NRBTS:actCarrierAggregation=true
+...    NRBTS:sCellActivationMethod=blind
+...    NRBTS:caConfigurationSupport=4CCDL_2CCUL
+...    NRBTS:weightForIgnbCaSelection=80
+...    NRBTS:actIncXn=true
+...    NRDU-1:actConnectedModeMobilityCA=true
+...    NRDU-1:flexibleCAMode=ConfigurationIndependent
+...    NRDU-1:carrierAggregationSupportList=ca_Fr1Tdd_Fdd_Sa,ca_Fr1Tdd_Sa,ca_Fr1Tdd_Any_Sa,ca_Fdd_Fr1Tdd_Sa,ca_Fdd_Fdd,ca_Fdd_Any_Sa
+...    NRDU-1:actInterGnbCa=DLOnly
+...    NRDU-1:dlToUlContributionRatio=101
+...    NRCELL:actK1Opt=intraAndInter-gNB
+...    NRCELL:maxNumScellsDlFr1=3
+
+@{PARAMS_FOR_GNB1}
+...    NRBTS:iGnbCaXnCfUpBackOffTmr=60
+...    NRBTS:iGnbCaXnSetupReqTmr=60
+...    NRBTS:iGnbCaXnSetupRespTmr=60
+...    NRBTS:intGnbScellTempBlockTmr=60
+...    NRBTS:actBcsCheck=enabled_FR1
+...    NRBTS:rejectSuppBcs=none
+...    NRBTS/NRDU-1:xgUplane:ipV4AddressDN1=MRBTS-1/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1
+...    NRCELL:sCellDeactivationTimerGNB=infinity
+...    NRCELL:allowUnsuppBcOrBcs=complete BCS check
+...    NRCELL:tddFrameStructure:frameStructureType=semiStatic
+...    NRCELL:tddFrameStructure:guardPeriodLength=2Symbols
+...    NRCELL:tddFrameStructure:lteToNrFrameShift=${EMPTY}
+...    NRCELL:tddFrameStructure:tdLteUlDlConfig=${EMPTY}
+...    NRCELL:tddFrameStructure:ulDlDataSlotRatio=3/7
+...    NRCELL:prachConfigurationIndex=160
+...    NRBTS/SNSSAI-1:xgUplane:ipV4AddressDN1=MRBTS-1/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1
+
+@{PARAMS_ADJ_REL_FOR_GNB1}
+...    NRBTS/NRADJGNB-2:administrativeState=Unlocked
+...    NRBTS/NRADJGNB-2:gNbIdLength=22
+...    NRBTS/NRADJGNB-2:gNodeBId=2
+...    NRBTS/NRADJGNB-2:weightForIgnbCaSelection=40
+...    NRBTS/NRADJGNB-2:xnLinkRef=1
+...    NRBTS/NRADJGNB-2:gnbPlmn:mcc=311
+...    NRBTS/NRADJGNB-2:gnbPlmn:mnc=489
+...    NRBTS/NRADJGNB-2:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-1:cellDepType=SA+NSA
+...    NRBTS/NRADJNRCELL-1:fiveGsTac=200
+...    NRBTS/NRADJNRCELL-1:freqBandIndicatorNR=77
+...    NRBTS/NRADJNRCELL-1:gNbId=2
+...    NRBTS/NRADJNRCELL-1:gNbIdLength=22
+...    NRBTS/NRADJNRCELL-1:lcrId=3
+...    NRBTS/NRADJNRCELL-1:nrarfcn=653400
+...    NRBTS/NRADJNRCELL-1:physCellId=52
+...    NRBTS/NRADJNRCELL-1:gnbPlmn:mcc=311
+...    NRBTS/NRADJNRCELL-1:gnbPlmn:mnc=489
+...    NRBTS/NRADJNRCELL-1:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-2:cellDepType=SA+NSA
+...    NRBTS/NRADJNRCELL-2:fiveGsTac=200
+...    NRBTS/NRADJNRCELL-2:freqBandIndicatorNR=77
+...    NRBTS/NRADJNRCELL-2:gNbId=2
+...    NRBTS/NRADJNRCELL-2:gNbIdLength=22
+...    NRBTS/NRADJNRCELL-2:lcrId=4
+...    NRBTS/NRADJNRCELL-2:nrarfcn=648000
+...    NRBTS/NRADJNRCELL-2:physCellId=53
+...    NRBTS/NRADJNRCELL-2:gnbPlmn:mcc=311
+...    NRBTS/NRADJNRCELL-2:gnbPlmn:mnc=489
+...    NRBTS/NRADJNRCELL-2:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-3:cellDepType=SA+NSA
+...    NRBTS/NRADJNRCELL-3:fiveGsTac=200
+...    NRBTS/NRADJNRCELL-3:freqBandIndicatorNR=3
+...    NRBTS/NRADJNRCELL-3:gNbId=2
+...    NRBTS/NRADJNRCELL-3:gNbIdLength=22
+...    NRBTS/NRADJNRCELL-3:lcrId=11
+...    NRBTS/NRADJNRCELL-3:nrarfcn=368400
+...    NRBTS/NRADJNRCELL-3:physCellId=60
+...    NRBTS/NRADJNRCELL-3:gnbPlmn:mcc=311
+...    NRBTS/NRADJNRCELL-3:gnbPlmn:mnc=489
+...    NRBTS/NRADJNRCELL-3:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-4:cellDepType=SA+NSA
+...    NRBTS/NRADJNRCELL-4:fiveGsTac=200
+...    NRBTS/NRADJNRCELL-4:freqBandIndicatorNR=28
+...    NRBTS/NRADJNRCELL-4:gNbId=2
+...    NRBTS/NRADJNRCELL-4:gNbIdLength=22
+...    NRBTS/NRADJNRCELL-4:lcrId=12
+...    NRBTS/NRADJNRCELL-4:nrarfcn=153400
+...    NRBTS/NRADJNRCELL-4:physCellId=61
+...    NRBTS/NRADJNRCELL-4:gnbPlmn:mcc=311
+...    NRBTS/NRADJNRCELL-4:gnbPlmn:mnc=489
+...    NRBTS/NRADJNRCELL-4:gnbPlmn:mncLength=3
+...    NRCELL-1/NRREL-1:cellIndividualSsbRsrpOffset=0dB
+...    NRCELL-1/NRREL-1:cellIndividualSsbRsrqOffset=0dB
+...    NRCELL-1/NRREL-1:gNbId=2
+...    NRCELL-1/NRREL-1:gNbIdLength=22
+...    NRCELL-1/NRREL-1:handoverAllowedSA=allowed
+...    NRCELL-1/NRREL-1:lcrId=3
+...    NRCELL-1/NRREL-1:removeNotAllowed=false
+...    NRCELL-1/NRREL-1:sCellAdditionMethod=blind
+...    NRCELL-1/NRREL-1:sCellOperationalMode=dlOnly
+...    NRCELL-1/NRREL-1:gnbPlmn:mcc=311
+...    NRCELL-1/NRREL-1:gnbPlmn:mnc=489
+...    NRCELL-1/NRREL-1:gnbPlmn:mncLength=3
+...    NRCELL-1/NRREL-2:cellIndividualSsbRsrpOffset=0dB
+...    NRCELL-1/NRREL-2:cellIndividualSsbRsrqOffset=0dB
+...    NRCELL-1/NRREL-2:gNbId=2
+...    NRCELL-1/NRREL-2:gNbIdLength=22
+...    NRCELL-1/NRREL-2:handoverAllowedSA=allowed
+...    NRCELL-1/NRREL-2:lcrId=4
+...    NRCELL-1/NRREL-2:removeNotAllowed=false
+...    NRCELL-1/NRREL-2:sCellAdditionMethod=blind
+...    NRCELL-1/NRREL-2:sCellOperationalMode=dlOnly
+...    NRCELL-1/NRREL-2:gnbPlmn:mcc=311
+...    NRCELL-1/NRREL-2:gnbPlmn:mnc=489
+...    NRCELL-1/NRREL-2:gnbPlmn:mncLength=3
+...    NRCELL-1/NRREL-3:cellIndividualSsbRsrpOffset=0dB
+...    NRCELL-1/NRREL-3:cellIndividualSsbRsrqOffset=0dB
+...    NRCELL-1/NRREL-3:gNbId=2
+...    NRCELL-1/NRREL-3:gNbIdLength=22
+...    NRCELL-1/NRREL-3:handoverAllowedSA=allowed
+...    NRCELL-1/NRREL-3:lcrId=11
+...    NRCELL-1/NRREL-3:removeNotAllowed=false
+...    NRCELL-1/NRREL-3:sCellAdditionMethod=blind
+...    NRCELL-1/NRREL-3:sCellOperationalMode=dlOnly
+...    NRCELL-1/NRREL-3:gnbPlmn:mcc=311
+...    NRCELL-1/NRREL-3:gnbPlmn:mnc=489
+...    NRCELL-1/NRREL-3:gnbPlmn:mncLength=3
+...    NRCELL-1/NRREL-4:cellIndividualSsbRsrpOffset=0dB
+...    NRCELL-1/NRREL-4:cellIndividualSsbRsrqOffset=0dB
+...    NRCELL-1/NRREL-4:gNbId=2
+...    NRCELL-1/NRREL-4:gNbIdLength=22
+...    NRCELL-1/NRREL-4:handoverAllowedSA=allowed
+...    NRCELL-1/NRREL-4:lcrId=12
+...    NRCELL-1/NRREL-4:removeNotAllowed=false
+...    NRCELL-1/NRREL-4:sCellAdditionMethod=blind
+...    NRCELL-1/NRREL-4:sCellOperationalMode=dlOnly
+...    NRCELL-1/NRREL-4:gnbPlmn:mcc=311
+...    NRCELL-1/NRREL-4:gnbPlmn:mnc=489
+...    NRCELL-1/NRREL-4:gnbPlmn:mncLength=3
+
+@{PARAMS_FOR_GNB2}
+...    NRBTS:iGnbCaXnCfUpBackOffTmr=60
+...    NRBTS:iGnbCaXnSetupReqTmr=60
+...    NRBTS:iGnbCaXnSetupRespTmr=60
+...    NRBTS:intGnbScellTempBlockTmr=60
+...    NRBTS/NRDU-1:xgUplane:ipV4AddressDN1=MRBTS-2/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1
+...    NRCELL:sCellDeactivationTimerGNB=infinity
+...    NRCELL:weightForSCellSelection=50
+...    NRCELL-3:tddFrameStructure:frameStructureType=tdLte
+...    NRCELL-3:tddFrameStructure:guardPeriodLength=4Symbols
+...    NRCELL-3:tddFrameStructure:lteToNrFrameShift=0ms
+...    NRCELL-3:tddFrameStructure:tdLteUlDlConfig=tdLteConfig2
+...    NRCELL-3:tddFrameStructure:ulDlDataSlotRatio=1/9
+...    NRCELL-4:tddFrameStructure:frameStructureType=tdLte
+...    NRCELL-4:tddFrameStructure:guardPeriodLength=4Symbols
+...    NRCELL-4:tddFrameStructure:lteToNrFrameShift=0ms
+...    NRCELL-4:tddFrameStructure:tdLteUlDlConfig=tdLteConfig2
+...    NRCELL-4:tddFrameStructure:ulDlDataSlotRatio=1/9
+...    NRCELL-3:prachConfigurationIndex=156
+...    NRCELL-4:prachConfigurationIndex=156
+...    NRBTS/SNSSAI-1:xgUplane:ipV4AddressDN1=MRBTS-2/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1
+
+@{PARAMS_ADJ_REL_FOR_GNB2}
+...    NRBTS/NRADJGNB-1:administrativeState=Unlocked
+...    NRBTS/NRADJGNB-1:gNbIdLength=22
+...    NRBTS/NRADJGNB-1:gNodeBId=1
+...    NRBTS/NRADJGNB-1:weightForIgnbCaSelection=40
+...    NRBTS/NRADJGNB-1:xnLinkRef=1
+...    NRBTS/NRADJGNB-1:gnbPlmn:mcc=311
+...    NRBTS/NRADJGNB-1:gnbPlmn:mnc=489
+...    NRBTS/NRADJGNB-1:gnbPlmn:mncLength=3
+...    NRBTS/NRADJNRCELL-1:cellDepType=SA+NSA
+...    NRBTS/NRADJNRCELL-1:fiveGsTac=200
+...    NRBTS/NRADJNRCELL-1:freqBandIndicatorNR=77
+...    NRBTS/NRADJNRCELL-1:gNbId=1
+...    NRBTS/NRADJNRCELL-1:gNbIdLength=22
+...    NRBTS/NRADJNRCELL-1:lcrId=1
+...    NRBTS/NRADJNRCELL-1:nrarfcn=663400
+...    NRBTS/NRADJNRCELL-1:physCellId=50
+...    NRBTS/NRADJNRCELL-1:gnbPlmn:mcc=311
+...    NRBTS/NRADJNRCELL-1:gnbPlmn:mnc=489
+...    NRBTS/NRADJNRCELL-1:gnbPlmn:mncLength=3
+...    NRCELL-12/NRREL-1:cellIndividualSsbRsrpOffset=0dB
+...    NRCELL-12/NRREL-1:cellIndividualSsbRsrqOffset=0dB
+...    NRCELL-12/NRREL-1:gNbId=1
+...    NRCELL-12/NRREL-1:gNbIdLength=22
+...    NRCELL-12/NRREL-1:handoverAllowedSA=allowed
+...    NRCELL-12/NRREL-1:lcrId=1
+...    NRCELL-12/NRREL-1:removeNotAllowed=false
+...    NRCELL-12/NRREL-1:sCellAdditionMethod=blind
+...    NRCELL-12/NRREL-1:sCellOperationalMode=dlOnly
+...    NRCELL-12/NRREL-1:gnbPlmn:mcc=311
+...    NRCELL-12/NRREL-1:gnbPlmn:mnc=489
+...    NRCELL-12/NRREL-1:gnbPlmn:mncLength=3
+@{PARAMS_FOR_OTHERS}
+
+
+...    NRBTS:actRanSharing=false
+...    NRCELL:actCDrx=false
+
+#UE1_Capa: CA_n3A-n41A-n77(2A) with BCS0 and with neither simultaneousRxTxInterBandCA nor simultaneousRxTxInterBandCAPerBandPair supported
+${without_simultaneousRxTxInterBandCA_and_simultaneousRxTxInterBandCAPerBandPair}    SEPARATOR=
+...    E9A09000575F5A13160003C4A0002C1262E003387A16009B20C39F30C7942C0E0980C0311C04EE3603606B04610D04083A41E006D6C98AB1A1CF88E3D033EC09F18
+...    91C790E7D473E618F28581C0E1E0B801FF800E000BE000C80000E0541B00B582308682041E20F0032B64C55890E7D813E238F1891C790E7D473E618F28581C0E1E1
+...    3FB000000FEC000000C80000E0551B133582308682041D20F0030B64C55110E7C471E238F40CFB027C639F30C7942C0E070F05C00FFC007003FF000640000702A0D
+...    837AC1184341020F10780195B262AC4873E238F604F8C48E3C873EA39F30C7942C0E070F09FFF000007FFC00000640000703B8D851FFAC1184341020E907801B5B2
+...    62AC6873E238F40CFB027C62471E439F51CF9863CA1607038782F557FF553D55FFD5432000038024B0F1300038980000002C0AC5C4C000E26000713000000858158
+...    B80400184C0309800020B02B1F008003036061300C260000C2C0AC5C02000C010181B0002058158F8040018060303606134000A160562E01000606C0C26000182C0
+...    AC3C02000C260001C2C0AC3C02000C01000202C0AC3C1B000C0D800242C0AC3C02000C03000282C0AC3C06000C0D8002C2C0AC5C02000C030181B00060581587836
+...    001C4C00001A160562E2600061300C01000382C0AC78020385000184C03098000F0302B171300030040606C0020160563E2680060080C030181B00088581009006E
+...    003404C800500A065041D212851226C73E1C4891226C73E1C4891226C73E1C68912244D8E7C38912244D8E7C38D1224489B1CF871224489B1CF870A244D8E7C3851
+...    226C73E1C28913639F0E14489B1CF870A244D8E7C38912244D8E7C3851226C73E1C4891226C73E1C68912244D8E7C38912244D8E7C38D1224489B1CF8603624318C
+...    6318C6318C6318C631801203900F93D06C003C00281C1401C0C02500700060240040603E09002000000010008000000200000C01000002008000020040000180200
+...    00100100000A008004010040100000C0080000700400200000008000080040000480200000C010000140080000B004002048120080000C033953595358295819583
+...    3582B594B7933780B581B58095811583B40D040000259494100001965260400006594901000039652404000125949010000596526040001A5949010000796524040
+...    00225949010000996524040002A5949010000B96525040003259490100003165240334AAAE955552A8BA55154162A82C55068AA531549A2A80C55028AA4D5541E28
+...    6802F012A05028140A05028140A05028140A05028140A05028008840400801010020044020040080801002020040088040300501002004040080118080600A02018
+...    0280801002020040088040400501010014040580B18080600C02018028080600C02004008804030050100C014040080108080600A02004008404030050100C01420
+...    2018030080600C10100C018040300508080600A02018028804030050100C018040300508080600C020040088040080101002004040300518080600A020040080801
+...    00202004008804008010100C018040300618080100202018028080600C02018028D50F8000810182030385058606880889098A0C0C8D8E0E8F909293139414951697A0A0C1680
+
+#UE2_Capa: CA_n41A-n77(2A) with BCS0 and nor simultaneousRxTxInterBandCA and simultaneousRxTxInterBandCAPerBandPair only scell supported
+${without_simultaneousRxTxInterBandCA_but_simultaneousRxTxInterBandCAPerBandPair_only_scell}    SEPARATOR=
+...    E9E09000575F5A13160003C4A0002C1262E003387A16009B20C39F30C7942C0E0980C0311C04EE3603606B04610D04083A41E006D6C98AB1A1CF88E3D033EC09F1891C790E
+...    7D473E618F28581C0E1E0B801FF800E000BE000C80000E0541B00B582308682041E20F0032B64C55890E7D813E238F1891C790E7D473E618F28581C0E1E13FB000000FEC00
+...    0000C80000E0551B133582308682041D20F0030B64C55110E7C471E238F40CFB027C639F30C7942C0E070F05C00FFC007003FF000640000702A0D837AC1184341020F10780
+...    195B262AC4873E238F604F8C48E3C873EA39F30C7942C0E070F09FFF000007FFC00000640000703B8D851FFAC1184341020E907801B5B262AC6873E238F40CFB027C62471E
+...    439F51CF9863CA1607038782F557FF553D55FFD5432000038024B0F1300038980000002C0AC5C28000C260184C0000818158B80400184C0309800020B02B1F008003036061
+...    300C260000C2C0AC5C02000C010181B0002058158F8040018060303606134000A160562E01000606C0C26000182C0AC3C02000C260001C2C0AC3C02000C01000202C0AC3C1
+...    B000C0D800242C0AC3C02000C03000282C0AC3C06000C0D8002C2C0AC5C02000C030181B00060581587836001C4C00001A160562E2600061300C01000382C0AC7802038500
+...    0182803098000F0B02B171300030040606C0020160563E2680060080C030181B00088581009006E003404C800500A065041D212851226C73E1C4891226C73E1C4891226C73
+...    E1C68912244D8E7C38912244D8E7C38D1224489B1CF871224489B1CF870A244D8E7C3851226C73E1C28913639F0E14489B1CF870A244D8E7C38912244D8E7C3851226C73E1
+...    C4891226C73E1C68912244D8E7C38912244D8E7C38D1224489B1CF8603624318C6318C6318C6318C631801203900F93D06C003C00281C1401C0C02500700060240040603E0
+...    9002000000010008000000200000C0100000200800002004000018020000100100000A008004010040100000C0080000700400200000008000080040000480200000C01000
+...    0140080000B004002048120080000C0339535953582958195833582B594B7933780B581B58095811583B40D040000259494100001965260400006594901000039652404000
+...    125949010000596526040001A594901000079652404000225949010000996524040002A5949010000B96525040003259490100003165240334AAAE955552A8BA55154162A8
+...    2C55068AA531549A2A80C55028AA4D5541E286802F012A05028140A05028140A05028140A05028140A05028008840400801010020044020040080801002020040088040300
+...    501002004040080118080600A020180280801002020040088040400501010014040580B18080600C02018028080600C02004008804030050100C014040080108080600A020
+...    04008404030050100C014202018030080600C10100C018040300508080600A02018028804030050100C018040300508080600C020040088040080101002004040300518080
+...    600A02004008080100202004008804008010100C018040300618080100202018028080600C0201802859A242400200000000000000D50F8000810182030385058606880889
+...    098A0C0C8D8E0E8F909293139414951697A0A0C168
+
+*** Test Cases ***
+CB008140-ET-GF024_Veiify when TTT P1070 s1116_0 and neither simultaneousRxTxInterBandCA nor simultaneousRxTxInterBandCAPerBandPair supported
+    [Documentation]
+    ...    failure in triggering the IgNB-CA SCell Addition procedure, due to different frame structure between the candidate
+    ...    ext-SCells and the PCell and the lack of UE capability.
+    ...    Requirement Coverage:
+    ...    5G_RAN_USR_RRM_18347, partial covered
+    ...    [Configuration]:
+    ...    Cell id=1 gnb=2 pci=16:2 tac=200 tdd_cell=on band=n41 nr_arfcn=513300:513300 gscn=6480 chBw=100MHz Cellid=0x4001
+    ...    Cell id=2 gnb=2 pci=17:0 tac=200 tdd_cell=on band=n41 nr_arfcn=510000:510000 gscn=6345 chBw=40MHz Cellid=0x4002
+    ...    Cell id=3 gnb=3 pci=17:1 tac=200 tdd_cell=on band=n77 nr_arfcn=653400:653400 gscn=8072 chBw=100MHz SCellWeight=50 Cellid=0x8003/32771
+    ...    Cell id=4 gnb=3 pci=17:2 tac=200 tdd_cell=on band=n77 nr_arfcn=648000:648000 gscn=8000 chBw=40MHz SCellWeight=50 Cellid=0x8004/32772
+    ...    Cell id=11 gnb=3 pci=20:0 tac=200 tdd_cell=off band=n3 nr_arfcn=349400:368400 gscn=4605 chBw=10MHz SCellWeight=50 Cellid=0x800b/32779
+    ...    Cell id=12 gnb=3 pci=20:1 tac=200 tdd_cell=off band=n28 nr_arfcn=143400:153400 gscn=1916 chBw=15MHz SCellWeight=50 Cellid=0x800c/32780
+    ...    UE1 Capa: CA_n3A-n41A-n77(2A) with BCS0 and with neither simultaneousRxTxInterBandCA nor simultaneousRxTxInterBandCAPerBandPair supported
+    ...    UE2 Capa: CA_n41A-n77(2A) with BCS0 and nor simultaneousRxTxInterBandCA and simultaneousRxTxInterBandCAPerBandPair only scell supported:
+    ...              simultaneousRxTxInterBandCAPerBandPair has value [001], so: [n41,n77]=>0, [n41,n77]=>0, [n77,n77]=>1
+    ...    2.Test Case Steps:
+    ...         a. UE1 Register And PDU Session Setup On Cell1_1
+    ...         b. UE2 Register And PDU Session Setup On Cell1_1
+    ...         c. Deregister UE1
+    ...    3. Expected Results:
+    ...         Step a: UE1 Register And PDU Session Setup Successful, no CA setup
+    ...         Step b: UE2 Register And PDU Session Setup Successful, no CA setup
+    ...         Step c: Released successfully
+    [Tags]    QC_281425
+    UE Register And PDU Session Setup
+    UE Register And PDU Session Setup    ue_id=2    gateway=2
+    Release UEs    ue_type=all
+    Check WireShark Log    ${CURDIR}${/}A2A_GF_024${/}a2a.ini    wait_string=UEContextRelease::20
+
+*** Keywords ***
+Common Suite Setup And Setup Airphone Env
+    Common Suite Setup
+    Setup 2Airphone Env    fddtdd_sansa_cmwv/6cells_gnb1_2T_N41_gnb2_2T2F    ue_count=5
+
+Modify Cfg
+    Update Cfg    ue_param id=1 ue_nr_capabilities=${without_simultaneousRxTxInterBandCA_and_simultaneousRxTxInterBandCAPerBandPair}
+    Update Cfg    ue_param id=2 ue_nr_capabilities=${without_simultaneousRxTxInterBandCA_but_simultaneousRxTxInterBandCAPerBandPair_only_scell}
+
+UE Register And PDU Session Setup
+    [Arguments]    ${ue_id}=1    ${gateway}=1    ${enb_id}=2    ${cell_id}=1
+    Execute Egate Command    ue_change_location id=${ue_id} enb=${enb_id} cell=${cell_id}
+    Execute Egate Command    ue_register id=${ue_id}    pass_regexp=NG RM Registered
+    Execute Egate Command    set_pdu_param ue=${ue_id} pdu=1 trf_type=internal
+    ${ret1}=    Execute Egate Command    ue_pdu_session_setup ue=${ue_id} pdu=1 nwslice=1 gw=${gateway}
+    ...    fail_regexp=activated successfully at airphone
